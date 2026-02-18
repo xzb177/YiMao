@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  emby-telegram-bot:
+    build: .
+    container_name: emby-telegram-bot
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    # If using reverse proxy, you can comment out the ports section

@@ -1,0 +1,27 @@
+# Environment
+.env
+
+# Data files
+*.json
+!binding_requests.json.example
+
+# Logs
+*.log
+*.pid
+
+# Binaries
+emby-telegram-bot
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
