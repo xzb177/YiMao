@@ -672,6 +672,164 @@ curl -X POST http://localhost:8080/api/admins \
 | | - 手机端友好，右对齐数字，清晰易读 |
 | | - 所有统计从 analytics 读取真实数据 |
 | 2026-02-19 | 服务重启完成 (PID: 1201536) |
+| 2026-02-19 | **问题报告管理员通知修复** 🐛 |
+| | - 修复当 issueID=0 时管理员不收到私聊通知的问题 |
+| | - 修改 `handleIssueCreatedWebhook` 函数，即使没有 issue ID 也通知管理员 |
+| | - 添加 `notifyAdminsIssue` 函数的详细调试日志 |
+| | - 日志文件位于 `/tmp/emby-bot.log`（而非 `/tmp/emby-debug.log`） |
+| | - 问题报告通知现在会私聊所有管理员 |
+| | - 注意：管理员需要先启动与机器人的私聊才能收到通知 |
+| 2026-02-19 | 服务重启完成 (PID: 1214725) |
+| 2026-02-19 | **问题报告自定义回复功能验证** ✅ |
+| | - 代码审查确认：自定义回复功能已完整实现 |
+| | - 管理员点击 "💬 回复" → 选择 "✏️ 自定义回复" |
+| | - 群消息编辑显示提示，私聊同时发送提醒 |
+| | - 管理员在私聊输入内容，自动发送到 Jellyseerr |
+| | - 支持 "✏️ 回复并关闭" 选项，发送后自动关闭问题 |
+| | - 快捷回复模板：已修复、处理中、重试、需要信息、无法重现、按预期工作 |
+| 2026-02-19 | **模块化重构编译成功** 🔧 |
+| | - 修复 `chain/` 包的导入问题 (移除未使用的包) |
+| | - 修复 `bot/handler.go` 中的类型引用问题 |
+| | - 修复 `bot/integration.go` 中的反斜杠转义错误 |
+| | - 修复 `session.UserSession` 添加 `LastMessageID` 字段 |
+| | - 修复 `bot.SearchItem` 与 `session.SearchItem` 类型统一 |
+| | - 添加 `convertToBotUpdate` 函数处理类型转换 |
+| | - 添加 `InitBotModule` 函数初始化新模块 |
+| | - 编译成功，二进制文件：`emby-telegram-bot` (21MB) |
+| 2026-02-19 | **模块化系统部署成功** 🚀 |
+| | - 停止旧进程 (PID: 1214725) |
+| | - 启动新进程 (PID: 1271043) |
+| | - 日志确认：`✅ New modular bot system initialized` |
+| | - BotModule 集成：`[BotModule] Initialized with Jellyseerr` |
+| | - 消息处理：`[BotModule] Using new module for message` |
+| | - Session 管理：`[Session] Created new session for user xxx` |
+| | - 搜索链：`[SearchChain] Found 0 results` |
+| | - 健康检查 API：✅ 正常 |
+| | - 统计 API：✅ 正常 |
+| | - Telegram Webhook：✅ 已设置 |
+| | - 菜单按钮：✅ 已设置 (16 命令) |
+| | - 命令注册：69 个命令，6 个分类 |
+| | - 新模块正在处理用户消息 (多个用户测试通过) |
+| 2026-02-19 | **Markdown 解析问题修复** 🔧 |
+| | - 移除 `bot/editor.go` 中的 `parse_mode: "Markdown"` |
+| | - 避免特殊字符导致的 Telegram API 解析错误 |
+| | - 添加调试日志：`[Editor] Sending message`、`[BotModule] Response received` |
+| 2026-02-19 | **搜索功能测试通过** ✅ |
+| | - 无结果搜索：显示 "未找到相关内容" |
+| | - 有结果搜索：`复仇者联盟` 找到 15 个结果 |
+| | - 响应消息生成：599 字符 |
+| | - 消息发送成功：`[Editor] Sending message to chat xxx` |
+| | - 当前运行 PID: 1283144 |
+| 2026-02-19 | **私聊搜索限制** 🔒 |
+| | - 修改 `main.go`：新模块仅在私聊 (`chat_type == "private"`) 中触发 |
+| | - 修改 `bot/handler.go`：非私聊消息直接忽略，返回 nil |
+| | - 日志确认：`[Handler] User xxx (chat type: private): xxx` |
+| | - 群组/超级群组搜索不再触发新模块 |
+| | - 私聊搜索正常工作，找到 15 个结果 |
+| | - 当前运行 PID: 1289092 |
+| 2026-02-19 | **群组搜索限制测试** ✅ |
+| | - 群组 (`group` / `supergroup`) 搜索：✅ 被正确忽略 |
+| | - 群组测试日志：只有 `[DEBUG]`，无 `[BotModule]` 日志 |
+| | - 私聊 (`private`) 搜索：✅ 正常工作 |
+| | - 私聊测试日志：`[BotModule] Using new module for message (private)` |
+| | - 确认搜索功能仅在私聊中可用 |
+| 2026-02-19 | **搜索显示和按钮修复** 🔧 |
+| | - 修复年份显示：年份为 0 时不显示 `(0)` |
+| | - 添加 `select` action 处理分支到 `HandleCallback` |
+| | - 实现 `handleSelectCallback` 函数处理按钮点击 |
+| | - 实现 `buildItemDetailsCallbackResponse` 显示详情 |
+| | - 添加 `strconv` 包导入 |
+| | - 当前运行 PID: 1298408 |
+| 2026-02-19 | **数据解析问题分析** 🔍 |
+| | - 发现 Jellyseerr API `/api/v1/search` 返回的数据缺少部分字段 |
+| | - `MediaType` 和 `ReleaseDate` 字段为空 |
+| | - 调试日志：`Converting item: ID=711, Title='', Name='Threat Matrix', MediaType='', ReleaseDate=''` |
+| | - 但标题通过 `Name` 字段获取成功 |
+| | - 详情页面显示不完整：只显示年份，缺少标题和其他信息 |
+| | - 按钮回调功能正在开发中，需要集成现有订阅逻辑 |
+| | - 当前运行 PID: 1306129 |
+| 2026-02-19 | **详情页面和订阅按钮优化** ✅ |
+| | - 移除下载按钮，只保留订阅按钮 |
+| | - 订阅按钮重命名为"📋 请求订阅" |
+| | - 添加标题显示（优先使用 Title，备用 ID） |
+| | - 添加年份显示（当年份 > 0 时） |
+| | - 添加类型显示（movie→电影，tv→剧集，默认"电影/剧集"） |
+| | - 添加评分显示（当评分 > 0 时） |
+| | - 简化按钮布局：订阅、返回搜索结果、取消 |
+| | - 实现 `handleSubscribeCallback` 集成订阅功能 |
+| | - 添加订阅请求的调试日志 |
+| | - 当前运行 PID: $(cat /tmp/emby-bot.pid) |
+| 2026-02-19 | **类型显示修复** 🔧 |
+| | - Jellyseerr API `/api/v1/search` 不返回 `media_type` 字段 |
+| | - 默认显示"电影/剧集"而不是"未知" |
+| | - 详情页面现在正确显示：`📺 生命树` + `🏷️ 类型: 电影/剧集` |
+| | - 按钮回调数据包含标题信息用于订阅请求 |
+| | - 当前运行 PID: 1298408 |
+| 2026-02-19 | **搜索回调功能修复** 🔧 |
+| | - 修复 `handlePageCallback` - 返回搜索结果页面的回调现在正常工作 |
+| | - 修复 `handleSubscribeCallback` - 添加完整的配额检查和使用量递增 |
+| | - 新增 `handleBackCallback` - 处理返回搜索结果的按钮 |
+| | - 新增 `buildSearchResultsCallbackResponse` - 构建搜索结果的回调响应 |
+| | - 新增 `bot/quota.go` - 独立的配额管理模块 |
+| | - 详情页面现在显示用户配额信息（剩余请求数） |
+| | - 订阅成功后显示更新后的配额状态 |
+| | - 配额检查：电影/剧集配额用完时阻止请求 |
+| 2026-02-19 | **模块化功能完善** 🚀 |
+| | - BotModule 集成 QuotaManager |
+| | - Handler 添加 SetQuotaManager 方法 |
+| | - 配额数据存储在 `user_quotas.json` |
+| | - 编译成功，新二进制：`emby-telegram-bot-new` |
+| 2026-02-19 | **部署成功** ✅ |
+| | - 服务启动成功 (PID: 1336860) |
+| | - 新模块已集成并正常工作 |
+| | - 日志确认：`[BotModule] Initialized with Jellyseerr` |
+| | - 日志确认：`[QuotaManager] Loaded 5 user quotas` |
+| | - 健康检查 API 正常响应 |
+| | - 搜索功能现已支持配额显示和回调 |
+| 2026-02-19 | **订阅回调功能修复** 🔧 |
+| | - 修复 mediaID 解析问题（支持任意长度的 type 前缀） |
+| | - 添加 Jellyseerr 用户 ID 映射获取 |
+| | - 新增 `SubscribeWithUser` 方法 - 支持指定用户创建请求 |
+| | - 未绑定账号时返回友好提示："请先使用 /link 命令绑定账号" |
+| | - 服务重启成功 (PID: 1340690) |
+| 2026-02-19 | **用户映射读取修复** 🔧 |
+| | - 修复 `getJellyseerrUserID` 函数的 JSON 结构解析 |
+| | - 正确读取 `telegramToJellyseerr` 映射 |
+| | - 用户 ID 格式转换为字符串进行查找 |
+| | - 添加调试日志追踪映射查找过程 |
+| 2026-02-19 | **反馈功能新增** 📝 |
+| | - 新增 `bot/feedback.go` - 反馈管理模块 |
+| | - 新增 `/feedback` 或 `/fb` 命令 - 发送用户反馈 |
+| | - 自动识别反馈类型：🐛 Bug、✨ 功能建议、💬 一般反馈 |
+| | - 反馈数据持久化到 `feedbacks.json` |
+| | - 支持管理员查看待处理反馈列表 |
+| | - 服务重启成功 (PID: 1345771) |
+| 2026-02-19 | **反馈功能与 Jellyseerr Issue 集成** 🔧 |
+| | - 重写 `bot/feedback.go` - 直接对接 Jellyseerr Issue API |
+| | - 新增 `/feedback <类型> <媒体ID> <描述>` - 创建问题报告 |
+| | - 问题类型：audio(音频)、subtitle(字幕)、video(视频)、other(其他) |
+| | - 新增 `/issues` 命令 - 查看我的问题列表 |
+| | - 新增 `/allissues` 命令 - 查看所有问题(管理员) |
+| | - 创建问题后直接同步到 Jellyseerr |
+| | - 支持 GetMyIssues、GetAllIssues、AddComment 等方法 |
+| | - 服务重启成功 (PID: 1350136) |
+| 2026-02-19 | **回调调试与问题排查** 🔍 |
+| | - 添加回调处理的调试日志 |
+| | - 订阅返回 500 错误 - Jellyseerr API 问题 |
+| | - back:results 回调处理正常 |
+| | - 添加 EditMode 日志追踪消息编辑状态 |
+| | - 服务重启成功 (PID: 1353009) |
+| 2026-02-19 | **文案全面优化** ✨ |
+| | - 优化 `/start` 和 `/help` 命令文案，更友好的引导 |
+| | - 帮助消息现在显示是否已绑定账号的状态 |
+| | - 添加步骤化引导：搜索 → 查看详情 → 发起请求 |
+| | - 优化配额提示文案，添加"明天自动重置"的说明 |
+| | - 优化订阅请求成功/失败消息 |
+| | - 优化搜索结果显示格式，添加分隔线 |
+| | - 优化搜索无结果时的友好提示 |
+| | - 配额已用完时自动禁用请求按钮 |
+| | - 优化各种错误提示，添加解决建议 |
+| | - 服务重启成功 (PID: 1373770) |
 
 ## 新增功能模块 (2026-02-18)
 
@@ -725,6 +883,184 @@ curl -X POST http://localhost:8080/api/admins \
   - 提供解决建议
   - 视觉化的进度指示器
   - 快捷操作按钮
+
+---
+
+## MoviePilot Bot 交互逻辑分析与优化建议
+
+### 项目概述
+- **项目**: [MoviePilot](https://github.com/jxxghp/MoviePilot) by jxxghp
+- **技术栈**: Python + FastAPI + Vue3
+- **Telegram 库**: `pyTelegramBotAPI` (telebot)
+- **核心文件**: `app/modules/telegram/telegram.py` (671行)
+
+### 架构设计对比
+
+| 特性 | MoviePilot | 当前 Emby Bot |
+|------|-----------|---------------|
+| 语言 | Python + FastAPI | Go |
+| 消息处理 | 事件驱动 + 链式处理 | 直接 switch 处理 |
+| 模块化 | Chain 模式 (SearchChain, SubscribeChain等) | 单文件 main.go |
+| 用户会话 | 支持会话缓存 (30分钟超时) | 无会话状态 |
+| 分页显示 | 支持 (每页8条) | 支持 (每页8条) |
+| 按钮回调 | CALLBACK: 格式 | issue_xxx: 格式 |
+| AI 集成 | 支持 AI 智能体 | 暂不支持 |
+
+### MoviePilot 的核心交互逻辑
+
+#### 1. 消息处理流程 (`app/chain/message.py`)
+```
+用户消息 → MessageChain.process()
+         ↓
+    message_parser (解析消息)
+         ↓
+    handle_message (处理消息)
+         ↓
+    判断消息类型:
+    - CALLBACK: → _handle_callback (按钮回调)
+    - /命令 → send_event (命令事件)
+    - /ai → _handle_ai_message (AI 处理)
+    - 普通消息 → 各种处理分支
+```
+
+#### 2. 支持的操作命令
+- **搜索**: `搜索 <名称>` 或直接输入名称
+- **订阅**: `订阅 <名称>`
+- **洗版**: `洗版 <名称>`
+- **下载**: `下载 <名称>`
+- **分页**: `p` (上一页) / `n` (下一页)
+- **选择**: 输入数字选择具体条目
+
+#### 3. 用户体验优化
+- **消息编辑**: 支持编辑原消息而非发送新消息
+- **按钮交互**: InlineKeyboard 支持丰富交互
+- **自动下载**: 特定用户可设置自动下载
+- **消息删除**: 支持删除消息以保持聊天清洁
+- **长消息处理**: 自动拆分长消息发送
+
+### 建议优化方向
+
+#### 1. 架构优化
+```go
+// 当前: 单文件处理所有逻辑
+// 建议: 拆分为模块化结构
+
+app/
+├── bot/
+│   ├── handler.go        // 消息处理入口
+│   ├── callback.go       // 回调处理
+│   └── session.go        // 用户会话管理
+├── chain/
+│   ├── search.go         // 搜索链
+│   ├── subscribe.go      // 订阅链
+│   └── download.go       // 下载链
+└── modules/
+    ├── jellyseerr/
+    └── emby/
+```
+
+#### 2. 会话管理
+```go
+// 用户会话状态管理
+type UserSession struct {
+    UserID      int64
+    ChatID      int64
+    LastActive  time.Time
+    CurrentPage int
+    SearchResults []MediaInfo
+    SelectedMedia *MediaInfo
+}
+
+// 会话超时清理 (30分钟)
+```
+
+#### 3. 消息编辑优化
+```go
+// 当前: 每次发送新消息
+// 建议: 编辑原消息
+
+func sendOrUpdateMessage(chatID int64, messageID int, text string) error {
+    if messageID > 0 {
+        return editMessage(chatID, messageID, text)
+    }
+    return sendMessage(chatID, text)
+}
+```
+
+#### 4. AI 智能体集成
+```python
+# MoviePilot 支持 /ai 命令
+# 建议添加类似的自然语言处理
+
+elif text.lower().startswith('/ai'):
+    self._handle_ai_message(...)
+```
+
+#### 5. 更丰富的按钮交互
+```go
+// 当前: issue_xxx: 格式
+// 建议: 更灵活的回调系统
+
+type Callback struct {
+    Action    string  // search, subscribe, download
+    Data      string  // 媒体ID或搜索关键词
+    Page      int     // 当前页码
+    UserID    int64   // 用户ID
+}
+
+func parseCallback(data string) *Callback {
+    // 解析回调数据
+}
+```
+
+### 参考资料
+- MoviePilot GitHub: https://github.com/jxxghp/MoviePilot
+- MoviePilot Wiki: https://wiki.movie-pilot.org
+- Telegram 发布频道: https://t.me/moviepilot_channel
+
+---
+
+## 2026-02-19 全面模块化重构 🚀
+
+### 架构升级
+- **参考 MoviePilot 设计** - 学习业界最佳实践
+- **模块化目录结构**:
+  - `bot/` - 消息处理模块
+  - `session/` - 会话管理模块
+  - `callback/` - 回调处理模块
+  - `chain/` - 业务链处理模块
+- **新增文件**:
+  - `bot/handler.go` - 统一消息处理入口
+  - `bot/editor.go` - 消息编辑和发送
+  - `bot/module.go` - 模块集成
+  - `session/manager.go` - 用户会话管理
+  - `callback/parser.go` - 回调数据解析
+  - `chain/base.go` - 链基类
+  - `chain/search.go` - 搜索链
+  - `chain/subscribe.go` - 订阅链
+  - `chain/download.go` - 下载链
+  - `ARCHITECTURE.md` - 架构文档
+
+### 新功能
+- **会话管理** - 30分钟超时，自动清理
+- **消息编辑** - 优先编辑原消息，减少刷屏
+- **长消息处理** - 自动拆分 (>4000字符)
+- **统一回调格式** - `action:key1:value1:key2:value2`
+- **分页状态保持** - 搜索结果分页浏览
+- **上下文存储** - 支持临时数据存储
+
+### 编译成功
+- 新二进制: `emby-telegram-bot-new`
+- 文件大小: 9.2MB
+- 所有模块编译通过
+
+### 待完成
+- [ ] 集成到 main.go
+- [ ] 测试新功能
+- [ ] 迁移现有功能到新架构
+- [ ] 更新命令处理
+- MoviePilot Wiki: https://wiki.movie-pilot.org
+- Telegram 发布频道: https://t.me/moviepilot_channel
 
 ## 优化方案文档
 

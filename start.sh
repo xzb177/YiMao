@@ -26,8 +26,12 @@ fi
 pkill -f "emby-telegram-bot" 2>/dev/null
 sleep 1
 
-# 启动服务
-./emby-telegram-bot > /tmp/emby-debug.log 2>&1 &
+# 启动服务（优先使用新版本）
+if [ -f "./emby-telegram-bot-new" ]; then
+    ./emby-telegram-bot-new > /tmp/emby-debug.log 2>&1 &
+else
+    ./emby-telegram-bot > /tmp/emby-debug.log 2>&1 &
+fi
 PID=$!
 
 # 保存 PID

@@ -15,6 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+
+	"emby-telegram-bot/bot"
 )
 
 // EmbyWebhookPayload represents the incoming webhook from Emby
@@ -187,6 +190,113 @@ var (
 	pendingIssueReplies map[int64]int64
 	issueReplyMutex     sync.RWMutex
 )
+
+// Global bot module instance
+var botModule *bot.BotModule
+
+// InitBotModule initializes the new modular bot system
+func InitBotModule() error {
+	botModule = bot.NewBotModule()
+	return botModule.Init(botToken, chatID, jellyseerrURL, jellyseerrAPIKey)
+}
+
+// convertToBotUpdate converts main.TelegramUpdate to bot.TelegramUpdate
+func convertToBotUpdate(update *TelegramUpdate) *bot.TelegramUpdate {
+	if update == nil {
+		return nil
+	}
+
+	botUpdate := &bot.TelegramUpdate{
+		UpdateID: update.UpdateID,
+	}
+
+	if update.Message != nil {
+		botUpdate.Message = &struct {
+			MessageID int64  `json:"message_id"`
+			From      struct {
+				ID        int64  `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				LastName  string `json:"last_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+			Chat struct {
+				ID   int64 `json:"id"`
+				Type string `json:"type"`
+			} `json:"chat"`
+			Date int64 `json:"date"`
+			Text string `json:"text"`
+		}{
+			MessageID: update.Message.MessageID,
+			From: struct {
+				ID        int64  `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				LastName  string `json:"last_name"`
+				Username  string `json:"username"`
+			}{
+				ID:        update.Message.From.ID,
+				IsBot:     false,
+				FirstName: update.Message.From.FirstName,
+				LastName:  update.Message.From.LastName,
+				Username:  update.Message.From.Username,
+			},
+			Chat: struct {
+				ID   int64 `json:"id"`
+				Type string `json:"type"`
+			}{
+				ID:   update.Message.Chat.ID,
+				Type: update.Message.Chat.Type,
+			},
+			Date: 0,
+			Text: update.Message.Text,
+		}
+	}
+
+	if update.CallbackQuery != nil {
+		botUpdate.CallbackQuery = &struct {
+			ID      string `json:"id"`
+			From    struct {
+				ID        int64  `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+			Message struct {
+				MessageID int64 `json:"message_id"`
+				Chat      struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			} `json:"message"`
+			Data string `json:"callback_data"`
+		}{
+			ID: update.CallbackQuery.ID,
+			From: struct {
+				ID        int64  `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			}{
+				ID:        update.CallbackQuery.From.ID,
+				IsBot:     false,
+				FirstName: update.CallbackQuery.From.FirstName,
+				Username:  update.CallbackQuery.From.Username,
+			},
+			Message: struct {
+				MessageID int64 `json:"message_id"`
+				Chat      struct {
+					ID int64 `json:"id"`
+				} `json:"chat"`
+			}{
+				MessageID: update.CallbackQuery.Message.MessageID,
+				Chat:      struct{ ID int64 "json:\"id\"" }{ID: update.CallbackQuery.Message.Chat.ID},
+			},
+			Data: update.CallbackQuery.Data,
+		}
+	}
+
+	return botUpdate
+}
 
 // PendingRequest holds info about a request waiting for admin action
 type PendingRequest struct {
@@ -2428,7 +2538,38 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[DEBUG] telegramWebhookHandler called, callback=%v", update.CallbackQuery != nil)
 
-	// Handle callback queries (button presses)
+	// 尝试使用新模块处理消息
+	if botModule != nil {
+		// 检查是否是新格式的回调 (以 search:subscribe:download:page:cancel 开头)
+		if update.CallbackQuery != nil {
+			data := update.CallbackQuery.Data
+			if isNewFormatCallback(data) {
+				log.Printf("[BotModule] Using new module for callback: %s", data)
+				botModule.HandleCallback(convertToBotUpdate(&update))
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, "OK")
+				return
+			}
+		}
+
+		// 检查是否是新的消息格式 (直接搜索、订阅等)
+		// 限制：仅在私聊中使用，群组中禁用
+		if update.Message != nil && update.Message.Text != "" {
+			chatType := update.Message.Chat.Type
+			text := update.Message.Text
+
+			// 仅在私聊中使用新模块的搜索功能
+			if chatType == "private" && shouldUseNewModule(text) {
+				log.Printf("[BotModule] Using new module for message (private): %s", text)
+				botModule.HandleMessage(convertToBotUpdate(&update))
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprintf(w, "OK")
+				return
+			}
+		}
+	}
+
+	// Handle callback queries (button presses) - legacy handler
 	if update.CallbackQuery != nil {
 		callbackID := update.CallbackQuery.ID
 		data := update.CallbackQuery.Data
@@ -3355,7 +3496,10 @@ func handleIssueCreatedWebhook(payload JellyseerrWebhookPayload) {
 		if err := sendTelegramMessage(text); err != nil {
 			log.Printf("Error sending issue notification: %v", err)
 		}
-		log.Printf("Issue notification sent (without buttons - no issue ID)")
+
+		// Still notify admins about the issue even without issue ID
+		notifyAdminsIssue(issueID, text, nil)
+		log.Printf("Issue notification sent (without buttons - no issue ID), admins notified")
 		return
 	}
 
@@ -3422,17 +3566,25 @@ func notifyAdminsIssue(issueID int64, text string, keyboard *TelegramInlineKeybo
 	adminsMutex.RLock()
 	defer adminsMutex.RUnlock()
 
+	log.Printf("[DEBUG] notifyAdminsIssue called: issueID=%d, adminsCount=%d", issueID, len(admins))
+
 	if len(admins) == 0 {
 		log.Printf("No admins to notify about issue %d", issueID)
 		return
 	}
 
+	successCount := 0
 	for userIDStr := range admins {
 		userIDInt, _ := strconv.ParseInt(userIDStr, 10, 64)
+		log.Printf("[DEBUG] Sending issue notification to admin %s (ID: %d)", userIDStr, userIDInt)
 		if err := sendPrivateMessage(userIDInt, text, keyboard); err != nil {
 			log.Printf("Error sending issue notification to admin %s: %v", userIDStr, err)
+		} else {
+			successCount++
+			log.Printf("[DEBUG] Successfully sent issue notification to admin %s", userIDStr)
 		}
 	}
+	log.Printf("Issue %d: notified %d/%d admins", issueID, successCount, len(admins))
 }
 
 // handleIssueReplyCallback handles issue reply button clicks - shows reply options menu
@@ -3907,6 +4059,14 @@ func summaryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// 初始化新的模块化 Bot 系统
+	if err := InitBotModule(); err != nil {
+		log.Printf("Warning: Failed to initialize new bot module: %v", err)
+		log.Println("Continuing with legacy handler...")
+	} else {
+		log.Println("✅ New modular bot system initialized")
+	}
+
 	http.HandleFunc("/webhook", webhookHandler)
 	http.HandleFunc("/telegram-webhook", telegramWebhookHandler)
 	http.HandleFunc("/health", healthHandler)
@@ -4392,3 +4552,56 @@ func handleQuickLinkCommand(telegramID int64, text string) {
 	msg += "💡 使用 /search 搜索媒体"
 	sendPrivateMessage(telegramID, msg, nil)
 }
+
+// isNewFormatCallback checks if callback data is in new format
+func isNewFormatCallback(data string) bool {
+	if data == "" {
+		return false
+	}
+
+	// New format callbacks
+	newActions := []string{"search:", "subscribe:", "download:", "page:", "cancel:", "select:", "back:"}
+	for _, action := range newActions {
+		if strings.HasPrefix(data, action) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// shouldUseNewModule checks if message should be handled by new module
+func shouldUseNewModule(text string) bool {
+	if text == "" {
+		return false
+	}
+
+	// Commands that should use new module
+	newCommands := []string{"/ai", "/recommend"}
+	for _, cmd := range newCommands {
+		if strings.HasPrefix(text, cmd) {
+			return true
+		}
+	}
+
+	// Direct search (no slash, not a legacy command)
+	if !strings.HasPrefix(text, "/") {
+		// Check if it is a search query (Chinese text or mixed)
+		if hasChinese(text) || len(text) > 3 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// hasChinese checks if text contains Chinese characters
+func hasChinese(text string) bool {
+	for _, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			return true
+		}
+	}
+	return false
+}
+
