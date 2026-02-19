@@ -732,39 +732,50 @@ func (m *SmartSearchManager) checkServerQuota(telegramID int64, mediaType string
 	quota.MovieLimit = movieLimit
 	quota.TVLimit = tvLimit
 	m.userQuotas[telegramID] = quota
-	m.quotaMutex.Unlock()
 
 	// Check if user can request based on server quota
-	// Note: We use a heuristic here since we don't have daily breakdown from server
-	// If user has 0 remaining based on their total request count, they likely can't request
+	// Note: We cannot reliably determine daily quota from server's requestCount
+	// because requestCount is the TOTAL historical count, not daily usage.
+	// Therefore, we always return true here and let the actual request API
+	// handle quota validation on the server side.
+	// We rely on local quota tracking for pre-check.
+
 	movieRemaining := movieLimit
 	tvRemaining := tvLimit
 
-	// If user has made requests, estimate remaining
-	// This is a simple heuristic - the actual quota check happens on the server
-	if user.RequestCount > 0 {
-		// Estimate: assume requests are evenly distributed between movie and tv
-		// This isn't perfect but gives a reasonable indication
-		estimatedUsedPerType := (user.RequestCount + 1) / 2
-		movieRemaining = movieLimit - estimatedUsedPerType
-		tvRemaining = tvLimit - estimatedUsedPerType
+	// Reset if it's a new day
+	today := time.Now().Format("2006-01-02")
+	if mediaType == "movie" && quota.MovieResetDate != today {
+		quota.MovieUsed = 0
+		quota.MovieResetDate = today
+	}
+	if mediaType == "tv" && quota.TVResetDate != today {
+		quota.TVUsed = 0
+		quota.TVResetDate = today
+	}
 
+	// Use local tracking for remaining calculation
+	if mediaType == "movie" {
+		movieRemaining = movieLimit - quota.MovieUsed
 		if movieRemaining < 0 {
 			movieRemaining = 0
 		}
+	}
+	if mediaType == "tv" {
+		tvRemaining = tvLimit - quota.TVUsed
 		if tvRemaining < 0 {
 			tvRemaining = 0
 		}
 	}
 
-	canRequest := true
-	if mediaType == "movie" && movieRemaining <= 0 {
-		canRequest = false
-	} else if mediaType == "tv" && tvRemaining <= 0 {
-		canRequest = false
-	}
+	// Save updated quota
+	m.userQuotas[telegramID] = quota
+	m.saveQuotasUnsafe()
+	m.quotaMutex.Unlock()
 
-	return canRequest, movieRemaining, tvRemaining, nil
+	// Allow request - server will do final validation
+	// We only use this for informational display
+	return true, movieRemaining, tvRemaining, nil
 }
 
 // getUserQuotaUnsafe gets quota without locking (caller must hold lock)
@@ -1503,7 +1514,7 @@ func (m *SmartSearchManager) CreateRequest(telegramID int64, tmdbID int, mediaTy
 
 	var result struct {
 		ID          int              `json:"id"`
-		Status      string           `json:"status"`
+		Status      interface{}      `json:"status"` // 可以是字符串或数字
 		Media       *JellyseerrMedia `json:"media"`
 		CreatedAt   string           `json:"createdAt"`
 		Requester   *JellyseerrUser `json:"requestedBy"`
@@ -1513,7 +1524,36 @@ func (m *SmartSearchManager) CreateRequest(telegramID int64, tmdbID int, mediaTy
 		return "", fmt.Errorf("failed to decode response: %w, body: %s", err, string(body))
 	}
 
-	log.Printf("Request created: id=%d, status=%s", result.ID, result.Status)
+	// Convert status to string
+	statusStr := "unknown"
+	switch v := result.Status.(type) {
+	case string:
+		statusStr = v
+	case float64:
+		switch int(v) {
+		case 1:
+			statusStr = "pending"
+		case 2:
+			statusStr = "approved"
+		case 3:
+			statusStr = "available"
+		case 4:
+			statusStr = "declined"
+		}
+	case int:
+		switch v {
+		case 1:
+			statusStr = "pending"
+		case 2:
+			statusStr = "approved"
+		case 3:
+			statusStr = "available"
+		case 4:
+			statusStr = "declined"
+		}
+	}
+
+	log.Printf("Request created: id=%d, status=%s", result.ID, statusStr)
 
 	// Sync user quota from Jellyseerr server
 	// This ensures bot quota matches server-side quota after request creation
@@ -1538,15 +1578,52 @@ func (m *SmartSearchManager) CreateRequest(telegramID int64, tmdbID int, mediaTy
 		}
 	}
 
-	msg := fmt.Sprintf("✅ *请求已创建*\n\n")
-	msg += fmt.Sprintf("📦 %s\n", title)
-	msg += fmt.Sprintf("📝 请求ID: %d\n", result.ID)
-	msg += fmt.Sprintf("📊 状态: %s\n", result.Status)
+	// Handle different request statuses
+	var msg string
 
-	if result.Status == "pending" {
-		msg += "\n\n⏳ 等待管理员批准"
-	} else if result.Status == "approved" {
-		msg += "\n\n✅ 已批准，正在处理中"
+	if statusStr == "declined" {
+		// Check if media is already available
+		mediaAvailable := false
+		mediaStatus := ""
+		if result.Media != nil {
+			mediaStatus = result.Media.GetStatusString()
+			if mediaStatus == "available" {
+				mediaAvailable = true
+			}
+		}
+
+		msg = "📋 *求片请求*\n\n"
+		msg += fmt.Sprintf("📦 %s\n", title)
+		msg += fmt.Sprintf("📝 请求ID: %d\n", result.ID)
+
+		if mediaAvailable {
+			msg += "\n\n✨ *好消息！\n\n"
+			msg += "这部电影已经在库中了，可以直接观看 🎬\n\n"
+			msg += "💡 由于媒体已存在，系统自动关闭了此请求"
+		} else {
+			msg += "\n\n❌ 请求已关闭\n\n"
+			if mediaStatus == "approved" || mediaStatus == "processing" {
+				msg += "💡 这部电影正在处理中，请耐心等待"
+			} else if mediaStatus == "pending" {
+				msg += "💡 这部电影已在请求队列中"
+			} else {
+				msg += "💡 可能媒体已存在或请求被管理员拒绝"
+			}
+		}
+	} else {
+		// Normal status handling (pending, approved, available)
+		msg = fmt.Sprintf("✅ *请求已创建*\n\n")
+		msg += fmt.Sprintf("📦 %s\n", title)
+		msg += fmt.Sprintf("📝 请求ID: %d\n", result.ID)
+		msg += fmt.Sprintf("📊 状态: %s\n", statusStr)
+
+		if statusStr == "pending" {
+			msg += "\n\n⏳ 等待管理员批准"
+		} else if statusStr == "approved" {
+			msg += "\n\n✅ 已批准，正在处理中"
+		} else if statusStr == "available" {
+			msg += "\n\n🎉 已可用，可以观看啦！"
+		}
 	}
 
 	// Add quota info

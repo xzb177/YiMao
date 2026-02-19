@@ -40,16 +40,56 @@ type JellyseerrRequest struct {
 
 // JellyseerrMedia represents media info
 type JellyseerrMedia struct {
-	ID               int     `json:"id"`
-	MediaType        string  `json:"mediaType"`
-	Status           string  `json:"status"`
-	TmdbID           int     `json:"tmdbId"`
-	Title            string  `json:"title"`
-	OriginalTitle    string  `json:"originalTitle"`
-	ReleaseDate      string  `json:"releaseDate"`
-	PosterPath       string  `json:"posterPath"`
-	BackdropPath     string  `json:"backdropPath"`
-	Overview         string  `json:"overview"`
+	ID               int        `json:"id"`
+	MediaType        string     `json:"mediaType"`
+	Status           interface{} `json:"status"` // 可以是字符串或数字
+	TmdbID           int        `json:"tmdbId"`
+	Title            string     `json:"title"`
+	OriginalTitle    string     `json:"originalTitle"`
+	ReleaseDate      string     `json:"releaseDate"`
+	PosterPath       string     `json:"posterPath"`
+	BackdropPath     string     `json:"backdropPath"`
+	Overview         string     `json:"overview"`
+}
+
+// GetStatusString returns the status as a string
+func (m *JellyseerrMedia) GetStatusString() string {
+	if m.Status == nil {
+		return "unknown"
+	}
+	switch v := m.Status.(type) {
+	case string:
+		return v
+	case float64:
+		// Jellyseerr uses numeric status: 1=pending, 2=approved, 3=available, 4=declined
+		switch int(v) {
+		case 1:
+			return "pending"
+		case 2:
+			return "approved"
+		case 3:
+			return "available"
+		case 4:
+			return "declined"
+		default:
+			return fmt.Sprintf("unknown(%d)", int(v))
+		}
+	case int:
+		switch v {
+		case 1:
+			return "pending"
+		case 2:
+			return "approved"
+		case 3:
+			return "available"
+		case 4:
+			return "declined"
+		default:
+			return fmt.Sprintf("unknown(%d)", v)
+		}
+	default:
+		return "unknown"
+	}
 }
 
 // JellyseerrUser represents a user

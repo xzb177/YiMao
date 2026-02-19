@@ -298,7 +298,7 @@ func (ss *SmartSearch) GetMediaDetails(tmdbID int, mediaType string) (*MediaDeta
 		BackdropPath string `json:"backdropPath"`
 		Overview   string `json:"overview"`
 		ReleaseDate string `json:"releaseDate"`
-		Status     string `json:"status"`
+		Status     interface{} `json:"status"` // 可以是字符串或数字
 		Rating     float64 `json:"rating"`
 	}
 
@@ -314,7 +314,40 @@ func (ss *SmartSearch) GetMediaDetails(tmdbID int, mediaType string) (*MediaDeta
 	details.BackdropPath = jsMedia.BackdropPath
 	details.Overview = jsMedia.Overview
 	details.ReleaseDate = jsMedia.ReleaseDate
-	details.Status = jsMedia.Status
+	// Convert status to string
+	switch v := jsMedia.Status.(type) {
+	case string:
+		details.Status = v
+	case float64:
+		// Numeric status from Jellyseerr
+		switch int(v) {
+		case 1:
+			details.Status = "pending"
+		case 2:
+			details.Status = "approved"
+		case 3:
+			details.Status = "available"
+		case 4:
+			details.Status = "declined"
+		default:
+			details.Status = "unknown"
+		}
+	case int:
+		switch v {
+		case 1:
+			details.Status = "pending"
+		case 2:
+			details.Status = "approved"
+		case 3:
+			details.Status = "available"
+		case 4:
+			details.Status = "declined"
+		default:
+			details.Status = "unknown"
+		}
+	default:
+		details.Status = "unknown"
+	}
 	details.VoteAverage = jsMedia.Rating
 
 	return &details, nil
