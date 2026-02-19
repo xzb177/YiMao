@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -126,7 +127,7 @@ type TelegramCallbackQuery struct {
 		FirstName string `json:"first_name"`
 		LastName  string `json:"last_name"`
 	} `json:"from"`
-	Message struct {
+	Message *struct {
 		MessageID int64 `json:"message_id"`
 		Chat struct {
 			ID int64 `json:"id"`
@@ -1231,6 +1232,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 	if update.Message == nil {
 		return
 	}
+	log.Printf("[DEBUG] handlePrivateMessage called with text: %s", update.Message.Text)
 
 	userID := fmt.Sprintf("%d", update.Message.From.ID)
 	username := update.Message.From.FirstName
@@ -1446,17 +1448,54 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		sendPrivateMessage(update.Message.From.ID, msg, nil)
 
 	case "/stats":
-		statsMutex.Lock()
-		defer statsMutex.Unlock()
+		// Get today's stats from analytics system
+		today := time.Now().Format("2006-01-02")
+		weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[time.Now().Weekday()]
 
-		msg := "📊 *统计数据*\n\n"
-		msg += fmt.Sprintf("📅 日期: %s\n", stats.Date)
-		msg += fmt.Sprintf("🎬 求片请求: %d\n", stats.RequestCount)
-		msg += fmt.Sprintf("✅ 已批准: %d\n", stats.ApprovedCount)
-		msg += fmt.Sprintf("❌ 已拒绝: %d\n", stats.DeclinedCount)
-		msg += fmt.Sprintf("🎉 已可用: %d\n", stats.AvailableCount)
-		msg += fmt.Sprintf("🐛 问题报告: %d\n", stats.IssueCount)
-		msg += fmt.Sprintf("📀 新增媒体: %d\n", stats.MediaAdded)
+		analytics.mutex.RLock()
+		var dailyStats *DailyCount
+		if ds, exists := analytics.DailyStats[today]; exists {
+			dailyStats = ds
+		} else {
+			dailyStats = &DailyCount{Date: today}
+		}
+
+		// Count pending requests for today
+		pendingCount := 0
+		for _, req := range analytics.Requests {
+			if req.CreatedAt.Format("2006-01-02") == today && req.Status == "pending" {
+				pendingCount++
+			}
+		}
+		analytics.mutex.RUnlock()
+
+		// Get current stats for issue count and media added
+		statsMutex.Lock()
+		issueCount := stats.IssueCount
+		mediaAdded := stats.MediaAdded
+		statsMutex.Unlock()
+
+		totalRequests := pendingCount + dailyStats.ApprovedCount + dailyStats.DeclinedCount
+
+		msg := "┌──────────────────┐\n"
+		msg += "│  📊 每日数据看板 │\n"
+		msg += "└──────────────────┘\n\n"
+		msg += fmt.Sprintf("📅 %s · %s\n\n", today, weekday)
+
+		msg += "┌─ 求片统计 ─────────┐\n"
+		msg += fmt.Sprintf("│ 总计    │%12d │\n", totalRequests)
+		msg += "├─────────────────────┤\n"
+		msg += fmt.Sprintf("│ ⏳ 待处理 │%11d │\n", pendingCount)
+		msg += fmt.Sprintf("│ ✅ 已批准 │%11d │\n", dailyStats.ApprovedCount)
+		msg += fmt.Sprintf("│ ❌ 已拒绝 │%11d │\n", dailyStats.DeclinedCount)
+		msg += fmt.Sprintf("│ 🎉 已可用 │%11d │\n", dailyStats.AvailableCount)
+		msg += "└─────────────────────┘\n"
+
+		msg += "┌─ 今日概览 ─────────┐\n"
+		msg += fmt.Sprintf("│ 🐛 问题报告 │%9d │\n", issueCount)
+		msg += fmt.Sprintf("│ 📀 新增媒体 │%9d │\n", mediaAdded)
+		msg += "└─────────────────────┘"
+
 		sendPrivateMessage(update.Message.From.ID, msg, nil)
 
 	case "/search":
@@ -2063,6 +2102,122 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			sendPrivateMessage(update.Message.From.ID, "❌ 用户同步功能暂不可用", nil)
 		}
 
+	// === 新增命令处理 ===
+
+	case "/profile", "/card":
+		// Show user profile card
+		if engagementSys != nil {
+			displayName := update.Message.From.FirstName
+			if update.Message.From.LastName != "" {
+				displayName += " " + update.Message.From.LastName
+			}
+			if update.Message.From.Username != "" {
+				displayName += " @" + update.Message.From.Username
+			}
+			msg := engagementSys.FormatUserCard(update.Message.From.ID, displayName)
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+
+			// Record activity
+			engagementSys.RecordActivity(update.Message.From.ID, "login", 1)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 用户功能暂不可用", nil)
+		}
+
+	case "/daily", "/checkin", "/bonus", "/signin":
+		// Claim daily bonus
+		if engagementSys != nil {
+			msg, _, err := engagementSys.ClaimDailyBonus(update.Message.From.ID)
+			if err != nil {
+				sendPrivateMessage(update.Message.From.ID, "❌ "+err.Error(), nil)
+			} else {
+				sendPrivateMessage(update.Message.From.ID, msg, nil)
+				// Try drop reward
+				TryDropReward(update.Message.From.ID, "每日签到")
+			}
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 签到功能暂不可用", nil)
+		}
+
+	case "/leaderboard", "/lb":
+		// Show leaderboard
+		if engagementSys != nil {
+			msg := engagementSys.FormatLeaderboard(10)
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 排行榜功能暂不可用", nil)
+		}
+
+	case "/challenges", "/tasks", "/dailies":
+		// Show daily challenges
+		if engagementSys != nil {
+			msg := engagementSys.FormatChallenges(update.Message.From.ID)
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 挑战功能暂不可用", nil)
+		}
+
+	case "/badges", "/achievements", "/trophies":
+		// Show user badges
+		if engagementSys != nil {
+			user := engagementSys.GetUserData(update.Message.From.ID)
+			if len(user.Badges) == 0 {
+				msg := "🏅 *我的成就*\n\n你还没有获得任何成就\n\n"
+				msg += "💡 多使用机器人可以获得成就！"
+				sendPrivateMessage(update.Message.From.ID, msg, nil)
+			} else {
+				msg := "🏅 *我的成就*\n\n"
+				for _, badge := range user.Badges {
+					msg += fmt.Sprintf("  %s\n", engagementSys.getBadgeEmoji(badge))
+				}
+				msg += fmt.Sprintf("\n共 %d 个成就", len(user.Badges))
+				sendPrivateMessage(update.Message.From.ID, msg, nil)
+			}
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 成就功能暂不可用", nil)
+		}
+
+	case "/recommend", "/rec", "/suggest":
+		// Show recommendations
+		sendPrivateMessage(update.Message.From.ID, "🎯 *智能推荐*\n\n功能开发中，敬请期待！", nil)
+
+	case "/trending", "/hot":
+		// Show trending searches
+		if searchHistoryMgr != nil {
+			trending := searchHistoryMgr.GetTrendingSearches(10)
+			msg := "🔥 *热门搜索*\n\n"
+			if len(trending) == 0 {
+				msg += "暂无热门搜索"
+			} else {
+				for i, item := range trending {
+					msg += fmt.Sprintf("%d. %s (%d次)\n", i+1, item.Query, item.Count)
+				}
+			}
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 热门搜索功能暂不可用", nil)
+		}
+
+	case "/history", "/hist":
+		// Show search history
+		if searchHistoryMgr != nil {
+			history := searchHistoryMgr.GetUserHistory(update.Message.From.ID, 20)
+			msg := "📜 *搜索历史*\n\n"
+			if len(history) == 0 {
+				msg += "暂无搜索历史"
+			} else {
+				for i, item := range history {
+					msg += fmt.Sprintf("%d. %s\n", i+1, item.Query)
+				}
+			}
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, "❌ 搜索历史功能暂不可用", nil)
+		}
+
+	case "/quicklink", "/fastbind":
+		// Quick link command
+		handleQuickLinkCommand(update.Message.From.ID, text)
+
 	default:
 		// Try NLP parsing for natural language input
 		if nlpParser != nil {
@@ -2097,14 +2252,54 @@ func handleNaturalLanguageIntent(userID int64, intent Intent, params *SearchPara
 		_, isAdmin := admins[userIDStr]
 		adminsMutex.RUnlock()
 		if isAdmin {
+			// Get today's stats from analytics system
+			today := time.Now().Format("2006-01-02")
+			weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[time.Now().Weekday()]
+
+			analytics.mutex.RLock()
+			var dailyStats *DailyCount
+			if ds, exists := analytics.DailyStats[today]; exists {
+				dailyStats = ds
+			} else {
+				dailyStats = &DailyCount{Date: today}
+			}
+
+			// Count pending requests for today
+			pendingCount := 0
+			for _, req := range analytics.Requests {
+				if req.CreatedAt.Format("2006-01-02") == today && req.Status == "pending" {
+					pendingCount++
+				}
+			}
+			analytics.mutex.RUnlock()
+
+			// Get current stats for issue count and media added
 			statsMutex.Lock()
-			statsMsg := "📊 *统计数据*\n\n"
-			statsMsg += fmt.Sprintf("📅 日期: %s\n", stats.Date)
-			statsMsg += fmt.Sprintf("🎬 求片请求: %d\n", stats.RequestCount)
-			statsMsg += fmt.Sprintf("✅ 已批准: %d\n", stats.ApprovedCount)
-			statsMsg += fmt.Sprintf("❌ 已拒绝: %d\n", stats.DeclinedCount)
-			statsMsg += fmt.Sprintf("🎉 已可用: %d\n", stats.AvailableCount)
+			issueCount := stats.IssueCount
+			mediaAdded := stats.MediaAdded
 			statsMutex.Unlock()
+
+			totalRequests := pendingCount + dailyStats.ApprovedCount + dailyStats.DeclinedCount
+
+			statsMsg := "┌──────────────────┐\n"
+			statsMsg += "│  📊 每日数据看板 │\n"
+			statsMsg += "└──────────────────┘\n\n"
+			statsMsg += fmt.Sprintf("📅 %s · %s\n\n", today, weekday)
+
+			statsMsg += "┌─ 求片统计 ─────────┐\n"
+			statsMsg += fmt.Sprintf("│ 总计    │%12d │\n", totalRequests)
+			statsMsg += "├─────────────────────┤\n"
+			statsMsg += fmt.Sprintf("│ ⏳ 待处理 │%11d │\n", pendingCount)
+			statsMsg += fmt.Sprintf("│ ✅ 已批准 │%11d │\n", dailyStats.ApprovedCount)
+			statsMsg += fmt.Sprintf("│ ❌ 已拒绝 │%11d │\n", dailyStats.DeclinedCount)
+			statsMsg += fmt.Sprintf("│ 🎉 已可用 │%11d │\n", dailyStats.AvailableCount)
+			statsMsg += "└─────────────────────┘\n"
+
+			statsMsg += "┌─ 今日概览 ─────────┐\n"
+			statsMsg += fmt.Sprintf("│ 🐛 问题报告 │%9d │\n", issueCount)
+			statsMsg += fmt.Sprintf("│ 📀 新增媒体 │%9d │\n", mediaAdded)
+			statsMsg += "└─────────────────────┘"
+
 			sendPrivateMessage(userID, statsMsg, nil)
 		} else {
 			sendPrivateMessage(userID, "❌ 只有管理员可以查看统计数据", nil)
@@ -2215,12 +2410,23 @@ func handleSmartSearch(userID int64, params *SearchParams) {
 
 // telegramWebhookHandler handles updates from Telegram
 func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[DEBUG] telegramWebhookHandler ENTRY")
+	defer func() {
+		if err := recover(); err != nil {
+			log.Printf("[PANIC] telegramWebhookHandler recovered: %v", err)
+			debug.PrintStack()
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+		}
+	}()
+
 	var update TelegramUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
 		log.Printf("Error decoding update: %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+
+	log.Printf("[DEBUG] telegramWebhookHandler called, callback=%v", update.CallbackQuery != nil)
 
 	// Handle callback queries (button presses)
 	if update.CallbackQuery != nil {
@@ -2744,14 +2950,16 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				answerCallbackQuery(callbackID, "")
 			}
 
-			// Edit the message if needed (check if MessageID exists)
-			log.Printf("[DEBUG] editMessage=%v, newMsg=%q, messageID=%d", editMessage, newMsg, update.CallbackQuery.Message.MessageID)
-			if editMessage && newMsg != "" && update.CallbackQuery.Message.MessageID != 0 {
-				log.Printf("[DEBUG] Editing message: chatID=%d, messageID=%d, newMsg=%q", update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, newMsg)
-				if err := editMessageText(userID, update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, newMsg, newKeyboard); err != nil {
-					log.Printf("[DEBUG] Error editing message: %v", err)
-				} else {
-					log.Printf("[DEBUG] Message edited successfully")
+			// Edit the message if needed (check if Message exists)
+			if update.CallbackQuery.Message != nil {
+				log.Printf("[DEBUG] editMessage=%v, newMsg=%q, messageID=%d", editMessage, newMsg, update.CallbackQuery.Message.MessageID)
+				if editMessage && newMsg != "" && update.CallbackQuery.Message.MessageID != 0 {
+					log.Printf("[DEBUG] Editing message: chatID=%d, messageID=%d, newMsg=%q", update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, newMsg)
+					if err := editMessageText(userID, update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, newMsg, newKeyboard); err != nil {
+						log.Printf("[DEBUG] Error editing message: %v", err)
+					} else {
+						log.Printf("[DEBUG] Message edited successfully")
+					}
 				}
 			}
 
@@ -3492,19 +3700,66 @@ func recordStats(eventType string) {
 
 // sendDailySummary sends daily statistics summary
 func sendDailySummary() {
-	if stats.Date == "" {
-		return
+	today := time.Now().Format("2006-01-02")
+
+	// Get today's stats from analytics system (which has persistent data)
+	analytics.mutex.RLock()
+	var dailyStats *DailyCount
+	if ds, exists := analytics.DailyStats[today]; exists {
+		dailyStats = ds
+	} else {
+		// No stats for today, create empty one
+		dailyStats = &DailyCount{Date: today}
 	}
 
-	text := fmt.Sprintf("📊 每日统计汇总\n\n")
-	text += fmt.Sprintf("📅 日期: %s\n\n", stats.Date)
+	// Also count pending requests for today
+	pendingCount := 0
+	approvedCount := dailyStats.ApprovedCount
+	declinedCount := dailyStats.DeclinedCount
+	availableCount := dailyStats.AvailableCount
 
-	text += fmt.Sprintf("🎬 求片请求: %d\n", stats.RequestCount)
-	text += fmt.Sprintf("✅ 已批准: %d\n", stats.ApprovedCount)
-	text += fmt.Sprintf("❌ 已拒绝: %d\n", stats.DeclinedCount)
-	text += fmt.Sprintf("🎉 已可用: %d\n", stats.AvailableCount)
-	text += fmt.Sprintf("🐛 问题报告: %d\n", stats.IssueCount)
-	text += fmt.Sprintf("📀 新增媒体: %d", stats.MediaAdded)
+	// Count today's requests by status
+	for _, req := range analytics.Requests {
+		if req.CreatedAt.Format("2006-01-02") == today {
+			if req.Status == "pending" {
+				pendingCount++
+			}
+		}
+	}
+	analytics.mutex.RUnlock()
+
+	// Get current stats for issue count and media added (these are tracked separately)
+	statsMutex.Lock()
+	issueCount := stats.IssueCount
+	mediaAdded := stats.MediaAdded
+	statsMutex.Unlock()
+
+	totalRequests := pendingCount + approvedCount + declinedCount
+
+	// Beautiful card-style format optimized for mobile
+	text := "┌──────────────────┐\n"
+	text += "│  📊 每日数据看板 │\n"
+	text += "└──────────────────┘\n\n"
+
+	// Date in a compact style
+	weekday := []string{"周日", "周一", "周二", "周三", "周四", "周五", "周六"}[time.Now().Weekday()]
+	text += fmt.Sprintf("📅 %s · %s\n\n", today, weekday)
+
+	// Request stats in a clean layout
+	text += "┌─ 求片统计 ─────────┐\n"
+	text += fmt.Sprintf("│ 总计    │%12d │\n", totalRequests)
+	text += "├─────────────────────┤\n"
+	text += fmt.Sprintf("│ ⏳ 待处理 │%11d │\n", pendingCount)
+	text += fmt.Sprintf("│ ✅ 已批准 │%11d │\n", approvedCount)
+	text += fmt.Sprintf("│ ❌ 已拒绝 │%11d │\n", declinedCount)
+	text += fmt.Sprintf("│ 🎉 已可用 │%11d │\n", availableCount)
+	text += "└─────────────────────┘\n"
+
+	// Other stats in horizontal cards
+	text += "┌─ 今日概览 ─────────┐\n"
+	text += fmt.Sprintf("│ 🐛 问题报告 │%9d │\n", issueCount)
+	text += fmt.Sprintf("│ 📀 新增媒体 │%9d │\n", mediaAdded)
+	text += "└─────────────────────┘"
 
 	if err := sendTelegramMessage(text); err != nil {
 		log.Printf("Error sending daily summary: %v", err)
@@ -4082,5 +4337,58 @@ func handleUnlinkCommand(telegramID int64) {
 	msg := "✅ *账号已解绑*\n\n"
 	msg += fmt.Sprintf("Jellyseerr ID: %d\n\n", jellyseerrID)
 	msg += "你可以随时使用 /link 重新绑定"
+	sendPrivateMessage(telegramID, msg, nil)
+}
+
+// handleQuickLinkCommand handles the /quicklink command
+func handleQuickLinkCommand(telegramID int64, text string) {
+	if userSyncMgr == nil {
+		sendPrivateMessage(telegramID, "❌ 快速绑定功能暂不可用", nil)
+		return
+	}
+
+	parts := strings.Fields(text)
+	if len(parts) < 3 {
+		msg := "🚀 *快速绑定*\n\n"
+		msg += "用法: /quicklink <账号名> <密码>\n\n"
+		msg += "示例: /quicklink myuser mypassword123\n\n"
+		msg += "💡 密码即验证码，请确保密码正确"
+		sendPrivateMessage(telegramID, msg, nil)
+		return
+	}
+
+	username := parts[1]
+	password := strings.Join(parts[2:], " ")
+
+	// Verify credentials with Jellyseerr
+	jellyseerrID, displayName, err := userSyncMgr.VerifyJellyfinCredentials(username, password)
+	if err != nil {
+		msg := "❌ *验证失败*\n\n"
+		if strings.Contains(err.Error(), "401") || strings.Contains(err.Error(), "403") {
+			msg += "账号名或密码错误\n\n"
+			msg += "💡 请检查你的 Jellyfin 账号信息"
+		} else {
+			msg += err.Error() + "\n\n"
+			msg += "💡 请稍后再试或联系管理员"
+		}
+		sendPrivateMessage(telegramID, msg, nil)
+		return
+	}
+
+	// Create binding request
+	bindingReq := userSyncMgr.CreateBindingRequest(telegramID, "", jellyseerrID, displayName, username)
+
+	// Auto-approve quick link requests
+	err = userSyncMgr.ApproveBindingRequest(bindingReq.RequestID, telegramID)
+	if err != nil {
+		msg := "❌ *绑定失败*\n\n" + err.Error()
+		sendPrivateMessage(telegramID, msg, nil)
+		return
+	}
+
+	msg := "🎉 *快速绑定成功*\n\n"
+	msg += fmt.Sprintf("账号: %s\n", displayName)
+	msg += "\n现在你可以使用求片功能了！\n\n"
+	msg += "💡 使用 /search 搜索媒体"
 	sendPrivateMessage(telegramID, msg, nil)
 }

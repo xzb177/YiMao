@@ -307,11 +307,12 @@ func GetTrends(days int) []*DailyCount {
 // FormatTopMedia formats top media for display
 func FormatTopMedia(mediaList []*MediaStats) string {
 	if len(mediaList) == 0 {
-		return "📊 *热门媒体*\n\n暂无数据"
+		return "┌────────────────────┐\n│  🔥 热门媒体排行  │\n└────────────────────┘\n\n暂无数据"
 	}
 
-	msg := "📊 *热门媒体排行*\n\n"
-	msg += fmt.Sprintf("🏆 Top %d 最受请求的内容\n\n", len(mediaList))
+	msg := "┌────────────────────┐\n"
+	msg += "│  🔥 热门媒体排行  │\n"
+	msg += "└────────────────────┘\n\n"
 
 	for i, media := range mediaList {
 		emoji := "🎬"
@@ -329,9 +330,13 @@ func FormatTopMedia(mediaList []*MediaStats) string {
 			emoji = "🥉"
 		}
 
-		msg += fmt.Sprintf("%s *%s*\n", emoji, media.MediaTitle)
-		msg += fmt.Sprintf("   请求次数: %d\n", media.RequestCount)
-		msg += fmt.Sprintf("   类型: %s\n\n", map[string]string{"movie": "电影", "tv": "剧集"}[media.MediaType])
+		mediaType := "电影"
+		if media.MediaType == "tv" {
+			mediaType = "剧集"
+		}
+
+		msg += fmt.Sprintf("%s %s\n", emoji, media.MediaTitle)
+		msg += fmt.Sprintf("   👜 请求 %d 次 · %s\n\n", media.RequestCount, mediaType)
 	}
 
 	return msg
@@ -340,11 +345,12 @@ func FormatTopMedia(mediaList []*MediaStats) string {
 // FormatTopUsers formats top users for display
 func FormatTopUsers(userList []*UserStats) string {
 	if len(userList) == 0 {
-		return "👥 *活跃用户*\n\n暂无数据"
+		return "┌────────────────────┐\n│  👥 活跃用户排行  │\n└────────────────────┘\n\n暂无数据"
 	}
 
-	msg := "👥 *活跃用户排行*\n\n"
-	msg += fmt.Sprintf("🏆 Top %d 最活跃的用户\n\n", len(userList))
+	msg := "┌────────────────────┐\n"
+	msg += "│  👥 活跃用户排行  │\n"
+	msg += "└────────────────────┘\n\n"
 
 	for i, user := range userList {
 		rank := i + 1
@@ -358,13 +364,13 @@ func FormatTopUsers(userList []*UserStats) string {
 			emoji = "🥉"
 		}
 
-		msg += fmt.Sprintf("%s *%s*\n", emoji, user.Username)
-		msg += fmt.Sprintf("   请求数: %d", user.RequestCount)
+		msg += fmt.Sprintf("%s %s\n", emoji, user.Username)
+		msg += fmt.Sprintf("   📋 请求 %d 次", user.RequestCount)
 		if user.ApprovedCount > 0 {
-			msg += fmt.Sprintf(" | 已批准: %d", user.ApprovedCount)
+			msg += fmt.Sprintf(" · ✅ %d", user.ApprovedCount)
 		}
 		if user.DeclinedCount > 0 {
-			msg += fmt.Sprintf(" | 已拒绝: %d", user.DeclinedCount)
+			msg += fmt.Sprintf(" · ❌ %d", user.DeclinedCount)
 		}
 		msg += "\n\n"
 	}
@@ -375,10 +381,12 @@ func FormatTopUsers(userList []*UserStats) string {
 // FormatTrends formats trends for display with ASCII chart
 func FormatTrends(trends []*DailyCount) string {
 	if len(trends) == 0 {
-		return "📈 *请求趋势*\n\n暂无数据"
+		return "┌────────────────────┐\n│  📈 请求趋势统计  │\n└────────────────────┘\n\n暂无数据"
 	}
 
-	msg := "📈 *请求趋势统计*\n\n"
+	msg := "┌────────────────────┐\n"
+	msg += "│  📈 请求趋势统计  │\n"
+	msg += "└────────────────────┘\n\n"
 
 	// Calculate max for scaling
 	maxCount := 1
@@ -388,21 +396,22 @@ func FormatTrends(trends []*DailyCount) string {
 		}
 	}
 
-	msg += "每日请求数:\n"
+	msg += "┌─ 每日请求 ────────┐\n"
 	for _, t := range trends {
 		date := t.Date[5:] // Remove year
 		bar := ""
 		count := t.RequestCount
 		if count > 0 {
-			barLength := (count * 20) / maxCount
+			barLength := (count * 15) / maxCount
 			for i := 0; i < barLength; i++ {
 				bar += "▓"
 			}
 		}
-		msg += fmt.Sprintf("`%s` │ %s %d\n", date, bar, count)
+		msg += fmt.Sprintf("│ %s │%s%d │\n", date, bar+repeatSpaces(15-len(bar)-len(fmt.Sprintf("%d", count))), count)
 	}
+	msg += "└───────────────────┘\n\n"
 
-	msg += "\n*统计详情:*\n"
+	// Summary stats
 	totalRequests := 0
 	totalApproved := 0
 	totalDeclined := 0
@@ -412,11 +421,22 @@ func FormatTrends(trends []*DailyCount) string {
 		totalDeclined += t.DeclinedCount
 	}
 
-	msg += fmt.Sprintf("📊 总请求: %d\n", totalRequests)
-	msg += fmt.Sprintf("✅ 已批准: %d\n", totalApproved)
-	msg += fmt.Sprintf("❌ 已拒绝: %d\n", totalDeclined)
+	msg += "┌─ 统计汇总 ────────┐\n"
+	msg += fmt.Sprintf("│ 📊 总请求 │%10d │\n", totalRequests)
+	msg += fmt.Sprintf("│ ✅ 已批准 │%10d │\n", totalApproved)
+	msg += fmt.Sprintf("│ ❌ 已拒绝 │%10d │\n", totalDeclined)
+	msg += "└───────────────────┘"
 
 	return msg
+}
+
+// Helper function to repeat spaces
+func repeatSpaces(count int) string {
+	result := ""
+	for i := 0; i < count; i++ {
+		result += " "
+	}
+	return result
 }
 
 // saveAnalyticsToFile saves analytics to disk
