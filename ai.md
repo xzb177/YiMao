@@ -1399,3 +1399,17 @@ trends - 请求趋势
 | |   - goroutine 完成后使用 `editMessageText` 编辑原消息
 | |   - 用户现在只会看到一条消息的变化，不会出现两条消息
 | | - **服务重启**: PID 2238590 ✅ |
+| 2026-02-20 | **安全模块启用与 HTTP 超时修复** 🔒 |
+| | - **问题**: `api_security.go` 安全模块已定义但未使用；HTTP 请求无超时设置 |
+| | - **修复**:
+| |   - 在 `main()` 中调用 `InitAPISecurity()` 初始化安全系统
+| |   - 创建全局 `httpClient` 变量，设置 30 秒超时
+| |   - 替换所有 `http.Post` 为 `httpClient.Post`
+| |   - 防止慢速攻击和请求挂起
+| | - **安全功能现已启用**:
+| |   - IP 封禁机制（失败5次封禁30分钟）
+| |   - 速率限制（每分钟60次请求）
+| |   - API Key 验证支持
+| |   - 安全响应头（X-Frame-Options, X-XSS-Protection）
+| | - **服务重启**: PID 2255824 ✅ |
+| | - **文档**: 创建 `SECURITY_AUDIT.md` 安全审查报告 |

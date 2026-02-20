@@ -171,6 +171,9 @@ var (
 	chatID      string
 	serverPort  string
 
+	// HTTP client with timeout for all requests
+	httpClient *http.Client
+
 	// Admin configuration
 	admins      map[string]string // telegram user ID -> name
 	adminsMutex sync.RWMutex
@@ -430,6 +433,10 @@ func init() {
 
 	// Initialize AI trending manager (2026-02-20)
 	InitAITrending()
+
+	// Initialize API security system (2026-02-20)
+	InitAPISecurity()
+	log.Println("[Init] API Security system initialized")
 
 	// Start daily summary routine
 	go startDailySummary()
@@ -1144,7 +1151,7 @@ func sendTelegramMessage(text string) error {
 	// Debug log
 	fmt.Printf("[DEBUG] Sending Telegram message: %s\n", text)
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		fmt.Printf("[DEBUG] Error sending message: %v\n", err)
 		return fmt.Errorf("failed to send message: %w", err)
@@ -1292,7 +1299,7 @@ func sendPrivateMessage(userID int64, text string, replyMarkup *TelegramInlineKe
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
@@ -3608,7 +3615,7 @@ func answerCallbackQuery(callbackID string, text string) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
@@ -4047,7 +4054,7 @@ func sendTelegramMessageWithKeyboard(text string, keyboard *TelegramInlineKeyboa
 		return fmt.Errorf("failed to marshal message: %w", err)
 	}
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to send message: %w", err)
 	}
@@ -4964,6 +4971,17 @@ func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Println("[Main] Starting application...")
 
+	// Initialize HTTP client with timeout (security: prevent slowloris attacks)
+	httpClient = &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
+	}
+	log.Println("[Init] HTTP client initialized with 30s timeout")
+
 	// Initialize AI features (must be called before BotModule)
 	log.Println("[Main] Calling InitAITrending...")
 	InitAITrending()
@@ -5022,7 +5040,7 @@ func setTelegramWebhook() error {
 	}
 
 	jsonData, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
@@ -5054,7 +5072,7 @@ func setTelegramMenuButton() error {
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/setChatMenuButton", botToken)
 	jsonData, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
@@ -5113,7 +5131,7 @@ func setTelegramCommands() error {
 
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/setMyCommands", botToken)
 	jsonData, _ := json.Marshal(payload)
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
@@ -5152,7 +5170,7 @@ func editMessageText(userID int64, chatID int64, messageID int64, text string, k
 
 	jsonData, _ = json.Marshal(payload)
 
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
