@@ -413,9 +413,6 @@ func init() {
 	// Initialize user sync manager
 	InitUserSyncManager()
 
-	// Initialize issue manager
-	InitIssueManager()
-
 	// Initialize new modules (2026-02-18)
 	InitLogger(os.Getenv("LOG_LEVEL"), "/tmp/emby-bot.log")        // Enhanced logging
 	InitQuickLinkManager()                                          // Quick account linking
@@ -1701,26 +1698,22 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			}
 
 			// Post the comment to Jellyseerr
-			if issueMgr != nil {
-				if err := issueMgr.AddComment(actualIssueID, text); err != nil {
-					sendPrivateMessage(update.Message.From.ID, fmt.Sprintf("❌ 回复失败: %v", err), nil)
-				} else {
-					log.Printf("Admin %d replied to issue %d: %s", update.Message.From.ID, actualIssueID, text)
-
-					// Close issue if requested
-					if shouldClose {
-						if err := issueMgr.DeleteIssue(actualIssueID); err != nil {
-							log.Printf("Error closing issue %d: %v", actualIssueID, err)
-							sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送，但关闭问题失败", nil)
-						} else {
-							sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送，问题已关闭", nil)
-						}
-					} else {
-						sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送", nil)
-					}
-				}
+			if err := addIssueComment(actualIssueID, text); err != nil {
+				sendPrivateMessage(update.Message.From.ID, fmt.Sprintf("❌ 回复失败: %v", err), nil)
 			} else {
-				sendPrivateMessage(update.Message.From.ID, "❌ 问题管理器未初始化", nil)
+				log.Printf("Admin %d replied to issue %d: %s", update.Message.From.ID, actualIssueID, text)
+
+				// Close issue if requested
+				if shouldClose {
+					if err := deleteIssue(actualIssueID); err != nil {
+						log.Printf("Error closing issue %d: %v", actualIssueID, err)
+						sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送，但关闭问题失败", nil)
+					} else {
+						sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送，问题已关闭", nil)
+					}
+				} else {
+					sendPrivateMessage(update.Message.From.ID, "✅ 回复已发送", nil)
+				}
 			}
 
 			// Clear the pending state
@@ -4172,146 +4165,59 @@ func handleJellyseerrWebhook(payload JellyseerrWebhookPayload) {
 
 // handleIssueCreatedWebhook handles ISSUE_CREATED webhook with reply buttons
 func handleIssueCreatedWebhook(payload JellyseerrWebhookPayload) {
-	log.Printf("[DEBUG] handleIssueCreatedWebhook called")
-
-	// Get issue ID - try multiple fields
+	// Get issue ID
 	issueID := int64(0)
 	if payload.Issue != nil && payload.Issue.ID > 0 {
 		issueID = int64(payload.Issue.ID)
 	}
 
-	// If no issue ID in payload, try to fetch the latest issue
-	username := "用户"
-	userID := ""
-
-	if issueID == 0 && issueMgr != nil {
-		log.Printf("[DEBUG] No issue ID in payload, trying to fetch latest issue")
-		// Try to find the latest issue that matches the subject
-		if payload.Subject != "" {
-			latestIssue, err := issueMgr.FindIssueBySubjectAndTime(payload.Subject, 5)
-			if err == nil && latestIssue != nil {
-				issueID = int64(latestIssue.ID)
-				username = latestIssue.CreatedBy.DisplayName
-				userID = fmt.Sprintf("%d", latestIssue.CreatedBy.ID)
-				log.Printf("[DEBUG] Found matching issue: ID=%d, User=%s", issueID, username)
-			} else {
-				log.Printf("[DEBUG] Could not find matching issue: %v", err)
-			}
-		}
-	} else if payload.User != nil && payload.User.ID > 0 {
+	// Get username
+	username := payload.Username
+	if username == "" && payload.User != nil {
 		username = payload.User.Username
 		if username == "" {
 			username = payload.User.Email
 		}
-		userID = fmt.Sprintf("%d", payload.User.ID)
+	}
+	if strings.Contains(username, "{{") {
+		username = "用户"
 	}
 
-	// Log the full payload for debugging
-	log.Printf("[DEBUG] Issue webhook payload: subject=%q, userId=%q, username=%q, issueID=%d",
-		payload.Subject, payload.UserID, payload.Username, issueID)
-
 	// Determine issue type
-	issueEmoji := "🐛"
-	issueType := "问题报告"
-	issuePriority := "🟡 普通"
-
+	emoji := "🐛"
 	eventType := payload.Event
 	if eventType == "" {
 		eventType = payload.NotificationType
 	}
 
-	if strings.Contains(eventType, "Subtitle") || strings.Contains(payload.Subject, "字幕") {
-		issueEmoji = "💬"
-		issueType = "字幕问题"
+	if strings.Contains(eventType, "Subtitle") {
+		emoji = "💬"
 	} else if strings.Contains(eventType, "Video") {
-		issueEmoji = "🎬"
-		issueType = "视频问题"
-		issuePriority = "🟠 重要"
+		emoji = "🎬"
 	} else if strings.Contains(eventType, "Audio") {
-		issueEmoji = "🔊"
-		issueType = "音频问题"
-		issuePriority = "🟠 重要"
+		emoji = "🔊"
 	}
 
-	// Get username from payload if not already set
-	if username == "用户" || username == "" {
-		username = payload.Username
-		if strings.Contains(username, "{{") || strings.Contains(username, "}}") {
-			// Username is a template variable
-			if payload.User != nil && payload.User.Username != "" {
-				username = payload.User.Username
-			} else if payload.User != nil && payload.User.Email != "" {
-				username = payload.User.Email
-			} else {
-				username = "用户"
-			}
-		}
-		if username == "" && payload.User != nil {
-			username = payload.User.Username
-			if username == "" && payload.User.Email != "" {
-				username = payload.User.Email
-			}
-		}
-	}
-
-	// Get userID from payload if not already set
-	if userID == "" {
-		userID = payload.UserID
-		if strings.Contains(userID, "{{") || strings.Contains(userID, "}}") {
-			// UserID is a template variable, try to get from User object
-			if payload.User != nil && payload.User.ID > 0 {
-				userID = fmt.Sprintf("%d", payload.User.ID)
-			} else {
-				userID = ""
-			}
-		}
-	}
-
-	// Build message text - use plain text without Markdown to avoid parsing errors
-	text := fmt.Sprintf("%s 新%s\n\n", issueEmoji, issueType)
-	text += fmt.Sprintf("%s 优先级\n\n", issuePriority)
+	// Build message
+	text := fmt.Sprintf("%s 新问题报告\n", emoji)
 	if payload.Subject != "" {
-		text += fmt.Sprintf("📦 媒体: %s\n", payload.Subject)
+		text += fmt.Sprintf("📦 %s\n", payload.Subject)
 	}
 	if payload.Message != "" && !strings.Contains(payload.Message, "{{") {
-		text += fmt.Sprintf("📝 问题描述: %s\n", payload.Message)
+		text += fmt.Sprintf("\n%s", payload.Message)
+	}
+	if username != "" && username != "用户" {
+		text += fmt.Sprintf("\n\n👤 %s", username)
 	}
 
-	// Add reporter info
-	reporterInfo := ""
-	if userID != "" && userSyncMgr != nil {
-		jellyseerrID, err := strconv.ParseInt(userID, 10, 64)
-		if err == nil {
-			telegramID, tgUsername, ok := userSyncMgr.GetTelegramUserInfo(jellyseerrID)
-			if ok {
-				reporterInfo = fmt.Sprintf("\n👉 %s (@%s) (%d)", username, tgUsername, telegramID)
-			}
-		}
-	}
-	if reporterInfo == "" {
-		// Don't show template variables
-		if !strings.Contains(username, "{{") && username != "" && username != "用户" {
-			reporterInfo = fmt.Sprintf("\n👉 %s", username)
-		}
-	}
-	text += reporterInfo
-
-	// Add Jellyseerr URL if no issue ID (so admin can manually check)
+	// No issue ID - send simple message
 	if issueID == 0 {
-		text += fmt.Sprintf("\n\n⚠️ 请前往 Jellyseerr 管理面板处理")
-
-		// Send without buttons since we don't have issue ID
-		if err := sendTelegramMessage(text); err != nil {
-			log.Printf("Error sending issue notification: %v", err)
-		}
-
-		// Still notify admins about the issue even without issue ID
-		notifyAdminsIssue(issueID, text, nil)
-		log.Printf("Issue notification sent (without buttons - no issue ID), admins notified")
+		text += "\n\n⚠️ 请前往 Jellyseerr 管理"
+		sendTelegramMessage(text)
 		return
 	}
 
-	// Create reply keyboard with issue ID
+	// Create keyboard
 	keyboard := &TelegramInlineKeyboard{
 		InlineKeyboard: [][]map[string]string{
 			{
@@ -4319,25 +4225,14 @@ func handleIssueCreatedWebhook(payload JellyseerrWebhookPayload) {
 				{"text": "✅ 已修复", "callback_data": fmt.Sprintf("issue_fixed:%d", issueID)},
 			},
 			{
-				{"text": "ℹ️ 处理中", "callback_data": fmt.Sprintf("issue_processing:%d", issueID)},
 				{"text": "🔗 详情", "url": fmt.Sprintf("%s/issues/%d", jellyseerrURL, issueID)},
-			},
-			{
-				{"text": "❌ 关闭问题", "callback_data": fmt.Sprintf("issue_close:%d", issueID)},
+				{"text": "❌ 关闭", "callback_data": fmt.Sprintf("issue_close:%d", issueID)},
 			},
 		},
 	}
 
-	// Send to main chat
-	if err := sendTelegramMessageWithKeyboard(text, keyboard); err != nil {
-		log.Printf("Error sending issue notification: %v", err)
-		return
-	}
-
-	// Also send private notification to admins with buttons
 	notifyAdminsIssue(issueID, text, keyboard)
-
-	log.Printf("Issue %d notification sent with buttons", issueID)
+	sendTelegramMessageWithKeyboard(text, keyboard)
 }
 
 // sendTelegramMessageWithKeyboard sends a message with inline keyboard to main chat
@@ -4451,14 +4346,6 @@ var replyTemplates = map[string]string{
 func handleIssueTemplateCallback(templateType string, issueID int64) (responseText string, editMessage bool, newMsg string, newKeyboard *TelegramInlineKeyboard) {
 	editMessage = true
 
-	// Check if issue manager is initialized
-	if issueMgr == nil {
-		newMsg = "❌ 问题管理器未初始化"
-		responseText = "❌ 失败"
-		newKeyboard = nil
-		return
-	}
-
 	// Get template message
 	template, exists := replyTemplates[templateType]
 	if !exists {
@@ -4466,7 +4353,7 @@ func handleIssueTemplateCallback(templateType string, issueID int64) (responseTe
 	}
 
 	// Add comment to Jellyseerr
-	if err := issueMgr.AddComment(issueID, template); err != nil {
+	if err := addIssueComment(issueID, template); err != nil {
 		log.Printf("Error adding template comment to issue %d: %v", issueID, err)
 		newMsg = fmt.Sprintf("❌ 添加评论失败: %v", err)
 		responseText = "❌ 失败"
@@ -4494,7 +4381,7 @@ func handleIssueTemplateCallback(templateType string, issueID int64) (responseTe
 	}
 
 	newMsg = fmt.Sprintf("%s *已发送回复*\n\nIssue #%d\n\n`%s`\n\n_问题仍然保持打开状态，直到用户确认或关闭。_", statusIcon, issueID, template)
-	newKeyboard = nil // Remove buttons after sending
+	newKeyboard = nil
 	responseText = "✅ 回复已发送"
 	return
 }
@@ -4558,46 +4445,72 @@ func handleIssueCancelCallback(issueID int64) (responseText string, editMessage 
 
 // handleIssueFixedCallback handles "fixed" quick reply
 func handleIssueFixedCallback(issueID int64) string {
-	if issueMgr == nil {
-		return "❌ 问题管理器未初始化"
-	}
-
 	message := "✅ 问题已修复，请再试一下。如果还有问题请留言。"
-	if err := issueMgr.AddComment(issueID, message); err != nil {
+	if err := addIssueComment(issueID, message); err != nil {
 		log.Printf("Error adding comment to issue %d: %v", issueID, err)
 		return fmt.Sprintf("❌ 添加评论失败: %v", err)
 	}
-
 	return "✅ 已回复: 问题已修复"
 }
 
 // handleIssueProcessingCallback handles "processing" quick reply
 func handleIssueProcessingCallback(issueID int64) string {
-	if issueMgr == nil {
-		return "❌ 问题管理器未初始化"
-	}
-
 	message := "ℹ️ 管理员已看到，正在处理中，请耐心等待。"
-	if err := issueMgr.AddComment(issueID, message); err != nil {
+	if err := addIssueComment(issueID, message); err != nil {
 		log.Printf("Error adding comment to issue %d: %v", issueID, err)
 		return fmt.Sprintf("❌ 添加评论失败: %v", err)
 	}
-
 	return "✅ 已回复: 正在处理中"
 }
 
 // handleIssueCloseCallback handles issue close/delete
 func handleIssueCloseCallback(issueID int64) string {
-	if issueMgr == nil {
-		return "❌ 问题管理器未初始化"
-	}
-
-	if err := issueMgr.DeleteIssue(issueID); err != nil {
+	if err := deleteIssue(issueID); err != nil {
 		log.Printf("Error deleting issue %d: %v", issueID, err)
 		return fmt.Sprintf("❌ 删除问题失败: %v", err)
 	}
-
 	return "✅ 问题已关闭"
+}
+
+// addIssueComment adds a comment to an issue via Jellyseerr API
+func addIssueComment(issueID int64, message string) error {
+	url := fmt.Sprintf("%s/api/v1/issue/%d/comment", jellyseerrURL, issueID)
+	payload := map[string]string{"message": message}
+	jsonData, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", jellyseerrAPIKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// deleteIssue deletes an issue via Jellyseerr API
+func deleteIssue(issueID int64) error {
+	url := fmt.Sprintf("%s/api/v1/issue/%d", jellyseerrURL, issueID)
+
+	req, _ := http.NewRequest("DELETE", url, nil)
+	req.Header.Set("X-Api-Key", jellyseerrAPIKey)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
