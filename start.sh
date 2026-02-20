@@ -13,6 +13,9 @@ export JELLYSEERR_URL=$(grep '^JELLYSEERR_URL=' .env | cut -d'=' -f2-)
 export JELLYSEERR_API_KEY=$(grep '^JELLYSEERR_API_KEY=' .env | cut -d'=' -f2-)
 export ZHIPU_API_KEY=$(grep '^ZHIPU_API_KEY=' .env | cut -d'=' -f2-)
 export ADMINS=$(grep '^ADMINS=' .env | cut -d'=' -f2-)
+export EMBY_URL=$(grep '^EMBY_URL=' .env | cut -d'=' -f2-)
+export EMBY_API_KEY=$(grep '^EMBY_API_KEY=' .env | cut -d'=' -f2-)
+export EMBY_USER_ID=$(grep '^EMBY_USER_ID=' .env | cut -d'=' -f2-)
 
 # 检查服务是否已在运行
 if [ -f /tmp/emby-bot.pid ]; then

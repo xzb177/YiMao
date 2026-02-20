@@ -464,89 +464,196 @@ func InitAITrending() {
 	}
 }
 
-func formatEmbyNotification(payload EmbyWebhookPayload) string {
+func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string) {
 	// For library.new, extract info from nested Item structure
 	itemType := payload.ItemType
 	itemName := payload.ItemName
-	parentName := payload.ParentName
 	seasonName := payload.SeasonName
-	indexNumber := payload.IndexNumber
 	year := payload.Year
 	genres := payload.Genres
+	itemID := payload.ItemID
 
 	// If library.new with nested Item, extract from there
 	if payload.Event == "library.new" && payload.Item != nil {
 		itemType = payload.Item.Type
 		itemName = payload.Item.Name
-		parentName = payload.Item.SeriesName
 		seasonName = payload.Item.SeasonName
-		if payload.Item.IndexNumber > 0 {
-			indexNumber = &payload.Item.IndexNumber
-		}
 		if payload.Item.ProductionYear > 0 {
 			year = &payload.Item.ProductionYear
 		}
 		genres = payload.Item.Genres
 	}
 
-	emoji := getEmojiForEventType(payload.Event, itemType)
-
 	var text string
+	var photoURL string
+
+	// Header separator
+	text += "✅ 入库成功"
+
 	switch payload.Event {
 	case "item.updated":
 		// Ignore item.updated as it's too frequent
-		return ""
+		return "", ""
 	case "library.new", "item.added":
-		if itemType == "Episode" || (payload.Item != nil && payload.Item.Type == "Episode") {
-			episodeNum := ""
-			if indexNumber != nil {
-				episodeNum = fmt.Sprintf("E%02d", *indexNumber)
+		if itemType == "Season" || (payload.Item != nil && payload.Item.Type == "Season") {
+			// Season format like: 盐水大饭店 (2024) S01 E01-E08
+			movYear := 0
+			if year != nil {
+				movYear = *year
 			}
-			// Extract season number for display
+
+			// Get detailed info from Emby API
+			var childCount int
+			var quality string
+			var totalSize int64
+			var fileCount int
+
+			if info, err := GetEmbyItemInfo(itemID); err == nil {
+				childCount = info.ChildCount
+				quality = GetMediaQuality(info)
+				totalSize = GetTotalSize(info)
+				fileCount = GetFileCount(info)
+				// Get backdrop image URL (horizontal, perfect for mobile)
+				photoURL = GetBestImageURL(info)
+				// If no backdrop, try to fetch from series
+				if photoURL == "" && info.SeriesId != "" {
+					photoURL = FetchSeriesBackdrop(info.SeriesId)
+				}
+				// If quality is unknown and childCount > 0, try to get from first episode
+				if quality == "未知" || quality == "" {
+					quality = getQualityFromFirstEpisode(itemID)
+				}
+				// If ChildCount is 0, try to get from items query
+				if childCount == 0 && info.SeriesId != "" {
+					embyURL := os.Getenv("EMBY_URL")
+					apiKey := os.Getenv("EMBY_API_KEY")
+					userID := os.Getenv("EMBY_USER_ID")
+					if embyURL != "" && apiKey != "" {
+						childURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1", embyURL, userID, itemID)
+						req, _ := http.NewRequest("GET", childURL, nil)
+						req.Header.Set("X-Emby-Token", apiKey)
+						resp, err := httpClient.Do(req)
+						if err == nil && resp.StatusCode == 200 {
+							defer resp.Body.Close()
+							var result struct {
+								TotalRecordCount int `json:"TotalRecordCount"`
+							}
+							body, _ := io.ReadAll(resp.Body)
+							if json.Unmarshal(body, &result) == nil {
+								childCount = result.TotalRecordCount
+							}
+						}
+					}
+				}
+			}
+
+			// Build season info line
+			text += fmt.Sprintf("：%s", itemName)
+			if movYear > 0 {
+				text += fmt.Sprintf(" (%d)", movYear)
+			}
+
+			// Add season number and episode range
 			seasonNum := ""
 			if seasonName != "" {
 				if strings.Contains(seasonName, "Season") {
 					parts := strings.Split(seasonName, " ")
 					if len(parts) > 1 {
-						seasonNum = "S" + parts[len(parts)-1]
-					}
-				} else if strings.Contains(seasonName, "第") && strings.Contains(seasonName, "季") {
-					re := regexp.MustCompile(`\d+`)
-					if matches := re.FindStringSubmatch(seasonName); len(matches) > 0 {
-						seasonNum = "S" + matches[0]
+						seasonNum = fmt.Sprintf("S%02d", parseSeasonNumber(parts[len(parts)-1]))
 					}
 				}
 			}
 
-			// Artistic episode design
-			text += "┌──────────────┐\n"
-			text += "│ 📺 剧集来啦 ✨│\n"
-			text += "└──────────────┘\n\n"
+			if seasonNum != "" {
+				text += fmt.Sprintf(" %s", seasonNum)
+			}
 
-			// Series name with style
-			text += "  ✨ " + parentName
-			if seasonNum != "" && episodeNum != "" {
-				text += " " + seasonNum + episodeNum
+			if childCount > 0 {
+				text += fmt.Sprintf(" E01-E%02d", childCount)
+			} else {
+				text += " E01"
+			}
+
+			// Separator line
+			text += "\n"
+			text += "───────────────────\n\n"
+
+			// Format details
+			text += fmt.Sprintf("🎬 名称：%s", itemName)
+			if movYear > 0 {
+				text += fmt.Sprintf(" (%d)", movYear)
+			}
+			if seasonNum != "" {
+				text += fmt.Sprintf(" %s", seasonNum)
+			}
+			if childCount > 0 {
+				text += fmt.Sprintf(" E01-E%02d", childCount)
 			}
 			text += "\n\n"
 
-			// Episode as a quote
-			text += "  ··············\n"
-			text += fmt.Sprintf("  「 %s 」", itemName)
-			if year != nil {
-				text += fmt.Sprintf("\n  🎬 %d", *year)
+			// Category - determine from genres
+			category := "剧集"
+			if len(genres) > 0 {
+				// Check for specific categories
+				genreLower := strings.ToLower(strings.Join(genres, " "))
+				switch {
+				case strings.Contains(genreLower, "chinese") || strings.Contains(genreLower, "国语") || strings.Contains(genreLower, "国产"):
+					category = "国产剧"
+				case strings.Contains(genreLower, "korean") || strings.Contains(genreLower, "韩剧"):
+					category = "韩剧"
+				case strings.Contains(genreLower, "japanese") || strings.Contains(genreLower, "日剧"):
+					category = "日剧"
+				case strings.Contains(genreLower, "american") || strings.Contains(genreLower, "美剧"):
+					category = "美剧"
+				}
 			}
-			text += "\n  ··············"
+			text += fmt.Sprintf("🏷️ 类别：%s\n\n", category)
+
+			// Quality
+			if quality != "" {
+				text += fmt.Sprintf("💎 质量：%s\n\n", quality)
+			} else {
+				text += "💎 质量：未知\n\n"
+			}
+
+			// Size
+			if totalSize > 0 {
+				text += fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize))
+			}
+
+			// File count
+			if fileCount > 0 {
+				text += fmt.Sprintf("📁 文件数量：%d 个\n", fileCount)
+			}
+
+			// Add episode file details (with size and quality for each episode)
+			if episodes, err := GetSeasonEpisodesInfo(itemID); err == nil && len(episodes) > 0 {
+				text += FormatEpisodesFileList(episodes)
+			}
+
+		} else if itemType == "Episode" || (payload.Item != nil && payload.Item.Type == "Episode") {
+			// Single episode - skip individual episodes, only show when season completes
+			// Return empty to avoid spam
+			return "", ""
 
 		} else if itemType == "Movie" || (payload.Item != nil && payload.Item.Type == "Movie") {
-			// Artistic movie design - cinema ticket style
-			text += "╺━━━━━━━━━━━━━━━━━━━━━━╸\n"
-			text += "  🎬 新电影来噜 ✨\n"
-			text += "╺━━━━━━━━━━━━━━━━━━━━━━╸\n\n"
-
+			// Movie format
 			movYear := 0
 			if year != nil {
 				movYear = *year
+			}
+
+			// Get detailed info from Emby API
+			var quality string
+			var totalSize int64
+			var fileCount int
+
+			if info, err := GetEmbyItemInfo(itemID); err == nil {
+				quality = GetMediaQuality(info)
+				totalSize = GetTotalSize(info)
+				fileCount = GetFileCount(info)
+				// Get backdrop image URL (horizontal, perfect for mobile)
+				photoURL = GetBestImageURL(info)
 			}
 
 			// Get rating info (includes Chinese name and genres)
@@ -558,63 +665,185 @@ func formatEmbyNotification(payload EmbyWebhookPayload) string {
 				displayTitle = mediaRating.CNName
 			}
 
-			// Main title
-			text += "  🎫 " + displayTitle
+			// Build title line
+			text += fmt.Sprintf("：%s", displayTitle)
 			if movYear > 0 {
-				text += fmt.Sprintf("\n  ········\n  📅 %d", movYear)
+				text += fmt.Sprintf(" (%d)", movYear)
 			}
 			text += "\n"
+			text += "───────────────────\n\n"
 
-			// Use Chinese genres from API if available, otherwise use provided genres
-			genreText := ""
+			// Name line
+			text += fmt.Sprintf("🎬 名称：%s", displayTitle)
+			if movYear > 0 {
+				text += fmt.Sprintf(" (%d)", movYear)
+			}
+			text += "\n\n"
+
+			// Category - use genres
+			category := "电影"
 			if mediaRating.GenreCN != "" {
-				genreText = mediaRating.GenreCN
+				category = mediaRating.GenreCN
 			} else if len(genres) > 0 {
-				displayGenres := genres
-				if len(genres) > 3 {
-					displayGenres = genres[:3]
-				}
-				for i, g := range displayGenres {
-					if i > 0 {
-						genreText += " · "
-					}
-					genreText += g
-				}
+				category = genres[0]
 			}
+			text += fmt.Sprintf("🏷️ 类别：%s\n\n", category)
 
-			if genreText != "" {
-				text += "\n  🏷️ " + genreText
-			}
-
-			// Show rating with source
-			if mediaRating.Score > 0 {
-				text += fmt.Sprintf("\n  ⭐ TMDB %.1f 分", mediaRating.Score)
+			// Quality
+			if quality != "" {
+				text += fmt.Sprintf("💎 质量：%s\n\n", quality)
 			} else {
-				text += "\n  ⭐ 评分暂无"
+				text += "💎 质量：未知\n\n"
 			}
+
+			// Size
+			if totalSize > 0 {
+				text += fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize))
+			}
+
+			// File count
+			if fileCount > 0 {
+				text += fmt.Sprintf("📁 文件数量：%d 个", fileCount)
+			}
+
 		} else {
-			text = "✨ 新内容入库\n\n"
-			text += fmt.Sprintf("《%s》\n", itemName)
-			text += fmt.Sprintf("📝 %s\n", itemType)
+			text += "\n\n"
+			text += fmt.Sprintf("🎬 名称：%s\n\n", itemName)
+			text += fmt.Sprintf("🏷️ 类别：%s", itemType)
 		}
+
 	case "system.notificationtest":
-		text = "🔔 *Emby 测试通知*\n\n✅ Webhook 连接成功！"
+		return "🔔 Emby 测试通知\n\n✅ Webhook 连接成功！", ""
+
 	default:
-		text = fmt.Sprintf("%s *%s*\n\n", emoji, payload.Event)
+		text += "\n\n"
 		if payload.ItemName != "" {
-			text += fmt.Sprintf("📦 名称: %s\n", payload.ItemName)
+			text += fmt.Sprintf("🎬 名称：%s\n", payload.ItemName)
 		}
 		if payload.ItemType != "" {
-			text += fmt.Sprintf("📝 类型: %s\n", payload.ItemType)
-		}
-		if len(genres) > 0 {
-			text += fmt.Sprintf("🏷️ %v\n", genres)
+			text += fmt.Sprintf("🏷️ 类型：%s\n", payload.ItemType)
 		}
 	}
 
-	text += fmt.Sprintf("\n🕐 %s", time.Now().Format("2006-01-02 15:04:05"))
+	return text, photoURL
+}
 
-	return text
+// getQualityFromFirstEpisode gets quality info from the first episode of a season
+func getQualityFromFirstEpisode(seasonID string) string {
+	embyURL := os.Getenv("EMBY_URL")
+	apiKey := os.Getenv("EMBY_API_KEY")
+	userID := os.Getenv("EMBY_USER_ID")
+
+	if embyURL == "" || apiKey == "" || seasonID == "" {
+		return ""
+	}
+
+	// Get first episode
+	epURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1&Fields=MediaSources,MediaStreams", embyURL, userID, seasonID)
+
+	req, err := http.NewRequest("GET", epURL, nil)
+	if err != nil {
+		return ""
+	}
+
+	req.Header.Set("X-Emby-Token", apiKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+
+	var result struct {
+		Items []struct {
+			MediaSources []struct {
+				Path         string `json:"Path"`
+				Size         int64  `json:"Size"`
+				MediaStreams []struct {
+					Type   string `json:"Type"`
+					Width  int    `json:"Width"`
+					Height int    `json:"Height"`
+					Codec  string `json:"Codec"`
+				} `json:"MediaStreams"`
+			} `json:"MediaSources"`
+		} `json:"Items"`
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	if err := json.Unmarshal(body, &result); err != nil {
+		return ""
+	}
+
+	if len(result.Items) == 0 || len(result.Items[0].MediaSources) == 0 {
+		return ""
+	}
+
+	// Extract quality from first episode
+	source := result.Items[0].MediaSources[0]
+	width := 0
+	height := 0
+
+	for _, stream := range source.MediaStreams {
+		if stream.Type == "Video" {
+			if stream.Width > 0 {
+				width = stream.Width
+			}
+			if stream.Height > 0 {
+				height = stream.Height
+			}
+			break
+		}
+	}
+
+	if height == 0 {
+		return ""
+	}
+
+	// Determine quality based on height and width
+	var quality string
+	switch {
+	case width >= 3800 || height >= 2160:
+		quality = "4K"
+	case height >= 1080:
+		quality = "1080p"
+	case height >= 720:
+		quality = "720p"
+	case height >= 480:
+		quality = "480p"
+	default:
+		quality = fmt.Sprintf("%dp", height)
+	}
+
+	// Check source type from path
+	path := strings.ToLower(source.Path)
+	sourceType := "WEB-DL"
+	if strings.Contains(path, "bluray") || strings.Contains(path, "bdrip") || strings.Contains(path, "brrip") {
+		sourceType = "BluRay"
+	} else if strings.Contains(path, "webrip") {
+		sourceType = "WEBRip"
+	} else if strings.Contains(path, "hdtv") {
+		sourceType = "HDTV"
+	} else if strings.Contains(path, "dvd") {
+		sourceType = "DVD"
+	}
+
+	return fmt.Sprintf("%s %s", sourceType, quality)
+}
+
+// parseSeasonNumber extracts season number from string
+func parseSeasonNumber(s string) int {
+	re := regexp.MustCompile(`\d+`)
+	if matches := re.FindStringSubmatch(s); len(matches) > 0 {
+		if num, err := strconv.Atoi(matches[0]); err == nil {
+			return num
+		}
+	}
+	return 1
 }
 
 func getEmojiForEventType(event, itemType string) string {
@@ -1164,6 +1393,53 @@ func sendTelegramMessage(text string) error {
 	}
 
 	fmt.Println("[DEBUG] Telegram message sent successfully")
+	return nil
+}
+
+// sendTelegramPhoto sends a photo to Telegram
+// Photo is sent as URL (Telegram will fetch it)
+func sendTelegramPhoto(photoURL, caption string) error {
+	if photoURL == "" {
+		return fmt.Errorf("empty photo URL")
+	}
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendPhoto", botToken)
+
+	// Build photo message payload
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"photo":   photoURL,
+	}
+
+	// Add caption if provided (max 1024 chars)
+	if caption != "" {
+		if len(caption) > 1024 {
+			caption = caption[:1020] + "..."
+		}
+		payload["caption"] = caption
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal photo message: %w", err)
+	}
+
+	fmt.Printf("[DEBUG] Sending photo to Telegram: %s\n", photoURL)
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Printf("[DEBUG] Photo request error: %v\n", err)
+		return fmt.Errorf("send photo request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("[DEBUG] Photo API error: status=%d, response=%s\n", resp.StatusCode, string(body))
+		return fmt.Errorf("telegram API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Println("[DEBUG] Photo sent successfully")
 	return nil
 }
 
@@ -3825,12 +4101,14 @@ func handleEmbyWebhook(payload EmbyWebhookPayload) {
 	recordStats(payload.Event)
 
 	var message string
-	if payload.Event == "item.added" {
-		message = formatEmbyNotification(payload)
+	var photoURL string
+
+	if payload.Event == "item.added" || payload.Event == "library.new" {
+		message, photoURL = formatEmbyNotificationWithPhoto(payload)
 	} else if payload.Event == "system.notificationtest" {
-		message = "🔔 *Emby 测试通知*\n\n✅ Webhook 连接成功！"
+		message = "🔔 Emby 测试通知\n\n✅ Webhook 连接成功！"
 	} else {
-		message = formatEmbyNotification(payload)
+		message, _ = formatEmbyNotificationWithPhoto(payload)
 	}
 
 	// Skip sending if message is empty (filtered event)
@@ -3839,11 +4117,25 @@ func handleEmbyWebhook(payload EmbyWebhookPayload) {
 		return
 	}
 
-	if err := sendTelegramMessage(message); err != nil {
-		log.Printf("Error sending telegram message: %v", err)
-		return
+	// Send photo if available, otherwise send text message
+	if photoURL != "" {
+		// Send photo with caption (combined in one message)
+		if err := sendTelegramPhoto(photoURL, message); err != nil {
+			log.Printf("Error sending telegram photo: %v", err)
+			// Fallback to text only
+			if err := sendTelegramMessage(message); err != nil {
+				log.Printf("Error sending telegram message: %v", err)
+				return
+			}
+		}
+		log.Println("Telegram notification with photo sent successfully")
+	} else {
+		if err := sendTelegramMessage(message); err != nil {
+			log.Printf("Error sending telegram message: %v", err)
+			return
+		}
+		log.Println("Telegram notification sent successfully")
 	}
-	log.Println("Telegram notification sent successfully")
 }
 
 func handleJellyseerrWebhook(payload JellyseerrWebhookPayload) {
