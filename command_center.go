@@ -473,7 +473,6 @@ func FormatCommandsByCategory() string {
 // GetMenuCommands returns commands for the menu button
 // Returns format required by Telegram setChatMenuButton API
 func GetMenuCommands() map[string]map[string]string {
-	// Menu button commands - organized for easy access
 	commands := map[string]map[string]string{
 		"basic": {
 			"start": "👋 开始",
@@ -482,98 +481,52 @@ func GetMenuCommands() map[string]map[string]string {
 		"search": {
 			"search":    "🔍 搜索",
 			"recommend": "🎯 推荐",
-			"trending":  "🔥 热门",
-			"history":   "📜 历史",
+			"random":    "🎲 随机",
 		},
 		"personal": {
-			"profile": "👤 资料",
-			"daily":   "🎁 签到",
-			"my":      "📋 请求",
-			"quota":   "📊 配额",
-			"prefs":   "⚙️ 设置",
-		},
-		"social": {
-			"leaderboard": "🏆 排行",
-			"challenges":  "🎯 挑战",
-			"badges":      "🏅 成就",
-			"top":         "🔥 热门内容",
-			"activity":    "👥 活跃",
+			"my":    "📋 我的请求",
+			"quota": "📊 配额",
+			"daily": "🎁 签到",
 		},
 		"account": {
-			"link":      "🔗 绑定",
-			"quicklink": "🚀 快速绑定",
-			"unlink":    "🔓 解绑",
+			"link":   "🔗 绑定账号",
+			"prefs": "⚙️ 设置",
 		},
 		"admin": {
-			"pending":     "⏳ 待处理",
-			"approve":     "✅ 批准",
-			"decline":     "❌ 拒绝",
-			"users":       "👥 用户",
-			"bindrequests": "📋 绑定请求",
-			"addadmin":    "➕ 加管理员",
-			"deladmin":    "➖ 减管理员",
-			"stats":       "📊 统计",
+			"pending": "⏳ 待处理",
+			"users":   "👥 用户",
+			"stats":   "📊 统计",
 		},
 	}
-
 	return commands
 }
 
 // FormatHelpMessage formats a help message with all available commands
 func FormatHelpMessage(isAdmin bool) string {
-	msg := "📖 *云海看板娘 - 使用指南*\n\n"
+	msg := "📖 使用指南\n\n"
 
-	msg += "📱 *快速入门*\n"
-	msg += "• 直接输入内容名搜索\n"
-	msg += "• 点击按钮发起请求\n"
-	msg += "• 完成后自动通知\n\n"
+	msg += "🔍 搜索\n"
+	msg += "直接输入片名或 `/search` 关键词\n\n"
 
-	msg += "🔍 *搜索与发现*\n"
-	msg += "`/search` <关键词> - 搜索内容\n"
-	msg += "`/ai` <问题> - AI 智能助手\n"
-	msg += "`/recommend` <心情> - 智能推荐\n"
-	msg += "`/trending` - 热门搜索\n"
-	msg += "`/history` - 搜索历史\n\n"
+	msg += "📋 我的\n"
+	msg += "`/my` - 请求状态 | `/quota` - 配额\n\n"
 
-	msg += "👤 *个人中心*\n"
-	msg += "`/profile` - 我的资料卡片\n"
-	msg += "`/daily` - 每日签到领奖励\n"
-	msg += "`/my` - 我的请求状态\n"
-	msg += "`/quota` - 配额查询\n"
-	msg += "`/prefs` - 通知设置\n\n"
+	msg += "🎯 推荐\n"
+	msg += "`/recommend` - AI推荐 | `/random` - 随机\n\n"
 
-	msg += "🏆 *社交竞技*\n"
-	msg += "`/leaderboard` - 用户排行榜\n"
-	msg += "`/challenges` - 每日挑战任务\n"
-	msg += "`/badges` - 我的成就徽章\n"
-	msg += "`/top` - 热门内容榜\n"
-	msg += "`/activity` - 活跃用户\n\n"
+	msg += "🔗 账号\n"
+	msg += "`/link` 账号 密码 - 绑定 | `/unlink` - 解绑\n\n"
 
-	msg += "🔗 *账号管理*\n"
-	msg += "`/link` <账号> <密码> - 绑定账号\n"
-	msg += "`/quicklink` <账号> <密码> - 快速绑定\n"
-	msg += "`/unlink` - 解绑账号\n\n"
-
-	msg += "💬 *反馈与帮助*\n"
-	msg += "`/feedback` <内容> - 提交反馈\n"
-	msg += "`/issues` - 我的问题\n"
+	msg += "⚙️ 设置\n"
+	msg += "`/prefs` - 通知设置 | `/daily` - 签到\n"
 
 	if isAdmin {
-		msg += "\n\n🔧 *管理员功能*\n"
-		msg += "`/pending` - 待处理请求\n"
-		msg += "`/approve` <ID> - 批准请求\n"
-		msg += "`/decline` <ID> - 拒绝请求\n"
-		msg += "`/users` - 用户列表\n"
-		msg += "`/bindrequests` - 绑定请求\n"
-		msg += "`/addadmin` <ID> - 添加管理员\n"
-		msg += "`/deladmin` <ID> - 删除管理员\n"
-		msg += "`/allissues` - 所有问题\n"
-		msg += "`/stats` - 系统统计\n"
+		msg += "\n🔧 管理员\n"
+		msg += "`/pending` - 待处理 | `/users` - 用户\n"
+		msg += "`/approve` ID - 批准 | `/decline` ID - 拒绝\n"
 	}
 
-	msg += "\n\n💡 *快捷方式*\n"
-	msg += "• 别名: `/h` = `/help`, `/s` = `/search`\n"
-	msg += "• 点击左下角菜单快速访问"
+	msg += "\n💡 点击左下角菜单快速访问"
 
 	return msg
 }

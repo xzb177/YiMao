@@ -1541,3 +1541,9 @@ trends - 请求趋势
 | | - 使用简单 API 辅助函数替代 issueMgr |
 | | - 按钮优化：回复、已修复、详情、关闭 |
 | | - **服务重启**: PID 待定 ✅ |
+| 2026-02-20 | **帮助命令和菜单优化** 🎨 |
+| | - 简化 `/help` 命令输出 - 更简洁清晰 |
+| | - 优化左下角菜单按钮 - 只保留核心功能 |
+| | - 菜单命令：开始、帮助、搜索、推荐、随机、我的请求、配额、签到、绑定、设置、待处理、用户、统计 |
+| | - 移除冗余命令：trending、history、profile、leaderboard、challenges、badges、top、activity、quicklink、feedback、issues |
+| | - 从 27 个命令精简到 13 个核心命令 |

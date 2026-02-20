@@ -5311,31 +5311,19 @@ type BotCommand struct {
 // setTelegramCommands sets the command list for the bot
 func setTelegramCommands() error {
 	commands := []BotCommand{
-		// ========== 基础功能 ==========
-		{Command: "start", Description: "👋 开始使用"},
+		{Command: "start", Description: "👋 开始"},
 		{Command: "help", Description: "❓ 帮助"},
-
-		// ========== 搜索与请求 ==========
-		{Command: "search", Description: "🔍 搜索媒体"},
-		{Command: "request", Description: "📋 发起请求"},
+		{Command: "search", Description: "🔍 搜索"},
+		{Command: "recommend", Description: "🎯 推荐"},
+		{Command: "random", Description: "🎲 随机"},
 		{Command: "my", Description: "📋 我的请求"},
-		{Command: "status", Description: "📊 我的状态"},
-
-		// ========== 设置 ==========
-		{Command: "prefs", Description: "⚙️ 通知设置"},
+		{Command: "quota", Description: "📊 配额"},
+		{Command: "daily", Description: "🎁 签到"},
 		{Command: "link", Description: "🔗 绑定账号"},
-
-		// ========== 统计 ==========
-		{Command: "top", Description: "🔥 热门排行"},
-		{Command: "activity", Description: "👥 活跃用户"},
-
-		// ========== 管理员 ==========
+		{Command: "prefs", Description: "⚙️ 设置"},
 		{Command: "pending", Description: "⏳ 待处理"},
-		{Command: "approve", Description: "✅ 批准"},
-		{Command: "decline", Description: "❌ 拒绝"},
-		{Command: "addadmin", Description: "➕ 添加管理员"},
-		{Command: "deladmin", Description: "➖ 删除管理员"},
-		{Command: "users", Description: "👥 用户列表"},
+		{Command: "users", Description: "👥 用户"},
+		{Command: "stats", Description: "📊 统计"},
 	}
 
 	type CommandsRequest struct {
