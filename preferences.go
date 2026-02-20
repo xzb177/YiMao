@@ -305,6 +305,77 @@ func formatList(items []string) string {
 	return result
 }
 
+// FormatPreferencesWithKeyboard formats preferences with interactive buttons
+func FormatPreferencesWithKeyboard(prefs *UserPreferences) (string, *TelegramInlineKeyboard) {
+	msg := "⚙️ *我的通知设置*\n\n"
+
+	// Status indicators
+	onIndicator := "✅"
+	offIndicator := "❌"
+
+	msg += "*📢 通知类型*\n"
+	if prefs.NotifyMovies {
+		msg += fmt.Sprintf("%s 电影通知\n", onIndicator)
+	} else {
+		msg += fmt.Sprintf("%s 电影通知\n", offIndicator)
+	}
+	if prefs.NotifySeries {
+		msg += fmt.Sprintf("%s 剧集通知\n", onIndicator)
+	} else {
+		msg += fmt.Sprintf("%s 剧集通知\n", offIndicator)
+	}
+	if prefs.NotifyIssues {
+		msg += fmt.Sprintf("%s 问题报告\n", onIndicator)
+	} else {
+		msg += fmt.Sprintf("%s 问题报告\n", offIndicator)
+	}
+	if prefs.NotifyApproved {
+		msg += fmt.Sprintf("%s 批准通知\n", onIndicator)
+	} else {
+		msg += fmt.Sprintf("%s 批准通知\n", offIndicator)
+	}
+	if prefs.NotifyAvailable {
+		msg += fmt.Sprintf("%s 可用通知\n", onIndicator)
+	} else {
+		msg += fmt.Sprintf("%s 可用通知\n", offIndicator)
+	}
+
+	msg += "\n*🌙 勿扰模式*\n"
+	if prefs.QuietHoursEnabled {
+		msg += fmt.Sprintf("%s 已启用 (%s - %s)\n", onIndicator, prefs.QuietHoursStart, prefs.QuietHoursEnd)
+	} else {
+		msg += fmt.Sprintf("%s 已禁用\n", offIndicator)
+	}
+
+	// Create interactive keyboard
+	keyboard := &TelegramInlineKeyboard{
+		InlineKeyboard: [][]map[string]string{
+			{
+				{"text": "🎬 电影", "callback_data": "prefs_toggle_movies"},
+				{"text": "📺 剧集", "callback_data": "prefs_toggle_series"},
+			},
+			{
+				{"text": "🐛 问题", "callback_data": "prefs_toggle_issues"},
+				{"text": "✅ 批准", "callback_data": "prefs_toggle_approved"},
+			},
+			{
+				{"text": "🎉 可用", "callback_data": "prefs_toggle_available"},
+				{"text": "🌙 勿扰", "callback_data": "prefs_toggle_quiet"},
+			},
+			{
+				{"text": "🔕 白名单", "callback_data": "prefs_whitelist"},
+				{"text": "🚫 黑名单", "callback_data": "prefs_blacklist"},
+			},
+			{
+				{"text": "🔄 重置所有", "callback_data": "prefs_reset"},
+				{"text": "❓ 帮助", "callback_data": "prefs_help"},
+			},
+		},
+	}
+
+	return msg, keyboard
+}
+
 // GetActiveUserCount returns the number of users with preferences
 func GetActiveUserCount() int {
 	if prefManager == nil {

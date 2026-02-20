@@ -140,6 +140,15 @@ func InitCommands() {
 	})
 
 	registerCmd(&CommandHandler{
+		Command:     "ai",
+		Aliases:     []string{},
+		Description: "🤖 AI助手",
+		Category:    "search",
+		AdminOnly:   false,
+		NeedAuth:    false,
+	})
+
+	registerCmd(&CommandHandler{
 		Command:     "history",
 		Aliases:     []string{"hist"},
 		Description: "📜 搜索历史",
@@ -510,44 +519,61 @@ func GetMenuCommands() map[string]map[string]string {
 	return commands
 }
 
-// FormatHelpMessage formats a help message
+// FormatHelpMessage formats a help message with all available commands
 func FormatHelpMessage(isAdmin bool) string {
-	msg := "🤖 *云海看板娘* - 使用帮助\n\n"
+	msg := "📖 *云海看板娘 - 使用指南*\n\n"
 
 	msg += "📱 *快速入门*\n"
 	msg += "• 直接输入内容名搜索\n"
 	msg += "• 点击按钮发起请求\n"
 	msg += "• 完成后自动通知\n\n"
 
-	msg += "🔍 *搜索功能*\n"
-	msg += "/search <关键词> - 搜索内容\n"
-	msg += "/recommend - 智能推荐\n"
-	msg += "/trending - 热门搜索\n\n"
+	msg += "🔍 *搜索与发现*\n"
+	msg += "`/search` <关键词> - 搜索内容\n"
+	msg += "`/ai` <问题> - AI 智能助手\n"
+	msg += "`/recommend` <心情> - 智能推荐\n"
+	msg += "`/trending` - 热门搜索\n"
+	msg += "`/history` - 搜索历史\n\n"
 
 	msg += "👤 *个人中心*\n"
-	msg += "/profile - 我的资料\n"
-	msg += "/daily - 每日签到\n"
-	msg += "/my - 我的请求\n\n"
+	msg += "`/profile` - 我的资料卡片\n"
+	msg += "`/daily` - 每日签到领奖励\n"
+	msg += "`/my` - 我的请求状态\n"
+	msg += "`/quota` - 配额查询\n"
+	msg += "`/prefs` - 通知设置\n\n"
 
 	msg += "🏆 *社交竞技*\n"
-	msg += "/leaderboard - 排行榜\n"
-	msg += "/challenges - 每日挑战\n"
-	msg += "/badges - 我的成就\n\n"
+	msg += "`/leaderboard` - 用户排行榜\n"
+	msg += "`/challenges` - 每日挑战任务\n"
+	msg += "`/badges` - 我的成就徽章\n"
+	msg += "`/top` - 热门内容榜\n"
+	msg += "`/activity` - 活跃用户\n\n"
 
 	msg += "🔗 *账号管理*\n"
-	msg += "/link <账号> <密码> - 绑定账号\n"
-	msg += "/quicklink <账号> <密码> - 快速绑定\n"
+	msg += "`/link` <账号> <密码> - 绑定账号\n"
+	msg += "`/quicklink` <账号> <密码> - 快速绑定\n"
+	msg += "`/unlink` - 解绑账号\n\n"
+
+	msg += "💬 *反馈与帮助*\n"
+	msg += "`/feedback` <内容> - 提交反馈\n"
+	msg += "`/issues` - 我的问题\n"
 
 	if isAdmin {
-		msg += "\n🔧 *管理员*\n"
-		msg += "/pending - 待处理请求\n"
-		msg += "/approve <ID> - 批准\n"
-		msg += "/decline <ID> - 拒绝\n"
-		msg += "/users - 用户列表\n"
-		msg += "/stats - 系统统计\n"
+		msg += "\n\n🔧 *管理员功能*\n"
+		msg += "`/pending` - 待处理请求\n"
+		msg += "`/approve` <ID> - 批准请求\n"
+		msg += "`/decline` <ID> - 拒绝请求\n"
+		msg += "`/users` - 用户列表\n"
+		msg += "`/bindrequests` - 绑定请求\n"
+		msg += "`/addadmin` <ID> - 添加管理员\n"
+		msg += "`/deladmin` <ID> - 删除管理员\n"
+		msg += "`/allissues` - 所有问题\n"
+		msg += "`/stats` - 系统统计\n"
 	}
 
-	msg += "\n💡 点击左下角菜单按钮快速访问所有功能"
+	msg += "\n\n💡 *快捷方式*\n"
+	msg += "• 别名: `/h` = `/help`, `/s` = `/search`\n"
+	msg += "• 点击左下角菜单快速访问"
 
 	return msg
 }

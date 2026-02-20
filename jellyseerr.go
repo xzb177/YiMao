@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -747,4 +746,63 @@ func flushAggregatedEvents() {
 	}
 
 	log.Printf("Flushed %d aggregated events", len(texts))
+}
+
+// GetUserRequests retrieves all requests for a specific user
+func (c *JellyseerrClient) GetUserRequests(jellyseerrUserID int) ([]JellyseerrRequest, error) {
+	// Get all requests and filter by user
+	path := "/request?take=100&sort=added"
+	body, err := c.makeRequest("GET", path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var results struct {
+		Page      int                `json:"page"`
+		Pages     int                `json:"pages"`
+		PageSize  int                `json:"pageSize"`
+		Total     int                `json:"total"`
+		Results   []JellyseerrRequest `json:"results"`
+	}
+
+	if err := json.Unmarshal(body, &results); err != nil {
+		return nil, err
+	}
+
+	// Filter requests by user
+	var userRequests []JellyseerrRequest
+	for _, req := range results.Results {
+		if req.RequestedBy != nil && req.RequestedBy.ID == jellyseerrUserID {
+			userRequests = append(userRequests, req)
+		}
+	}
+
+	return userRequests, nil
+}
+
+// getStatus returns the status as a string
+func (r *JellyseerrRequest) getStatus() string {
+	if r.Status == nil {
+		return "unknown"
+	}
+	switch v := r.Status.(type) {
+	case string:
+		return v
+	case float64:
+		// Jellyseerr uses numeric status: 1=pending, 2=approved, 3=available, 4=declined
+		switch int(v) {
+		case 1:
+			return "pending"
+		case 2:
+			return "approved"
+		case 3:
+			return "available"
+		case 4:
+			return "declined"
+		default:
+			return fmt.Sprintf("unknown(%d)", int(v))
+		}
+	default:
+		return "unknown"
+	}
 }

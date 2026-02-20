@@ -353,10 +353,13 @@ func GetQuickStartKeyboard() *TelegramInlineKeyboard {
 			},
 			{
 				{"text": "🎬 最新电影", "callback_data": "search_movie_new"},
-				{"text": "📋 我的请求", "callback_data": "action_myrequests"},
+				{"text": "🎲 随机推荐", "callback_data": "action_random"},
 			},
 			{
+				{"text": "📋 我的请求", "callback_data": "action_myrequests"},
 				{"text": "⚙️ 设置", "callback_data": "action_settings"},
+			},
+			{
 				{"text": "❓ 帮助", "callback_data": "action_help"},
 			},
 		},

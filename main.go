@@ -195,6 +195,9 @@ var (
 // Global bot module instance
 var botModule *bot.BotModule
 
+// Global AI trending manager
+var trendingAIManager *ai.TrendingAIManager
+
 // InitBotModule initializes the new modular bot system
 func InitBotModule() error {
 	botModule = bot.NewBotModule()
@@ -425,8 +428,33 @@ func init() {
 	// Initialize command center and help system (2026-02-18)
 	InitCommands()                                                 // Centralized command handling
 
+	// Initialize AI trending manager (2026-02-20)
+	InitAITrending()
+
 	// Start daily summary routine
 	go startDailySummary()
+}
+
+// InitAITrending initializes the AI trending manager
+func InitAITrending() {
+	log.Println("[Init] InitAITrending called")
+	// Get ZHIPU_API_KEY from environment
+	apiKey := os.Getenv("ZHIPU_API_KEY")
+	log.Printf("[Init] ZHIPU_API_KEY length: %d", len(apiKey))
+	if apiKey == "" {
+		log.Println("[Init] ZHIPU_API_KEY not set, AI trending disabled")
+		return
+	}
+
+	// Import ai package and create trending manager
+	zhipuClient := ai.NewZhipuClient(apiKey)
+	log.Printf("[Init] ZhipuClient enabled: %v", zhipuClient.IsEnabled())
+	if zhipuClient.IsEnabled() {
+		trendingAIManager = ai.NewTrendingAIManager(zhipuClient)
+		log.Println("[Init] AI trending manager initialized")
+	} else {
+		log.Println("[Init] Zhipu AI client not enabled, AI trending disabled")
+	}
 }
 
 func formatEmbyNotification(payload EmbyWebhookPayload) string {
@@ -1429,23 +1457,18 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	switch command {
 	case "/start":
-		// /start command - Welcome message for new users, greeting for returning users
+		// /start command - Welcome message with keyboard buttons
+		log.Printf("[COMMAND] /start from user %d (%s)", update.Message.From.ID, username)
 		isNewUser := ShouldShowOnboarding(update.Message.From.ID)
 
-		// Build different messages for new vs returning users
 		var startMsg string
+		var keyboard *TelegramInlineKeyboard
 
 		if isNewUser {
-			// New user welcome message
-			startMsg = "🎉 *欢迎来到云海看板娘！*\n\n"
-			startMsg += "我是你的智能影视助手，帮你：\n\n"
-			startMsg += "🔍 *搜索内容* - 直接输入电影/剧集名称\n"
-			startMsg += "📋 *发起请求* - 自动下载你想看的内容\n"
-			startMsg += "🔔 *自动通知* - 完成后第一时间通知你\n\n"
-			startMsg += "💡 *快速开始*\n"
-			startMsg += "试试输入：「复仇者联盟」"
+			// New user - use GetWelcomeForNewUser which includes keyboard
+			startMsg, keyboard = GetWelcomeForNewUser(update.Message.From.ID, username)
 		} else {
-			// Returning user greeting
+			// Returning user - greeting with quick actions keyboard
 			displayName := update.Message.From.FirstName
 			if displayName == "" {
 				displayName = username
@@ -1456,15 +1479,13 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 			startMsg = fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
 			startMsg += "我可以帮你搜索和请求影视内容\n\n"
-			startMsg += "🔍 *快速搜索*\n"
-			startMsg += "直接输入电影或剧集名称\n\n"
-			startMsg += "📋 *其他功能*\n"
-			startMsg += "`/help` - 查看完整帮助\n"
-			startMsg += "`/recommend` - 智能推荐\n"
-			startMsg += "`/profile` - 我的资料"
+			startMsg += "💡 点击下方按钮快速开始"
+
+			// Use QuickStartKeyboard for returning users
+			keyboard = GetQuickStartKeyboard()
 		}
 
-		sendPrivateMessage(update.Message.From.ID, startMsg, nil)
+		sendPrivateMessage(update.Message.From.ID, startMsg, keyboard)
 
 		// Complete onboarding after first interaction
 		if isNewUser && onboardingMgr != nil {
@@ -1473,6 +1494,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	case "/help":
 		// /help command - Comprehensive help guide
+		log.Printf("[COMMAND] /help from user %d (%s)", update.Message.From.ID, username)
 		// Get help message from command_center
 		helpMsg := FormatHelpMessage(isAdminUser(update.Message.From.ID))
 		sendPrivateMessage(update.Message.From.ID, helpMsg, nil)
@@ -1703,6 +1725,118 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		} else {
 			sendPrivateMessage(update.Message.From.ID, "❌ 搜索功能暂不可用", nil)
 		}
+
+	case "/refresh_trending":
+		// Refresh AI trending recommendations (admin only)
+		userIDStr := fmt.Sprintf("%d", update.Message.From.ID)
+		adminsMutex.RLock()
+		_, isAdmin := admins[userIDStr]
+		adminsMutex.RUnlock()
+
+		if !isAdmin {
+			sendPrivateMessage(update.Message.From.ID, "❌ 此命令仅管理员可用", nil)
+			return
+		}
+
+		if trendingAIManager == nil || !trendingAIManager.IsEnabled() {
+			sendPrivateMessage(update.Message.From.ID, "❌ AI 推荐功能未启用", nil)
+			return
+		}
+
+		// Send loading message
+		loadingMsg := "🔄 正在刷新 AI 推荐内容...\n\n这可能需要 15-20 秒"
+		sendPrivateMessage(update.Message.From.ID, loadingMsg, nil)
+
+		// Refresh in background
+		go func(userID int64) {
+			if err := trendingAIManager.RefreshCache(); err != nil {
+				sendPrivateMessage(userID, fmt.Sprintf("❌ 刷新失败: %v", err), nil)
+			} else {
+				sendPrivateMessage(userID, "✅ AI 推荐内容已刷新！\n\n💡 重新点击热门推荐按钮查看新内容", nil)
+			}
+		}(update.Message.From.ID)
+
+	case "/random", "/推荐":
+		// Get random recommendations from AI
+		if trendingAIManager == nil || !trendingAIManager.IsEnabled() {
+			sendPrivateMessage(update.Message.From.ID, "❌ AI 推荐功能未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY", nil)
+			return
+		}
+
+		// Determine media type from command
+		mediaType := "movie" // default
+		if strings.Contains(text, "剧集") || strings.Contains(text, "tv") {
+			mediaType = "tv"
+		}
+
+		// Send loading message
+		loadingMsg := "🎲 正在获取随机推荐...\n\n这可能需要 15-20 秒"
+		sendPrivateMessage(update.Message.From.ID, loadingMsg, nil)
+
+		// Get recommendations in background
+		go func(userID int64, mType string) {
+			results, err := trendingAIManager.GetRandomRecommendation(8, mType)
+			if err != nil {
+				sendPrivateMessage(userID, fmt.Sprintf("❌ 获取推荐失败: %v", err), nil)
+				return
+			}
+
+			// Format results with buttons
+			var sb strings.Builder
+			title := "🎲 随机推荐"
+			if mType == "tv" {
+				title = "🎲 随机剧集推荐"
+			}
+			sb.WriteString(fmt.Sprintf("┌─── %s ────┐\n\n", title))
+			sb.WriteString(fmt.Sprintf("  📅 更新时间: 刚刚\n\n"))
+			sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+			// Create keyboard
+			var keyboard [][]map[string]string
+
+			for i, item := range results {
+				if i >= 8 {
+					break
+				}
+
+				emoji := "🎬"
+				if mType == "tv" {
+					emoji = "📺"
+				}
+
+				sb.WriteString(fmt.Sprintf("  %s %d. %s", emoji, i+1, item.Title))
+				if item.Year > 0 {
+					sb.WriteString(fmt.Sprintf(" (%d)", item.Year))
+				}
+				if item.Rating > 0 {
+					sb.WriteString(fmt.Sprintf(" ⭐%.1f", item.Rating))
+				}
+				sb.WriteString("\n")
+
+				if item.Reason != "" {
+					reason := item.Reason
+					if len(reason) > 20 {
+						reason = reason[:17] + "..."
+					}
+					sb.WriteString(fmt.Sprintf("     💡 %s\n", reason))
+				}
+
+				// Add button
+				if i%4 == 0 {
+					keyboard = append(keyboard, []map[string]string{})
+				}
+				buttonLabel := fmt.Sprintf("%d", i+1)
+				callbackData := fmt.Sprintf("ai_random_%d_%s", item.TmdbID, mType)
+				keyboard[len(keyboard)-1] = append(keyboard[len(keyboard)-1], map[string]string{
+					"text":         buttonLabel,
+					"callback_data": callbackData,
+				})
+			}
+
+			sb.WriteString("\n└──────────────────────┘")
+
+			sendPrivateMessage(userID, sb.String(), &TelegramInlineKeyboard{InlineKeyboard: keyboard})
+		}(update.Message.From.ID, mediaType)
 
 	case "/stuck":
 		// Show stuck requests (admin only)
@@ -1951,10 +2085,10 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		sendPrivateMessage(update.Message.From.ID, msg, nil)
 
 	case "/prefs", "/preferences":
-		// Show user preferences
+		// Show user preferences with interactive keyboard
 		prefs := prefManager.GetPreferences(userID, username)
-		msg := FormatPreferences(prefs)
-		sendPrivateMessage(update.Message.From.ID, msg, nil)
+		msg, keyboard := FormatPreferencesWithKeyboard(prefs)
+		sendPrivateMessage(update.Message.From.ID, msg, keyboard)
 
 	case "/setprefs":
 		// Parse preference command
@@ -2295,6 +2429,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	case "/ai":
 		// AI assistant command
+		log.Printf("[COMMAND] /ai from user %d (%s)", update.Message.From.ID, username)
 		parts := strings.Fields(text)
 		var args string
 		if len(parts) > 1 {
@@ -2317,6 +2452,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	case "/recommend", "/rec", "/suggest":
 		// Smart recommendations - integrate with AI
+		log.Printf("[COMMAND] /recommend from user %d (%s)", update.Message.From.ID, username)
 		parts := strings.Fields(text)
 		var mood string
 		if len(parts) > 1 {
@@ -2637,6 +2773,12 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		data := update.CallbackQuery.Data
 		userID := update.CallbackQuery.From.ID
 		username := update.CallbackQuery.From.FirstName
+		var chatID int64
+		var messageID int64
+		if update.CallbackQuery.Message != nil {
+			chatID = update.CallbackQuery.Message.Chat.ID
+			messageID = update.CallbackQuery.Message.MessageID
+		}
 
 		// Save Telegram username for issue reporting
 		if userSyncMgr != nil && update.CallbackQuery.From.Username != "" {
@@ -2673,8 +2815,69 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			var newMsg string
 			var newKeyboard *TelegramInlineKeyboard
 
-			switch action {
-			case "approve", "decline":
+			// Check for special multi-part actions first (before single-part switch)
+			// This handles cases like "search_trending" where we need the full action name
+			// Also handles AI result selection like "ai_trending_<tmdbID>_<type>"
+			isSpecialAction := data == "search_trending" || data == "search_tv_hot" || data == "search_movie_new"
+			isAISelection := strings.HasPrefix(data, "ai_trending_") || strings.HasPrefix(data, "ai_hot_tv_") || strings.HasPrefix(data, "ai_new_movie_") || strings.HasPrefix(data, "ai_random_")
+
+			if isSpecialAction {
+				log.Printf("[DEBUG] isSpecialAction=true, data=%s", data)
+				switch data {
+				case "search_trending":
+					newMsg, newKeyboard, editMessage = handleTrendingSearchCallback(userID)
+				case "search_tv_hot":
+					newMsg, newKeyboard, editMessage = handleHotTVSearchCallback(userID)
+				case "search_movie_new":
+					newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
+				}
+				log.Printf("[DEBUG] After special action handler: newMsg=%q, editMessage=%v", newMsg[:50]+"...", editMessage)
+			} else if isAISelection {
+				// Handle AI result button selection
+				// Format: ai_<source>_<tmdbID>_<type>
+				parts := strings.Split(data, "_")
+				if len(parts) >= 4 {
+					tmdbID, _ := strconv.Atoi(parts[2])
+					mediaType := parts[3]
+
+					// Build details message with request button
+					var sb strings.Builder
+					emoji := "🎬"
+					if mediaType == "tv" {
+						emoji = "📺"
+					}
+					typeLabel := "电影"
+					if mediaType == "tv" {
+						typeLabel = "剧集"
+					}
+
+					sb.WriteString(fmt.Sprintf("┌─ ✨ 详情 ─────────┐\n\n"))
+					sb.WriteString(fmt.Sprintf("%s TMDB ID: %d\n", emoji, tmdbID))
+					sb.WriteString(fmt.Sprintf("🏷️ 类型: %s\n\n", typeLabel))
+					sb.WriteString("━━━━━━━━━━━━━━━\n\n")
+					sb.WriteString("💡 点击下方按钮发起请求\n")
+
+					// Create keyboard with request button
+					requestButton := map[string]string{
+						"text":         "📋 发起请求",
+						"callback_data": fmt.Sprintf("request_%d_%s", tmdbID, mediaType),
+					}
+					backButton := map[string]string{
+						"text":         "🔙 返回列表",
+						"callback_data": "ignore", // Just ignore for now
+					}
+					keyboard := &TelegramInlineKeyboard{
+						InlineKeyboard: [][]map[string]string{{requestButton}, {backButton}},
+					}
+
+					newMsg = sb.String()
+					newKeyboard = keyboard
+					editMessage = true
+				}
+			} else {
+				// Normal switch for single-part actions
+				switch action {
+				case "approve", "decline":
 				// Admin only actions (legacy)
 				userIDStr := fmt.Sprintf("%d", userID)
 				adminsMutex.RLock()
@@ -2815,8 +3018,20 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					responseText = "❌ 无效的请求"
 				}
 
+			case "search_trending":
+				// Trending search - show popular content with enterprise-grade fallback
+				newMsg, newKeyboard, editMessage = handleTrendingSearchCallback(userID)
+
+			case "search_tv_hot":
+				// Hot TV shows - search for popular TV series with enterprise-grade fallback
+				newMsg, newKeyboard, editMessage = handleHotTVSearchCallback(userID)
+
+			case "search_movie_new":
+				// New movies - search for recent movies with enterprise-grade fallback
+				newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
+
 			case "search":
-				// Quick search from button
+				// Quick search from button (only if not the special trending actions)
 				query := strings.Join(parts[1:], "_")
 				if smartSearchMgr != nil {
 					newMsg, newKeyboard, _ = HandleQuickSearchCallback(userID, query)
@@ -2832,22 +3047,128 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				editMessage = true
 
 			case "action":
-				// Quick action buttons
+				// Quick action buttons - enterprise-grade handling
 				if len(parts) >= 2 {
 					subAction := parts[1]
 					switch subAction {
 					case "search":
-						newMsg, newKeyboard = FormatQuickSearchMenu(userID)
+						newMsg = `🔍 *搜索内容*
+
+直接输入影片名称即可搜索
+
+💡 *搜索技巧*
+• 输入中文名：复仇者联盟
+• 输入英文名：Avatar
+• 输入年份：2024年电影
+• 输入类型：科幻剧
+
+现在就可以开始搜索！`
 						editMessage = true
 					case "myrequests":
-						handleMyRequestsPrivate(userID)
-						responseText = "✅ 已显示你的请求"
+						go handleMyRequestsPrivate(userID)
+						newMsg = `📋 *我的请求*
+
+正在获取您的请求列表...
+
+💡 *提示*
+使用 /link 绑定账号后可查看详细信息`
+						editMessage = true
 					case "help":
-						newMsg = GetHelpMessage(LevelNormal)
+						newMsg = `❓ *帮助中心*
+
+📱 *常用命令*
+/start - 开始使用
+/search - 搜索内容
+/my - 我的请求
+/link - 绑定账号
+/help - 显示此帮助
+
+💡 点击左下角菜单快速访问所有功能`
 						editMessage = true
 					case "settings":
-						newMsg = "⚙️ *设置*\n\n使用 /prefs 查看和修改设置"
+						quotaText := "未绑定账号"
+						if smartSearchMgr != nil {
+							quotaInfo := smartSearchMgr.GetUserQuotaInfo(userID)
+							if quotaInfo != "" {
+								quotaText = quotaInfo
+							}
+						}
+						newMsg = fmt.Sprintf(`⚙️ *设置*
+
+📊 *今日配额*
+%s
+
+💡 *其他设置*
+/prefs - 通知设置
+/link - 绑定账号
+/quota - 配额详情`, quotaText)
 						editMessage = true
+					case "random":
+						// Random recommendations - trigger like /random command
+						if trendingAIManager == nil || !trendingAIManager.IsEnabled() {
+							newMsg = "❌ AI 推荐功能未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY"
+							editMessage = true
+						} else {
+							newMsg = "🎲 正在获取随机推荐...\n\n这可能需要 15-20 秒"
+							editMessage = true
+							// Get random recommendations in background and edit the message
+							go func(uid int64, cid int64, mid int64) {
+								results, err := trendingAIManager.GetRandomRecommendation(8, "movie")
+								if err != nil {
+									errMsg := fmt.Sprintf("❌ 获取推荐失败: %v", err)
+									editMessageText(uid, cid, mid, errMsg, nil)
+									log.Printf("[Callback] Random recommendation failed: %v", err)
+									return
+								}
+
+								// Format results
+								var sb strings.Builder
+								sb.WriteString("┌─── 🎲 随机推荐 ────┐\n\n")
+								sb.WriteString("  📅 更新时间: 刚刚\n\n")
+								sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+								var keyboard [][]map[string]string
+
+								for i, item := range results {
+									if i >= 8 {
+										break
+									}
+
+									sb.WriteString(fmt.Sprintf("  🎬 %d. %s", i+1, item.Title))
+									if item.Year > 0 {
+										sb.WriteString(fmt.Sprintf(" (%d)", item.Year))
+									}
+									if item.Rating > 0 {
+										sb.WriteString(fmt.Sprintf(" ⭐%.1f", item.Rating))
+									}
+									sb.WriteString("\n")
+
+									if item.Reason != "" {
+										reason := item.Reason
+										if len(reason) > 20 {
+											reason = reason[:17] + "..."
+										}
+										sb.WriteString(fmt.Sprintf("     💡 %s\n", reason))
+									}
+
+									if i%4 == 0 {
+										keyboard = append(keyboard, []map[string]string{})
+									}
+									buttonLabel := fmt.Sprintf("%d", i+1)
+									callbackData := fmt.Sprintf("ai_random_%d_movie", item.TmdbID)
+									keyboard[len(keyboard)-1] = append(keyboard[len(keyboard)-1], map[string]string{
+										"text":         buttonLabel,
+										"callback_data": callbackData,
+									})
+								}
+
+								sb.WriteString("\n└──────────────────────┘")
+
+								// Edit the original message with results
+								editMessageText(uid, cid, mid, sb.String(), &TelegramInlineKeyboard{InlineKeyboard: keyboard})
+								log.Printf("[Callback] Random recommendation results sent to user %d", uid)
+							}(userID, chatID, messageID)
+						}
 					default:
 						responseText = "✅ 已操作"
 					}
@@ -2971,6 +3292,84 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			case "more":
 				// Show more search results
 				responseText = "📋 更多功能开发中..."
+
+			case "prefs_toggle_movies", "prefs_toggle_series", "prefs_toggle_issues",
+			     "prefs_toggle_approved", "prefs_toggle_available", "prefs_toggle_quiet":
+				// Toggle preference settings
+				if prefManager != nil {
+					userIDStr := fmt.Sprintf("%d", userID)
+					prefs := prefManager.GetPreferences(userIDStr, username)
+					switch action {
+					case "prefs_toggle_movies":
+						prefs.NotifyMovies = !prefs.NotifyMovies
+					case "prefs_toggle_series":
+						prefs.NotifySeries = !prefs.NotifySeries
+					case "prefs_toggle_issues":
+						prefs.NotifyIssues = !prefs.NotifyIssues
+					case "prefs_toggle_approved":
+						prefs.NotifyApproved = !prefs.NotifyApproved
+					case "prefs_toggle_available":
+						prefs.NotifyAvailable = !prefs.NotifyAvailable
+					case "prefs_toggle_quiet":
+						prefs.QuietHoursEnabled = !prefs.QuietHoursEnabled
+					}
+					prefManager.SetPreferences(userIDStr, prefs)
+					newMsg, newKeyboard = FormatPreferencesWithKeyboard(prefs)
+					editMessage = true
+					responseText = "✅ 设置已更新"
+				} else {
+					responseText = "❌ 设置功能暂不可用"
+				}
+
+			case "prefs_reset":
+				// Reset all preferences to default
+				if prefManager != nil {
+					userIDStr := fmt.Sprintf("%d", userID)
+					prefs := &UserPreferences{
+						UserID:            userIDStr,
+						Username:          username,
+						NotifyMovies:      true,
+						NotifySeries:      true,
+						NotifyIssues:      true,
+						NotifyApproved:    true,
+						NotifyAvailable:   true,
+						MinVoteAverage:    0,
+						QuietHoursEnabled: false,
+						QuietHoursStart:   "22:00",
+						QuietHoursEnd:     "08:00",
+						KeywordsWhitelist: []string{},
+						KeywordsBlacklist: []string{},
+					}
+					prefManager.SetPreferences(userIDStr, prefs)
+					newMsg, newKeyboard = FormatPreferencesWithKeyboard(prefs)
+					editMessage = true
+					responseText = "✅ 设置已重置"
+				} else {
+					responseText = "❌ 设置功能暂不可用"
+				}
+
+			case "prefs_whitelist", "prefs_blacklist":
+				// Add keyword to whitelist/blacklist
+				responseText = "💡 使用 /setprefs 命令添加关键词\n\n"
+				if action == "prefs_whitelist" {
+					responseText += "示例: /setprefs whitelist 4K"
+				} else {
+					responseText += "示例: /setprefs blacklist 恐怖"
+				}
+
+			case "prefs_help":
+				newMsg = "📖 *设置帮助*\n\n"
+				newMsg += "• 🎬 电影 - 开关电影通知\n"
+				newMsg += "• 📺 剧集 - 开关剧集通知\n"
+				newMsg += "• 🐛 问题 - 开关问题报告通知\n"
+				newMsg += "• ✅ 批准 - 开关批准通知\n"
+				newMsg += "• 🎉 可用 - 开关可用通知\n"
+				newMsg += "• 🌙 勿扰 - 开关勿扰模式\n"
+				newMsg += "• 🔕 白名单 - 只通知匹配关键词的内容\n"
+				newMsg += "• 🚫 黑名单 - 不通知匹配关键词的内容\n\n"
+				newMsg += "💡 使用 /setprefs 命令进行详细设置"
+				editMessage = true
+				responseText = "✅ 已显示帮助"
 
 			case "issue_reply":
 				// Admin wants to reply to an issue
@@ -3145,8 +3544,9 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			default:
 				responseText = "✅ 已操作"
 			}
+			} // End of else block for normal switch
 
-			// Answer the callback query
+			// Answer the callback query (for both special and normal actions)
 			if responseText != "" {
 				answerCallbackQuery(callbackID, responseText)
 			} else {
@@ -3154,6 +3554,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			// Edit the message if needed (check if Message exists)
+			// This is now OUTSIDE the if-else, so it works for both special and normal actions
 			if update.CallbackQuery.Message != nil {
 				log.Printf("[DEBUG] editMessage=%v, newMsg=%q, messageID=%d", editMessage, newMsg, update.CallbackQuery.Message.MessageID)
 				if editMessage && newMsg != "" && update.CallbackQuery.Message.MessageID != 0 {
@@ -3218,41 +3619,77 @@ func answerCallbackQuery(callbackID string, text string) error {
 
 // handleMyRequestsPrivate shows user's requests in private chat
 func handleMyRequestsPrivate(userID int64) {
-	userIDStr := fmt.Sprintf("%d", userID)
-
-	// Get user's requests from analytics
-	if analytics == nil {
-		sendPrivateMessage(userID, "📋 *我的请求*\n\n⚠️ 分析功能暂不可用", nil)
-		return
+	// Get user's Jellyseerr ID
+	var jellyseerrUserID int64
+	if userSyncMgr != nil {
+		jellyseerrUserID, _ = userSyncMgr.GetJellyseerrUserID(userID)
 	}
 
-	analytics.mutex.RLock()
-	var userRequests []RequestRecord
-	for _, req := range analytics.Requests {
-		if req.UserID == userIDStr {
-			userRequests = append(userRequests, req)
+	if jellyseerrUserID == 0 {
+		// User not linked, check analytics for fallback
+		if analytics == nil {
+			sendPrivateMessage(userID, "📋 *我的请求*\n\n⚠️ 请先绑定账号", nil)
+			return
 		}
-	}
-	analytics.mutex.RUnlock()
 
-	if len(userRequests) == 0 {
-		msg := "📋 *我的请求*\n\n"
-		msg += "暂无请求记录\n\n"
-		msg += "💡 使用 `/search ` 搜索并请求媒体"
+		analytics.mutex.RLock()
+		var userRequests []RequestRecord
+		for _, req := range analytics.Requests {
+			if req.UserID == fmt.Sprintf("%d", userID) {
+				userRequests = append(userRequests, req)
+			}
+		}
+		analytics.mutex.RUnlock()
+
+		if len(userRequests) == 0 {
+			sendPrivateMessage(userID, "📋 *我的请求*\n\n暂无请求记录\n\n💡 请先绑定账号后使用 /search 搜索并请求媒体", nil)
+			return
+		}
+
+		// Show analytics data (limited info)
+		msg := "📋 *我的请求* (本地记录)\n\n"
+		for _, req := range userRequests {
+			statusIcon := map[string]string{"pending": "⏳", "approved": "✅", "available": "🎉", "declined": "❌"}[req.Status]
+			msg += fmt.Sprintf("%s %s\n", statusIcon, req.MediaTitle)
+		}
 		sendPrivateMessage(userID, msg, nil)
 		return
 	}
 
+	// User is linked - fetch from Jellyseerr
+	if jellyseerrClient == nil {
+		sendPrivateMessage(userID, "📋 *我的请求*\n\n⚠️ Jellyseerr API 未配置", nil)
+		return
+	}
+
+	// Fetch user requests from Jellyseerr
+	requests, err := jellyseerrClient.GetUserRequests(int(jellyseerrUserID))
+	if err != nil {
+		sendPrivateMessage(userID, "📋 *我的请求*\n\n❌ 获取失败: "+formatAPIError(err, "获取请求"), nil)
+		log.Printf("Error getting user requests: %v", err)
+		return
+	}
+
+	if len(requests) == 0 {
+		msg := "📋 *我的请求*\n\n"
+		msg += "暂无请求记录\n\n"
+		msg += "💡 使用 /search 搜索并请求媒体"
+		sendPrivateMessage(userID, msg, nil)
+		return
+	}
+
+	// Format requests by status
 	msg := "📋 *我的请求*\n\n"
 
 	// Group by status
-	pending := []RequestRecord{}
-	approved := []RequestRecord{}
-	available := []RequestRecord{}
-	declined := []RequestRecord{}
+	pending := []JellyseerrRequest{}
+	approved := []JellyseerrRequest{}
+	available := []JellyseerrRequest{}
+	declined := []JellyseerrRequest{}
 
-	for _, req := range userRequests {
-		switch req.Status {
+	for _, req := range requests {
+		status := req.getStatus()
+		switch status {
 		case "pending":
 			pending = append(pending, req)
 		case "approved":
@@ -3268,19 +3705,21 @@ func handleMyRequestsPrivate(userID int64) {
 	msg += fmt.Sprintf("✅ 已批准: %d\n", len(approved))
 	msg += fmt.Sprintf("🎉 已可用: %d\n", len(available))
 	msg += fmt.Sprintf("❌ 已拒绝: %d\n", len(declined))
-	msg += fmt.Sprintf("\n📊 总计: %d 个请求\n\n", len(userRequests))
+	msg += fmt.Sprintf("\n📊 总计: %d 个请求\n\n", len(requests))
 
-	// Show recent pending requests
+	// Show pending requests with buttons
 	if len(pending) > 0 {
-		msg += "*🕐 最近待处理:*\n"
+		msg += "*⏳ 待处理:*\n"
 		for i, req := range pending {
-			if i >= 3 {
+			if i >= 5 {
+				msg += fmt.Sprintf("... 还有 %d 个\n", len(pending)-5)
 				break
 			}
-			msg += fmt.Sprintf("• %s\n", req.MediaTitle)
-		}
-		if len(pending) > 3 {
-			msg += fmt.Sprintf("... 还有 %d 个\n", len(pending)-3)
+			mediaTitle := req.Media.Title
+			if mediaTitle == "" {
+				mediaTitle = fmt.Sprintf("ID: %d", req.MediaID)
+			}
+			msg += fmt.Sprintf("• %s\n", mediaTitle)
 		}
 		msg += "\n"
 	}
@@ -3289,18 +3728,16 @@ func handleMyRequestsPrivate(userID int64) {
 	if len(available) > 0 {
 		msg += "*🎉 最近可用:*\n"
 		for i, req := range available {
-			if i >= 3 {
+			if i >= 5 {
 				break
 			}
-			msg += fmt.Sprintf("• %s", req.MediaTitle)
-			if req.AvailableAt != nil {
-				msg += fmt.Sprintf(" (%s)", req.AvailableAt.Format("01-02"))
+			mediaTitle := req.Media.Title
+			if mediaTitle == "" {
+				mediaTitle = fmt.Sprintf("ID: %d", req.MediaID)
 			}
-			msg += "\n"
+			msg += fmt.Sprintf("• %s", mediaTitle)
 		}
-		if len(available) > 3 {
-			msg += fmt.Sprintf("... 还有 %d 个\n", len(available)-3)
-		}
+		msg += "\n"
 	}
 
 	sendPrivateMessage(userID, msg, nil)
@@ -4109,6 +4546,409 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ==============================================================================
+// Enterprise-grade Callback Handlers
+// ==============================================================================
+
+// handleTrendingSearchCallback handles trending search with comprehensive fallback
+func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
+	log.Printf("[Callback] handleTrendingSearchCallback for user %d", userID)
+
+	// Check if AI is enabled and cache is fresh
+	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
+		cacheKey := "trending_movies"
+
+		// Check if we have fresh cached results
+		cached := trendingAIManager.GetCachedResults(cacheKey)
+		if cached != nil && len(cached) > 0 {
+			// Fresh cache - display immediately
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🔥 热门推荐 (AI精选)", cacheKey)
+			return msg, keyboard, true
+		}
+
+		// Cache is stale or empty - need to fetch from AI
+		// Send loading message first and tell user to wait
+		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
+		log.Printf("[Callback] Returning loading message for trending movies")
+
+		// Fetch in background and send update
+		go func(uid int64) {
+			log.Printf("[Callback] Background goroutine started for trending movies")
+			results, err := trendingAIManager.GetTrendingMovies(8)
+			if err == nil && len(results) > 0 {
+				log.Printf("[Callback] Got %d trending results, sending to user", len(results))
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🔥 热门推荐 (AI精选)", "trending_movies")
+				sendPrivateMessage(uid, msg, keyboard)
+			} else {
+				log.Printf("[Callback] AI trending failed: %v", err)
+				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+			}
+		}(userID)
+
+		// Return loading message immediately
+		return loadingMsg, nil, true
+	}
+
+	// Fallback 1: Try smartSearchMgr
+	if smartSearchMgr != nil {
+		ctx := &SearchContext{
+			UserID: userID,
+			Query:  "2024",
+			Params: &SearchParams{},
+		}
+		if err := smartSearchMgr.Search(ctx); err != nil {
+			log.Printf("[Callback] Trending search via smartSearchMgr failed: %v", err)
+		} else {
+			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
+			return "🔥 *热门推荐*\n\n" + msg, keyboard, true
+		}
+	}
+
+	// Fallback 2: Try direct Jellyseerr search
+	if jellyseerrClient != nil {
+		results, err := jellyseerrClient.SearchMedia("2024")
+		if err == nil && len(results) > 0 {
+			msg := formatSimpleSearchResults("🔥 热门推荐", "2024", results)
+			return msg, nil, true
+		}
+	}
+
+	// Final fallback: User-friendly message with suggestions
+	msg := `🔥 *热门推荐*
+
+AI 推荐服务正在初始化中
+
+💡 *你可以试试*
+1. 直接输入「复仇者联盟」搜索
+2. 直接输入「权力的游戏」搜索
+3. 直接输入「2024」搜索今年内容
+
+💡 或者直接输入任何内容名开始搜索`
+
+	return msg, nil, true
+}
+
+// handleHotTVSearchCallback handles hot TV search with comprehensive fallback
+func handleHotTVSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
+	log.Printf("[Callback] handleHotTVSearchCallback for user %d", userID)
+
+	// Check if AI is enabled and cache is fresh
+	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
+		cacheKey := "hot_tv_shows"
+
+		// Check if we have fresh cached results
+		cached := trendingAIManager.GetCachedResults(cacheKey)
+		if cached != nil && len(cached) > 0 {
+			// Fresh cache - display immediately
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "📺 热播剧集 (AI精选)", cacheKey)
+			return msg, keyboard, true
+		}
+
+		// Cache is stale or empty - need to fetch from AI
+		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
+		log.Printf("[Callback] Returning loading message for hot TV shows")
+
+		// Fetch in background and send update
+		go func(uid int64) {
+			log.Printf("[Callback] Background goroutine started for hot TV shows")
+			results, err := trendingAIManager.GetHotTVShows(8)
+			if err == nil && len(results) > 0 {
+				log.Printf("[Callback] Got %d hot TV results, sending to user", len(results))
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "📺 热播剧集 (AI精选)", "hot_tv_shows")
+				sendPrivateMessage(uid, msg, keyboard)
+			} else {
+				log.Printf("[Callback] AI trending TV failed: %v", err)
+				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+			}
+		}(userID)
+
+		// Return loading message immediately
+		return loadingMsg, nil, true
+	}
+
+	// Fallback 1: Try smartSearchMgr
+	if smartSearchMgr != nil {
+		ctx := &SearchContext{
+			UserID: userID,
+			Query:  "2024",
+			Params: &SearchParams{
+				MediaType: "tv",
+				Year:      "2024",
+			},
+		}
+		if err := smartSearchMgr.Search(ctx); err != nil {
+			log.Printf("[Callback] Hot TV search via smartSearchMgr failed: %v", err)
+		} else {
+			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
+			return "📺 *热播剧集 (2024)*\n\n" + msg, keyboard, true
+		}
+	}
+
+	// Fallback 2: Try direct Jellyseerr search with TV filter
+	if jellyseerrClient != nil {
+		results, err := jellyseerrClient.SearchMedia("2024")
+		if err == nil && len(results) > 0 {
+			tvResults := filterResultsByMediaType(results, "tv")
+			if len(tvResults) > 0 {
+				msg := formatSimpleSearchResults("📺 热播剧集", "2024 剧集", tvResults)
+				return msg, nil, true
+			}
+		}
+	}
+
+	// Final fallback
+	msg := `📺 *热播剧集*
+
+AI 推荐服务正在初始化中
+
+💡 *你可以试试*
+1. 直接输入「繁花」搜索
+2. 直接输入「三体」搜索
+3. 直接输入「狂飙」搜索
+
+💡 或者直接输入任何剧名开始搜索`
+
+	return msg, nil, true
+}
+
+// handleNewMoviesSearchCallback handles new movies search with comprehensive fallback
+func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
+	log.Printf("[Callback] handleNewMoviesSearchCallback for user %d", userID)
+
+	// Check if AI is enabled and cache is fresh
+	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
+		cacheKey := "new_releases"
+
+		// Check if we have fresh cached results
+		cached := trendingAIManager.GetCachedResults(cacheKey)
+		if cached != nil && len(cached) > 0 {
+			// Fresh cache - display immediately
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🎬 最新上映 (AI精选)", cacheKey)
+			return msg, keyboard, true
+		}
+
+		// Cache is stale or empty - need to fetch from AI
+		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
+		log.Printf("[Callback] Returning loading message for new releases")
+
+		// Fetch in background and send update
+		go func(uid int64) {
+			log.Printf("[Callback] Background goroutine started for new releases")
+			results, err := trendingAIManager.GetNewReleases(8)
+			if err == nil && len(results) > 0 {
+				log.Printf("[Callback] Got %d new release results, sending to user", len(results))
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🎬 最新上映 (AI精选)", "new_releases")
+				sendPrivateMessage(uid, msg, keyboard)
+			} else {
+				log.Printf("[Callback] AI new releases failed: %v", err)
+				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+			}
+		}(userID)
+
+		// Return loading message immediately
+		return loadingMsg, nil, true
+	}
+
+	// Fallback 1: Try smartSearchMgr
+	if smartSearchMgr != nil {
+		ctx := &SearchContext{
+			UserID: userID,
+			Query:  "2024",
+			Params: &SearchParams{
+				MediaType: "movie",
+				Year:      "2024",
+			},
+		}
+		if err := smartSearchMgr.Search(ctx); err != nil {
+			log.Printf("[Callback] New movies search via smartSearchMgr failed: %v", err)
+		} else {
+			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
+			return "🎬 *最新电影 (2024)*\n\n" + msg, keyboard, true
+		}
+	}
+
+	// Fallback 2: Try direct Jellyseerr search with movie filter
+	if jellyseerrClient != nil {
+		results, err := jellyseerrClient.SearchMedia("2024")
+		if err == nil && len(results) > 0 {
+			movieResults := filterResultsByMediaType(results, "movie")
+			if len(movieResults) > 0 {
+				msg := formatSimpleSearchResults("🎬 最新电影", "2024 电影", movieResults)
+				return msg, nil, true
+			}
+		}
+	}
+
+	// Final fallback
+	msg := `🎬 *最新电影*
+
+搜索功能正在初始化中
+
+💡 *你可以试试*
+1. 直接输入「沙丘2」搜索
+2. 直接输入「奥本海默」搜索
+3. 直接输入「 Barbie」搜索
+
+💡 或者直接输入任何电影名开始搜索`
+
+	return msg, nil, true
+}
+
+// formatSimpleSearchResults formats search results in a simple way
+// formatAIItemDetails formats AI item details for display
+func formatAIItemDetails(tmdbID int, mediaType string) string {
+	var sb strings.Builder
+
+	emoji := "🎬"
+	if mediaType == "tv" {
+		emoji = "📺"
+	}
+
+	typeLabel := "电影"
+	if mediaType == "tv" {
+		typeLabel = "剧集"
+	}
+
+	sb.WriteString(fmt.Sprintf("┌─ ✨ 详情 ─────────┐\n\n"))
+	sb.WriteString(fmt.Sprintf("%s TMDB ID: %d\n", emoji, tmdbID))
+	sb.WriteString(fmt.Sprintf("🏷️ 类型: %s\n\n", typeLabel))
+
+	sb.WriteString("━━━━━━━━━━━━━━━\n\n")
+
+	// Create request button
+	sb.WriteString("💡 点击下方按钮发起请求\n")
+
+	return sb.String()
+}
+
+func formatSimpleSearchResults(title, query string, results []JellyseerrSearchResult) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("┌─── %s ────┐\n\n", title))
+	sb.WriteString(fmt.Sprintf("  关键词: 「%s」\n", query))
+	sb.WriteString(fmt.Sprintf("  📄 共 %d 条结果\n\n", len(results)))
+	sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+
+		emoji := "🎬"
+		if item.MediaType == "tv" {
+			emoji = "📺"
+		}
+
+		titleText := item.Title
+		if titleText == "" {
+			titleText = item.Name
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s %d. %s", emoji, i+1, titleText))
+		if item.ReleaseDate != "" && len(item.ReleaseDate) >= 4 {
+			sb.WriteString(fmt.Sprintf(" (%s)", item.ReleaseDate[:4]))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n└──────────────────────┘")
+	sb.WriteString(fmt.Sprintf("\n\n💡 输入数字 1-%d 查看详情", len(results)))
+
+	return sb.String()
+}
+
+// filterResultsByMediaType filters results by media type
+func filterResultsByMediaType(results []JellyseerrSearchResult, mediaType string) []JellyseerrSearchResult {
+	filtered := make([]JellyseerrSearchResult, 0)
+	for _, item := range results {
+		if item.MediaType == mediaType {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// buildTrendingResultsMessage builds a trending results message (without keyboard)
+func buildTrendingResultsMessage(results []*ai.TrendingResult, title, cacheKey string) string {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("┌─── %s ────┐\n\n", title))
+	sb.WriteString(fmt.Sprintf("  📅 更新时间: %s\n", trendingAIManager.FormatUpdateTime(cacheKey)))
+	sb.WriteString(fmt.Sprintf("  📄 共 %d 条结果\n\n", len(results)))
+	sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+
+		emoji := "🎬"
+		if item.MediaType == "tv" {
+			emoji = "📺"
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s %d. %s", emoji, i+1, item.Title))
+		if item.Year > 0 {
+			sb.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("\n└──────────────────────┘")
+	sb.WriteString(fmt.Sprintf("\n\n💡 点击下方按钮快速请求"))
+
+	return sb.String()
+}
+
+// buildTrendingResultsMessageWithKeyboard builds a trending results message with number buttons
+func buildTrendingResultsMessageWithKeyboard(results []*ai.TrendingResult, title, cacheKey string) (string, *TelegramInlineKeyboard) {
+	var sb strings.Builder
+
+	sb.WriteString(fmt.Sprintf("┌─── %s ────┐\n\n", title))
+	sb.WriteString(fmt.Sprintf("  📅 更新时间: %s\n", trendingAIManager.FormatUpdateTime(cacheKey)))
+	sb.WriteString(fmt.Sprintf("  📄 共 %d 条结果\n\n", len(results)))
+	sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+	// Create keyboard with number buttons (4 per row)
+	var keyboard [][]map[string]string
+
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+
+		emoji := "🎬"
+		if item.MediaType == "tv" {
+			emoji = "📺"
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s %d. %s", emoji, i+1, item.Title))
+		if item.Year > 0 {
+			sb.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+		sb.WriteString("\n")
+
+		// Add button for this item (4 per row)
+		if i%4 == 0 {
+			keyboard = append(keyboard, []map[string]string{})
+		}
+		buttonLabel := fmt.Sprintf("%d", i+1)
+		mediaType := "movie"
+		if item.MediaType == "tv" {
+			mediaType = "tv"
+		}
+		callbackData := fmt.Sprintf("ai_trending_%d_%s", item.TmdbID, mediaType)
+		keyboard[len(keyboard)-1] = append(keyboard[len(keyboard)-1], map[string]string{
+			"text":         buttonLabel,
+			"callback_data": callbackData,
+		})
+	}
+
+	sb.WriteString("\n└──────────────────────┘")
+
+	return sb.String(), &TelegramInlineKeyboard{InlineKeyboard: keyboard}
+}
+
 // summaryHandler sends manual summary
 func summaryHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
@@ -4121,7 +4961,15 @@ func summaryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.Println("[Main] Starting application...")
+
+	// Initialize AI features (must be called before BotModule)
+	log.Println("[Main] Calling InitAITrending...")
+	InitAITrending()
+
 	// 初始化新的模块化 Bot 系统
+	log.Println("[Main] Calling InitBotModule...")
 	if err := InitBotModule(); err != nil {
 		log.Printf("Warning: Failed to initialize new bot module: %v", err)
 		log.Println("Continuing with legacy handler...")

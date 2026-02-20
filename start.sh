@@ -11,6 +11,7 @@ export TELEGRAM_CHAT_ID=$(grep '^TELEGRAM_CHAT_ID=' .env | cut -d'=' -f2-)
 export PORT=$(grep '^PORT=' .env | cut -d'=' -f2-)
 export JELLYSEERR_URL=$(grep '^JELLYSEERR_URL=' .env | cut -d'=' -f2-)
 export JELLYSEERR_API_KEY=$(grep '^JELLYSEERR_API_KEY=' .env | cut -d'=' -f2-)
+export ZHIPU_API_KEY=$(grep '^ZHIPU_API_KEY=' .env | cut -d'=' -f2-)
 export ADMINS=$(grep '^ADMINS=' .env | cut -d'=' -f2-)
 
 # 检查服务是否已在运行

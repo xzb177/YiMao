@@ -2,7 +2,6 @@ package response
 
 import (
 	"fmt"
-	"strings"
 )
 
 // CommandType represents different command types for responses
@@ -155,22 +154,15 @@ func GetCommandResponse(cmdType CommandType, ctx *CommandContext) string {
 	switch cmdType {
 	case CommandStart:
 		resp := builder.BuildStartCommand()
-		return formatResponseAsText(resp)
+		return resp.String()
 
 	case CommandHelp:
 		resp := builder.BuildHelpCommand()
-		return formatResponseAsText(resp)
+		return resp.String()
 
 	default:
 		return "❓ 未知命令"
 	}
-}
-
-// formatResponseAsText converts a Response to plain text for legacy compatibility
-func formatResponseAsText(resp *Response) *Response {
-	// For now, just return the response as-is
-	// The Response type already has a String() method
-	return resp
 }
 
 // FormatStartMessage returns the formatted /start message (legacy)
@@ -202,40 +194,4 @@ func FormatHelpCommandMessage(isAdmin bool) string {
 	}
 
 	return resp.String()
-}
-
-// ResponseExtension adds String() method to Response for text formatting
-func (r *Response) String() string {
-	var sb strings.Builder
-
-	if r.Title != "" {
-		sb.WriteString(r.Title)
-		sb.WriteString("\n")
-	}
-
-	if r.Message != "" {
-		sb.WriteString(r.Message)
-		sb.WriteString("\n")
-	}
-
-	if r.Details != "" {
-		if r.Message != "" {
-			sb.WriteString("\n")
-		}
-		sb.WriteString(r.Details)
-		sb.WriteString("\n")
-	}
-
-	if len(r.Suggestions) > 0 {
-		if r.Details != "" || r.Message != "" {
-			sb.WriteString("\n")
-		}
-		for _, s := range r.Suggestions {
-			sb.WriteString("• ")
-			sb.WriteString(s)
-			sb.WriteString("\n")
-		}
-	}
-
-	return sb.String()
 }

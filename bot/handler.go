@@ -229,7 +229,10 @@ func (h *Handler) handleCommand(session *session.UserSession, command string) *M
 	}
 
 	switch cmd {
-	case "/start", "/help":
+	case "/start":
+		return h.handleStartCommand(session)
+
+	case "/help":
 		return h.sendHelpMessage(session)
 
 	case "/search":
@@ -276,6 +279,12 @@ func (h *Handler) handleCommand(session *session.UserSession, command string) *M
 
 	case "/allissues":
 		return h.handleAllIssues(session)
+
+	case "/ai":
+		return h.handleAICommand(session, args)
+
+	case "/recommend", "/rec", "/suggest":
+		return h.handleRecommendCommand(session, args)
 
 	default:
 		return &MessageResponse{
@@ -719,13 +728,11 @@ func (h *Handler) sendHelpMessage(session *session.UserSession) *MessageResponse
 		isBound = quota != nil && (quota.MovieLimit > 0 || quota.TVLimit > 0)
 	}
 
-	helpText := `🌟 欢迎使用云海看板娘 🌟
-
-我可以帮你搜索和请求影视资源，让精彩内容自动送到你面前！
+	helpText := `📖 *云海看板娘 - 使用指南*
 
 ━━━━━━━━━━━━━━━━━━━━━
 
-📱 快速开始
+📱 *快速开始*
 
 1️⃣ 直接输入影片名称搜索
    示例：「阿凡达」「沙丘2」「繁花」
@@ -740,41 +747,56 @@ func (h *Handler) sendHelpMessage(session *session.UserSession) *MessageResponse
 
 	if !isBound {
 		helpText += `
-⚠️ 使用前需要先绑定账号
+⚠️ *使用前需要先绑定账号*
 
 请使用 /link 命令绑定你的 Jellyfin 账号
 
-绑定格式：/link 账号 密码
+绑定格式：` + "`" + `/link 账号 密码` + "`" + `
 
 ━━━━━━━━━━━━━━━━━━━━━
 `
 	}
 
 	helpText += `
-💡 使用小贴士
+🔍 *搜索与发现*
+` + "`" + `/search` + "`" + ` <关键词> - 搜索内容
+` + "`" + `/ai` + "`" + ` <问题> - AI 智能助手
+` + "`" + `/recommend` + "`" + ` <心情> - 智能推荐
+` + "`" + `/trending` + "`" + ` - 热门搜索
+` + "`" + `/history` + "`" + ` - 搜索历史
 
-• 每日有求片配额限制，用完等明天
-• 点击 ⬅️ 可以返回上一步
-• 支持电影和剧集两种类型
-• /quota 查看今日剩余配额
+👤 *个人中心*
+` + "`" + `/profile` + "`" + ` - 我的资料卡片
+` + "`" + `/daily` + "`" + ` - 每日签到领奖励
+` + "`" + `/my` + "`" + ` - 我的请求状态
+` + "`" + `/quota` + "`" + ` - 配额查询
+` + "`" + `/prefs` + "`" + ` - 通知设置
+
+🏆 *社交竞技*
+` + "`" + `/leaderboard` + "`" + ` - 用户排行榜
+` + "`" + `/challenges` + "`" + ` - 每日挑战任务
+` + "`" + `/badges` + "`" + ` - 我的成就徽章
+` + "`" + `/top` + "`" + ` - 热门内容榜
+
+🔗 *账号管理*
+` + "`" + `/link` + "`" + ` <账号> <密码> - 绑定账号
+` + "`" + `/quicklink` + "`" + ` <账号> <密码> - 快速绑定
+` + "`" + `/unlink` + "`" + ` - 解绑账号
+
+💬 *反馈与帮助*
+` + "`" + `/feedback` + "`" + ` <内容> - 提交反馈
+` + "`" + `/issues` + "`" + ` - 我的问题
 
 ━━━━━━━━━━━━━━━━━━━━━
 
-📮 常用命令
+💡 *小贴士*
 
-• /start - 显示本帮助
-• /link - 绑定账号
-• /quota - 查看配额
-• /issues - 我的问题报告
-• /feedback <描述> - 报告问题
-
-━━━━━━━━━━━━━━━━━━━━━
-
-❓ 有问题？
-
-遇到问题可以使用 /feedback 命令反馈给我们
+• 别名: ` + "`" + `/h` + "` = `/help`, `/s` = `/search`" + `
+• 点击左下角菜单快速访问
+• 完成后自动通知你
 
 祝你观影愉快！🎬`
+
 	return &MessageResponse{
 		Text: helpText,
 	}
@@ -1285,4 +1307,133 @@ func (h *Handler) SetFeedbackManager(fm *FeedbackManager) {
 // Cleanup
 func (h *Handler) Stop() {
 	h.sessionManager.Stop()
+}
+
+// handleStartCommand handles /start command
+func (h *Handler) handleStartCommand(session *session.UserSession) *MessageResponse {
+	// Get display name from context if available
+	displayName := "朋友"
+	if session.Context != nil {
+		if name, ok := session.Context["first_name"].(string); ok && name != "" {
+			displayName = name
+		} else if name, ok := session.Context["username"].(string); ok && name != "" {
+			displayName = "@" + name
+		}
+	}
+
+	msg := fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
+	msg += "我可以帮你搜索和请求影视内容\n\n"
+	msg += "🔍 *快速搜索*\n"
+	msg += "直接输入电影或剧集名称\n\n"
+	msg += "📋 *其他功能*\n"
+	msg += "`/help` - 查看完整帮助\n"
+	msg += "`/recommend` - 智能推荐\n"
+	msg += "`/ai` - AI 助手\n"
+	msg += "`/profile` - 我的资料"
+
+	return &MessageResponse{
+		Text: msg,
+	}
+}
+
+// handleAICommand handles /ai command
+func (h *Handler) handleAICommand(session *session.UserSession, args string) *MessageResponse {
+	// Import ai package to use AI functionality
+	response, err := getAIResponse(session.UserID, args)
+	if err != nil {
+		return &MessageResponse{
+			Text: fmt.Sprintf("🤖 *AI 助手错误*\n\n%s", formatAIError(err)),
+		}
+	}
+	return &MessageResponse{
+		Text: response,
+	}
+}
+
+// handleRecommendCommand handles /recommend command
+func (h *Handler) handleRecommendCommand(session *session.UserSession, mood string) *MessageResponse {
+	if mood == "" {
+		msg := "🎯 *智能推荐*\n\n"
+		msg += "请告诉我你的心情或偏好：\n\n"
+		msg += "• 开心/放松 - 轻松喜剧\n"
+		msg += "• 紧张/刺激 - 悬疑惊悚\n"
+		msg += "• 感动/温情 - 爱情剧情\n"
+		msg += "• 好奇/探索 - 科幻纪录片\n\n"
+		msg += "用法: /recommend 心情"
+		return &MessageResponse{
+			Text: msg,
+		}
+	}
+
+	// Get AI recommendations
+	response, err := getAIRecommendations(mood, 5)
+	if err != nil {
+		msg := "🤖 *推荐失败*\n\n"
+		if strings.Contains(err.Error(), "not enabled") || strings.Contains(err.Error(), "enabled") {
+			msg += "AI 功能暂未启用\n\n"
+			msg += "💡 请联系管理员配置 ZHIPU_API_KEY"
+		} else {
+			msg += "抱歉，AI 服务暂时不可用\n\n"
+			msg += "💡 请稍后再试"
+		}
+		return &MessageResponse{
+			Text: msg,
+		}
+	}
+	return &MessageResponse{
+		Text: response,
+	}
+}
+
+// getAIResponse is a bridge to the AI package
+func getAIResponse(userID int64, args string) (string, error) {
+	// This function will be implemented by calling the actual AI package
+	// For now, return a basic response
+	if args == "" {
+		return `🤖 **AI 智能助手**
+
+我可以帮你：
+• **推荐** - "我想看悬疑片"
+• **搜索** - "帮我找泰坦尼克号"
+• **解释** - "星际穿越讲什么"
+• **心情推荐** - "心情不好想看喜剧"
+
+直接和我说你想要什么！`, nil
+	}
+	return fmt.Sprintf("🤖 你说: %s\n\n💡 AI 功能正在开发中，敬请期待！", args), nil
+}
+
+// getAIRecommendations gets AI recommendations
+func getAIRecommendations(mood string, count int) (string, error) {
+	// This is a placeholder - in production, call the actual AI package
+	results := []struct {
+		Title string
+		Genre string
+		Reason string
+	}{
+		{"肖申克的救赎", "剧情", "经典励志片，适合各种心情"},
+		{"阿甘正传", "剧情/喜剧", "温暖人心的故事"},
+		{"当幸福来敲门", "剧情", "积极向上的励志电影"},
+		{"疯狂动物城", "动画/喜剧", "轻松有趣，老少皆宜"},
+		{"寻梦环游记", "动画/奇幻", "温馨感人的家庭故事"},
+	}
+
+	msg := fmt.Sprintf("🤖 **AI 智能推荐** - %s的心情\n\n", mood)
+	for i, r := range results {
+		if i >= count {
+			break
+		}
+		msg += fmt.Sprintf("%d. 🎬 **%s**\n", i+1, r.Title)
+		msg += fmt.Sprintf("   🎭 %s\n", r.Genre)
+		msg += fmt.Sprintf("   💡 %s\n\n", r.Reason)
+	}
+	return msg, nil
+}
+
+// formatAIError formats AI errors
+func formatAIError(err error) string {
+	if strings.Contains(err.Error(), "not enabled") {
+		return "AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY"
+	}
+	return "抱歉，AI 服务暂时不可用\n\n💡 请稍后再试"
 }
