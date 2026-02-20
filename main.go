@@ -1654,6 +1654,16 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 		sendPrivateMessage(update.Message.From.ID, msg, nil)
 
+	case "/perf":
+		// Performance monitoring command (admin only)
+		if update.Message != nil {
+			if isAdminUser(update.Message.From.ID) {
+				sendPrivateMessage(update.Message.From.ID, GetRuntimeInfo(), nil)
+			} else {
+				sendPrivateMessage(update.Message.From.ID, "❌ 此命令仅管理员可用", nil)
+			}
+		}
+
 	case "/search":
 		// Enhanced search with filters
 		// Usage: /search  [筛选参数]

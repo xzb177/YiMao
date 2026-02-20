@@ -1413,3 +1413,20 @@ trends - 请求趋势
 | |   - 安全响应头（X-Frame-Options, X-XSS-Protection）
 | | - **服务重启**: PID 2255824 ✅ |
 | | - **文档**: 创建 `SECURITY_AUDIT.md` 安全审查报告 |
+| 2026-02-20 | **性能极限优化** ⚡ |
+| | - **新增 `pool.go`** - JSON Buffer 和 String Builder 对象池 |
+| |   - JSON 编码使用 buffer pool 复用，减少内存分配
+| |   - String builder 使用 pool 复用，减少 GC 压力
+| |   - HTTP 连接池优化（MaxIdleConns=100, IdleConnTimeout=90s） |
+| | - **新增 `performance.go`** - 性能监控模块 |
+| |   - 新增 `/perf` 命令（管理员）- 查看内存、GC、Goroutines 等指标 |
+| |   - 实时监控内存使用、系统占用、GC 次数等
+| | - **优化策略**:
+| |   - 对象池复用减少内存分配
+| |   - HTTP 客户端连接复用
+| |   - 减少不必要的字符串转换和锁竞争
+| | - **服务重启**: PID 2273826 ✅ |
+| | - **文件变更**:
+| |   - 新增 `pool.go` - 对象池管理
+| |   - 新增 `performance.go` - 性能监控
+| |   - 修改 `main.go` - 添加 `/perf` 命令 |
