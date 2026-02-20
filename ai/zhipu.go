@@ -44,6 +44,7 @@ type ZhipuRequest struct {
 
 // ZhipuResponse represents the API response structure
 // 智谱 AI API 返回格式参考：https://open.bigmodel.cn/doc/api#chat
+// GLM-5 使用 reasoning_content 字段返回内容
 type ZhipuResponse struct {
 	ID      string `json:"id"`
 	Created int64  `json:"created"`
@@ -51,9 +52,14 @@ type ZhipuResponse struct {
 	Choices []struct {
 		Index   int `json:"index"`
 		Message struct {
-			Role    string `json:"role"`
-			Content string `json:"content"`
+			Role            string `json:"role"`
+			Content         string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"` // GLM-5 使用此字段
 		} `json:"message"`
+		Delta struct {
+			Content         string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
+		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Usage struct {
@@ -75,11 +81,11 @@ func NewZhipuClient(apiKey string) *ZhipuClient {
 	}
 	return &ZhipuClient{
 		apiKey: apiKey,
-		apiURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-		model:  "glm-4-flash", // 使用快速模型
-		maxTokens: 4096,
+		apiURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions", // 标准端点
+		model:  "glm-4-flash", // 使用 GLM-4-Flash (快速且免费)
+		maxTokens: 8192, // 增加到 8K 以获得更高质量回复
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 45 * time.Second, // 增加超时以支持更复杂任务
 		},
 		cache:   NewResponseCache(time.Hour * 24),
 		enabled: true,
@@ -99,7 +105,17 @@ func (c *ZhipuClient) Send(userMessage string, systemPrompt string) (string, err
 		return "", fmt.Errorf("Zhipu client is not enabled")
 	}
 
-	fmt.Printf("[ZhipuAI] Sending message: %s\n", userMessage[:min(len(userMessage), 50)])
+	// Safe string truncation for multi-byte characters
+	maxDisplayLen := 50
+	displayMsg := userMessage
+	if len(userMessage) > maxDisplayLen {
+		// Truncate at rune boundary to avoid splitting multi-byte characters
+		runes := []rune(userMessage)
+		if len(runes) > maxDisplayLen {
+			displayMsg = string(runes[:maxDisplayLen]) + "..."
+		}
+	}
+	fmt.Printf("[ZhipuAI] Sending message: %s\n", displayMsg)
 
 	// Check cache
 	cacheKey := systemPrompt + "|||" + userMessage
@@ -120,8 +136,8 @@ func (c *ZhipuClient) Send(userMessage string, systemPrompt string) (string, err
 		Model:       c.model,
 		Messages:    messages,
 		MaxTokens:   c.maxTokens,
-		Temperature: 0.7,
-		TopP:        0.9,
+		Temperature: 0.8, // 提高创意性
+		TopP:        0.95, // 提高多样性
 		Stream:      false,
 	}
 
@@ -166,7 +182,12 @@ func (c *ZhipuClient) Send(userMessage string, systemPrompt string) (string, err
 		return "", fmt.Errorf("empty response from Zhipu AI")
 	}
 
-	result := strings.TrimSpace(response.Choices[0].Message.Content)
+	// GLM-5 使用 reasoning_content 字段，普通模型使用 content 字段
+	// 优先使用 reasoning_content，如果为空则使用 content
+	result := strings.TrimSpace(response.Choices[0].Message.ReasoningContent)
+	if result == "" {
+		result = strings.TrimSpace(response.Choices[0].Message.Content)
+	}
 	if result == "" {
 		return "", fmt.Errorf("empty content in Zhipu AI response")
 	}
@@ -191,8 +212,8 @@ func (c *ZhipuClient) SendWithConversation(messages []Message, systemPrompt stri
 		Model:       c.model,
 		Messages:    messages,
 		MaxTokens:   c.maxTokens,
-		Temperature: 0.7,
-		TopP:        0.9,
+		Temperature: 0.8, // 提高创意性
+		TopP:        0.95, // 提高多样性
 		Stream:      false,
 	}
 
@@ -237,7 +258,12 @@ func (c *ZhipuClient) SendWithConversation(messages []Message, systemPrompt stri
 		return "", fmt.Errorf("empty response from Zhipu AI")
 	}
 
-	result := strings.TrimSpace(response.Choices[0].Message.Content)
+	// GLM-5 使用 reasoning_content 字段，普通模型使用 content 字段
+	// 优先使用 reasoning_content，如果为空则使用 content
+	result := strings.TrimSpace(response.Choices[0].Message.ReasoningContent)
+	if result == "" {
+		result = strings.TrimSpace(response.Choices[0].Message.Content)
+	}
 	if result == "" {
 		return "", fmt.Errorf("empty content in Zhipu AI response")
 	}

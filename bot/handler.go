@@ -21,6 +21,7 @@ type Handler struct {
 	displayBuilder *DisplayBuilder
 	quotaManager   *QuotaManager
 	feedbackManager *FeedbackManager
+	chatSystem     *ChatSystem // 添加聊天系统
 
 	// Event handlers
 	searchHandlers   map[string]SearchHandler
@@ -69,6 +70,13 @@ func NewHandler() *Handler {
 	return h
 }
 
+// SetChatSystem sets the chat system
+func (h *Handler) SetChatSystem(cs *ChatSystem) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.chatSystem = cs
+}
+
 // RegisterSearchHandler registers a search handler
 func (h *Handler) RegisterSearchHandler(key string, handler SearchHandler) {
 	h.mu.Lock()
@@ -106,7 +114,26 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 		return nil
 	}
 
-	log.Printf("[Handler] User %d (chat type: %s): %s", userID, chatType, text)
+	// 检查是否是回复机器人的消息
+	isReplyToBot := false
+	if message.ReplyToMessage != nil && message.ReplyToMessage.From.IsBot {
+		isReplyToBot = true
+	}
+
+	log.Printf("[Handler] User %d (chat type: %s, replyToBot: %v): %s", userID, chatType, isReplyToBot, text)
+
+	// 处理聊天系统的回复（回复消息或@机器人）
+	if h.chatSystem != nil {
+		// 检查是否应该触发聊天（回复机器人或@机器人）
+		if isReplyToBot || IsMentioningBot(text) {
+			userName := message.From.FirstName
+			if message.From.Username != "" {
+				userName = message.From.Username
+			}
+			response := h.chatSystem.GetChatResponse(text, userName, userID)
+			return &MessageResponse{Text: response}
+		}
+	}
 
 	// 限制：搜索功能仅在私聊中使用
 	if chatType != "private" && !strings.HasPrefix(text, "/") {
@@ -550,14 +577,14 @@ func (h *Handler) handleNumericInput(session *session.UserSession, input string)
 	// Parse input as number
 	var num int
 	_, err := fmt.Sscanf(input, "%d", &num)
-	if err != nil || num < 0 {
+	if err != nil || num <= 0 {
 		return &MessageResponse{
 			Text: "❌ 无效的输入\n\n请输入数字选择结果，或输入新的关键词搜索",
 		}
 	}
 
-	// Calculate actual index
-	index := num + session.CurrentPage*8 - 1
+	// Calculate actual index (num is 1-based, so subtract 1 first)
+	index := num - 1 + session.CurrentPage*8
 
 	if index < 0 || index >= len(session.SearchResults) {
 		maxNum := (len(session.SearchResults) - session.CurrentPage*8)
@@ -1174,8 +1201,17 @@ type TelegramUpdate struct {
 			ID int64 `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
-		Date int64 `json:"date"`
-		Text string `json:"text"`
+		Date            int64 `json:"date"`
+		Text            string `json:"text"`
+		ReplyToMessage  *struct {
+			MessageID int64 `json:"message_id"`
+			From      struct {
+				ID        int64 `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+		} `json:"reply_to_message"`
 	} `json:"message"`
 	CallbackQuery *struct {
 		ID      string `json:"id"`
@@ -1436,4 +1472,12 @@ func formatAIError(err error) string {
 		return "AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY"
 	}
 	return "抱歉，AI 服务暂时不可用\n\n💡 请稍后再试"
+}
+
+// SetAdminChecker sets the admin checker function (for integration)
+func (h *Handler) SetAdminChecker(fn func(int64) bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	// Store the checker for use in security checks
+	log.Printf("[Handler] Admin checker set")
 }

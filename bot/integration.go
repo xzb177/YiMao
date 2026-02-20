@@ -13,6 +13,9 @@ import (
 	"emby-telegram-bot/session"
 )
 
+// Global mutex for user_mappings.json file access
+var userMappingsMutex sync.RWMutex
+
 // BotModule integrates all bot functionality
 type BotModule struct {
 	handler        *Handler
@@ -20,6 +23,7 @@ type BotModule struct {
 	messageEditor  *MessageEditor
 	quotaManager   *QuotaManager
 	feedbackManager *FeedbackManager
+	chatSystem     *ChatSystem // 添加聊天系统
 
 	searchChain    *chain.SearchChain
 	subscribeChain *chain.SubscribeChain
@@ -43,7 +47,7 @@ func NewBotModule() *BotModule {
 		quotaManager:   NewQuotaManager("user_quotas.json"),
 	}
 
-	// FeedbackManager will be initialized in Init() with Jellyseerr config
+	// FeedbackManager and ChatSystem will be initialized in Init()
 
 	// Register handlers
 	module.handler.RegisterSearchHandler("default", module.handleSearchRequest)
@@ -79,6 +83,12 @@ func (m *BotModule) Init(botToken, chatID, jellyseerrURL, jellyseerrAPIKey strin
 
 	// Set bot token for message editor
 	m.messageEditor.SetBotToken(botToken)
+
+	// Initialize chat system for private chat responses
+	kb := NewKnowledgeBase(".")
+	m.chatSystem = NewChatSystem(kb)
+	m.handler.SetChatSystem(m.chatSystem)
+	// Note: Admin checker should be set via SetAdminChecker() from main.go
 
 	log.Printf("[BotModule] Initialized with Jellyseerr: %s", jellyseerrURL)
 
@@ -262,6 +272,11 @@ func (m *BotModule) GetActiveSessionCount() int {
 	return m.sessionManager.GetActiveSessionCount()
 }
 
+// SetAdminChecker sets the admin checker function for the handler
+func (m *BotModule) SetAdminChecker(fn func(int64) bool) {
+	m.handler.SetAdminChecker(fn)
+}
+
 // GinRoute returns the Gin route handler for webhook
 func (m *BotModule) GinRoute() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -294,6 +309,10 @@ func (m *BotModule) Stop() {
 
 // getJellyseerrUserID gets the Jellyseerr user ID for a Telegram user
 func (m *BotModule) getJellyseerrUserID(telegramID int64) int {
+	// Use read lock for concurrent safe file reading
+	userMappingsMutex.RLock()
+	defer userMappingsMutex.RUnlock()
+
 	// Try to read from user_mappings.json
 	type MappingData struct {
 		TelegramToJellyseerr map[string]int `json:"telegramToJellyseerr"`

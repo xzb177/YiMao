@@ -72,7 +72,8 @@ func (m *TrendingAIManager) GetTrendingMovies(count int) ([]*TrendingResult, err
 	// Check cache
 	cacheKey := "trending_movies"
 	m.cacheMutex.RLock()
-	if cached, exists := m.jailed[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
+	cached := m.jailed[cacheKey]
+	if cached != nil && time.Now().Before(cached.ExpiresAt) {
 		m.cacheMutex.RUnlock()
 		log.Printf("[TrendingAI] Cache hit for trending_movies")
 		return cached.Results, nil
@@ -81,29 +82,22 @@ func (m *TrendingAIManager) GetTrendingMovies(count int) ([]*TrendingResult, err
 
 	log.Printf("[TrendingAI] Fetching AI trending movies...")
 
-	currentTime := time.Now().Format("2006-01-02 15:04")
+	currentTime := time.Now().Format("2006-01-02")
 
-	systemPrompt := fmt.Sprintf(`你是一位专业的影视推荐专家，精通全球热门影视作品。
+	systemPrompt := fmt.Sprintf(`你是凛冬（Rin），猫娘影视推荐师。高冷傲娇但品味一流。
 
-请推荐 %d 部当前最受欢迎的电影（包括近期上映和高评分作品）。
+【任务】推荐 %d 部当前热门电影。要求：
+- 2023-2026年作品优先，评分7+
+- 中美韩日热门作品
+- JSON格式，无代码块标记
 
-返回格式必须是纯 JSON 数组，不要包含任何其他文字或格式标记：
-[
-  {"title": "电影名", "year": 2024, "genre": "类型", "rating": 8.5, "reason": "推荐理由", "tmdbId": 123, "releaseDate": "2024-01-01", "country": "国家"},
-  {"title": "电影名", "year": 2024, "genre": "类型", "rating": 8.0, "reason": "推荐理由", "tmdbId": 456, "releaseDate": "2024-02-01", "country": "国家"}
-]
+【格式】[{"title":"片名","year":2024,"genre":"类型","rating":8.5,"reason":"简短推荐理由(傲娇风格,20字内)","tmdbId":123}]
 
-要求：
-1. 优先推荐 2023-2025 年的作品
-2. 推荐评分 7.0 以上的作品
-3. 包含中美、韩、日等地区的热门作品
-4. 推荐理由要简洁有吸引力（不超过30字）
-5. 每部作品给出准确的 TMDB ID（如果知道）
-6. 返回纯JSON格式，不要有代码块标记
+【理由风格】"勉强值得一看喵""本座亲自挑的""这种水平也就你能欣赏...喵"
 
-当前时间：%s`, count, currentTime)
+当前时间: %s`, count, currentTime)
 
-	userMessage := fmt.Sprintf("推荐 %d 部当前最热门的电影", count)
+	userMessage := fmt.Sprintf("推荐 %d 部热门电影喵", count)
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
@@ -158,29 +152,22 @@ func (m *TrendingAIManager) GetHotTVShows(count int) ([]*TrendingResult, error) 
 
 	log.Printf("[TrendingAI] Fetching AI hot TV shows...")
 
-	currentTime := time.Now().Format("2006-01-02 15:04")
+	currentTime := time.Now().Format("2006-01-02")
 
-	systemPrompt := fmt.Sprintf(`你是一位专业的影视推荐专家，精通全球热门剧集。
+	systemPrompt := fmt.Sprintf(`你是凛冬（Rin），猫娘影视推荐师。高冷傲娇但品味一流。
 
-请推荐 %d 部当前最受欢迎的电视剧（包括近期播出和高评分作品）。
+【任务】推荐 %d 部当前热播剧集。要求：
+- 2023-2026年播出优先，评分7+
+- 中美韩日热门剧集
+- JSON格式，无代码块标记
 
-返回格式必须是纯 JSON 数组，不要包含任何其他文字或格式标记：
-[
-  {"title": "剧集名", "year": 2024, "genre": "类型", "rating": 8.5, "reason": "推荐理由", "tmdbId": 123, "releaseDate": "2024-01-01", "country": "国家"},
-  {"title": "剧集名", "year": 2024, "genre": "类型", "rating": 8.0, "reason": "推荐理由", "tmdbId": 456, "releaseDate": "2024-02-01", "country": "国家"}
-]
+【格式】[{"title":"剧名","year":2024,"genre":"类型","rating":8.5,"reason":"简短推荐理由(傲娇风格,20字内)","tmdbId":123}]
 
-要求：
-1. 优先推荐 2023-2025 年播出的剧集
-2. 推荐评分 7.0 以上的作品
-3. 包含中美、韩、日、英等地区的热门剧集
-4. 推荐理由要简洁有吸引力（不超过30字）
-5. 每部作品给出准确的 TMDB ID（如果知道）
-6. 返回纯JSON格式，不要有代码块标记
+【理由风格】"勉强值得追喵""本座亲自挑的""这种水平也就你能欣赏...喵"
 
-当前时间：%s`, count, currentTime)
+当前时间: %s`, count, currentTime)
 
-	userMessage := fmt.Sprintf("推荐 %d 部当前最热门的电视剧", count)
+	userMessage := fmt.Sprintf("推荐 %d 部热播剧集喵", count)
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
@@ -235,31 +222,22 @@ func (m *TrendingAIManager) GetNewReleases(count int) ([]*TrendingResult, error)
 
 	log.Printf("[TrendingAI] Fetching AI new releases...")
 
-	currentTime := time.Now().Format("2006-01-02 15:04")
+	currentTime := time.Now().Format("2006-01-02")
 
-	systemPrompt := fmt.Sprintf(`你是一位专业的影视推荐专家，精通最新影视作品。
+	systemPrompt := fmt.Sprintf(`你是凛冬（Rin），猫娘影视推荐师。高冷傲娇但品味一流。
 
-请推荐 %d 部最新上映的优质电影（最近3个月内上映或公布）。
+【任务】推荐 %d 部最新上映电影(近3个月)。要求：
+- 评分6.5+可接受
+- 中美韩日新片
+- JSON格式，无代码块标记
 
-返回格式必须是纯 JSON 数组，不要包含任何其他文字或格式标记：
-[
-  {"title": "电影名", "year": 2025, "genre": "类型", "rating": 8.5, "reason": "推荐理由", "tmdbId": 123, "releaseDate": "2025-01-01", "country": "国家"},
-  {"title": "电影名", "year": 2025, "genre": "类型", "rating": 8.0, "reason": "推荐理由", "tmdbId": 456, "releaseDate": "2025-02-01", "country": "国家"}
-]
+【格式】[{"title":"片名","year":2026,"genre":"类型","rating":8.5,"reason":"简短推荐理由(傲娇风格,20字内)","tmdbId":123}]
 
-要求：
-1. 优先推荐最近上映的高期待作品
-2. 推荐评分 6.5 以上的作品（新片评分可能较低）
-3. 包含中美、韩、日等地区的最新作品
-4. 推荐理由要突出"新"、"期待"等关键词
-5. 每部作品给出准确的 TMDB ID（如果知道）
-6. 返回纯JSON格式，不要有代码块标记
+【理由风格】"勉强值得一看喵""新片，本座亲自挑的""这种新片也就你能欣赏...喵"
 
-当前时间：%s
+当前时间: %s`, count, currentTime)
 
-注意：今天是 2026 年 2 月 20 日，请推荐这个时间段前后上映的作品。`, count, currentTime)
-
-	userMessage := fmt.Sprintf("推荐 %d 部最新上映的热门电影", count)
+	userMessage := fmt.Sprintf("推荐 %d 部最新上映电影喵", count)
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
@@ -607,47 +585,35 @@ func (m *TrendingAIManager) GetRandomRecommendation(count int, mediaType string)
 
 	log.Printf("[TrendingAI] Fetching random %s recommendations...", mediaType)
 
-	currentTime := time.Now().Format("2006-01-02 15:04")
+	currentTime := time.Now().Format("2006-01-02")
 
 	var systemPrompt string
 	var userMessage string
 
 	if mediaType == "tv" {
-		systemPrompt = fmt.Sprintf(`你是一位专业的影视推荐专家，精通全球剧集。
+		systemPrompt = fmt.Sprintf(`你是凛冬（Rin），猫娘影视推荐师。高冷傲娇但品味一流。
 
-请推荐 %d 部不同类型的精彩剧集（包括经典作品和冷门佳作）。
+【任务】推荐 %d 部不同类型剧集(经典+冷门)。要求：
+- 类型多样:悬疑/爱情/科幻/历史/犯罪
+- 不同国家作品
+- JSON格式，无代码块标记
 
-返回格式必须是纯 JSON 数组：
-[
-  {"title": "剧集名", "year": 2024, "genre": "类型", "rating": 8.5, "reason": "推荐理由", "tmdbId": 123, "releaseDate": "2024-01-01", "country": "国家"}
-]
+【格式】[{"title":"剧名","year":2024,"genre":"类型","rating":8.5,"reason":"简短推荐理由(傲娇风格,20字内)","tmdbId":123}]
 
-要求：
-1. 推荐不同类型：悬疑、爱情、科幻、历史、犯罪等
-2. 包含不同国家的作品
-3. 推荐理由要独特有吸引力
-4. 返回纯JSON格式
-
-当前时间：%s`, count, currentTime)
-		userMessage = fmt.Sprintf("推荐 %d 部不同类型的精彩剧集", count)
+当前时间: %s`, count, currentTime)
+		userMessage = fmt.Sprintf("推荐 %d 部不同类型剧集喵", count)
 	} else {
-		systemPrompt = fmt.Sprintf(`你是一位专业的影视推荐专家，精通全球电影。
+		systemPrompt = fmt.Sprintf(`你是凛冬（Rin），猫娘影视推荐师。高冷傲娇但品味一流。
 
-请推荐 %d 部不同类型的精彩电影（包括经典作品和冷门佳作）。
+【任务】推荐 %d 部不同类型电影(经典+冷门)。要求：
+- 类型多样:动作/喜剧/剧情/科幻/恐怖/动画
+- 不同国家和时代作品
+- JSON格式，无代码块标记
 
-返回格式必须是纯 JSON 数组：
-[
-  {"title": "电影名", "year": 2024, "genre": "类型", "rating": 8.5, "reason": "推荐理由", "tmdbId": 123, "releaseDate": "2024-01-01", "country": "国家"}
-]
+【格式】[{"title":"片名","year":2024,"genre":"类型","rating":8.5,"reason":"简短推荐理由(傲娇风格,20字内)","tmdbId":123}]
 
-要求：
-1. 推荐不同类型：动作、喜剧、剧情、科幻、恐怖、动画等
-2. 包含不同国家和时代的作品
-3. 推荐理由要独特有吸引力
-4. 返回纯JSON格式
-
-当前时间：%s`, count, currentTime)
-		userMessage = fmt.Sprintf("推荐 %d 部不同类型的精彩电影", count)
+当前时间: %s`, count, currentTime)
+		userMessage = fmt.Sprintf("推荐 %d 部不同类型电影喵", count)
 	}
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)

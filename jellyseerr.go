@@ -47,6 +47,7 @@ type JellyseerrMedia struct {
 	Status           interface{} `json:"status"` // 可以是字符串或数字
 	TmdbID           int        `json:"tmdbId"`
 	Title            string     `json:"title"`
+	Name             string     `json:"name"`      // TV shows use 'name' field
 	OriginalTitle    string     `json:"originalTitle"`
 	ReleaseDate      string     `json:"releaseDate"`
 	PosterPath       string     `json:"posterPath"`
@@ -378,7 +379,7 @@ func FormatPendingRequests(requests []JellyseerrRequest) string {
 		title := req.Media.Title
 		if title == "" && req.Media != nil {
 			// TV shows use Name field
-			title = req.Media.Title
+			title = req.Media.Name
 		}
 
 		// 安全获取状态

@@ -201,10 +201,33 @@ var botModule *bot.BotModule
 // Global AI trending manager
 var trendingAIManager *ai.TrendingAIManager
 
+// Media security checker
+var mediaSecurityChecker *MediaSecurityChecker
+
+// Chat system for group conversations
+var chatSystem *bot.ChatSystem
+var knowledgeBase *bot.KnowledgeBase
+
 // InitBotModule initializes the new modular bot system
 func InitBotModule() error {
 	botModule = bot.NewBotModule()
 	return botModule.Init(botToken, chatID, jellyseerrURL, jellyseerrAPIKey)
+}
+
+// InitChatSystem initializes the chat system and knowledge base
+func InitChatSystem() {
+	// Initialize knowledge base
+	knowledgeBase = bot.NewKnowledgeBase(".")
+	log.Println("[ChatSystem] Knowledge base initialized")
+
+	// Initialize chat system
+	chatSystem = bot.NewChatSystem(knowledgeBase)
+
+	// Set admin checker
+	if chatSystem != nil {
+		chatSystem.SetAdminChecker(isUserAdmin)
+		log.Println("[ChatSystem] Chat system initialized with admin checker")
+	}
 }
 
 // convertToBotUpdate converts main.TelegramUpdate to bot.TelegramUpdate
@@ -231,8 +254,17 @@ func convertToBotUpdate(update *TelegramUpdate) *bot.TelegramUpdate {
 				ID   int64 `json:"id"`
 				Type string `json:"type"`
 			} `json:"chat"`
-			Date int64 `json:"date"`
-			Text string `json:"text"`
+			Date            int64 `json:"date"`
+			Text            string `json:"text"`
+			ReplyToMessage  *struct {
+				MessageID int64 `json:"message_id"`
+				From      struct {
+					ID        int64  `json:"id"`
+					IsBot     bool   `json:"is_bot"`
+					FirstName string `json:"first_name"`
+					Username  string `json:"username"`
+				} `json:"from"`
+			} `json:"reply_to_message"`
 		}{
 			MessageID: update.Message.MessageID,
 			From: struct {
@@ -296,7 +328,7 @@ func convertToBotUpdate(update *TelegramUpdate) *bot.TelegramUpdate {
 				} `json:"chat"`
 			}{
 				MessageID: update.CallbackQuery.Message.MessageID,
-				Chat:      struct{ ID int64 "json:\"id\"" }{ID: update.CallbackQuery.Message.Chat.ID},
+				Chat:      struct{ ID int64 `json:"id"` }{ID: update.CallbackQuery.Message.Chat.ID},
 			},
 			Data: update.CallbackQuery.Data,
 		}
@@ -3004,6 +3036,13 @@ func handleSmartSearch(userID int64, params *SearchParams) {
 
 // telegramWebhookHandler handles updates from Telegram
 func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
+	// 记录 webhook 调用（用于调试）
+	go func() {
+		f, _ := os.OpenFile("/tmp/webhook-calls.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		defer f.Close()
+		f.WriteString(fmt.Sprintf("[%s] Webhook called from %s\n", time.Now().Format("2006-01-02 15:04:05"), r.RemoteAddr))
+	}()
+
 	log.Printf("[DEBUG] telegramWebhookHandler ENTRY")
 	defer func() {
 		if err := recover(); err != nil {
@@ -3013,8 +3052,30 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// 🔒 安全检查：先读取原始 JSON 用于媒体安全检查
+	// 必须在 Decode 之前读取，因为 body 只能读一次
+	rawBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		log.Printf("Error reading request body: %v", err)
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+
+	// 🔒 安全检查：检测媒体内容中的 Emby 链接泄露（使用原始 JSON）
+	if mediaSecurityChecker != nil {
+		shouldDelete, reason := mediaSecurityChecker.CheckUpdate(rawBody)
+		if shouldDelete {
+			log.Printf("[Security] Message deleted due to: %s", reason)
+			// 消息已被安全检查器处理（删除或警告已发送）
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprintf(w, "OK")
+			return
+		}
+	}
+
+	// 解析 update 结构
 	var update TelegramUpdate
-	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+	if err := json.Unmarshal(rawBody, &update); err != nil {
 		log.Printf("Error decoding update: %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
@@ -3869,9 +3930,34 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Handle group messages with mentions
+	// Handle group messages with mentions and chat
 	if update.Message != nil {
-		// Check for @bot mentions or commands
+		// First, check if this is a chat message that needs response
+		// Chat system handles: @mentions, learning commands, casual conversation
+		if chatSystem != nil && update.Message.Text != "" {
+			userID := update.Message.From.ID
+			userName := getDisplayName(update.Message.From)
+			chatID := update.Message.Chat.ID
+			message := update.Message.Text
+
+			// Check if should reply (only replies to @mentions or learning commands)
+			response := chatSystem.ProcessChatMessage(&bot.ChatTriggerData{
+				Message:  message,
+				UserName:  userName,
+				UserID:    userID,
+				ChatType:  update.Message.Chat.Type,
+			})
+
+			if response.ShouldReply {
+				// Send chat response to group
+				sendGroupMessage(chatID, response.Reply)
+				log.Printf("[ChatSystem] Replied to group message from user %d", userID)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+
+		// Check for @bot mentions or commands (legacy handler)
 		if HandleMentionCommand(&update) {
 			w.WriteHeader(http.StatusOK)
 			return
@@ -5184,6 +5270,7 @@ func summaryHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetOutput(os.Stdout) // 确保输出到 stdout
 	log.Println("[Main] Starting application...")
 
 	// Initialize HTTP client with timeout (security: prevent slowloris attacks)
@@ -5200,6 +5287,15 @@ func main() {
 	// Initialize AI features (must be called before BotModule)
 	log.Println("[Main] Calling InitAITrending...")
 	InitAITrending()
+
+	// Initialize chat system and knowledge base
+	log.Println("[Main] Initializing chat system...")
+	InitChatSystem()
+
+	// Initialize media security checker
+	log.Println("[Main] Initializing media security checker...")
+	mediaSecurityChecker = NewMediaSecurityChecker()
+	mediaSecurityChecker.SetBotToken(botToken)
 
 	// 初始化新的模块化 Bot 系统
 	log.Println("[Main] Calling InitBotModule...")

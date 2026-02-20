@@ -77,7 +77,7 @@ func (s *SubscribeChain) SubscribeWithUser(mediaID int, mediaType string, season
 
 // GetPendingRequests gets all pending requests
 func (s *SubscribeChain) GetPendingRequests() ([]RequestInfo, error) {
-	endpoint := "/api/v1/request?take=20&sort=added&filter=available"
+	endpoint := "/api/v1/request?take=20&sort=added&filter=pending"
 
 	var response struct {
 		PageInfo struct {

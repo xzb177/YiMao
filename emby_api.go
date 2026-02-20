@@ -98,16 +98,16 @@ func GetEmbyItemInfo(itemID string) (*EmbyItemInfo, error) {
 		return nil, fmt.Errorf("EMBY_URL or EMBY_API_KEY not configured")
 	}
 
-	// Check cache
-	cacheKey := itemID
+	// Check cache - use read lock and check both maps atomically
 	embyCache.RLock()
-	if ttl, exists := embyCache.ttl[cacheKey]; exists && time.Now().Before(ttl) {
-		if info, ok := embyCache.data[cacheKey]; ok {
-			embyCache.RUnlock()
-			return info, nil
-		}
-	}
+	info, infoExists := embyCache.data[itemID]
+	ttl, ttlExists := embyCache.ttl[itemID]
 	embyCache.RUnlock()
+
+	// Return cached value if it exists and is not expired
+	if infoExists && ttlExists && time.Now().Before(ttl) {
+		return info, nil
+	}
 
 	// Build API URL with MediaSources field
 	apiURL := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=MediaSources,MediaStreams,ChildCount,ImageTags,BackdropImageTags", embyURL, getEmbyUserID(), itemID)
@@ -134,18 +134,18 @@ func GetEmbyItemInfo(itemID string) (*EmbyItemInfo, error) {
 	}
 
 	// Parse response
-	var info EmbyItemInfo
-	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+	var result EmbyItemInfo
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
 	// Cache result (5 minutes TTL)
 	embyCache.Lock()
-	embyCache.data[cacheKey] = &info
-	embyCache.ttl[cacheKey] = time.Now().Add(5 * time.Minute)
+	embyCache.data[itemID] = &result
+	embyCache.ttl[itemID] = time.Now().Add(5 * time.Minute)
 	embyCache.Unlock()
 
-	return &info, nil
+	return &result, nil
 }
 
 // getEmbyUserID returns the admin user ID for Emby API calls

@@ -114,11 +114,14 @@ func (e *MessageEditor) sendOrEditMessage(chatID, messageID int64, text string, 
 
 		resp, err := e.httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
 		if err != nil {
+			log.Printf("[Editor] Request failed: %v", err)
 			return 0, fmt.Errorf("failed to send request: %w", err)
 		}
 
 		body, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
+
+		log.Printf("[Editor] Response status: %d, body: %s", resp.StatusCode, string(body))
 
 		if resp.StatusCode != http.StatusOK {
 			log.Printf("[Editor] API error: %s", string(body))
@@ -135,8 +138,9 @@ func (e *MessageEditor) sendOrEditMessage(chatID, messageID int64, text string, 
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			log.Printf("[Editor] Failed to parse response: %v", string(body))
-			continue
+			log.Printf("[Editor] Failed to parse response: %v, body: %s", err, string(body))
+			// Don't continue on parse error, return the error instead
+			return 0, fmt.Errorf("failed to parse API response: %w", err)
 		}
 
 		if !result.OK {

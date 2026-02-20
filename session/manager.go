@@ -11,6 +11,8 @@ type SessionManager struct {
 	sessions map[int64]*UserSession
 	mu       sync.RWMutex
 	stopChan chan struct{}
+	stopOnce sync.Once
+	stopped  bool
 }
 
 // UserSession represents a user's session state
@@ -217,7 +219,12 @@ func (sm *SessionManager) cleanupExpired(timeout time.Duration) {
 
 // Stop stops the session manager
 func (sm *SessionManager) Stop() {
-	close(sm.stopChan)
+	sm.stopOnce.Do(func() {
+		sm.mu.Lock()
+		sm.stopped = true
+		sm.mu.Unlock()
+		close(sm.stopChan)
+	})
 }
 
 // GetActiveSessionCount returns the number of active sessions
