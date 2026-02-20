@@ -32,14 +32,20 @@ type UserSession struct {
 
 // SearchItem represents a search result item
 type SearchItem struct {
-	ID       string
-	Title    string
-	Year     int
-	Type     string
-	Poster   string
-	Rating   float64
-	Seasons  []int
-	Episodes map[int]int
+	ID          string
+	Title       string
+	Year        int
+	Type        string
+	Poster      string
+	Rating      float64
+	Seasons     []int
+	Episodes    map[int]int
+	Overview    string
+	ReleaseDate string
+	Genres      []string
+	Runtime     int
+	Status      string
+	Popularity  float64
 }
 
 // NewSessionManager creates a new session manager

@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode"
 
+	"emby-telegram-bot/ai"
 	"emby-telegram-bot/bot"
 )
 
@@ -1360,19 +1361,6 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	text := strings.TrimSpace(update.Message.Text)
 
-	// Check if this is a first-time user (show onboarding)
-	if ShouldShowOnboarding(update.Message.From.ID) {
-		if text == "/start" {
-			msg, keyboard := GetWelcomeForNewUser(update.Message.From.ID, username)
-			sendPrivateMessage(update.Message.From.ID, msg, keyboard)
-			return
-		}
-		// Complete onboarding after first interaction
-		if onboardingMgr != nil {
-			onboardingMgr.CompleteOnboarding(update.Message.From.ID)
-		}
-	}
-
 	// Extract command if text contains space (for arguments)
 	command := text
 	if idx := strings.Index(text, " "); idx > 0 {
@@ -1440,24 +1428,53 @@ func handlePrivateMessage(update *TelegramUpdate) {
 	issueReplyMutex.Unlock()
 
 	switch command {
-	case "/start", "/help":
-		// Check if user needs onboarding
-		if ShouldShowOnboarding(update.Message.From.ID) && text == "/start" {
-			msg, keyboard := GetWelcomeForNewUser(update.Message.From.ID, username)
-			sendPrivateMessage(update.Message.From.ID, msg, keyboard)
-			return
+	case "/start":
+		// /start command - Welcome message for new users, greeting for returning users
+		isNewUser := ShouldShowOnboarding(update.Message.From.ID)
+
+		// Build different messages for new vs returning users
+		var startMsg string
+
+		if isNewUser {
+			// New user welcome message
+			startMsg = "🎉 *欢迎来到云海看板娘！*\n\n"
+			startMsg += "我是你的智能影视助手，帮你：\n\n"
+			startMsg += "🔍 *搜索内容* - 直接输入电影/剧集名称\n"
+			startMsg += "📋 *发起请求* - 自动下载你想看的内容\n"
+			startMsg += "🔔 *自动通知* - 完成后第一时间通知你\n\n"
+			startMsg += "💡 *快速开始*\n"
+			startMsg += "试试输入：「复仇者联盟」"
+		} else {
+			// Returning user greeting
+			displayName := update.Message.From.FirstName
+			if displayName == "" {
+				displayName = username
+				if displayName == "" {
+					displayName = "朋友"
+				}
+			}
+
+			startMsg = fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
+			startMsg += "我可以帮你搜索和请求影视内容\n\n"
+			startMsg += "🔍 *快速搜索*\n"
+			startMsg += "直接输入电影或剧集名称\n\n"
+			startMsg += "📋 *其他功能*\n"
+			startMsg += "`/help` - 查看完整帮助\n"
+			startMsg += "`/recommend` - 智能推荐\n"
+			startMsg += "`/profile` - 我的资料"
 		}
 
-		// Show simplified help
-		helpMsg := "🤖 *云海看板娘*\n\n"
-		helpMsg += "📱 点击左下角菜单查看所有功能\n\n"
-		helpMsg += "• 直接输入内容名搜索\n"
-		helpMsg += "• 点击按钮发起请求\n"
-		helpMsg += "• 完成后自动通知你\n\n"
-		helpMsg += "试试：\n"
-		helpMsg += "• 复仇者联盟\n"
-		helpMsg += "• 权力的游戏\n"
-		helpMsg += "• 2024年的电影"
+		sendPrivateMessage(update.Message.From.ID, startMsg, nil)
+
+		// Complete onboarding after first interaction
+		if isNewUser && onboardingMgr != nil {
+			onboardingMgr.CompleteOnboarding(update.Message.From.ID)
+		}
+
+	case "/help":
+		// /help command - Comprehensive help guide
+		// Get help message from command_center
+		helpMsg := FormatHelpMessage(isAdminUser(update.Message.From.ID))
 		sendPrivateMessage(update.Message.From.ID, helpMsg, nil)
 
 	case "/my", "/myrequests", "/me":
@@ -1665,7 +1682,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			// Use smart search with filters
 			results, err := smartSearch.SearchWithFilter(query, filter)
 			if err != nil {
-				sendPrivateMessage(update.Message.From.ID, "❌ 搜索失败: "+err.Error(), nil)
+				sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "搜索"), nil)
 				log.Printf("Error searching with filter: %v", err)
 				return
 			}
@@ -1676,7 +1693,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			// Fallback to basic search
 			results, err := jellyseerrClient.SearchMedia(query)
 			if err != nil {
-				sendPrivateMessage(update.Message.From.ID, "❌ 搜索失败: "+err.Error(), nil)
+				sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "搜索"), nil)
 				log.Printf("Error searching media: %v", err)
 				return
 			}
@@ -1835,17 +1852,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 		requests, err := jellyseerrClient.GetPendingRequests()
 		if err != nil {
-			// 检查是否是403权限错误
-			if strings.Contains(err.Error(), "403") {
-				msg := "❌ 无法访问 Jellyseerr API\n\n"
-				msg += "可能原因：\n"
-				msg += "• API Key 权限不足\n"
-				msg += "• API Key 配置错误\n\n"
-				msg += "请检查 Jellyseerr 设置中的 API Key 权限"
-				sendPrivateMessage(update.Message.From.ID, msg, nil)
-				return
-			}
-			sendPrivateMessage(update.Message.From.ID, "❌ 获取失败: "+err.Error(), nil)
+			sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "获取待处理请求"), nil)
 			log.Printf("Error getting pending requests: %v", err)
 			return
 		}
@@ -1882,7 +1889,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 
 		if err := jellyseerrClient.ApproveRequest(requestID); err != nil {
-			sendPrivateMessage(update.Message.From.ID, "❌ 批准失败: "+err.Error(), nil)
+			sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "批准请求"), nil)
 			return
 		}
 
@@ -1918,7 +1925,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 
 		if err := jellyseerrClient.DeclineRequest(requestID); err != nil {
-			sendPrivateMessage(update.Message.From.ID, "❌ 拒绝失败: "+err.Error(), nil)
+			sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "拒绝请求"), nil)
 			return
 		}
 
@@ -2286,9 +2293,64 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			sendPrivateMessage(update.Message.From.ID, "❌ 成就功能暂不可用", nil)
 		}
 
+	case "/ai":
+		// AI assistant command
+		parts := strings.Fields(text)
+		var args string
+		if len(parts) > 1 {
+			args = strings.Join(parts[1:], " ")
+		}
+		response, err := ai.HandleAICommand(update.Message.From.ID, args)
+		if err != nil {
+			msg := "🤖 *AI 助手错误*\n\n"
+			if strings.Contains(err.Error(), "not enabled") {
+				msg += "AI 功能暂未启用\n\n"
+				msg += "💡 请联系管理员配置 ZHIPU_API_KEY 或 CLAUDE_API_KEY"
+			} else {
+				msg += "抱歉，AI 服务暂时不可用\n\n"
+				msg += "💡 请稍后再试"
+			}
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			sendPrivateMessage(update.Message.From.ID, response, nil)
+		}
+
 	case "/recommend", "/rec", "/suggest":
-		// Show recommendations
-		sendPrivateMessage(update.Message.From.ID, "🎯 *智能推荐*\n\n功能开发中，敬请期待！", nil)
+		// Smart recommendations - integrate with AI
+		parts := strings.Fields(text)
+		var mood string
+		if len(parts) > 1 {
+			mood = strings.Join(parts[1:], " ")
+		}
+
+		if mood == "" {
+			// Show mood options
+			msg := "🎯 *智能推荐*\n\n"
+			msg += "请告诉我你的心情或偏好：\n\n"
+			msg += "• 开心/放松 - 轻松喜剧\n"
+			msg += "• 紧张/刺激 - 悬疑惊悚\n"
+			msg += "• 感动/温情 - 爱情剧情\n"
+			msg += "• 好奇/探索 - 科幻纪录片\n\n"
+			msg += "用法: /recommend 心情"
+			sendPrivateMessage(update.Message.From.ID, msg, nil)
+		} else {
+			// Get AI recommendations
+			result, err := ai.GetAIRecommendations(mood, 5)
+			if err != nil {
+				// Provide user-friendly error message for AI failures
+				msg := "🤖 *推荐失败*\n\n"
+				if strings.Contains(err.Error(), "AI is not enabled") {
+					msg += "AI 功能暂未启用\n\n"
+					msg += "💡 请联系管理员配置 ZHIPU_API_KEY 或 CLAUDE_API_KEY"
+				} else {
+					msg += "抱歉，AI 服务暂时不可用\n\n"
+					msg += "💡 请稍后再试或联系管理员"
+				}
+				sendPrivateMessage(update.Message.From.ID, msg, nil)
+			} else {
+				sendPrivateMessage(update.Message.From.ID, result, nil)
+			}
+		}
 
 	case "/trending", "/hot":
 		// Show trending searches
@@ -4603,5 +4665,108 @@ func hasChinese(text string) bool {
 		}
 	}
 	return false
+}
+
+// formatAPIError formats API errors for user display with actionable guidance
+// This provides enterprise-level error handling with diagnostics
+func formatAPIError(err error, context string) string {
+	if err == nil {
+		return ""
+	}
+
+	errMsg := err.Error()
+
+	// Build user-friendly error message with diagnostic information
+	msg := "❌ *操作失败*\n\n"
+
+	// Parse error type and provide specific guidance
+	switch {
+	case strings.Contains(errMsg, "401") || strings.Contains(errMsg, "unauthorized") || strings.Contains(errMsg, "ERR_UNAUTHORIZED"):
+		msg += "🔑 *API 认证失败*\n\n"
+		msg += "可能原因：\n"
+		msg += "• API Key 无效或已过期\n"
+		msg += "• API Key 配置错误\n\n"
+		msg += "📋 请联系管理员检查 JELLYSEERR_API_KEY 配置"
+
+	case strings.Contains(errMsg, "403") || strings.Contains(errMsg, "forbidden") || strings.Contains(errMsg, "ERR_FORBIDDEN"):
+		msg += "🚫 *权限不足*\n\n"
+		msg += "可能原因：\n"
+		msg += "• API Key 权限不足\n"
+		msg += "• 当前操作需要更高权限\n\n"
+		msg += "📋 请检查 Jellyseerr 设置中的 API Key 权限"
+
+	case strings.Contains(errMsg, "404") || strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "ERR_NOT_FOUND"):
+		msg += "🔍 *资源未找到*\n\n"
+		msg += "可能原因：\n"
+		msg += "• 请求的内容不存在\n"
+		msg += "• ID 或路径错误\n\n"
+		msg += "💡 请检查输入的 ID 是否正确"
+
+	case strings.Contains(errMsg, "429") || strings.Contains(errMsg, "rate limit") || strings.Contains(errMsg, "ERR_RATE_LIMIT"):
+		msg += "⏱️ *请求过于频繁*\n\n"
+		msg += "请求超出速率限制，请稍后再试"
+
+	case strings.Contains(errMsg, "400") || strings.Contains(errMsg, "bad request") || strings.Contains(errMsg, "ERR_BAD_REQUEST"):
+		msg += "📝 *请求格式错误*\n\n"
+		msg += "可能原因：\n"
+		msg += "• 请求参数不正确\n"
+		msg += "• 数据格式不符合要求\n\n"
+		// Try to extract the actual error message from Jellyseerr
+		if strings.Contains(errMsg, "|") {
+			parts := strings.Split(errMsg, "|")
+			if len(parts) > 1 {
+				actualError := strings.TrimSpace(parts[len(parts)-1])
+				if strings.HasPrefix(actualError, "Error:") {
+					actualError = strings.TrimPrefix(actualError, "Error:")
+					actualError = strings.TrimSpace(actualError)
+				}
+				msg += "🔴 错误详情: " + actualError
+			}
+		}
+
+	case strings.Contains(errMsg, "timeout") || strings.Contains(errMsg, "deadline exceeded"):
+		msg += "⏰ *请求超时*\n\n"
+		msg += "服务器响应时间过长，请稍后再试"
+
+	case strings.Contains(errMsg, "connection") || strings.Contains(errMsg, "connect") || strings.Contains(errMsg, "ERR_HTTP_CLIENT"):
+		msg += "🔌 *连接失败*\n\n"
+		msg += "无法连接到 Jellyseerr 服务器\n\n"
+		msg += "可能原因：\n"
+		msg += "• 服务器地址配置错误\n"
+		msg += "• 网络连接问题\n"
+		msg += "• Jellyseerr 服务未运行"
+
+	default:
+		// Generic error with context
+		msg += "❌ *" + context + "失败*\n\n"
+		// Only show technical details in debug mode or to admins
+		if len(errMsg) < 100 {
+			msg += "详情: " + errMsg
+		} else {
+			msg += "详情: " + errMsg[:100] + "..."
+		}
+	}
+
+	// Add diagnostic info for debugging
+	if context != "" {
+		msg += "\n\n📊 上下文: " + context
+	}
+
+	return msg
+}
+
+// isAdminUser checks if a user is an administrator
+// This is a centralized helper function for admin checks
+func isAdminUser(userID int64) bool {
+	userIDStr := fmt.Sprintf("%d", userID)
+	adminsMutex.RLock()
+	_, exists := admins[userIDStr]
+	adminsMutex.RUnlock()
+	return exists
+}
+
+// isUserAdmin checks if a user is an administrator (alternate naming for compatibility)
+func isUserAdmin(userID int64) bool {
+	return isAdminUser(userID)
 }
 

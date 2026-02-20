@@ -10,8 +10,11 @@ import (
 	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
+
+	apperrors "emby-telegram-bot/internal/errors"
 )
 
 var (
@@ -144,26 +147,38 @@ func InitJellyseerrClient() {
 	log.Println("Jellyseerr API client initialized")
 }
 
-// makeRequest makes an authenticated request to Jellyseerr API
+// APIErrorResponse represents a standardized error response from Jellyseerr
+type APIErrorResponse struct {
+	ErrorMessage string `json:"errorMessage"`
+	Error        string `json:"error"`
+	StatusCode   int    `json:"statusCode"`
+	Message      string `json:"message"`
+}
+
+// makeRequest makes an authenticated request to Jellyseerr API with enterprise-level error handling
 func (c *JellyseerrClient) makeRequest(method, path string, body interface{}) ([]byte, error) {
 	if c == nil {
-		return nil, fmt.Errorf("Jellyseerr client not initialized")
+		return nil, apperrors.Internal("Jellyseerr client not initialized").WithDetails("JELLYSEERR_URL environment variable may not be set")
 	}
 
-	url := c.baseURL + "/api/v1" + path
+	fullURL := c.baseURL + "/api/v1" + path
 
+	// Prepare request body
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
 		if err != nil {
-			return nil, err
+			return nil, apperrors.Wrap(err, "ERR_JSON_ENCODE", "failed to encode request body")
 		}
 		reqBody = bytes.NewBuffer(jsonData)
+		log.Printf("[Jellyseerr] %s %s", method, fullURL)
+	} else {
+		log.Printf("[Jellyseerr] %s %s", method, fullURL)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequest(method, fullURL, reqBody)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(err, "ERR_HTTP_REQUEST", "failed to create HTTP request")
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -171,20 +186,73 @@ func (c *JellyseerrClient) makeRequest(method, path string, body interface{}) ([
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(err, "ERR_HTTP_CLIENT", "HTTP request failed").
+			WithDetails(fmt.Sprintf("Failed to reach Jellyseerr at %s", c.baseURL))
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, apperrors.Wrap(err, "ERR_HTTP_READ", "failed to read response body")
 	}
 
+	// Handle error responses with detailed diagnostics
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error: %d - %s", resp.StatusCode, string(respBody))
+		return nil, c.handleAPIError(resp.StatusCode, respBody, method, path)
 	}
 
 	return respBody, nil
+}
+
+// handleAPIError processes API error responses with detailed diagnostics
+func (c *JellyseerrClient) handleAPIError(statusCode int, respBody []byte, method, path string) error {
+	// Try to parse structured error response
+	var apiErr APIErrorResponse
+	if json.Unmarshal(respBody, &apiErr) == nil {
+		errorMsg := apiErr.ErrorMessage
+		if errorMsg == "" {
+			errorMsg = apiErr.Error
+		}
+		if errorMsg == "" {
+			errorMsg = apiErr.Message
+		}
+		if errorMsg == "" {
+			errorMsg = string(respBody)
+		}
+
+		// Map status codes to semantic error types
+		switch statusCode {
+		case 400:
+			return apperrors.BadRequest("Jellyseerr API rejected the request").
+				WithDetails(fmt.Sprintf("Path: %s %s | Error: %s", method, path, errorMsg))
+		case 401:
+			return apperrors.Unauthorized("Jellyseerr API key is invalid").
+				WithDetails("Please check JELLYSEERR_API_KEY environment variable")
+		case 403:
+			return apperrors.Forbidden("Jellyseerr API key lacks permission").
+				WithDetails(fmt.Sprintf("Path: %s requires additional permissions", path))
+		case 404:
+			return apperrors.NotFound("Resource not found in Jellyseerr").
+				WithDetails(fmt.Sprintf("Path: %s | Error: %s", path, errorMsg))
+		case 429:
+			return apperrors.RateLimitExceeded(60).
+				WithDetails("Jellyseerr rate limit exceeded, please retry later")
+		default:
+			return apperrors.ExternalServiceFailed("Jellyseerr",
+				fmt.Errorf("HTTP %d: %s", statusCode, errorMsg)).
+				WithDetails(fmt.Sprintf("Request: %s %s", method, path))
+		}
+	}
+
+	// Fallback: raw response couldn't be parsed
+	bodyStr := string(respBody)
+	if len(bodyStr) > 200 {
+		bodyStr = bodyStr[:200] + "..."
+	}
+
+	return apperrors.ExternalServiceFailed("Jellyseerr",
+		fmt.Errorf("HTTP %d", statusCode)).
+		WithDetails(fmt.Sprintf("Request: %s %s | Response: %s", method, path, bodyStr))
 }
 
 // ApproveRequest approves a media request

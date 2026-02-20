@@ -112,18 +112,36 @@ func (m *BotModule) HandleCallback(update *TelegramUpdate) {
 		return
 	}
 
-	// Answer the callback first
-	callbackID := update.CallbackQuery.ID
-	m.messageEditor.AnswerCallback(callbackID, "", false)
+	log.Printf("[BotModule] Received callback: %s", update.CallbackQuery.Data)
 
 	response := m.handler.HandleCallback(update)
 
+	if response == nil {
+		log.Printf("[BotModule] No response from callback handler")
+		m.messageEditor.AnswerCallback(update.CallbackQuery.ID, "", false)
+		return
+	}
+
+	log.Printf("[BotModule] Handler response: ShowAlert=%v, Text=%s", response.ShowAlert, response.Text)
+
+	// Answer the callback query
+	// If there's alert text, show it; otherwise just acknowledge
+	answerText := response.Text
+	if answerText == "" {
+		answerText = ""
+	}
+	err := m.messageEditor.AnswerCallback(update.CallbackQuery.ID, answerText, response.ShowAlert)
+	if err != nil {
+		log.Printf("[BotModule] AnswerCallback error: %v", err)
+	}
+
 	log.Printf("[BotModule] Callback response: EditMode=%v, TextLen=%d, KeyboardLen=%d",
-		response != nil && response.EditMode,
+		response.EditMode,
 		len(response.Text),
 		len(response.Keyboard))
 
-	if response != nil && response.EditMode {
+	// Edit message if needed
+	if response.EditMode {
 		chatID := update.CallbackQuery.Message.Chat.ID
 		messageID := update.CallbackQuery.Message.MessageID
 		log.Printf("[BotModule] Editing message: chatID=%d, messageID=%d", chatID, messageID)

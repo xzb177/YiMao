@@ -18,6 +18,7 @@ type Handler struct {
 	sessionManager *session.SessionManager
 	callbackParser *callback.CallbackParser
 	messageEditor  *MessageEditor
+	displayBuilder *DisplayBuilder
 	quotaManager   *QuotaManager
 	feedbackManager *FeedbackManager
 
@@ -56,6 +57,7 @@ func NewHandler() *Handler {
 		sessionManager: session.NewSessionManager(),
 		callbackParser: callback.NewCallbackParser(),
 		messageEditor:  NewMessageEditor(),
+		displayBuilder: NewDisplayBuilder(callback.NewCallbackParser()),
 		searchHandlers: make(map[string]SearchHandler),
 		subscribeHandlers: make(map[string]SubscribeHandler),
 		downloadHandlers: make(map[string]DownloadHandler),
@@ -167,9 +169,12 @@ func (h *Handler) HandleCallback(update *TelegramUpdate) *CallbackResponse {
 		}
 	}
 
+	log.Printf("[Handler] Parsed callback: action=%s, data=%v", cb.Action, cb.Data)
+
 	// Get user session
 	session := h.sessionManager.GetSession(userID)
 	if session == nil {
+		log.Printf("[Handler] No session found for user %d", userID)
 		return &CallbackResponse{
 			ShowAlert: true,
 			Text:     "会话已过期，请重新开始",
@@ -202,6 +207,7 @@ func (h *Handler) HandleCallback(update *TelegramUpdate) *CallbackResponse {
 		return h.handleBackCallback(session, cb)
 
 	default:
+		log.Printf("[Handler] Unknown callback action: %s", cb.Action)
 		return &CallbackResponse{
 			ShowAlert: false,
 			Text:     "未知操作",
@@ -250,6 +256,17 @@ func (h *Handler) handleCommand(session *session.UserSession, command string) *M
 
 	case "/pending":
 		return h.handlePending(session)
+
+	case "/link":
+		if args == "" {
+			return &MessageResponse{
+				Text: "请输入账号信息\n格式: /link 账号 密码",
+			}
+		}
+		return h.handleLinkCommand(session, args)
+
+	case "/quota":
+		return h.handleQuotaCommand(session)
 
 	case "/feedback", "/fb":
 		return h.handleFeedback(session, args)
@@ -411,6 +428,65 @@ func (h *Handler) handleAllIssues(session *session.UserSession) *MessageResponse
 	}
 }
 
+// handleLinkCommand handles link command
+func (h *Handler) handleLinkCommand(session *session.UserSession, args string) *MessageResponse {
+	parts := strings.Fields(args)
+	if len(parts) < 2 {
+		return &MessageResponse{
+			Text: "🔗 绑定账号\n\n格式: /link 账号 密码\n\n示例: /link myusername mypassword",
+		}
+	}
+
+	// This would typically be handled by the legacy system
+	// For now, return a message directing to use legacy handler
+	return &MessageResponse{
+		Text: "🔗 绑定账号\n\n请使用旧版本命令进行绑定",
+	}
+}
+
+// handleQuotaCommand handles quota command
+func (h *Handler) handleQuotaCommand(session *session.UserSession) *MessageResponse {
+	if h.quotaManager == nil {
+		return &MessageResponse{
+			Text: "配额功能暂不可用",
+		}
+	}
+
+	quota := h.quotaManager.GetUserQuota(session.UserID)
+	if quota == nil {
+		return &MessageResponse{
+			Text: "❌ 未找到配额信息\n\n请先使用 /link 绑定账号",
+		}
+	}
+
+	// Build quota status message
+	var text strings.Builder
+	text.WriteString("📊 今日配额使用情况\n\n")
+
+	text.WriteString(fmt.Sprintf("🎬 电影: %d/%d", quota.MovieUsed, quota.MovieLimit))
+	if quota.MovieUsed < quota.MovieLimit {
+		remaining := quota.MovieLimit - quota.MovieUsed
+		text.WriteString(fmt.Sprintf(" (剩余 %d)", remaining))
+	} else {
+		text.WriteString(" (已用完)")
+	}
+	text.WriteString("\n")
+
+	text.WriteString(fmt.Sprintf("📺 剧集: %d/%d", quota.TVUsed, quota.TVLimit))
+	if quota.TVUsed < quota.TVLimit {
+		remaining := quota.TVLimit - quota.TVUsed
+		text.WriteString(fmt.Sprintf(" (剩余 %d)", remaining))
+	} else {
+		text.WriteString(" (已用完)")
+	}
+
+	text.WriteString("\n\n💡 配额每天 00:00 自动重置")
+
+	return &MessageResponse{
+		Text: text.String(),
+	}
+}
+
 // containsAny checks if the text contains any of the keywords
 func containsAny(text string, keywords []string) bool {
 	for _, kw := range keywords {
@@ -428,9 +504,7 @@ func (h *Handler) handleSearch(session *session.UserSession, query string) *Mess
 	h.mu.RUnlock()
 
 	if !exists {
-		return &MessageResponse{
-			Text: "搜索功能暂不可用",
-		}
+		return h.displayBuilder.BuildErrorMessage("搜索功能暂不可用", "请稍后再试或联系管理员")
 	}
 
 	// Reset to first page for new search
@@ -441,23 +515,19 @@ func (h *Handler) handleSearch(session *session.UserSession, query string) *Mess
 
 	result, err := handler(session.UserID, query, session.CurrentPage)
 	if err != nil {
-		return &MessageResponse{
-			Text: fmt.Sprintf("❌ 搜索失败\n\n%s", err.Error()),
-		}
+		return h.displayBuilder.BuildErrorMessage("搜索失败", err.Error())
 	}
 
 	if result == nil || len(result.Items) == 0 {
-		return &MessageResponse{
-			Text: fmt.Sprintf("🔍 未找到相关内容\n\n关键词：%s\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简单的关键词\n• 尝试使用影片的英文名", query),
-		}
+		return h.displayBuilder.BuildNoResultsMessage(query)
 	}
 
 	// Store results in session
 	session.SearchResults = result.Items
 	session.TotalResults = result.Total
 
-	// Build response with inline keyboard
-	return h.buildSearchResultsMessage(session, result)
+	// Build response with inline keyboard using display builder
+	return h.displayBuilder.BuildSearchResultsMessage(session, result)
 }
 
 // handleNumericInput handles numeric selections (1-8 for items, 0 for auto)
@@ -711,129 +781,27 @@ func (h *Handler) sendHelpMessage(session *session.UserSession) *MessageResponse
 }
 
 func (h *Handler) buildSearchResultsMessage(session *session.UserSession, result *SearchResult) *MessageResponse {
-	var text strings.Builder
-
-	// Header
-	text.WriteString("🔍 搜索结果\n\n")
-	text.WriteString(fmt.Sprintf("📝 关键词：%s\n", session.SearchQuery))
-	totalPages := (result.Total + 7) / 8
-	text.WriteString(fmt.Sprintf("📄 第 %d/%d 页 (共 %d 条结果)\n\n",
-		session.CurrentPage+1, totalPages, result.Total))
-	text.WriteString("━━━━━━━━━━━━━━━━\n\n")
-
-	// Items
-	startIdx := session.CurrentPage * 8
-	for i, item := range result.Items {
-		num := startIdx + i + 1
-		text.WriteString(fmt.Sprintf("%d. %s", num, item.Title))
-		if item.Year > 0 {
-			text.WriteString(fmt.Sprintf(" (%d)", item.Year))
-		}
-		if item.Rating > 0 {
-			text.WriteString(fmt.Sprintf(" ⭐%.1f", item.Rating))
-		}
-		text.WriteString("\n")
-	}
-
-	// Build inline keyboard
-	keyboard := [][]map[string]string{}
-
-	// Item buttons
-	row := []string{}
-	for i := range result.Items {
-		num := i + 1
-		row = append(row, fmt.Sprintf("%d", num))
-		if len(row) == 4 {
-			keyboard = append(keyboard, h.buildButtonRow(row, "select", session))
-			row = []string{}
-		}
-	}
-	if len(row) > 0 {
-		keyboard = append(keyboard, h.buildButtonRow(row, "select", session))
-	}
-
-	// Navigation buttons
-	navRow := []map[string]string{}
-	if session.CurrentPage > 0 {
-		navRow = append(navRow, map[string]string{
-			"text":         "⬅️ 上一页",
-			"callback_data": h.callbackParser.Format("page", fmt.Sprintf("%d", session.CurrentPage)),
-		})
-	}
-	maxPage := (result.Total + 7) / 8
-	if session.CurrentPage < maxPage-1 {
-		navRow = append(navRow, map[string]string{
-			"text":         "下一页➡️",
-			"callback_data": h.callbackParser.Format("page", fmt.Sprintf("%d", session.CurrentPage+2)),
-		})
-	}
-	if len(navRow) > 0 {
-		keyboard = append(keyboard, navRow)
-	}
-
-	// Cancel button
-	keyboard = append(keyboard, []map[string]string{{
-		"text":         "❌ 取消",
-		"callback_data": h.callbackParser.Format("cancel", ""),
-	}})
-
-	return &MessageResponse{
-		Text:     text.String(),
-		Keyboard: keyboard,
-		EditMode: session.LastMessageID > 0,
-	}
+	// Use the new display builder for beautiful formatting
+	return h.displayBuilder.BuildSearchResultsMessage(session, result)
 }
 
 func (h *Handler) buildItemDetailsMessage(session *session.UserSession, item *SearchItem) *MessageResponse {
-	var text strings.Builder
-
-	text.WriteString(fmt.Sprintf("📺 %s (%d)\n\n", item.Title, item.Year))
-	if item.Rating > 0 {
-		text.WriteString(fmt.Sprintf("⭐ 评分: %.1f\n", item.Rating))
-	}
-	text.WriteString(fmt.Sprintf("🏷️ 类型: %s\n", item.Type))
-
-	if len(item.Seasons) > 0 {
-		text.WriteString(fmt.Sprintf("📺 季数: %v\n", item.Seasons))
-	}
-
-	// Build action buttons
-	keyboard := [][]map[string]string{
-		{
-			{"text": "📋 订阅", "callback_data": h.callbackParser.FormatWithData("subscribe", map[string]string{
-				"id":   item.ID,
-				"type": item.Type,
-			})},
-			{"text": "🔍 搜索下载", "callback_data": h.callbackParser.FormatWithData("search", map[string]string{
-				"id":   item.ID,
-				"type": item.Type,
-			})},
-		},
-		{
-			{"text": "⬅️ 返回", "callback_data": h.callbackParser.Format("page", fmt.Sprintf("%d", session.CurrentPage+1))},
-			{"text": "❌ 取消", "callback_data": h.callbackParser.Format("cancel", "")},
-		},
+	// Get quota info
+	var quota *QuotaInfo
+	if h.quotaManager != nil {
+		q := h.quotaManager.GetUserQuota(session.UserID)
+		if q != nil {
+			quota = &QuotaInfo{
+				MovieLimit: q.MovieLimit,
+				MovieUsed:  q.MovieUsed,
+				TVLimit:    q.TVLimit,
+				TVUsed:     q.TVUsed,
+			}
+		}
 	}
 
-	return &MessageResponse{
-		Text:     text.String(),
-		Keyboard: keyboard,
-		EditMode: true,
-	}
-}
-
-func (h *Handler) buildButtonRow(labels []string, action string, session *session.UserSession) []map[string]string {
-	row := []map[string]string{}
-	for _, label := range labels {
-		row = append(row, map[string]string{
-			"text":         label,
-			"callback_data": h.callbackParser.FormatWithData(action, map[string]string{
-				"index": label,
-				"page":  fmt.Sprintf("%d", session.CurrentPage+1),
-			}),
-		})
-	}
-	return row
+	// Use the new display builder for beautiful formatting
+	return h.displayBuilder.BuildItemDetailsMessage(session, item, quota)
 }
 
 // Placeholder handlers for callbacks
@@ -866,119 +834,32 @@ func (h *Handler) handleSelectCallback(session *session.UserSession, cb *callbac
 }
 
 func (h *Handler) buildItemDetailsCallbackResponse(session *session.UserSession, item *SearchItem) *CallbackResponse {
-	var text strings.Builder
-
 	// Debug logging
 	log.Printf("[Handler] Item details: Title='%s', Year=%d, Type='%s', Rating=%.1f, ID='%s'",
 		item.Title, item.Year, item.Type, item.Rating, item.ID)
 
-	// Use title if available, otherwise use ID
-	displayTitle := item.Title
-	if displayTitle == "" {
-		displayTitle = fmt.Sprintf("媒体 ID: %s", item.ID)
-	}
-
-	// Build header with title
-	if item.Year > 0 {
-		text.WriteString(fmt.Sprintf("🎬 %s (%d)\n\n", displayTitle, item.Year))
-	} else {
-		text.WriteString(fmt.Sprintf("🎬 %s\n\n", displayTitle))
-	}
-
-	// Rating
-	if item.Rating > 0 {
-		text.WriteString(fmt.Sprintf("⭐ %.1f 分\n", item.Rating))
-	}
-
-	// Media type with better labels
-	mediaType := "电影"
-	if item.Type == "tv" {
-		mediaType = "剧集"
-	} else if item.Type == "" {
-		mediaType = "电影/剧集"
-	}
-	text.WriteString(fmt.Sprintf("📺 %s\n", mediaType))
-
-	// Add quota info if available with better formatting
+	// Get quota info
+	var quota *QuotaInfo
 	if h.quotaManager != nil {
-		quota := h.quotaManager.GetUserQuota(session.UserID)
-
-		text.WriteString("\n━━━━━━━━━━━━━━━━\n")
-		text.WriteString("📊 今日配额状态\n\n")
-
-		// Show remaining quota based on media type
-		if mediaType == "电影" || item.Type == "movie" {
-			remaining := quota.MovieLimit - quota.MovieUsed
-			if remaining > 0 {
-				text.WriteString(fmt.Sprintf("💡 还可请求 %d 部电影 (共 %d 部)", remaining, quota.MovieLimit))
-			} else {
-				text.WriteString("🚫 今日电影配额已用完")
-				text.WriteString("\n💡 明天配额会自动重置")
-			}
-		} else if mediaType == "剧集" || item.Type == "tv" {
-			remaining := quota.TVLimit - quota.TVUsed
-			if remaining > 0 {
-				text.WriteString(fmt.Sprintf("💡 还可请求 %d 部剧集 (共 %d 部)", remaining, quota.TVLimit))
-			} else {
-				text.WriteString("🚫 今日剧集配额已用完")
-				text.WriteString("\n💡 明天配额会自动重置")
-			}
-		} else {
-			// Show both when type is unknown
-			text.WriteString(fmt.Sprintf("🎬 电影: %d/%d\n", quota.MovieUsed, quota.MovieLimit))
-			text.WriteString(fmt.Sprintf("📺 剧集: %d/%d", quota.TVUsed, quota.TVLimit))
-		}
-	}
-
-	// Build action buttons - disable request button if no quota
-	var keyboard [][]map[string]string
-
-	// Check if user has quota for this media type
-	hasQuota := true
-	buttonText := "📋 发起请求"
-
-	if h.quotaManager != nil {
-		quota := h.quotaManager.GetUserQuota(session.UserID)
-		if mediaType == "电影" || item.Type == "movie" {
-			if quota.MovieUsed >= quota.MovieLimit {
-				hasQuota = false
-				buttonText = "🚫 配额已用完"
-			}
-		} else if mediaType == "剧集" || item.Type == "tv" {
-			if quota.TVUsed >= quota.TVLimit {
-				hasQuota = false
-				buttonText = "🚫 配额已用完"
+		q := h.quotaManager.GetUserQuota(session.UserID)
+		if q != nil {
+			quota = &QuotaInfo{
+				MovieLimit: q.MovieLimit,
+				MovieUsed:  q.MovieUsed,
+				TVLimit:    q.TVLimit,
+				TVUsed:     q.TVUsed,
 			}
 		}
 	}
 
-	if hasQuota {
-		keyboard = [][]map[string]string{
-			{
-				{"text": buttonText, "callback_data": h.callbackParser.FormatWithData("subscribe", map[string]string{
-					"id":    item.ID,
-					"title": displayTitle,
-					"type":  item.Type,
-				})},
-			},
-			{
-				{"text": "⬅️ 返回列表", "callback_data": h.callbackParser.Format("back", "results")},
-				{"text": "❌ 关闭", "callback_data": h.callbackParser.Format("cancel", "")},
-			},
-		}
-	} else {
-		// Show info button instead when quota is used up
-		keyboard = [][]map[string]string{
-			{
-				{"text": "❌ 关闭", "callback_data": h.callbackParser.Format("cancel", "")},
-			},
-		}
-	}
+	// Use the new display builder
+	msgResp := h.displayBuilder.BuildItemDetailsMessage(session, item, quota)
 
+	// Convert to CallbackResponse
 	return &CallbackResponse{
-		Text:     text.String(),
-		Keyboard: keyboard,
-		EditMode:  true,
+		Text:     msgResp.Text,
+		Keyboard: msgResp.Keyboard,
+		EditMode: true,
 	}
 }
 
@@ -1209,73 +1090,22 @@ func (h *Handler) buildSearchResultsCallbackResponse(session *session.UserSessio
 		endIdx = len(session.SearchResults)
 	}
 
-	totalPages := (session.TotalResults + pageSize - 1) / pageSize
-
-	var text strings.Builder
-	text.WriteString("🔍 搜索结果\n\n")
-	text.WriteString(fmt.Sprintf("📝 关键词：%s\n", session.SearchQuery))
-	text.WriteString(fmt.Sprintf("📄 第 %d/%d 页 (共 %d 条结果)\n\n",
-		session.CurrentPage+1, totalPages, session.TotalResults))
-	text.WriteString("━━━━━━━━━━━━━━━━\n\n")
-
-	// Display current page results
-	for i := startIdx; i < endIdx; i++ {
-		item := session.SearchResults[i]
-		num := i + 1
-		text.WriteString(fmt.Sprintf("%d. %s", num, item.Title))
-		if item.Year > 0 {
-			text.WriteString(fmt.Sprintf(" (%d)", item.Year))
-		}
-		if item.Rating > 0 {
-			text.WriteString(fmt.Sprintf(" ⭐%.1f", item.Rating))
-		}
-		text.WriteString("\n")
+	// Build a result object for display
+	result := &SearchResult{
+		Query:    session.SearchQuery,
+		Page:     session.CurrentPage,
+		PageSize: pageSize,
+		Total:    session.TotalResults,
+		Items:    session.SearchResults[startIdx:endIdx],
 	}
 
-	// Build keyboard
-	keyboard := [][]map[string]string{}
-
-	// Item buttons (4 per row)
-	row := []string{}
-	for i := startIdx; i < endIdx; i++ {
-		row = append(row, fmt.Sprintf("%d", i-startIdx+1))
-		if len(row) == 4 {
-			keyboard = append(keyboard, h.buildButtonRow(row, "select", session))
-			row = []string{}
-		}
-	}
-	if len(row) > 0 {
-		keyboard = append(keyboard, h.buildButtonRow(row, "select", session))
-	}
-
-	// Navigation buttons
-	navRow := []map[string]string{}
-	if session.CurrentPage > 0 {
-		navRow = append(navRow, map[string]string{
-			"text":         "⬅️ 上一页",
-			"callback_data": h.callbackParser.Format("page", "page", fmt.Sprintf("%d", session.CurrentPage)),
-		})
-	}
-	if session.CurrentPage < totalPages-1 {
-		navRow = append(navRow, map[string]string{
-			"text":         "下一页➡️",
-			"callback_data": h.callbackParser.Format("page", "page", fmt.Sprintf("%d", session.CurrentPage+2)),
-		})
-	}
-	if len(navRow) > 0 {
-		keyboard = append(keyboard, navRow)
-	}
-
-	// Cancel button
-	keyboard = append(keyboard, []map[string]string{{
-		"text":         "❌ 取消",
-		"callback_data": h.callbackParser.Format("cancel", ""),
-	}})
+	// Use the display builder
+	msgResp := h.displayBuilder.BuildSearchResultsMessage(session, result)
 
 	return &CallbackResponse{
-		Text:     text.String(),
-		Keyboard: keyboard,
-		EditMode:  true,
+		Text:     msgResp.Text,
+		Keyboard: msgResp.Keyboard,
+		EditMode: true,
 	}
 }
 
@@ -1422,8 +1252,8 @@ func (h *Handler) GinCallbackHandler() gin.HandlerFunc {
 				if response.EditMode {
 					chatID := update.CallbackQuery.Message.Chat.ID
 					messageID := update.CallbackQuery.Message.MessageID
-					// Build new message text based on action
-					h.messageEditor.EditMessage(chatID, messageID, response.Text, nil)
+					// Edit message with keyboard
+					h.messageEditor.EditMessage(chatID, messageID, response.Text, response.Keyboard)
 				}
 			}
 		}
