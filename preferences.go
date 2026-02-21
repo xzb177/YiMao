@@ -85,8 +85,8 @@ func (pm *PreferenceManager) SetPreferences(userID string, prefs *UserPreference
 	prefs.UserID = userID
 	pm.preferences[userID] = prefs
 
-	// Save to file
-	savePreferencesToFile()
+	// Save to file - use internal method that assumes lock is held
+	pm.savePreferencesToFileLocked()
 }
 
 // ShouldNotify determines if a user should receive a notification
@@ -208,6 +208,7 @@ func contains(s, substr string) bool {
 }
 
 // savePreferencesToFile saves preferences to disk
+// Note: This function is designed to be called when the caller does NOT hold the mutex
 func savePreferencesToFile() {
 	if prefManager == nil {
 		return
@@ -216,7 +217,13 @@ func savePreferencesToFile() {
 	prefManager.mutex.Lock()
 	defer prefManager.mutex.Unlock()
 
-	data, err := json.MarshalIndent(prefManager.preferences, "", "  ")
+	prefManager.savePreferencesToFileLocked()
+}
+
+// savePreferencesToFileLocked saves preferences to disk
+// Note: This function assumes the caller already holds the mutex
+func (pm *PreferenceManager) savePreferencesToFileLocked() {
+	data, err := json.MarshalIndent(pm.preferences, "", "  ")
 	if err != nil {
 		log.Printf("Error marshaling preferences: %v", err)
 		return
@@ -229,6 +236,7 @@ func savePreferencesToFile() {
 }
 
 // loadPreferencesFromFile loads preferences from disk
+// Note: This function should only be called during initialization when no other goroutines are running
 func loadPreferencesFromFile() {
 	data, err := os.ReadFile("/root/emby-telegram-bot/preferences.json")
 	if err != nil {
@@ -236,13 +244,20 @@ func loadPreferencesFromFile() {
 		return
 	}
 
-	err = json.Unmarshal(data, &prefManager.preferences)
-	if err != nil {
+	// Parse into a temporary map first to avoid concurrent access issues
+	var tempPrefs map[string]*UserPreferences
+	if err := json.Unmarshal(data, &tempPrefs); err != nil {
 		log.Printf("Error loading preferences: %v", err)
 		return
 	}
 
-	log.Printf("Loaded preferences for %d users", len(prefManager.preferences))
+	// Now assign under lock if prefManager exists
+	if prefManager != nil {
+		prefManager.mutex.Lock()
+		prefManager.preferences = tempPrefs
+		prefManager.mutex.Unlock()
+		log.Printf("Loaded preferences for %d users", len(tempPrefs))
+	}
 }
 
 // FormatPreferences formats user preferences for display

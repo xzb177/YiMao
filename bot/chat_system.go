@@ -239,10 +239,12 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 		cs.mu.Lock()
 		oldProb := cs.chatProbability
 		cs.chatProbability = 100
-		defer func() {
-			cs.chatProbability = oldProb
-		}()
 		cs.mu.Unlock()
+		defer func() {
+			cs.mu.Lock()
+			cs.chatProbability = oldProb
+			cs.mu.Unlock()
+		}()
 	}
 
 	// 判断是否应该回复

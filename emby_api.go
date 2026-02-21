@@ -198,16 +198,18 @@ func GetEmbySeasonInfo(itemID string) (*EmbyItemInfo, error) {
 	// If ChildCount is 0, try to get it from parent items query
 	if info.ChildCount == 0 {
 		childURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1", embyURL, getEmbyUserID(), itemID)
-		req2, _ := http.NewRequest("GET", childURL, nil)
-		req2.Header.Set("X-Emby-Token", apiKey)
-		resp2, err := client.Do(req2)
-		if err == nil && resp2.StatusCode == http.StatusOK {
-			defer resp2.Body.Close()
-			var result struct {
-				TotalRecordCount int `json:"TotalRecordCount"`
-			}
-			if json.NewDecoder(resp2.Body).Decode(&result) == nil {
-				info.ChildCount = result.TotalRecordCount
+		req2, err := http.NewRequest("GET", childURL, nil)
+		if err == nil {
+			req2.Header.Set("X-Emby-Token", apiKey)
+			resp2, err := client.Do(req2)
+			if err == nil && resp2.StatusCode == http.StatusOK {
+				defer resp2.Body.Close()
+				var result struct {
+					TotalRecordCount int `json:"TotalRecordCount"`
+				}
+				if json.NewDecoder(resp2.Body).Decode(&result) == nil {
+					info.ChildCount = result.TotalRecordCount
+				}
 			}
 		}
 	}

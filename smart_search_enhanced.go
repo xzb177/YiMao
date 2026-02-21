@@ -370,13 +370,46 @@ func (m *SmartSearchManager) saveSearchHistory(ctx *SearchContext) {
 	m.searchHistory[ctx.UserID] = userHistory
 }
 
+const (
+	maxCacheSize = 500 // Maximum number of cached search results
+	cacheCleanupThreshold = 600 // Clean up when exceeding this
+)
+
 // cleanExpiredCache removes expired entries from the results cache
+// This function should be called while holding the cacheMutex lock
 func (m *SmartSearchManager) cleanExpiredCache() {
 	now := time.Now()
 	for key, cached := range m.resultsCache {
 		if now.After(cached.ExpireAt) {
 			delete(m.resultsCache, key)
 		}
+	}
+
+	// If cache is still too large, remove oldest entries
+	if len(m.resultsCache) > maxCacheSize {
+		// Remove entries sorted by expiration time
+		type cacheEntry struct {
+			key      string
+			expireAt time.Time
+		}
+		entries := make([]cacheEntry, 0, len(m.resultsCache))
+		for key, cached := range m.resultsCache {
+			entries = append(entries, cacheEntry{key, cached.ExpireAt})
+		}
+		// Sort by expiration time (oldest first)
+		for i := 0; i < len(entries)-1; i++ {
+			for j := i + 1; j < len(entries); j++ {
+				if entries[i].expireAt.After(entries[j].expireAt) {
+					entries[i], entries[j] = entries[j], entries[i]
+				}
+			}
+		}
+		// Remove oldest entries
+		toRemove := len(m.resultsCache) - maxCacheSize
+		for i := 0; i < toRemove; i++ {
+			delete(m.resultsCache, entries[i].key)
+		}
+		log.Printf("[Cache] Cleaned up %d entries to maintain max size", toRemove)
 	}
 }
 
@@ -516,6 +549,10 @@ func (m *SmartSearchManager) syncQuotasFromJellyseerr() {
 			log.Printf("Quota sync: Failed to fetch user %d: %v", jellyseerrID, err)
 			continue
 		}
+		defer func() {
+			io.Copy(io.Discard, userResp.Body) // Drain body before closing
+			userResp.Body.Close()
+		}()
 
 		if userResp.StatusCode == http.StatusOK {
 			var user JellyseerrUser
@@ -528,7 +565,6 @@ func (m *SmartSearchManager) syncQuotasFromJellyseerr() {
 		} else {
 			log.Printf("Quota sync: API returned status %d for user %d", userResp.StatusCode, jellyseerrID)
 		}
-		userResp.Body.Close()
 	}
 
 	// Step 3: Update users with no custom limit to use default limits
@@ -569,6 +605,7 @@ func (m *SmartSearchManager) periodicQuotaSync() {
 }
 
 // getUserQuota gets or creates user quota with default limits
+// Returns a copy of the quota to avoid concurrent modification issues
 func (m *SmartSearchManager) getUserQuota(userID int64) *UserQuota {
 	m.quotaMutex.Lock()
 	defer m.quotaMutex.Unlock()
@@ -584,31 +621,34 @@ func (m *SmartSearchManager) getUserQuota(userID int64) *UserQuota {
 		// Try to fetch from Jellyseerr settings
 		if m.apiKey != "" {
 			url := fmt.Sprintf("%s/api/v1/settings/main", m.jellyseerrURL)
-			req, _ := http.NewRequest("GET", url, nil)
-			req.Header.Set("X-Api-Key", m.apiKey)
+			req, err := http.NewRequest("GET", url, nil)
+			if err == nil {
+				req.Header.Set("X-Api-Key", m.apiKey)
 
-			resp, err := m.httpClient.Do(req)
-			if err == nil && resp.StatusCode == http.StatusOK {
-				var settings struct {
-					DefaultQuotas struct {
-						Movie struct {
-							QuotaLimit int `json:"quotaLimit"`
-						} `json:"movie"`
-						TV struct {
-							QuotaLimit int `json:"quotaLimit"`
-						} `json:"tv"`
-					} `json:"defaultQuotas"`
-				}
-				if err := json.NewDecoder(resp.Body).Decode(&settings); err == nil {
-					// Check if values are valid
-					if settings.DefaultQuotas.Movie.QuotaLimit > 0 {
-						movieLimit = settings.DefaultQuotas.Movie.QuotaLimit
+				resp, err := m.httpClient.Do(req)
+				if err == nil && resp.StatusCode == http.StatusOK {
+					var settings struct {
+						DefaultQuotas struct {
+							Movie struct {
+								QuotaLimit int `json:"quotaLimit"`
+							} `json:"movie"`
+							TV struct {
+								QuotaLimit int `json:"quotaLimit"`
+							} `json:"tv"`
+						} `json:"defaultQuotas"`
 					}
-					if settings.DefaultQuotas.TV.QuotaLimit > 0 {
-						tvLimit = settings.DefaultQuotas.TV.QuotaLimit
+					if err := json.NewDecoder(resp.Body).Decode(&settings); err == nil {
+						// Check if values are valid
+						if settings.DefaultQuotas.Movie.QuotaLimit > 0 {
+							movieLimit = settings.DefaultQuotas.Movie.QuotaLimit
+						}
+						if settings.DefaultQuotas.TV.QuotaLimit > 0 {
+							tvLimit = settings.DefaultQuotas.TV.QuotaLimit
+						}
 					}
+					io.Copy(io.Discard, resp.Body) // Drain body before closing
+					resp.Body.Close()
 				}
-				resp.Body.Close()
 			}
 		}
 
@@ -623,20 +663,30 @@ func (m *SmartSearchManager) getUserQuota(userID int64) *UserQuota {
 			LastSyncDate:    time.Now().Format("2006-01-02"),
 		}
 		m.userQuotas[userID] = quota
-		m.saveQuotasUnsafe()  // Use unsafe version since we already hold the lock
+		// Save in background to avoid holding lock during I/O
+		go m.saveQuotas()
 	}
 
 	// Reset counters if it's a new day
+	needsSave := false
 	if quota.MovieResetDate != today {
 		quota.MovieUsed = 0
 		quota.MovieResetDate = today
+		needsSave = true
 	}
 	if quota.TVResetDate != today {
 		quota.TVUsed = 0
 		quota.TVResetDate = today
+		needsSave = true
 	}
 
-	return quota
+	// Return a copy to avoid race conditions with caller modifications
+	result := *quota
+	if needsSave {
+		// Save in background to avoid holding lock during I/O
+		go m.saveQuotas()
+	}
+	return &result
 }
 
 // checkServerQuota checks user's quota on Jellyseerr server
@@ -799,27 +849,32 @@ func (m *SmartSearchManager) getUserQuotaUnsafe(userID int64) *UserQuota {
 }
 
 // CanUserRequest checks if user can make a request
+// Note: This now uses a read-only check without modifying the quota
 func (m *SmartSearchManager) CanUserRequest(userID int64, mediaType string) (bool, string) {
+	// Get a copy of quota (thread-safe)
 	quota := m.getUserQuota(userID)
 
 	today := time.Now().Format("2006-01-02")
 
+	// Check limits based on the current state
 	if mediaType == "movie" {
+		// If the date has changed, the quota would be reset in getUserQuota
+		// so we just check against current values
+		used := quota.MovieUsed
 		if quota.MovieResetDate != today {
-			quota.MovieUsed = 0
-			quota.MovieResetDate = today
+			used = 0 // Would be reset
 		}
-		if quota.MovieUsed >= quota.MovieLimit {
-			return false, fmt.Sprintf("今日电影请求已达上限 (%d/%d)", quota.MovieUsed, quota.MovieLimit)
+		if used >= quota.MovieLimit {
+			return false, fmt.Sprintf("今日电影请求已达上限 (%d/%d)", used, quota.MovieLimit)
 		}
 		return true, ""
 	} else if mediaType == "tv" {
+		used := quota.TVUsed
 		if quota.TVResetDate != today {
-			quota.TVUsed = 0
-			quota.TVResetDate = today
+			used = 0 // Would be reset
 		}
-		if quota.TVUsed >= quota.TVLimit {
-			return false, fmt.Sprintf("今日剧集请求已达上限 (%d/%d)", quota.TVUsed, quota.TVLimit)
+		if used >= quota.TVLimit {
+			return false, fmt.Sprintf("今日剧集请求已达上限 (%d/%d)", used, quota.TVLimit)
 		}
 		return true, ""
 	}
@@ -827,7 +882,7 @@ func (m *SmartSearchManager) CanUserRequest(userID int64, mediaType string) (boo
 	return false, "未知媒体类型"
 }
 
-// RecordRequest records a user's request
+// RecordRequest records a user's request (increments usage counter)
 func (m *SmartSearchManager) RecordRequest(userID int64, mediaType string) {
 	m.quotaMutex.Lock()
 	defer m.quotaMutex.Unlock()
@@ -849,6 +904,7 @@ func (m *SmartSearchManager) RecordRequest(userID int64, mediaType string) {
 			TVResetDate:     today,
 			LastSyncDate:    time.Now().Format("2006-01-02"),
 		}
+		m.userQuotas[userID] = quota
 	}
 
 	if mediaType == "movie" {
@@ -857,17 +913,16 @@ func (m *SmartSearchManager) RecordRequest(userID int64, mediaType string) {
 			quota.MovieResetDate = today
 		}
 		quota.MovieUsed++
-		m.userQuotas[userID] = quota
 	} else if mediaType == "tv" {
 		if quota.TVResetDate != today {
 			quota.TVUsed = 0
 			quota.TVResetDate = today
 		}
 		quota.TVUsed++
-		m.userQuotas[userID] = quota
 	}
 
-	m.saveQuotasUnsafe()
+	// Save in background to avoid holding lock during I/O
+	go m.saveQuotas()
 }
 
 // GetUserQuotaInfo returns user's quota information

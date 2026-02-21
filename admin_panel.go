@@ -266,9 +266,13 @@ func (m *AdminPanelManager) handlePending(userID int64, params map[string]string
 			emoji = "📺"
 		}
 
-		title := req.Media.Title
-		if title == "" {
+		// Safely get title from Media (which can be nil)
+		title := "未知标题"
+		if req.Media != nil {
 			title = req.Media.Title
+			if title == "" {
+				title = req.Media.Name
+			}
 		}
 
 		msg += fmt.Sprintf("%d. %s *%s*\n", i+1, emoji, title)

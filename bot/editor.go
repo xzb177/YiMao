@@ -117,9 +117,16 @@ func (e *MessageEditor) sendOrEditMessage(chatID, messageID int64, text string, 
 			log.Printf("[Editor] Request failed: %v", err)
 			return 0, fmt.Errorf("failed to send request: %w", err)
 		}
+		defer func() {
+			io.Copy(io.Discard, resp.Body) // Drain body before closing
+			resp.Body.Close()
+		}()
 
-		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("[Editor] Failed to read response: %v", err)
+			return 0, fmt.Errorf("failed to read response: %w", err)
+		}
 
 		log.Printf("[Editor] Response status: %d, body: %s", resp.StatusCode, string(body))
 
@@ -185,7 +192,10 @@ func (e *MessageEditor) DeleteMessage(chatID, messageID int64) error {
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body) // Drain body before closing
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -236,7 +246,10 @@ func (e *MessageEditor) AnswerCallback(callbackID, text string, showAlert bool) 
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body) // Drain body before closing
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -410,7 +423,10 @@ func (e *MessageEditor) EditMediaMessage(chatID, messageID int64, photoURL, capt
 	if err != nil {
 		return fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		io.Copy(io.Discard, resp.Body) // Drain body before closing
+		resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

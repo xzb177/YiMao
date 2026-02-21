@@ -513,11 +513,11 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 		genres = payload.Item.Genres
 	}
 
-	var text string
+	var text strings.Builder
 	var photoURL string
 
 	// Header separator
-	text += "✅ 入库成功"
+	text.WriteString("✅ 入库成功")
 
 	switch payload.Event {
 	case "item.updated":
@@ -559,17 +559,19 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 					userID := os.Getenv("EMBY_USER_ID")
 					if embyURL != "" && apiKey != "" {
 						childURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1", embyURL, userID, itemID)
-						req, _ := http.NewRequest("GET", childURL, nil)
-						req.Header.Set("X-Emby-Token", apiKey)
-						resp, err := httpClient.Do(req)
-						if err == nil && resp.StatusCode == 200 {
-							defer resp.Body.Close()
-							var result struct {
-								TotalRecordCount int `json:"TotalRecordCount"`
-							}
-							body, _ := io.ReadAll(resp.Body)
-							if json.Unmarshal(body, &result) == nil {
-								childCount = result.TotalRecordCount
+						req, err := http.NewRequest("GET", childURL, nil)
+						if err == nil {
+							req.Header.Set("X-Emby-Token", apiKey)
+							resp, err := httpClient.Do(req)
+							if err == nil && resp.StatusCode == 200 {
+								defer resp.Body.Close()
+								var result struct {
+									TotalRecordCount int `json:"TotalRecordCount"`
+								}
+								body, _ := io.ReadAll(resp.Body)
+								if json.Unmarshal(body, &result) == nil {
+									childCount = result.TotalRecordCount
+								}
 							}
 						}
 					}
@@ -577,9 +579,9 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			}
 
 			// Build season info line
-			text += fmt.Sprintf("：%s", itemName)
+			text.WriteString(fmt.Sprintf("：%s", itemName))
 			if movYear > 0 {
-				text += fmt.Sprintf(" (%d)", movYear)
+				text.WriteString(fmt.Sprintf(" (%d)", movYear))
 			}
 
 			// Add season number and episode range
@@ -594,31 +596,31 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			}
 
 			if seasonNum != "" {
-				text += fmt.Sprintf(" %s", seasonNum)
+				text.WriteString(fmt.Sprintf(" %s", seasonNum))
 			}
 
 			if childCount > 0 {
-				text += fmt.Sprintf(" E01-E%02d", childCount)
+				text.WriteString(fmt.Sprintf(" E01-E%02d", childCount))
 			} else {
-				text += " E01"
+				text.WriteString(" E01")
 			}
 
 			// Separator line
-			text += "\n"
-			text += "───────────────────\n\n"
+			text.WriteString("\n")
+			text.WriteString("───────────────────\n\n")
 
 			// Format details
-			text += fmt.Sprintf("🎬 名称：%s", itemName)
+			text.WriteString(fmt.Sprintf("🎬 名称：%s", itemName))
 			if movYear > 0 {
-				text += fmt.Sprintf(" (%d)", movYear)
+				text.WriteString(fmt.Sprintf(" (%d)", movYear))
 			}
 			if seasonNum != "" {
-				text += fmt.Sprintf(" %s", seasonNum)
+				text.WriteString(fmt.Sprintf(" %s", seasonNum))
 			}
 			if childCount > 0 {
-				text += fmt.Sprintf(" E01-E%02d", childCount)
+				text.WriteString(fmt.Sprintf(" E01-E%02d", childCount))
 			}
-			text += "\n\n"
+			text.WriteString("\n\n")
 
 			// Category - determine from genres
 			category := "剧集"
@@ -636,28 +638,28 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 					category = "美剧"
 				}
 			}
-			text += fmt.Sprintf("🏷️ 类别：%s\n\n", category)
+			text.WriteString(fmt.Sprintf("🏷️ 类别：%s\n\n", category))
 
 			// Quality
 			if quality != "" {
-				text += fmt.Sprintf("💎 质量：%s\n\n", quality)
+				text.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
 			} else {
-				text += "💎 质量：未知\n\n"
+				text.WriteString("💎 质量：未知\n\n")
 			}
 
 			// Size
 			if totalSize > 0 {
-				text += fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize))
+				text.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize)))
 			}
 
 			// File count
 			if fileCount > 0 {
-				text += fmt.Sprintf("📁 文件数量：%d 个\n", fileCount)
+				text.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", fileCount))
 			}
 
 			// Add episode file details (with size and quality for each episode)
 			if episodes, err := GetSeasonEpisodesInfo(itemID); err == nil && len(episodes) > 0 {
-				text += FormatEpisodesFileList(episodes)
+				text.WriteString(FormatEpisodesFileList(episodes))
 			}
 
 		} else if itemType == "Episode" || (payload.Item != nil && payload.Item.Type == "Episode") {
@@ -695,19 +697,19 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			}
 
 			// Build title line
-			text += fmt.Sprintf("：%s", displayTitle)
+			text.WriteString(fmt.Sprintf("：%s", displayTitle))
 			if movYear > 0 {
-				text += fmt.Sprintf(" (%d)", movYear)
+				text.WriteString(fmt.Sprintf(" (%d)", movYear))
 			}
-			text += "\n"
-			text += "───────────────────\n\n"
+			text.WriteString("\n")
+			text.WriteString("───────────────────\n\n")
 
 			// Name line
-			text += fmt.Sprintf("🎬 名称：%s", displayTitle)
+			text.WriteString(fmt.Sprintf("🎬 名称：%s", displayTitle))
 			if movYear > 0 {
-				text += fmt.Sprintf(" (%d)", movYear)
+				text.WriteString(fmt.Sprintf(" (%d)", movYear))
 			}
-			text += "\n\n"
+			text.WriteString("\n\n")
 
 			// Category - use genres
 			category := "电影"
@@ -716,45 +718,45 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			} else if len(genres) > 0 {
 				category = genres[0]
 			}
-			text += fmt.Sprintf("🏷️ 类别：%s\n\n", category)
+			text.WriteString(fmt.Sprintf("🏷️ 类别：%s\n\n", category))
 
 			// Quality
 			if quality != "" {
-				text += fmt.Sprintf("💎 质量：%s\n\n", quality)
+				text.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
 			} else {
-				text += "💎 质量：未知\n\n"
+				text.WriteString("💎 质量：未知\n\n")
 			}
 
 			// Size
 			if totalSize > 0 {
-				text += fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize))
+				text.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize)))
 			}
 
 			// File count
 			if fileCount > 0 {
-				text += fmt.Sprintf("📁 文件数量：%d 个", fileCount)
+				text.WriteString(fmt.Sprintf("📁 文件数量：%d 个", fileCount))
 			}
 
 		} else {
-			text += "\n\n"
-			text += fmt.Sprintf("🎬 名称：%s\n\n", itemName)
-			text += fmt.Sprintf("🏷️ 类别：%s", itemType)
+			text.WriteString("\n\n")
+			text.WriteString(fmt.Sprintf("🎬 名称：%s\n\n", itemName))
+			text.WriteString(fmt.Sprintf("🏷️ 类别：%s", itemType))
 		}
 
 	case "system.notificationtest":
 		return "🔔 Emby 测试通知\n\n✅ Webhook 连接成功！", ""
 
 	default:
-		text += "\n\n"
+		text.WriteString("\n\n")
 		if payload.ItemName != "" {
-			text += fmt.Sprintf("🎬 名称：%s\n", payload.ItemName)
+			text.WriteString(fmt.Sprintf("🎬 名称：%s\n", payload.ItemName))
 		}
 		if payload.ItemType != "" {
-			text += fmt.Sprintf("🏷️ 类型：%s\n", payload.ItemType)
+			text.WriteString(fmt.Sprintf("🏷️ 类型：%s\n", payload.ItemType))
 		}
 	}
 
-	return text, photoURL
+	return text.String(), photoURL
 }
 
 // getQualityFromFirstEpisode gets quality info from the first episode of a season
@@ -4562,9 +4564,15 @@ func handleIssueCloseCallback(issueID int64) string {
 func addIssueComment(issueID int64, message string) error {
 	url := fmt.Sprintf("%s/api/v1/issue/%d/comment", jellyseerrURL, issueID)
 	payload := map[string]string{"message": message}
-	jsonData, _ := json.Marshal(payload)
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
 
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", jellyseerrAPIKey)
 
@@ -4584,7 +4592,10 @@ func addIssueComment(issueID int64, message string) error {
 func deleteIssue(issueID int64) error {
 	url := fmt.Sprintf("%s/api/v1/issue/%d", jellyseerrURL, issueID)
 
-	req, _ := http.NewRequest("DELETE", url, nil)
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("X-Api-Key", jellyseerrAPIKey)
 
 	resp, err := httpClient.Do(req)

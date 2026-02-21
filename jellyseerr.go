@@ -376,10 +376,13 @@ func FormatPendingRequests(requests []JellyseerrRequest) string {
 			emoji = "📺"
 		}
 
-		title := req.Media.Title
-		if title == "" && req.Media != nil {
-			// TV shows use Name field
-			title = req.Media.Name
+		title := "未知标题"
+		if req.Media != nil {
+			title = req.Media.Title
+			if title == "" {
+				// TV shows use Name field
+				title = req.Media.Name
+			}
 		}
 
 		// 安全获取状态
@@ -707,14 +710,14 @@ func AddEventToAggregation(eventType, mediaTitle, mediaType, parentTitle string,
 
 // flushAggregatedEvents sends all aggregated events and clears buffer
 func flushAggregatedEvents() {
-	aggregationBuffer.mutex.Lock()
-	defer aggregationBuffer.mutex.Unlock()
+	// First, collect messages while holding lock
+	var texts []string
 
+	aggregationBuffer.mutex.Lock()
 	if len(aggregationBuffer.events) == 0 {
+		aggregationBuffer.mutex.Unlock()
 		return
 	}
-
-	var texts []string
 
 	for key, event := range aggregationBuffer.events {
 		var msg string
@@ -738,8 +741,9 @@ func flushAggregatedEvents() {
 		texts = append(texts, msg)
 		delete(aggregationBuffer.events, key)
 	}
+	aggregationBuffer.mutex.Unlock()
 
-	// Send aggregated messages
+	// Send messages AFTER releasing the lock to avoid holding it during I/O
 	for _, text := range texts {
 		if err := sendTelegramMessage(text); err != nil {
 			log.Printf("Error sending aggregated message: %v", err)

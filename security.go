@@ -115,14 +115,16 @@ func (s *SecurityManager) BanIP(ip string, duration time.Duration) {
 // RecordFailedAttempt records a failed login attempt
 func (s *SecurityManager) RecordFailedAttempt(identifier string) {
 	s.failMutex.Lock()
-	defer s.failMutex.Unlock()
-
 	s.failedAttempts[identifier]++
+	shouldBan := s.failedAttempts[identifier] >= 5
+	s.failMutex.Unlock()
 
-	// Auto-ban after too many attempts
-	if s.failedAttempts[identifier] >= 5 {
+	// Auto-ban after too many attempts - release lock first to avoid deadlock
+	if shouldBan {
 		s.BanIP(identifier, time.Hour)
+		s.failMutex.Lock()
 		delete(s.failedAttempts, identifier)
+		s.failMutex.Unlock()
 		log.Printf("SecurityManager: Auto-banned %s due to too many failed attempts", identifier)
 	}
 }

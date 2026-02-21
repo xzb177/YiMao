@@ -61,9 +61,13 @@ type ClaudeResponse struct {
 
 // ResponseCache caches AI responses
 type ResponseCache struct {
-	data map[string]*CacheEntry
-	mu   sync.RWMutex
-	ttl  time.Duration
+	data      map[string]*CacheEntry
+	mu        sync.RWMutex
+	ttl       time.Duration
+	maxSize   int
+	maxSizeEvict int // Number of entries to evict when max size is reached
+	stopChan  chan struct{}
+	stopped   sync.Once
 }
 
 // CacheEntry represents a cached response
@@ -76,8 +80,9 @@ type CacheEntry struct {
 // NewResponseCache creates a new response cache
 func NewResponseCache(ttl time.Duration) *ResponseCache {
 	cache := &ResponseCache{
-		data: make(map[string]*CacheEntry),
-		ttl:  ttl,
+		data:     make(map[string]*CacheEntry),
+		ttl:      ttl,
+		stopChan: make(chan struct{}),
 	}
 	// Start cleanup goroutine
 	go cache.cleanup()
@@ -111,16 +116,28 @@ func (c *ResponseCache) Set(key, response string) {
 func (c *ResponseCache) cleanup() {
 	ticker := time.NewTicker(time.Minute * 10)
 	defer ticker.Stop()
-	for range ticker.C {
-		c.mu.Lock()
-		now := time.Now()
-		for key, entry := range c.data {
-			if now.Sub(entry.Timestamp) > c.ttl {
-				delete(c.data, key)
+	for {
+		select {
+		case <-ticker.C:
+			c.mu.Lock()
+			now := time.Now()
+			for key, entry := range c.data {
+				if now.Sub(entry.Timestamp) > c.ttl {
+					delete(c.data, key)
+				}
 			}
+			c.mu.Unlock()
+		case <-c.stopChan:
+			return
 		}
-		c.mu.Unlock()
 	}
+}
+
+// Stop stops the cleanup goroutine
+func (c *ResponseCache) Stop() {
+	c.stopped.Do(func() {
+		close(c.stopChan)
+	})
 }
 
 // NewClaudeClient creates a new Claude API client

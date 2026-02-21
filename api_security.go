@@ -239,7 +239,8 @@ func (s *SecurityContext) cleanup() {
 	}
 }
 
-// validateAPIKey validates an API key
+// validateAPIKey validates an API key using constant-time comparison
+// to prevent timing attacks. Always compares against all keys.
 func (s *SecurityContext) validateAPIKey(key string) bool {
 	s.apiKeys.mu.RLock()
 	defer s.apiKeys.mu.RUnlock()
@@ -248,12 +249,17 @@ func (s *SecurityContext) validateAPIKey(key string) bool {
 		return true // Authentication disabled
 	}
 
+	// Use a constant-time approach: always compare against all keys
+	// to prevent timing attacks that could leak key length info
+	keyMatch := false
 	for validKey := range s.apiKeys.Keys {
+		// ConstantTimeCompare returns 1 if equal, 0 if not
+		// We OR the results to ensure we check all keys
 		if subtle.ConstantTimeCompare([]byte(key), []byte(validKey)) == 1 {
-			return true
+			keyMatch = true
 		}
 	}
-	return false
+	return keyMatch
 }
 
 // SecurityMiddleware wraps an http.Handler with security checks

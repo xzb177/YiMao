@@ -238,7 +238,10 @@ func (m *MediaSecurityChecker) performOCR(imageURL string) (string, error) {
 
 	formData := fmt.Sprintf("url=%s&language=chs&isOverlayRequired=false&scale=true", imageURL)
 
-	req, _ := http.NewRequest("POST", ocrURL, strings.NewReader(formData))
+	req, err := http.NewRequest("POST", ocrURL, strings.NewReader(formData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create OCR request: %w", err)
+	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -317,8 +320,12 @@ func (m *MediaSecurityChecker) sendWarning(chatID int64, mediaType string) {
 	}
 
 	jsonData, _ := json.Marshal(payload)
-	resp, _ := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
-	resp.Body.Close()
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	if resp != nil {
+		io.Copy(io.Discard, resp.Body) // Drain body before closing
+		resp.Body.Close()
+	}
+	_ = err // Ignore error in warning function
 }
 
 // notifyAdmin notifies admin about security breach
@@ -335,10 +342,7 @@ func (m *MediaSecurityChecker) notifyAdmin(chatID int64, messageID int64, mediaT
 	msg += fmt.Sprintf("📝 消息: %d\n", messageID)
 	msg += fmt.Sprintf("📎 类型: %s\n", mediaType)
 	// Safely truncate OCR content
-	ocrPreview := ""
-	if len(content) > 0 {
-		ocrPreview = content[:minInt(len(content), 200)]
-	}
+	ocrPreview := SafeStringSlice(content, Min(200, len(content)))
 	msg += fmt.Sprintf("🔍 OCR内容: %s\n", ocrPreview)
 	msg += "\n✅ 已自动删除该消息"
 
@@ -349,16 +353,12 @@ func (m *MediaSecurityChecker) notifyAdmin(chatID int64, messageID int64, mediaT
 	}
 
 	jsonData, _ := json.Marshal(payload)
-	resp, _ := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
-	resp.Body.Close()
+	resp, err := http.Post(url, "application/json", strings.NewReader(string(jsonData)))
+	if resp != nil {
+		io.Copy(io.Discard, resp.Body) // Drain body before closing
+		resp.Body.Close()
+	}
+	_ = err // Ignore error in notification function
 
 	log.Printf("[Security] Notified admin about media link leak")
-}
-
-// Since min is declared in engagement_system.go, rename this one
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

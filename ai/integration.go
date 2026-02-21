@@ -23,9 +23,10 @@ var (
 // Initialize initializes the global AI manager
 func Initialize(apiKey string) *Manager {
 	once.Do(func() {
+		agent := NewAgent(apiKey)
 		globalManager = &Manager{
-			agent:   NewAgent(apiKey),
-			enabled: NewAgent(apiKey).IsEnabled(),
+			agent:   agent,
+			enabled: agent.IsEnabled(),
 		}
 	})
 	return globalManager
