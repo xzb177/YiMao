@@ -1377,16 +1377,30 @@ func (h *Handler) handleStartCommand(session *session.UserSession) *MessageRespo
 
 	msg := fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
 	msg += "我可以帮你搜索和请求影视内容\n\n"
-	msg += "🔍 *快速搜索*\n"
-	msg += "直接输入电影或剧集名称\n\n"
-	msg += "📋 *其他功能*\n"
-	msg += "`/help` - 查看完整帮助\n"
-	msg += "`/recommend` - 智能推荐\n"
-	msg += "`/ai` - AI 助手\n"
-	msg += "`/profile` - 我的资料"
+	msg += "💡 点击下方按钮快速开始"
+
+	// Create inline keyboard with quick actions
+	keyboard := [][]map[string]string{
+		{
+			{"text": "🔍 搜索内容", "callback_data": "action_search"},
+		},
+		{
+			{"text": "🔥 热门推荐", "callback_data": "search_trending"},
+			{"text": "📺 热播剧集", "callback_data": "search_tv_hot"},
+		},
+		{
+			{"text": "🎬 最新电影", "callback_data": "search_movie_new"},
+			{"text": "📋 我的请求", "callback_data": "action_myrequests"},
+		},
+		{
+			{"text": "⚙️ 设置", "callback_data": "action_settings"},
+			{"text": "❓ 帮助", "callback_data": "action_help"},
+		},
+	}
 
 	return &MessageResponse{
-		Text: msg,
+		Text:     msg,
+		Keyboard: keyboard,
 	}
 }
 
