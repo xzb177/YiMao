@@ -92,15 +92,24 @@ func (cs *ChatSystem) GetChatResponse(message string, userName string, userID in
 		isAdmin = cs.isAdminFunc(userID)
 	}
 
+	log.Printf("[ChatSystem] GetChatResponse called: user=%s, admin=%v, msg=%s", userName, isAdmin, message)
+
 	// 优先使用 AI
 	if ai.GetManager() != nil && ai.GetManager().IsEnabled() {
+		log.Printf("[ChatSystem] Using AI for response")
 		if response := cs.callAI(message, userName, isAdmin); response != "" {
+			log.Printf("[ChatSystem] AI response: %s", response)
 			return response
 		}
+		log.Printf("[ChatSystem] AI returned empty, using fallback")
+	} else {
+		log.Printf("[ChatSystem] AI not available, using fallback")
 	}
 
 	// AI 不可用时的降级回复
-	return cs.getFallbackResponse(message, userName, isAdmin)
+	fallback := cs.getFallbackResponse(message, userName, isAdmin)
+	log.Printf("[ChatSystem] Fallback response: %s", fallback)
+	return fallback
 }
 
 // callAI 调用 AI 获取回复
@@ -111,13 +120,22 @@ func (cs *ChatSystem) callAI(message string, userName string, isAdmin bool) stri
 	// 构建完整提示
 	fullPrompt := fmt.Sprintf("%s\n\n当前环境: %s\n\n用户消息: %s\n\n请作为凛冬回复:", personality, context, message)
 
+	log.Printf("[ChatSystem] Calling AI with prompt length: %d", len(fullPrompt))
+
 	response, err := ai.GetManager().GetAgent().ProcessMessage(0, fullPrompt)
 	if err != nil {
 		log.Printf("[ChatSystem] AI error: %v", err)
-		return ""
+		// 即使 AI 失败，也返回一个带有上下文的回复
+		return cs.buildContextualFallback(message, userName, isAdmin)
 	}
 
 	response = strings.TrimSpace(response)
+
+	// 如果 AI 返回空，使用上下文降级
+	if response == "" {
+		log.Printf("[ChatSystem] AI returned empty response")
+		return cs.buildContextualFallback(message, userName, isAdmin)
+	}
 
 	// 确保有猫娘风格
 	if !strings.Contains(response, "喵") && rand.Intn(100) < 30 {
@@ -131,6 +149,36 @@ func (cs *ChatSystem) callAI(message string, userName string, isAdmin bool) stri
 	}
 
 	return response
+}
+
+// buildContextualFallback 根据消息内容构建上下文相关的降级回复
+func (cs *ChatSystem) buildContextualFallback(message, userName string, isAdmin bool) string {
+	msgLower := strings.ToLower(message)
+
+	// 根据消息内容返回不同的回复
+	if strings.Contains(msgLower, "你好") || strings.Contains(msgLower, "hi") || strings.Contains(msgLower, "hello") {
+		if isAdmin {
+			return "哼，主人来了喵...有什么事吗？💅"
+		}
+		return "哦喵...两脚兽你好"
+	}
+
+	if strings.Contains(msgLower, "在吗") || strings.Contains(msgLower, "在不在") {
+		if isAdmin {
+			return "本座一直在喵...主人找我有事？"
+		}
+		return "哼喵...一直都在，说吧"
+	}
+
+	if strings.Contains(msgLower, "谢谢") || strings.Contains(msgLower, "感谢") {
+		if isAdmin {
+			return "唔...主人客气了喵..."
+		}
+		return "哦...谢、谢谢喵"
+	}
+
+	// 默认降级回复
+	return cs.getFallbackResponse(message, userName, isAdmin)
 }
 
 // buildCatgirlPersonality 构建猫娘人格
