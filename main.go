@@ -721,11 +721,20 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 
 		} else if itemType == "Episode" || (payload.Item != nil && payload.Item.Type == "Episode") {
 			// Episode added - 动态通知：每次有新剧集都通知
-			// Get series ID from API
+			// Get series ID and detailed info from API
 			seriesID := ""
+			var quality string
+			var totalSize int64
+			var fileCount int
+
 			if itemID != "" {
 				if info, err := GetEmbyItemInfo(itemID); err == nil {
 					seriesID = info.SeriesId
+					quality = GetMediaQuality(info)
+					totalSize = GetTotalSize(info)
+					fileCount = GetFileCount(info)
+					// Get backdrop image URL
+					photoURL = GetBestImageURL(info)
 				}
 			}
 
@@ -776,22 +785,32 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 				epIndex = payload.Item.IndexNumber
 			}
 
+			// Header
 			notifyMilestone := fmt.Sprintf("新增第%d集", epIndex)
 			text.WriteString(fmt.Sprintf("✅ %s %s %sE%02d\n\n",
 				notifyMilestone, seriesName, seasonNum, epIndex))
 			text.WriteString("───────────────────\n\n")
+
+			// Name line (duplicate for clarity)
+			text.WriteString(fmt.Sprintf("🎬 名称：%s %s %sE%02d\n\n", seriesName, seasonNum, seasonNum, epIndex))
+
+			// Progress
 			text.WriteString(fmt.Sprintf("📊 当前进度：共%d集\n\n", currentCount))
 
-			// Try to get quality from the latest episode
-			if info, err := GetEmbyItemInfo(itemID); err == nil {
-				quality := GetMediaQuality(info)
-				if quality != "" && quality != "未知" {
-					text.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
-				}
+			// Quality
+			if quality != "" {
+				text.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
 			}
 
-			// Don't include direct link for security
-			// text.WriteString("📺 前往观看")
+			// Size
+			if totalSize > 0 {
+				text.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", FormatMediaSize(totalSize)))
+			}
+
+			// File count
+			if fileCount > 0 {
+				text.WriteString(fmt.Sprintf("📁 文件数量：%d 个", fileCount))
+			}
 
 		} else if itemType == "Movie" || (payload.Item != nil && payload.Item.Type == "Movie") {
 			// Movie format
