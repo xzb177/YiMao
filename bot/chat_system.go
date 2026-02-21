@@ -624,6 +624,13 @@ func (cs *ChatSystem) parseAndLearn(message, trigger, userName, prefix string) (
 func (cs *ChatSystem) handleKeywordSearch(query, userName string, userID int64) string {
 	// 清理查询词
 	query = strings.TrimSpace(query)
+
+	// 检测是否是推荐类型请求（没有具体片名）
+	// 例如："推荐几部恐怖片"、"好看的悬疑片"
+	if isGenreRecommendation(query) {
+		return cs.handleGenreRecommendation(query, userName, userID)
+	}
+
 	// 移除触发词
 	cleanQuery := query
 	cleanQuery = strings.ReplaceAll(cleanQuery, "推荐", "")
@@ -653,6 +660,43 @@ func (cs *ChatSystem) handleKeywordSearch(query, userName string, userID int64) 
 
 	// 否则返回AI推荐风格回复
 	return cs.generateAISearchResponse(cleanQuery, userName, userID)
+}
+
+// isGenreRecommendation 检测是否是类型推荐请求
+func isGenreRecommendation(query string) bool {
+	query = strings.ToLower(query)
+
+	// 包含量词但没有具体片名
+	hasQuantity := strings.Contains(query, "几部") || strings.Contains(query, "部") ||
+		strings.Contains(query, "一些") || strings.Contains(query, "点")
+
+	// 包含类型词或"推荐"
+	hasGenreOrRecommend := strings.Contains(query, "推荐") ||
+		strings.Contains(query, "恐怖") || strings.Contains(query, "悬疑") ||
+		strings.Contains(query, "喜剧") || strings.Contains(query, "科幻") ||
+		strings.Contains(query, "动作") || strings.Contains(query, "爱情") ||
+		strings.Contains(query, "动画") || strings.Contains(query, "战争") ||
+		strings.Contains(query, "犯罪") || strings.Contains(query, "纪录片") ||
+		strings.Contains(query, "好看的")
+
+	return hasQuantity && hasGenreOrRecommend
+}
+
+// handleGenreRecommendation 处理类型推荐请求
+func (cs *ChatSystem) handleGenreRecommendation(query, userName string, userID int64) string {
+	log.Printf("[ChatSystem] Genre recommendation: %s", query)
+
+	// 使用AI生成推荐回复
+	if ai.GetManager() != nil && ai.GetManager().IsEnabled() {
+		aiPrompt := fmt.Sprintf("用户想看%s，请用傲娇猫娘的口吻推荐几部同类型的优秀作品，直接给出片名和简短推荐理由。", query)
+		response, err := ai.GetManager().GetAgent().ProcessMessage(userID, aiPrompt)
+		if err == nil && response != "" {
+			return strings.TrimSpace(response)
+		}
+	}
+
+	// 降级回复
+	return fmt.Sprintf("哼...想看%s？本座帮你搜搜看喵...💅\n\n或者直接说片名，本座帮你搜～", query)
 }
 
 // searchAndReply 搜索并生成回复
