@@ -1,10 +1,10 @@
 # Multi-stage build for emby-telegram-bot
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies
-RUN apk add --no-cache git
+# Install build dependencies (including gcc for CGO/SQLite)
+RUN apk add --no-cache git gcc musl-dev
 
 # Copy go mod files
 COPY go.mod go.sum* ./
@@ -13,8 +13,8 @@ RUN go mod download
 # Copy all source files
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o emby-telegram-bot .
+# Build the application (CGO enabled for SQLite)
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o emby-telegram-bot .
 
 # Final stage
 FROM alpine:latest

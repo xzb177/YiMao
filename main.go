@@ -3715,6 +3715,24 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					newKeyboard = newKeyboard
 				}
 
+			case "myreq_feedback":
+				// Feedback from "My Requests" list
+				// Format: myreq_feedback:tmdbID:mediaType:requestID
+				if len(parts) >= 4 {
+					tmdbID, _ := strconv.Atoi(parts[1])
+					mediaType := parts[2]
+					requestID, _ := strconv.Atoi(parts[3])
+					response := handleMyRequestsFeedback(userID, tmdbID, mediaType, requestID)
+					if response != nil {
+						responseText = *response
+					}
+				}
+
+			case "myreq_refresh":
+				// Refresh "My Requests" list
+				go handleMyRequestsPrivate(userID)
+				responseText = "🔄 正在刷新..."
+
 			case "search":
 				// Quick search from button (only if not the special trending actions)
 				query := strings.Join(parts[1:], "_")
@@ -4340,7 +4358,7 @@ func answerCallbackQueryWithAlert(callbackID string, text string, showAlert bool
 	return nil
 }
 
-// handleMyRequestsPrivate shows user's requests in private chat
+// handleMyRequestsPrivate shows user's requests in private chat with inline keyboard
 func handleMyRequestsPrivate(userID int64) {
 	// Get user's Jellyseerr ID
 	var jellyseerrUserID int64
@@ -4401,9 +4419,15 @@ func handleMyRequestsPrivate(userID int64) {
 		return
 	}
 
-	// Format requests by status
-	msg := "📋 *我的请求*\n\n"
+	// Build message with inline keyboard
+	msg := buildMyRequestsMessage(requests)
+	keyboard := buildMyRequestsKeyboard(requests)
 
+	sendPrivateMessage(userID, msg, keyboard)
+}
+
+// buildMyRequestsMessage builds the message text for user requests
+func buildMyRequestsMessage(requests []JellyseerrRequest) string {
 	// Group by status
 	pending := []JellyseerrRequest{}
 	approved := []JellyseerrRequest{}
@@ -4424,46 +4448,132 @@ func handleMyRequestsPrivate(userID int64) {
 		}
 	}
 
-	msg += fmt.Sprintf("⏳ 待处理: %d\n", len(pending))
-	msg += fmt.Sprintf("✅ 已批准: %d\n", len(approved))
-	msg += fmt.Sprintf("🎉 已可用: %d\n", len(available))
-	msg += fmt.Sprintf("❌ 已拒绝: %d\n", len(declined))
-	msg += fmt.Sprintf("\n📊 总计: %d 个请求\n\n", len(requests))
+	var sb strings.Builder
+	sb.WriteString("📋 *我的请求*\n\n")
 
-	// Show pending requests with buttons
-	if len(pending) > 0 {
-		msg += "*⏳ 待处理:*\n"
-		for i, req := range pending {
-			if i >= 5 {
-				msg += fmt.Sprintf("... 还有 %d 个\n", len(pending)-5)
-				break
-			}
-			mediaTitle := req.Media.Title
-			if mediaTitle == "" {
-				mediaTitle = fmt.Sprintf("ID: %d", req.MediaID)
-			}
-			msg += fmt.Sprintf("• %s\n", mediaTitle)
-		}
-		msg += "\n"
+	sb.WriteString(fmt.Sprintf("⏳ 待处理: %d\n", len(pending)))
+	sb.WriteString(fmt.Sprintf("✅ 已批准: %d\n", len(approved)))
+	sb.WriteString(fmt.Sprintf("🎉 已可用: %d\n", len(available)))
+	sb.WriteString(fmt.Sprintf("❌ 已拒绝: %d\n", len(declined)))
+	sb.WriteString(fmt.Sprintf("\n📊 总计: %d 个请求", len(requests)))
+
+	return sb.String()
+}
+
+// buildMyRequestsKeyboard builds the inline keyboard for user requests
+func buildMyRequestsKeyboard(requests []JellyseerrRequest) *TelegramInlineKeyboard {
+	keyboard := &TelegramInlineKeyboard{
+		InlineKeyboard: [][]map[string]string{},
 	}
 
-	// Show recent available
-	if len(available) > 0 {
-		msg += "*🎉 最近可用:*\n"
-		for i, req := range available {
-			if i >= 5 {
-				break
-			}
-			mediaTitle := req.Media.Title
-			if mediaTitle == "" {
-				mediaTitle = fmt.Sprintf("ID: %d", req.MediaID)
-			}
-			msg += fmt.Sprintf("• %s", mediaTitle)
+	// Separate requests by status and add buttons
+	// Show at most 3 pending/approved requests with feedback button
+	count := 0
+	maxShown := 3
+
+	for _, req := range requests {
+		if count >= maxShown {
+			break
 		}
-		msg += "\n"
+
+		status := req.getStatus()
+		if status != "pending" && status != "approved" {
+			continue
+		}
+
+		// Get media info
+		mediaTitle := "未知"
+		mediaType := "movie"
+		tmdbID := 0
+
+		if req.Media != nil {
+			if req.Media.Title != "" {
+				mediaTitle = req.Media.Title
+			} else if req.Media.Name != "" {
+				mediaTitle = req.Media.Name
+			}
+			mediaType = req.Media.MediaType
+			tmdbID = req.Media.TmdbID
+		}
+
+		// Truncate title for button
+		if len(mediaTitle) > 15 {
+			mediaTitle = mediaTitle[:15] + "..."
+		}
+
+		// Status emoji
+		statusEmoji := "⏳"
+		if status == "approved" {
+			statusEmoji = "✅"
+		}
+
+		// Row with title and feedback button
+		row := []map[string]string{
+			{
+				"text": fmt.Sprintf("%s %s", statusEmoji, mediaTitle),
+				"callback_data": "ignore",
+			},
+			{
+				"text":         "🐛 反馈",
+				"callback_data": fmt.Sprintf("myreq_feedback:%d:%s:%d", tmdbID, mediaType, req.ID),
+			},
+		}
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
+		count++
 	}
 
-	sendPrivateMessage(userID, msg, nil)
+	// Add refresh button at the bottom
+	refreshRow := []map[string]string{
+		{"text": "🔄 刷新", "callback_data": "myreq_refresh"},
+	}
+	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, refreshRow)
+
+	return keyboard
+}
+
+// handleMyRequestsFeedback handles feedback from "My Requests" list
+func handleMyRequestsFeedback(userID int64, tmdbID int, mediaType string, requestID int) *string {
+	// Store feedback context in session (if bot module is available)
+	if botModule != nil {
+		session := botModule.GetSession(userID)
+		if session != nil {
+			mediaTitle := fmt.Sprintf("请求 #%d", requestID)
+			session.SetContext("feedback_media_id", fmt.Sprintf("%d", tmdbID))
+			session.SetContext("feedback_media_title", mediaTitle)
+			session.SetContext("feedback_media_type", mediaType)
+			session.SetContext("feedback_from_my_requests", true)
+			session.PendingAction = "awaiting_feedback_type"
+		}
+	}
+
+	// Build feedback type selection keyboard
+	keyboard := &TelegramInlineKeyboard{
+		InlineKeyboard: [][]map[string]string{
+			{
+				{"text": "🎵 音频问题", "callback_data": "feedback_type:audio"},
+				{"text": "📝 字幕问题", "callback_data": "feedback_type:subtitle"},
+			},
+			{
+				{"text": "🎬 视频问题", "callback_data": "feedback_type:video"},
+				{"text": "📦 其他问题", "callback_data": "feedback_type:other"},
+			},
+			{
+				{"text": "⬅️ 返回", "callback_data": "myreq_refresh"},
+			},
+		},
+	}
+
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("🐛 **反馈问题**\n\n"))
+	msg.WriteString(fmt.Sprintf("📬 请求 ID: #%d\n", requestID))
+	msg.WriteString(fmt.Sprintf("🎬 TMDB ID: %d\n\n", tmdbID))
+	msg.WriteString("请选择问题类型：")
+
+	// Send the feedback prompt
+	sendPrivateMessage(userID, msg.String(), keyboard)
+
+	response := "请选择问题类型"
+	return &response
 }
 
 func webhookHandler(w http.ResponseWriter, r *http.Request) {

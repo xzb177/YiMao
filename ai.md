@@ -2167,3 +2167,28 @@ trends - 请求趋势
 | | - **用户流程**: 点击推荐按钮→显示 loading→后台获取→编辑原消息显示结果 |
 | | - **服务重启**: Docker 容器重启成功 ✅ |
 | | - **容器状态**: healthy (41 user quotas loaded) |
+| 2026-02-22 | **用户数据库系统** 💾 |
+| | - **问题**: 用户数据分散在多个 JSON 文件中，难以管理 |
+| | - **新增功能**: |
+| |   - 创建 SQLite 数据库统一存储用户数据 |
+| |   - 支持 users, user_requests, user_feedback 三张表 |
+| |   - 提供 JSON 到数据库的迁移工具 |
+| | - **新增文件**: `database/user_db.go`, `database/migrate.go` |
+| | - **数据结构**: |
+| |   - `UserData` - 用户信息（基本信息、配额、设置、统计） |
+| |   - `UserRequest` - 请求记录 |
+| |   - `UserFeedback` - 反馈记录 |
+| | - **API**: `UpsertUser`, `GetUser`, `CreateRequest`, `GetRequests`, `UpdateRequestStatus`, `CreateFeedback` 等 |
+| 2026-02-22 | **我的请求列表反馈按钮** 🐛 |
+| | - **问题**: "我的请求"列表只有文本，没有交互按钮 |
+| | - **优化内容**: |
+| |   - 改用 inline keyboard 格式显示请求列表 |
+| |   - 每个待处理/已批准的请求旁边添加"🐛 反馈"按钮 |
+| |   - 添加"🔄 刷新"按钮更新列表 |
+| | - **文件修改**: `main.go` |
+| |   - 新增 `buildMyRequestsMessage()`, `buildMyRequestsKeyboard()` |
+| |   - 新增 `handleMyRequestsFeedback()` 处理反馈按钮 |
+| |   - 新增 `myreq_feedback`, `myreq_refresh` callback 处理 |
+| | - **Dockerfile**: 修改以支持 CGO（SQLite 需要） |
+| | - **go.mod**: 添加 `modernc.org/sqlite v1.46.1` |
+| | - **服务重启**: Docker 容器重启成功 ✅ |
