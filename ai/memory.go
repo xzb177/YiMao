@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -26,14 +27,35 @@ type UserMemory struct {
 	// 关系
 	RelationLevel string `json:"relation_level"` // stranger, acquaintance, friend, close
 
-	// 标签 (由凛冬添加)
+	// 标签 (由小凛添加)
 	Tags []string `json:"tags,omitempty"`
 
 	// 重要事件
-	Memories []string `json:"memories,omitempty"` // 凛冬记住的重要时刻
+	Memories []string `json:"memories,omitempty"` // 小凛记住的重要时刻
 
 	// 情绪记录
 	MoodHistory []MoodEntry `json:"mood_history,omitempty"`
+
+	// 最后情绪状态 (用于情感支持)
+	LastMood       string `json:"last_mood,omitempty"`        // 最后一次检测到的情绪
+	LastMoodTime   int64  `json:"last_mood_time,omitempty"`   // 最后一次情绪检测时间
+
+	// 对话上下文 (用于多轮对话)
+	LastTopics     []string `json:"last_topics,omitempty"`    // 最近讨论的话题
+	LastQuestions  []string `json:"last_questions,omitempty"` // 最近提出的问题
+
+	// 请求历史 (用于延续对话)
+	RequestHistory []RequestRecord `json:"request_history,omitempty"` // 求片历史
+
+	// 情感状态记录 (用于情感支持)
+	EmotionalState string `json:"emotional_state,omitempty"` // 当前情感状态: happy, sad, stressed, neutral
+}
+
+// RequestRecord 求片记录
+type RequestRecord struct {
+	MediaTitle string `json:"media_title"`  // 媒体标题
+	RequestTime int64 `json:"request_time"` // 请求时间
+	Status     string `json:"status"`       // 状态: pending, available, declined
 }
 
 // UserPreferences 用户偏好
@@ -289,24 +311,274 @@ func (m *MemorySystem) FormatMemoryForAI(userID int64) string {
 		return "" // 新用户，不需要太多上下文
 	}
 
-	var info string
-	info += fmt.Sprintf("【用户信息】")
-	info += fmt.Sprintf("昵称: %s", user.getDisplayName())
-	info += fmt.Sprintf(" | 互动次数: %d", user.MessageCount)
-	info += fmt.Sprintf(" | 关系: %s", user.getRelationText())
+	var info strings.Builder
 
+	// 基本信息
+	info.WriteString("【用户信息】")
+	info.WriteString(fmt.Sprintf("昵称: %s", user.getDisplayName()))
+	info.WriteString(fmt.Sprintf(" | 互动次数: %d", user.MessageCount))
+	info.WriteString(fmt.Sprintf(" | 关系: %s", user.getRelationText()))
+
+	// 偏好
 	if len(user.Preferences.FavoriteGenres) > 0 {
-		info += fmt.Sprintf("\n【偏好】喜欢: %v", user.Preferences.FavoriteGenres)
+		info.WriteString(fmt.Sprintf("\n【偏好】喜欢: %v", user.Preferences.FavoriteGenres))
+	}
+	if len(user.Preferences.DislikedGenres) > 0 {
+		info.WriteString(fmt.Sprintf(" | 不喜欢: %v", user.Preferences.DislikedGenres))
+	}
+	if len(user.Preferences.FavoriteMedia) > 0 {
+		info.WriteString(fmt.Sprintf("\n【喜欢的作品】%v", user.Preferences.FavoriteMedia))
 	}
 
-	if len(user.Memories) > 0 {
-		info += fmt.Sprintf("\n【重要记忆】")
-		for _, mem := range user.Memories {
-			info += fmt.Sprintf("• %s", mem)
+	// 最近话题 (用于多轮对话)
+	if len(user.LastTopics) > 0 {
+		info.WriteString(fmt.Sprintf("\n【最近讨论的话题】"))
+		for i, topic := range user.LastTopics {
+			if i >= 3 {
+				break // 只显示最近3个
+			}
+			info.WriteString(fmt.Sprintf("• %s", topic))
 		}
 	}
 
-	return info
+	// 最近问题 (用于延续对话)
+	if len(user.LastQuestions) > 0 {
+		info.WriteString(fmt.Sprintf("\n【最近问过的问题】"))
+		for i, q := range user.LastQuestions {
+			if i >= 3 {
+				break
+			}
+			info.WriteString(fmt.Sprintf("• %s", q))
+		}
+	}
+
+	// 求片历史 (用于延续对话)
+	if len(user.RequestHistory) > 0 {
+		info.WriteString(fmt.Sprintf("\n【求片历史】"))
+		for i, req := range user.RequestHistory {
+			if i >= 5 {
+				break
+			}
+			info.WriteString(fmt.Sprintf("• %s (%s)", req.MediaTitle, req.Status))
+		}
+	}
+
+	// 重要记忆
+	if len(user.Memories) > 0 {
+		info.WriteString(fmt.Sprintf("\n【重要记忆】"))
+		for _, mem := range user.Memories {
+			info.WriteString(fmt.Sprintf("• %s", mem))
+		}
+	}
+
+	// 情感状态 (用于情感支持)
+	if user.EmotionalState != "" && user.EmotionalState != "neutral" {
+		info.WriteString(fmt.Sprintf("\n【当前情感状态】%s", user.getEmotionalStateText()))
+	}
+
+	// 最后的情绪 (如果最近有负面情绪，提醒关注)
+	if user.LastMood != "" {
+		timeSinceMood := time.Now().Unix() - user.LastMoodTime
+		if timeSinceMood < 86400 { // 24小时内有情绪记录
+			if containsNegativeMood(user.LastMood) {
+				info.WriteString(fmt.Sprintf("\n【情感关怀】用户最近心情不好(%s)，需要关心和安慰", user.LastMood))
+			}
+		}
+	}
+
+	// 标签
+	if len(user.Tags) > 0 {
+		info.WriteString(fmt.Sprintf("\n【标签】%v", user.Tags))
+	}
+
+	return info.String()
+}
+
+// getEmotionalStateText 获取情感状态文本
+func (u *UserMemory) getEmotionalStateText() string {
+	switch u.EmotionalState {
+	case "happy":
+		return "开心"
+	case "sad":
+		return "难过"
+	case "stressed":
+		return "压力大"
+	case "excited":
+		return "兴奋"
+	case "bored":
+		return "无聊"
+	default:
+		return "平静"
+	}
+}
+
+// containsNegativeMood 检查是否包含负面情绪
+func containsNegativeMood(mood string) bool {
+	negativeMoods := []string{"难过", "生气", "烦躁", "沮丧", "失望", "伤心", "压力", "疲惫"}
+	for _, nm := range negativeMoods {
+		if strings.Contains(mood, nm) {
+			return true
+		}
+	}
+	return false
+}
+
+// UpdateMood 更新用户情绪状态
+func (m *MemorySystem) UpdateMood(userID int64, mood string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return
+	}
+
+	user.LastMood = mood
+	user.LastMoodTime = time.Now().Unix()
+
+	// 更新情感状态
+	if containsNegativeMood(mood) {
+		if strings.Contains(mood, "压力") {
+			user.EmotionalState = "stressed"
+		} else {
+			user.EmotionalState = "sad"
+		}
+	} else if strings.Contains(mood, "开心") || strings.Contains(mood, "高兴") {
+		user.EmotionalState = "happy"
+	} else if strings.Contains(mood, "无聊") {
+		user.EmotionalState = "bored"
+	}
+}
+
+// AddTopic 添加讨论话题
+func (m *MemorySystem) AddTopic(userID int64, topic string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return
+	}
+
+	// 检查是否已存在
+	for _, t := range user.LastTopics {
+		if t == topic {
+			return
+		}
+	}
+
+	user.LastTopics = append(user.LastTopics, topic)
+	// 只保留最近10个话题
+	if len(user.LastTopics) > 10 {
+		user.LastTopics = user.LastTopics[len(user.LastTopics)-10:]
+	}
+}
+
+// AddQuestion 添加用户问题
+func (m *MemorySystem) AddQuestion(userID int64, question string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return
+	}
+
+	user.LastQuestions = append(user.LastQuestions, question)
+	// 只保留最近10个问题
+	if len(user.LastQuestions) > 10 {
+		user.LastQuestions = user.LastQuestions[len(user.LastQuestions)-10:]
+	}
+}
+
+// AddRequestRecord 添加求片记录
+func (m *MemorySystem) AddRequestRecord(userID int64, mediaTitle string, status string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return
+	}
+
+	record := RequestRecord{
+		MediaTitle: mediaTitle,
+		RequestTime: time.Now().Unix(),
+		Status:     status,
+	}
+
+	user.RequestHistory = append(user.RequestHistory, record)
+	// 只保留最近20条记录
+	if len(user.RequestHistory) > 20 {
+		user.RequestHistory = user.RequestHistory[len(user.RequestHistory)-20:]
+	}
+}
+
+// GetRecentRequests 获取最近的求片记录
+func (m *MemorySystem) GetRecentRequests(userID int64) []RequestRecord {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return nil
+	}
+
+	// 返回最近3条
+	if len(user.RequestHistory) <= 3 {
+		return user.RequestHistory
+	}
+	return user.RequestHistory[len(user.RequestHistory)-3:]
+}
+
+// GetUserEmotionalContext 获取用户情感上下文（用于情感支持）
+func (m *MemorySystem) GetUserEmotionalContext(userID int64) string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	user := m.memories[userID]
+	if user == nil {
+		return ""
+	}
+
+	var ctx strings.Builder
+
+	// 当前情感状态
+	if user.EmotionalState != "" && user.EmotionalState != "neutral" {
+		ctx.WriteString(fmt.Sprintf("用户当前心情: %s", user.getEmotionalStateText()))
+	}
+
+	// 最近的情绪记录
+	if len(user.MoodHistory) > 0 {
+		recentMoods := user.MoodHistory
+		if len(recentMoods) > 5 {
+			recentMoods = recentMoods[len(recentMoods)-5:]
+		}
+
+		negativeCount := 0
+		for _, mood := range recentMoods {
+			if containsNegativeMood(mood.Mood) {
+				negativeCount++
+			}
+		}
+
+		if negativeCount >= 3 {
+			ctx.WriteString(" | 用户最近情绪低落，需要更多关心和鼓励")
+		}
+	}
+
+	return ctx.String()
+}
+
+// ClearEmotionalState 清除情感状态（用户情绪好转时调用）
+func (m *MemorySystem) ClearEmotionalState(userID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	user := m.memories[userID]
+	if user != nil {
+		user.EmotionalState = "neutral"
+	}
 }
 
 func (u *UserMemory) getRelationText() string {
