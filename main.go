@@ -790,7 +790,8 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 				}
 			}
 
-			text.WriteString("📺 前往观看：https://emby.oceancloud.asia")
+			// Don't include direct link for security
+			// text.WriteString("📺 前往观看")
 
 		} else if itemType == "Movie" || (payload.Item != nil && payload.Item.Type == "Movie") {
 			// Movie format
