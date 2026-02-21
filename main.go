@@ -3575,6 +3575,14 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				// New movies - search for recent movies with enterprise-grade fallback
 				newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
 
+			case "guide_link", "guide_search", "guide_request":
+				// New user guide callbacks
+				newMsg, newKeyboard, editMessage = handleGuideCallback(userID, action)
+				if newMsg != "" {
+					responseText = newMsg
+					newKeyboard = newKeyboard
+				}
+
 			case "search":
 				// Quick search from button (only if not the special trending actions)
 				query := strings.Join(parts[1:], "_")
@@ -5072,6 +5080,91 @@ func adminHandler(w http.ResponseWriter, r *http.Request) {
 // Enterprise-grade Callback Handlers
 // ==============================================================================
 
+// handleGuideCallback handles new user guide callbacks
+func handleGuideCallback(userID int64, action string) (string, *TelegramInlineKeyboard, bool) {
+	log.Printf("[Guide] User %d requested guide: %s", userID, action)
+
+	switch action {
+	case "guide_link":
+		msg := "🔗 *绑定账号教程*\n\n"
+		msg += "━━━━━━━━━━━━━━━━\n\n"
+		msg += "📝 *步骤说明*\n\n"
+		msg += "发送命令给小凛：\n"
+		msg += "`/link 你的账号 你的密码`\n\n"
+		msg += "📌 *示例*：\n"
+		msg += "`/link alice 123456`\n\n"
+		msg += "💡 *提示*：\n"
+		msg += "• 账号和密码就是你在 Jellyfin 登录用的\n"
+		msg += "• 绑定后每天可以请求一定数量的影片\n"
+		msg += "• 配额会在每天凌晨自动重置\n\n"
+		msg += "准备好了吗？直接发送命令试试吧！"
+
+		keyboard := &TelegramInlineKeyboard{
+			InlineKeyboard: [][]map[string]string{
+				{
+					{"text": "✅ 我明白了", "callback_data": "guide_search"},
+					{"text": "🔍 搜索教程", "callback_data": "guide_search"},
+				},
+			},
+		}
+		return msg, keyboard, true
+
+	case "guide_search":
+		msg := "🔍 *搜索教程*\n\n"
+		msg += "━━━━━━━━━━━━━━━━\n\n"
+		msg += "超简单的！直接输入影片名就行～\n\n"
+		msg += "📝 *试试这些*：\n"
+		msg += "• 「繁花」\n"
+		msg += "• 「沙丘2」\n"
+		msg += "• 「三体」\n\n"
+		msg += "🎯 *搜索技巧*：\n"
+		msg += "• 输入中文名、英文名都可以\n"
+		msg += "• 可以加上年份，如「阿凡达2009」\n"
+		msg += "• 输入「2024电影」看今年的电影\n\n"
+		msg += "💡 *下一步*：\n"
+		msg += "搜索到后点击数字按钮查看详情\n"
+		msg += "然后点击「📋 发起请求」就搞定啦！"
+
+		keyboard := &TelegramInlineKeyboard{
+			InlineKeyboard: [][]map[string]string{
+				{
+					{"text": "🔥 去搜索", "callback_data": "action_search"},
+				},
+				{
+					{"text": "⬅️ 上一步", "callback_data": "guide_link"},
+				},
+			},
+		}
+		return msg, keyboard, true
+
+	case "guide_request":
+		msg := "📋 *请求教程*\n\n"
+		msg += "━━━━━━━━━━━━━━━━\n\n"
+		msg += "找到想看的内容？发起请求超简单！\n\n"
+		msg += "📝 *步骤*：\n\n"
+		msg += "1️⃣ 在搜索结果中点击数字按钮\n"
+		msg += "2️⃣ 查看详情后点击「📋 发起请求」\n"
+		msg += "3️⃣ 等待管理员处理\n"
+		msg += "4️⃣ 完成后自动通知你 🎉\n\n"
+		msg += "💡 *提示*：\n"
+		msg += "• 每天有请求配额限制\n"
+		msg += "• 查看配额：/quota\n"
+		msg += "• 查看状态：/my"
+
+		keyboard := &TelegramInlineKeyboard{
+			InlineKeyboard: [][]map[string]string{
+				{
+					{"text": "🔍 去搜索", "callback_data": "action_search"},
+				},
+			},
+		}
+		return msg, keyboard, true
+
+	default:
+		return "", nil, false
+	}
+}
+
 // handleTrendingSearchCallback handles trending search with comprehensive fallback
 func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
 	log.Printf("[Callback] handleTrendingSearchCallback for user %d", userID)
@@ -5233,7 +5326,6 @@ AI 推荐服务正在初始化中
 	return msg, nil, true
 }
 
-// handleNewMoviesSearchCallback handles new movies search with comprehensive fallback
 func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
 	log.Printf("[Callback] handleNewMoviesSearchCallback for user %d", userID)
 

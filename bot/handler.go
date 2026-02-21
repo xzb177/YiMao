@@ -1375,31 +1375,84 @@ func (h *Handler) handleStartCommand(session *session.UserSession) *MessageRespo
 		}
 	}
 
-	msg := fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
-	msg += "我可以帮你搜索和请求影视内容\n\n"
-	msg += "💡 点击下方按钮快速开始"
+	// 检查用户状态（是否已绑定账号）
+	hasQuota := false
+	isNewUser := true
+	if h.quotaManager != nil {
+		quota := h.quotaManager.GetUserQuota(session.UserID)
+		hasQuota = quota != nil && (quota.MovieLimit > 0 || quota.TVLimit > 0)
+	}
 
-	// Create inline keyboard with quick actions
-	keyboard := [][]map[string]string{
-		{
-			{"text": "🔍 搜索内容", "callback_data": "action_search"},
-		},
-		{
-			{"text": "🔥 热门推荐", "callback_data": "search_trending"},
-			{"text": "📺 热播剧集", "callback_data": "search_tv_hot"},
-		},
-		{
-			{"text": "🎬 最新电影", "callback_data": "search_movie_new"},
-			{"text": "📋 我的请求", "callback_data": "action_myrequests"},
-		},
-		{
-			{"text": "⚙️ 设置", "callback_data": "action_settings"},
-			{"text": "❓ 帮助", "callback_data": "action_help"},
-		},
+	// 根据用户状态显示不同消息
+	var msg strings.Builder
+
+	if hasQuota {
+		// 老用户 - 简洁欢迎
+		msg.WriteString(fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName))
+		msg.WriteString("准备好探索精彩内容了吗？\n\n")
+		msg.WriteString("💡 直接输入影片名称开始搜索")
+	} else {
+		// 新用户 - 详细引导
+		isNewUser = true
+		msg.WriteString(fmt.Sprintf("👋 *欢迎，%s！*\n\n", displayName))
+		msg.WriteString("我是云海看板娘，你的智能媒体助手～\n\n")
+		msg.WriteString("━━━━━━━━━━━━━━━━\n\n")
+		msg.WriteString("🎯 *三步快速上手*\n\n")
+		msg.WriteString("1️⃣ 先绑定你的账号\n")
+		msg.WriteString("   使用 /link 账号 密码\n\n")
+		msg.WriteString("2️⃣ 直接输入影片名搜索\n")
+		msg.WriteString("   比如：「繁花」「沙丘2」\n\n")
+		msg.WriteString("3️⃣ 点击「请求」坐等完成\n\n")
+		msg.WriteString("━━━━━━━━━━━━━━━━\n\n")
+		msg.WriteString("🚀 *准备好开始了吗？*\n\n")
+		msg.WriteString("点击下方按钮开始探索吧！")
+	}
+
+	// 根据用户状态显示不同的按钮
+	var keyboard [][]map[string]string
+
+	if isNewUser {
+		// 新用户 - 引导式按钮
+		keyboard = [][]map[string]string{
+			{
+				{"text": "1️⃣ 绑定账号", "callback_data": "guide_link"},
+			},
+			{
+				{"text": "🔍 搜索教程", "callback_data": "guide_search"},
+			},
+			{
+				{"text": "🔥 热门推荐", "callback_data": "search_trending"},
+			},
+			{
+				{"text": "❓ 详细帮助", "callback_data": "action_help"},
+			},
+		}
+	} else {
+		// 老用户 - 功能按钮
+		keyboard = [][]map[string]string{
+			{
+				{"text": "🔍 搜索内容", "callback_data": "action_search"},
+			},
+			{
+				{"text": "🔥 热门推荐", "callback_data": "search_trending"},
+				{"text": "📺 热播剧集", "callback_data": "search_tv_hot"},
+			},
+			{
+				{"text": "🎬 最新电影", "callback_data": "search_movie_new"},
+				{"text": "🎲 随机推荐", "callback_data": "action_random"},
+			},
+			{
+				{"text": "📋 我的请求", "callback_data": "action_myrequests"},
+			},
+			{
+				{"text": "⚙️ 设置", "callback_data": "action_settings"},
+				{"text": "❓ 帮助", "callback_data": "action_help"},
+			},
+		}
 	}
 
 	return &MessageResponse{
-		Text:     msg,
+		Text:     msg.String(),
 		Keyboard: keyboard,
 	}
 }
