@@ -137,6 +137,10 @@ func (m *BotModule) HandleCallback(update *TelegramUpdate) {
 	// Answer the callback query
 	// If there's alert text, show it; otherwise just acknowledge
 	answerText := response.Text
+	if response.ShowAlert && len(answerText) > 200 {
+		// Telegram alert text limit is 200 characters
+		answerText = answerText[:197] + "..."
+	}
 	if answerText == "" {
 		answerText = ""
 	}
