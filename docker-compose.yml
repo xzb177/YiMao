@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   emby-telegram-bot:
     build: .
@@ -36,8 +34,8 @@ services:
       # Timezone
       - TZ=Asia/Shanghai
 
-    ports:
-      - "8080:8080"
+    # Use host network for better network access
+    network_mode: "host"
 
     # Volume for persistent data (preferences, quotas, cache, etc.)
     volumes:
@@ -45,9 +43,6 @@ services:
       - ./preferences.json:/app/preferences.json
       - ./user_quotas.json:/app/user_quotas.json
       - ./user_mapping.json:/app/user_mapping.json
-
-    # Network mode can be changed based on your setup
-    # network_mode: "host"  # Use if you need to access other services on the same host
 
     # Logging configuration
     logging:
