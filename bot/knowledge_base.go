@@ -430,15 +430,6 @@ func (kb *KnowledgeBase) initDefaultEntries() {
 			Priority: 100, // 高优先级
 		},
 		{
-			ID:       "kb_player_client",
-			Keywords: []string{"播放器", "客户端", "app", "用什么播放", "用什么看", "下载app", "怎么播放", "软件下载"},
-			Question: "用什么播放器看？",
-			Answer:   "📺 **播放软件下载**\n\n连接协议请选择「Emby」或「其他Emby」\n\n📱 **iOS & iPad OS**\nInfuse / yybx / iemc / Fileball / HamHub / SenPlayer / Conflux / iPlay / Forward / Reflix / Vidhub\n\n📺 **Apple TV**\nInfuse / yybx / Fileball / HamHub / SenPlayer / Conflux / iPlay / Vidhub\n\n🤖 **Android**\nAfusekt / Yamby / Emby小秘版 / iPlay / Jellyfin / Findroid / Emby kirlif版 / Femor / Vidhub / Hills\n\n📺 **Android TV**\nAfusekt TV版 / Jellyfin Android TV / Emby小秘版 / Emby kirlif版 / Yamby / Vidhub\n\n🖥️ **Windows**\nJellyfin Media Player / Emby小秘版 / Tsukimi / Femor / 小幻影视 / Hills Lite\n\n📱 **华为鸿蒙**\nHosPlayer\n\n⚠️ 注意：本服禁止开启Infuse的「媒体库模式」功能\n\n📋 完整下载列表: https://t.me/oceancloudemby/138",
-			Category: "info",
-			Enabled:  true,
-			Priority: 100, // 高优先级
-		},
-		{
 			ID:       "kb_emby_address",
 			Keywords: []string{"emby地址", "emby链接", "服务器", "地址是啥", "播放地址", "在哪看", "哪里看"},
 			Question: "Emby地址是多少？",

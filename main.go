@@ -698,9 +698,77 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			}
 
 		} else if itemType == "Episode" || (payload.Item != nil && payload.Item.Type == "Episode") {
-			// Single episode - skip individual episodes, only show when season completes
-			// Return empty to avoid spam
-			return "", ""
+			// Episode added - 动态通知：每次有新剧集都通知
+			// Get series ID from API
+			seriesID := ""
+			if itemID != "" {
+				if info, err := GetEmbyItemInfo(itemID); err == nil {
+					seriesID = info.SeriesId
+				}
+			}
+
+			// Get current episode count in the series
+			currentCount := 0
+			if seriesID != "" {
+				embyURL := os.Getenv("EMBY_URL")
+				apiKey := os.Getenv("EMBY_API_KEY")
+				userID := os.Getenv("EMBY_USER_ID")
+				if embyURL != "" && apiKey != "" {
+					seriesURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Fields=ChildCount", embyURL, userID, seriesID)
+					req, _ := http.NewRequest("GET", seriesURL, nil)
+					req.Header.Set("X-Emby-Token", apiKey)
+					resp, err := httpClient.Do(req)
+					if err == nil && resp.StatusCode == 200 {
+						defer resp.Body.Close()
+						var seasonInfo struct {
+							ChildCount int `json:"ChildCount"`
+						}
+						body, _ := io.ReadAll(resp.Body)
+						if json.Unmarshal(body, &seasonInfo) == nil {
+							currentCount = seasonInfo.ChildCount
+						}
+					}
+				}
+			}
+
+			// Build notification for new episode
+			seriesName := payload.ParentName // Series name is in ParentName for episodes
+			if seriesName == "" && payload.Item != nil {
+				seriesName = payload.Item.SeriesName
+			}
+
+			// Get season number
+			seasonNum := "S01"
+			if seasonName != "" && strings.Contains(seasonName, "Season") {
+				parts := strings.Split(seasonName, " ")
+				if len(parts) > 1 {
+					seasonNum = fmt.Sprintf("S%02d", parseSeasonNumber(parts[len(parts)-1]))
+				}
+			}
+
+			// Get episode index
+			epIndex := 0
+			if payload.IndexNumber != nil && *payload.IndexNumber > 0 {
+				epIndex = *payload.IndexNumber
+			} else if payload.Item != nil && payload.Item.IndexNumber > 0 {
+				epIndex = payload.Item.IndexNumber
+			}
+
+			notifyMilestone := fmt.Sprintf("新增第%d集", currentCount)
+			text.WriteString(fmt.Sprintf("✅ %s %s %sE%02d\n\n",
+				notifyMilestone, seriesName, seasonNum, epIndex))
+			text.WriteString("───────────────────\n\n")
+			text.WriteString(fmt.Sprintf("📊 当前进度：共%d集\n\n", currentCount))
+
+			// Try to get quality from the latest episode
+			if info, err := GetEmbyItemInfo(itemID); err == nil {
+				quality := GetMediaQuality(info)
+				if quality != "" && quality != "未知" {
+					text.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
+				}
+			}
+
+			text.WriteString("📺 前往观看：https://emby.oceancloud.asia")
 
 		} else if itemType == "Movie" || (payload.Item != nil && payload.Item.Type == "Movie") {
 			// Movie format
