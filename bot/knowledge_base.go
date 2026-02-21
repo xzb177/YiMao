@@ -449,7 +449,7 @@ func (kb *KnowledgeBase) initDefaultEntries() {
 		},
 		{
 			ID:       "kb_recommend_content",
-			Keywords: []string{"推荐", "推荐个", "推荐部", "推荐电影", "推荐剧集", "有啥好看", "有什么好看", "好看的"},
+			Keywords: []string{"推荐命令", "怎么推荐", "recommend命令", "推荐功能"},
 			Question: "有什么推荐？",
 			Answer:   "🎬 **推荐影片**\n\n私聊我，直接输入片名搜索即可！\n\n或者告诉我你喜欢的类型：\n• `/recommend 悬疑` - 悬疑片推荐\n• `/recommend 喜剧` - 喜剧片推荐\n• `/recommend 科幻` - 科幻片推荐\n\n💡 也可以直接说「推荐个XX片」",
 			Category: "help",
