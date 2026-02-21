@@ -74,7 +74,7 @@ func (cs *ChatSystem) ShouldReplyToMessage(isReplyToBot bool, message string) bo
 // IsMentioningBot 检查是否在提及机器人（只检查@提及）
 func IsMentioningBot(message string) bool {
 	// 只检查真正的 @username 提及
-	botNames := []string{"@oceancloudying_bot"}
+	botNames := []string{"@云海看板娘", "@oceancloudying_bot"}
 	msgLower := strings.ToLower(message)
 	for _, name := range botNames {
 		if strings.Contains(msgLower, name) {
@@ -283,6 +283,9 @@ type ChatResponse struct {
 func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 	isMention := IsMentioningBot(data.Message)
 
+	log.Printf("[ChatSystem] ProcessChatMessage: Message=%q, IsReplyToBot=%v, IsMention=%v, UserID=%d",
+		data.Message, data.IsReplyToBot, isMention, data.UserID)
+
 	// @机器人100%回复
 	if isMention {
 		cs.mu.Lock()
@@ -310,6 +313,8 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 
 	// 判断是否应该回复：@机器人 或 回复机器人
 	if !cs.ShouldReply(data.UserID, data.Message) && !isMention && !data.IsReplyToBot {
+		log.Printf("[ChatSystem] ShouldReply=false - not replying (ShouldReply=%v, isMention=%v, IsReplyToBot=%v)",
+			cs.ShouldReply(data.UserID, data.Message), isMention, data.IsReplyToBot)
 		return &ChatResponse{ShouldReply: false}
 	}
 

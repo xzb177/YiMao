@@ -116,8 +116,15 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 
 	// 检查是否是回复机器人的消息
 	isReplyToBot := false
-	if message.ReplyToMessage != nil && message.ReplyToMessage.From.IsBot {
-		isReplyToBot = true
+	if message.ReplyToMessage != nil {
+		log.Printf("[Handler] ReplyToMessage detected: MessageID=%d, FromID=%d, FromUsername=%q, IsBot=%v",
+			message.ReplyToMessage.MessageID,
+			message.ReplyToMessage.From.ID,
+			message.ReplyToMessage.From.Username,
+			message.ReplyToMessage.From.IsBot)
+		if message.ReplyToMessage.From.IsBot {
+			isReplyToBot = true
+		}
 	}
 
 	log.Printf("[Handler] User %d (chat type: %s, replyToBot: %v): %s", userID, chatType, isReplyToBot, text)
