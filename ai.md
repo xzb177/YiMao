@@ -2192,3 +2192,18 @@ trends - 请求趋势
 | | - **Dockerfile**: 修改以支持 CGO（SQLite 需要） |
 | | - **go.mod**: 添加 `modernc.org/sqlite v1.46.1` |
 | | - **服务重启**: Docker 容器重启成功 ✅ |
+| 2026-02-22 | **代码质量审查与修复** 🔍 |
+| | - **工具**: 使用 `go vet` 静态分析 |
+| | - **修复问题**: |
+| |   - `main.go:3715` - 修复 newKeyboard 自赋值问题 |
+| |   - `database/user_db.go:298,576` - 修复 bool 类型到 intToBool 的错误转换 |
+| |   - `chain/subscribe.go:27,29` - 删除重复的 qualityProfileId json tag |
+| |   - `internal/errors/errors.go:115` - 修复 sprintf 格式 %s 与 int 参数不匹配 |
+| |   - `test/setup.go:157` - 修复表达式语法错误 (:= 改为 ,) |
+| | - **代码质量评估**: |
+| |   - HTTP 客户端配置合理（超时、连接池） |
+| |   - map 访问大部分有 mutex 保护 |
+| |   - response body 基本都有 defer Close() |
+| |   - goroutine 使用得当，无泄漏风险 |
+| | - **提交**: b56395c |
+| | - **服务状态**: ✅ 运行正常 |
