@@ -3366,6 +3366,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			isSpecialAction := data == "search_trending" || data == "search_tv_hot" || data == "search_movie_new"
 			isAISelection := strings.HasPrefix(data, "ai_trending_") || strings.HasPrefix(data, "ai_hot_tv_") || strings.HasPrefix(data, "ai_new_movie_") || strings.HasPrefix(data, "ai_random_")
 			isRequestAction := strings.HasPrefix(data, "request_") && strings.Count(data, "_") >= 2
+			isTitleSearch := strings.HasPrefix(data, "search_title:")
 
 			if isSpecialAction {
 				log.Printf("[DEBUG] isSpecialAction=true, data=%s", data)
@@ -3467,6 +3468,34 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					}
 
 					newMsg = sb.String()
+					newKeyboard = keyboard
+					editMessage = true
+				}
+			} else if isTitleSearch {
+				// Handle title search: search_title:MovieName
+				title := strings.TrimPrefix(data, "search_title:")
+				title = strings.TrimSpace(title)
+
+				log.Printf("[DEBUG] Processing title search: %s", title)
+
+				// Search using smartSearchMgr
+				if smartSearchMgr != nil {
+					ctx := &SearchContext{
+						UserID: userID,
+						Query:  title,
+						Params: nil,
+					}
+					if err := smartSearchMgr.Search(ctx); err != nil {
+						log.Printf("[DEBUG] Title search error: %v", err)
+						responseText = "❌ 搜索失败，请稍后再试"
+						answerCallbackQuery(callbackID, responseText)
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+
+					// Format results with keyboard
+					msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
+					newMsg = msg
 					newKeyboard = keyboard
 					editMessage = true
 				}
@@ -5598,11 +5627,20 @@ func buildTrendingResultsMessageWithKeyboard(results []*ai.TrendingResult, title
 			keyboard = append(keyboard, []map[string]string{})
 		}
 		buttonLabel := fmt.Sprintf("%d", i+1)
-		mediaType := "movie"
-		if item.MediaType == "tv" {
-			mediaType = "tv"
+
+		// If tmdbID is 0, use title search instead of direct request
+		var callbackData string
+		if item.TmdbID > 0 {
+			mediaType := "movie"
+			if item.MediaType == "tv" {
+				mediaType = "tv"
+			}
+			callbackData = fmt.Sprintf("ai_trending_%d_%s", item.TmdbID, mediaType)
+		} else {
+			// Use title search callback
+			callbackData = fmt.Sprintf("search_title:%s", item.Title)
 		}
-		callbackData := fmt.Sprintf("ai_trending_%d_%s", item.TmdbID, mediaType)
+
 		keyboard[len(keyboard)-1] = append(keyboard[len(keyboard)-1], map[string]string{
 			"text":         buttonLabel,
 			"callback_data": callbackData,
