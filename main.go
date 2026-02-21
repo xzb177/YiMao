@@ -232,10 +232,11 @@ func InitChatSystem() {
 	// Initialize chat system
 	chatSystem = bot.NewChatSystem(knowledgeBase)
 
-	// Set admin checker
+	// Set admin checker and Jellyseerr config
 	if chatSystem != nil {
 		chatSystem.SetAdminChecker(isUserAdmin)
-		log.Println("[ChatSystem] Chat system initialized with admin checker")
+		chatSystem.SetJellyseerrConfig(jellyseerrURL, jellyseerrAPIKey)
+		log.Println("[ChatSystem] Chat system initialized with admin checker and Jellyseerr config")
 	}
 }
 

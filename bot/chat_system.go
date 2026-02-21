@@ -2,9 +2,11 @@
 package bot
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -26,6 +28,10 @@ type ChatSystem struct {
 	// 管理员检查函数
 	isAdminFunc func(int64) bool
 
+	// Jellyseerr客户端（用于AI搜索）
+	jellyseerrURL    string
+	jellyseerrAPIKey string
+
 	mu sync.RWMutex
 }
 
@@ -38,6 +44,14 @@ func NewChatSystem(kb *KnowledgeBase) *ChatSystem {
 		chatCooldown:       2 * time.Second, // 2秒冷却，更活跃
 		isAdminFunc:        nil, // 稍后设置
 	}
+}
+
+// SetJellyseerrConfig 设置Jellyseerr配置（用于AI搜索）
+func (cs *ChatSystem) SetJellyseerrConfig(url, apiKey string) {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	cs.jellyseerrURL = url
+	cs.jellyseerrAPIKey = apiKey
 }
 
 // SetAdminChecker 设置管理员检查函数
@@ -84,7 +98,95 @@ func IsMentioningBot(message string) bool {
 	return false
 }
 
-// GetChatResponse 获取聊天回复（优先使用 AI）
+// ShouldAutoReplyByKeyword 检查是否应该根据关键词自动回复（无需@或回复）
+// 返回 (shouldReply, extractedQuery)
+func ShouldAutoReplyByKeyword(message string) (bool, string) {
+	msgLower := strings.ToLower(message)
+
+	// 搜索/推荐/求片相关关键词
+	searchKeywords := []struct {
+		kw      string
+		extract func(string) string
+	}{
+		{"推荐", nil},
+		{"想看", nil},
+		{"推荐部", nil},
+		{"有啥", nil},
+		{"有什么", nil},
+		{"搜索", nil},
+		{"找部", nil},
+		{"看看", nil},
+		{"求推荐", nil},
+		{"好看的", nil},
+		{"想找", nil},
+		{"求片", nil},
+		{"求电影", nil},
+		{"求剧", nil},
+		{"求资源", nil},
+		{"有没有", nil},
+		{"来点", nil},
+		{"播放器", nil},
+		{"客户端", nil},
+		{"app", nil},
+		{"下载", nil},
+		{"怎么看", nil},
+		{"在哪看", nil},
+		{"哪里看", nil},
+	}
+
+	for _, sk := range searchKeywords {
+		if strings.Contains(msgLower, sk.kw) {
+			// 如果有提取函数，使用它
+			if sk.extract != nil {
+				return true, sk.extract(message)
+			}
+			// 否则返回整个消息作为查询
+			return true, message
+		}
+	}
+
+	// 检测媒体名称+年份格式 (如 "复仇者联盟 2019")
+	if containsYear(msgLower) && len(msgLower) > 3 {
+		return true, message
+	}
+
+	// 检测可能的媒体名称（较长且不含常见闲聊词）
+	if len(message) > 3 && !isChitchat(msgLower) {
+		return true, message
+	}
+
+	return false, ""
+}
+
+// containsYear 检查是否包含年份
+func containsYear(s string) bool {
+	// 检查 1900-2030 年的年份
+	for y := 2030; y >= 1990; y-- {
+		yearStr := fmt.Sprintf("%d", y)
+		if strings.Contains(s, yearStr) {
+			return true
+		}
+	}
+	return false
+}
+
+// isChitchat 检查是否是闲聊（不触发搜索）
+func isChitchat(msg string) bool {
+	chatWords := []string{
+		"你好", "hi", "hello", "在吗", "在不在", "哈哈", "嘿嘿",
+		"喵", "谢谢", "感谢", "再见", "晚安", "早安", "午安",
+		"开心", "高兴", "难过", "生气", "无聊", "睡觉", "吃饭",
+		"我是", "你是", "名字", "几岁", "多大了",
+	}
+	for _, w := range chatWords {
+		if strings.Contains(msg, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// GetChatResponse 获取聊天回复（优先使用知识库，然后AI）
 func (cs *ChatSystem) GetChatResponse(message string, userName string, userID int64) string {
 	// 检查是否是管理员
 	isAdmin := false
@@ -94,10 +196,24 @@ func (cs *ChatSystem) GetChatResponse(message string, userName string, userID in
 
 	log.Printf("[ChatSystem] GetChatResponse: user=%s (ID=%d, admin=%v), msg=%s", userName, userID, isAdmin, message)
 
-	// 优先使用 AI
+	// 1. 首先检查知识库（最高优先级）
+	if cs.kb != nil {
+		if entry := cs.kb.Match(message); entry != nil {
+			// 更新触发统计
+			cs.kb.UpdateTriggerCount(entry.ID)
+			log.Printf("[ChatSystem] Knowledge base matched: %s", entry.ID)
+
+			// 如果有答案，直接返回
+			if entry.Answer != "" {
+				return entry.Answer
+			}
+		}
+	}
+
+	// 2. 然后使用 AI
 	if ai.GetManager() != nil && ai.GetManager().IsEnabled() {
 		log.Printf("[ChatSystem] Using AI for response")
-		if response := cs.callAI(message, userName, isAdmin); response != "" {
+		if response := cs.callAI(message, userName, userID, isAdmin); response != "" {
 			log.Printf("[ChatSystem] AI response: %s", response)
 			return response
 		}
@@ -106,23 +222,25 @@ func (cs *ChatSystem) GetChatResponse(message string, userName string, userID in
 		log.Printf("[ChatSystem] AI not available, using fallback")
 	}
 
-	// AI 不可用时的降级回复
+	// 3. 最后降级回复
 	fallback := cs.getFallbackResponse(message, userName, isAdmin)
 	log.Printf("[ChatSystem] Fallback response: %s", fallback)
 	return fallback
 }
 
 // callAI 调用 AI 获取回复
-func (cs *ChatSystem) callAI(message string, userName string, isAdmin bool) string {
-	personality := cs.buildCatgirlPersonality(isAdmin)
-	context := cs.buildContext(userName, isAdmin)
+func (cs *ChatSystem) callAI(message string, userName string, userID int64, isAdmin bool) string {
+	// 构建用户消息，包含角色信息
+	userMsg := message
+	if isAdmin {
+		userMsg = fmt.Sprintf("[主人] %s: %s", userName, message)
+	} else {
+		userMsg = fmt.Sprintf("[用户] %s: %s", userName, message)
+	}
 
-	// 构建完整提示
-	fullPrompt := fmt.Sprintf("%s\n\n当前环境: %s\n\n用户消息: %s\n\n请作为凛冬回复:", personality, context, message)
+	log.Printf("[ChatSystem] Calling AI with userID=%d, message: %s", userID, userMsg)
 
-	log.Printf("[ChatSystem] Calling AI with prompt length: %d", len(fullPrompt))
-
-	response, err := ai.GetManager().GetAgent().ProcessMessage(0, fullPrompt)
+	response, err := ai.GetManager().GetAgent().ProcessMessage(userID, userMsg)
 	if err != nil {
 		log.Printf("[ChatSystem] AI error: %v", err)
 		// 即使 AI 失败，也返回一个带有上下文的回复
@@ -137,15 +255,14 @@ func (cs *ChatSystem) callAI(message string, userName string, isAdmin bool) stri
 		return cs.buildContextualFallback(message, userName, isAdmin)
 	}
 
-	// 确保有猫娘风格
-	if !strings.Contains(response, "喵") && rand.Intn(100) < 30 {
-		suffixes := []string{" 喵...", " 喵。", "喵！", " 喵？", " 💅", " 😏"}
-		response += suffixes[rand.Intn(len(suffixes))]
-	}
+	// 清理可能的格式标记
+	response = strings.TrimPrefix(response, "[assistant]: ")
+	response = strings.TrimPrefix(response, "Assistant: ")
+	response = strings.TrimPrefix(response, "AI: ")
 
 	// 限制长度，适合 Telegram 显示
-	if len(response) > 300 {
-		response = response[:297] + "..."
+	if len(response) > 350 {
+		response = response[:347] + "..."
 	}
 
 	return response
@@ -308,6 +425,19 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 		}
 	}
 
+	// 【新增】检查关键词自动回复（无需@或回复）
+	if shouldAutoReply, query := ShouldAutoReplyByKeyword(data.Message); shouldAutoReply {
+		log.Printf("[ChatSystem] Keyword triggered auto-reply: %s", query)
+		reply := cs.handleKeywordSearch(query, data.UserName, data.UserID)
+		if reply != "" {
+			return &ChatResponse{
+				Reply:       reply,
+				ShouldReply: true,
+				IsMention:   false,
+			}
+		}
+	}
+
 	// 判断是否应该回复：@机器人 或 回复机器人
 	if !cs.ShouldReply(data.UserID, data.Message) && !isMention && !data.IsReplyToBot {
 		return &ChatResponse{ShouldReply: false}
@@ -405,4 +535,118 @@ func (cs *ChatSystem) parseAndLearn(message, trigger, userName, prefix string) (
 	response += fmt.Sprintf("谢谢 %s 教我！📚", userName)
 
 	return response, true
+}
+
+// handleKeywordSearch 处理关键词触发的搜索
+func (cs *ChatSystem) handleKeywordSearch(query, userName string, userID int64) string {
+	// 清理查询词
+	query = strings.TrimSpace(query)
+	// 移除触发词
+	cleanQuery := query
+	cleanQuery = strings.ReplaceAll(cleanQuery, "推荐", "")
+	cleanQuery = strings.ReplaceAll(cleanQuery, "想看", "")
+	cleanQuery = strings.ReplaceAll(cleanQuery, "有什么", "")
+	cleanQuery = strings.ReplaceAll(cleanQuery, "有啥", "")
+	cleanQuery = strings.ReplaceAll(cleanQuery, "找部", "")
+	cleanQuery = strings.ReplaceAll(cleanQuery, "搜索", "")
+	cleanQuery = strings.TrimSpace(cleanQuery)
+
+	if cleanQuery == "" || len(cleanQuery) < 2 {
+		return ""
+	}
+
+	log.Printf("[ChatSystem] Keyword search: %s (original: %s)", cleanQuery, query)
+
+	// 使用AI进行搜索并回复
+	cs.mu.Lock()
+	jellyseerrURL := cs.jellyseerrURL
+	jellyseerrAPIKey := cs.jellyseerrAPIKey
+	cs.mu.Unlock()
+
+	// 如果有Jellyseerr配置，进行实际搜索
+	if jellyseerrURL != "" && jellyseerrAPIKey != "" {
+		return cs.searchAndReply(cleanQuery, userName, userID, jellyseerrURL, jellyseerrAPIKey)
+	}
+
+	// 否则返回AI推荐风格回复
+	return cs.generateAISearchResponse(cleanQuery, userName, userID)
+}
+
+// searchAndReply 搜索并生成回复
+func (cs *ChatSystem) searchAndReply(query, userName string, userID int64, jellyseerrURL, jellyseerrAPIKey string) string {
+	// 调用Jellyseerr搜索API
+	searchURL := fmt.Sprintf("%s/api/v1/search?query=%s&language=zh", jellyseerrURL, query)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Get(searchURL)
+	if err != nil {
+		log.Printf("[ChatSystem] Search error: %v", err)
+		return cs.generateAISearchResponse(query, userName, userID)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("[ChatSystem] Search returned status: %d", resp.StatusCode)
+		return cs.generateAISearchResponse(query, userName, userID)
+	}
+
+	var results []struct {
+		ID         int    `json:"id"`
+		Title      string `json:"title"`
+		ReleaseDate string `json:"releaseDate"`
+		PosterPath string `json:"posterPath"`
+		MediaType  string `json:"mediaType"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		log.Printf("[ChatSystem] Decode error: %v", err)
+		return cs.generateAISearchResponse(query, userName, userID)
+	}
+
+	if len(results) == 0 {
+		return fmt.Sprintf("哼...本座没找到「%s」喵...换个关键词试试？💅", query)
+	}
+
+	// 生成猫娘风格的搜索结果回复
+	var reply strings.Builder
+	reply.WriteString(fmt.Sprintf("哼，本座帮你搜了「%s」喵...\n\n", query))
+
+	// 只显示前3个结果
+	for i, r := range results {
+		if i >= 3 {
+			break
+		}
+		mediaType := "🎬"
+		if r.MediaType == "tv" {
+			mediaType = "📺"
+		}
+		reply.WriteString(fmt.Sprintf("%s **%s**\n", mediaType, r.Title))
+	}
+
+	reply.WriteString(fmt.Sprintf("\n想要哪一个？直接告诉我喵～"))
+
+	return reply.String()
+}
+
+// generateAISearchResponse 生成AI搜索回复（当Jellyseerr不可用时）
+func (cs *ChatSystem) generateAISearchResponse(query, userName string, userID int64) string {
+	isAdmin := false
+	if cs.isAdminFunc != nil {
+		isAdmin = cs.isAdminFunc(userID)
+	}
+
+	// 使用AI生成搜索回复
+	if ai.GetManager() != nil && ai.GetManager().IsEnabled() {
+		aiPrompt := fmt.Sprintf("用户%s想找影视作品「%s」，请用傲娇猫娘的口吻回应，告诉用户本座可以帮忙搜索，让用户说更具体的关键词。", userName, query)
+		response, err := ai.GetManager().GetAgent().ProcessMessage(userID, aiPrompt)
+		if err == nil && response != "" {
+			return strings.TrimSpace(response)
+		}
+	}
+
+	// 降级回复
+	if isAdmin {
+		return fmt.Sprintf("主人想找「%s」？本座帮你搜搜看喵...主人可以说得更具体一点吗？💅", query)
+	}
+	return fmt.Sprintf("哦...你想找「%s」？告诉本座更具体的关键词，本座帮你搜喵～", query)
 }
