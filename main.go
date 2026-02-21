@@ -36,6 +36,7 @@ type EmbyWebhookPayload struct {
 
 	// Nested Item field (library.new format)
 	Item       *struct {
+		Id              string `json:"Id"`
 		Name            string `json:"Name"`
 		Type            string `json:"Type"`
 		ParentId        string `json:"ParentId"`
@@ -542,6 +543,9 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 		itemType = payload.Item.Type
 		itemName = payload.Item.Name
 		seasonName = payload.Item.SeasonName
+		if payload.Item.Id != "" {
+			itemID = payload.Item.Id
+		}
 		if payload.Item.ProductionYear > 0 {
 			year = &payload.Item.ProductionYear
 		}
