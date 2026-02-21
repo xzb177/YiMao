@@ -566,47 +566,65 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 				movYear = *year
 			}
 
-			// Get detailed info from Emby API
+			// Get detailed info from Emby API with retry
 			var childCount int
 			var quality string
 			var totalSize int64
 			var fileCount int
+			var seriesID string
 
-			if info, err := GetEmbyItemInfo(itemID); err == nil {
-				childCount = info.ChildCount
-				quality = GetMediaQuality(info)
-				totalSize = GetTotalSize(info)
-				fileCount = GetFileCount(info)
-				// Get backdrop image URL (horizontal, perfect for mobile)
-				photoURL = GetBestImageURL(info)
-				// If no backdrop, try to fetch from series
-				if photoURL == "" && info.SeriesId != "" {
-					photoURL = FetchSeriesBackdrop(info.SeriesId)
+			for attempt := 0; attempt <= 2; attempt++ {
+				if info, err := GetEmbyItemInfo(itemID); err == nil {
+					childCount = info.ChildCount
+					quality = GetMediaQuality(info)
+					totalSize = GetTotalSize(info)
+					fileCount = GetFileCount(info)
+					seriesID = info.SeriesId
+					// Get backdrop image URL (horizontal, perfect for mobile)
+					photoURL = GetBestImageURL(info)
+					// If no backdrop, try to fetch from series
+					if photoURL == "" && info.SeriesId != "" {
+						photoURL = FetchSeriesBackdrop(info.SeriesId)
+					}
+
+					// If we got meaningful data, break
+					if (quality != "" && quality != "未知") || totalSize > 0 {
+						break
+					}
+					// Wait before retry
+					if attempt < 2 {
+						time.Sleep(500 * time.Millisecond)
+					}
+				} else {
+					if attempt < 2 {
+						time.Sleep(500 * time.Millisecond)
+					}
 				}
-				// If quality is unknown and childCount > 0, try to get from first episode
-				if quality == "未知" || quality == "" {
-					quality = getQualityFromFirstEpisode(itemID)
-				}
-				// If ChildCount is 0, try to get from items query
-				if childCount == 0 && info.SeriesId != "" {
-					embyURL := os.Getenv("EMBY_URL")
-					apiKey := os.Getenv("EMBY_API_KEY")
-					userID := os.Getenv("EMBY_USER_ID")
-					if embyURL != "" && apiKey != "" {
-						childURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1", embyURL, userID, itemID)
-						req, err := http.NewRequest("GET", childURL, nil)
-						if err == nil {
-							req.Header.Set("X-Emby-Token", apiKey)
-							resp, err := httpClient.Do(req)
-							if err == nil && resp.StatusCode == 200 {
-								defer resp.Body.Close()
-								var result struct {
-									TotalRecordCount int `json:"TotalRecordCount"`
-								}
-								body, _ := io.ReadAll(resp.Body)
-								if json.Unmarshal(body, &result) == nil {
-									childCount = result.TotalRecordCount
-								}
+			}
+
+			// If quality is still unknown and childCount > 0, try to get from first episode
+			if quality == "未知" || quality == "" {
+				quality = getQualityFromFirstEpisode(itemID)
+			}
+			// If ChildCount is 0, try to get from items query
+			if childCount == 0 && seriesID != "" {
+				embyURL := os.Getenv("EMBY_URL")
+				apiKey := os.Getenv("EMBY_API_KEY")
+				userID := os.Getenv("EMBY_USER_ID")
+				if embyURL != "" && apiKey != "" {
+					childURL := fmt.Sprintf("%s/Users/%s/Items?ParentId=%s&Limit=1", embyURL, userID, itemID)
+					req, err := http.NewRequest("GET", childURL, nil)
+					if err == nil {
+						req.Header.Set("X-Emby-Token", apiKey)
+						resp, err := httpClient.Do(req)
+						if err == nil && resp.StatusCode == 200 {
+							defer resp.Body.Close()
+							var result struct {
+								TotalRecordCount int `json:"TotalRecordCount"`
+							}
+							body, _ := io.ReadAll(resp.Body)
+							if json.Unmarshal(body, &result) == nil {
+								childCount = result.TotalRecordCount
 							}
 						}
 					}
@@ -777,17 +795,34 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 				movYear = *year
 			}
 
-			// Get detailed info from Emby API
+			// Get detailed info from Emby API with retry for better data
 			var quality string
 			var totalSize int64
 			var fileCount int
 
-			if info, err := GetEmbyItemInfo(itemID); err == nil {
-				quality = GetMediaQuality(info)
-				totalSize = GetTotalSize(info)
-				fileCount = GetFileCount(info)
-				// Get backdrop image URL (horizontal, perfect for mobile)
-				photoURL = GetBestImageURL(info)
+			// Try multiple times to get complete media info (webhook might fire before media is fully scanned)
+			for attempt := 0; attempt <= 2; attempt++ {
+				if info, err := GetEmbyItemInfo(itemID); err == nil {
+					quality = GetMediaQuality(info)
+					totalSize = GetTotalSize(info)
+					fileCount = GetFileCount(info)
+					// Get backdrop image URL (horizontal, perfect for mobile)
+					photoURL = GetBestImageURL(info)
+
+					// If we got meaningful data, break
+					if quality != "" && quality != "未知" && totalSize > 0 {
+						break
+					}
+					// Wait before retry (only if not last attempt)
+					if attempt < 2 {
+						time.Sleep(500 * time.Millisecond)
+					}
+				} else {
+					// Wait before retry if API call failed
+					if attempt < 2 {
+						time.Sleep(500 * time.Millisecond)
+					}
+				}
 			}
 
 			// Get rating info (includes Chinese name and genres)
