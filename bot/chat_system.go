@@ -625,10 +625,11 @@ func (cs *ChatSystem) handleKeywordSearch(query, userName string, userID int64) 
 	// 清理查询词
 	query = strings.TrimSpace(query)
 
-	// 检测是否是推荐类型请求（没有具体片名）
-	// 例如："推荐几部恐怖片"、"好看的悬疑片"
-	if isGenreRecommendation(query) {
-		return cs.handleGenreRecommendation(query, userName, userID)
+	// 检测是否是纯推荐请求（没有具体片名）
+	// 返回空字符串，让后续流程走知识库或AI
+	if isGenreRecommendation(query) && !hasSpecificTitle(query) {
+		log.Printf("[ChatSystem] Pure genre recommendation, passing to KB/AI: %s", query)
+		return "" // 返回空，让 ProcessChatMessage 继续走知识库/AI
 	}
 
 	// 移除触发词
@@ -662,24 +663,68 @@ func (cs *ChatSystem) handleKeywordSearch(query, userName string, userID int64) 
 	return cs.generateAISearchResponse(cleanQuery, userName, userID)
 }
 
+// hasSpecificTitle 检查是否包含具体片名（非类型词）
+func hasSpecificTitle(query string) bool {
+	// 常见类型词列表
+	genres := []string{
+		"恐怖", "悬疑", "喜剧", "科幻", "动作", "爱情", "动画",
+		"战争", "犯罪", "纪录片", "剧情", "冒险", "奇幻",
+		"动画片", "电影", "电视剧", "剧集", "片",
+	}
+
+	lowerQuery := strings.ToLower(query)
+	words := strings.Fields(lowerQuery)
+
+	// 如果只有一个词且是类型词，认为没有具体片名
+	if len(words) == 1 {
+		for _, g := range genres {
+			if words[0] == g {
+				return false
+			}
+		}
+	}
+
+	// 检查是否包含非类型词的内容
+	// 例如 "推荐复仇者联盟" 包含具体片名
+	for _, word := range words {
+		isGenre := false
+		for _, g := range genres {
+			if word == g || word == "推荐" || word == "好看" || word == "个" || word == "部" || word == "几" {
+				isGenre = true
+				break
+			}
+		}
+		if !isGenre && len(word) >= 2 {
+			return true // 有具体内容
+		}
+	}
+
+	return false
+}
+
 // isGenreRecommendation 检测是否是类型推荐请求
 func isGenreRecommendation(query string) bool {
 	query = strings.ToLower(query)
 
+	// 推荐类消息总是走AI
+	if strings.Contains(query, "推荐") {
+		return true
+	}
+
 	// 包含量词但没有具体片名
 	hasQuantity := strings.Contains(query, "几部") || strings.Contains(query, "部") ||
-		strings.Contains(query, "一些") || strings.Contains(query, "点")
+		strings.Contains(query, "一些") || strings.Contains(query, "点") ||
+		strings.Contains(query, "个")
 
-	// 包含类型词或"推荐"
-	hasGenreOrRecommend := strings.Contains(query, "推荐") ||
-		strings.Contains(query, "恐怖") || strings.Contains(query, "悬疑") ||
+	// 包含类型词
+	hasGenre := strings.Contains(query, "恐怖") || strings.Contains(query, "悬疑") ||
 		strings.Contains(query, "喜剧") || strings.Contains(query, "科幻") ||
 		strings.Contains(query, "动作") || strings.Contains(query, "爱情") ||
 		strings.Contains(query, "动画") || strings.Contains(query, "战争") ||
 		strings.Contains(query, "犯罪") || strings.Contains(query, "纪录片") ||
 		strings.Contains(query, "好看的")
 
-	return hasQuantity && hasGenreOrRecommend
+	return hasQuantity && hasGenre
 }
 
 // handleGenreRecommendation 处理类型推荐请求
