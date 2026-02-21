@@ -247,6 +247,18 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 		}()
 	}
 
+	// 检查是否是学习命令（管理员专用）
+	if isMention && cs.kb != nil && cs.isAdminFunc != nil && cs.isAdminFunc(data.UserID) {
+		if learnResponse, learned := cs.handleLearning(data.Message, data.UserName); learned {
+			cs.UpdateCooldown(data.UserID)
+			return &ChatResponse{
+				Reply:       learnResponse,
+				ShouldReply: true,
+				IsMention:   isMention,
+			}
+		}
+	}
+
 	// 判断是否应该回复
 	if !cs.ShouldReply(data.UserID, data.Message) && !isMention {
 		return &ChatResponse{ShouldReply: false}
@@ -263,4 +275,85 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 		ShouldReply: true,
 		IsMention:   isMention,
 	}
+}
+
+// handleLearning 处理学习命令（管理员专用）
+// 支持格式:
+//   - "记住：xxx是yyy"
+//   - "机器人记住 xxx是yyy"
+//   - "学习：xxx是yyy"
+//   - "机器人学习 xxx是yyy"
+func (cs *ChatSystem) handleLearning(message, userName string) (string, bool) {
+	// 触发词列表
+	triggers := []string{"记住", "学习", "记一下", "添加知识", "新知识"}
+
+	for _, trigger := range triggers {
+		// 检查 "记住：xxx是yyy" 或 "学习：xxx是yyy" 格式
+		prefix := trigger + "："
+		if strings.Contains(message, prefix) {
+			return cs.parseAndLearn(message, trigger, userName, prefix)
+		}
+		// 检查 "机器人记住 xxx是yyy" 格式
+		prefix = "机器人" + trigger + " "
+		if strings.Contains(message, prefix) {
+			return cs.parseAndLearn(message, trigger, userName, prefix)
+		}
+	}
+
+	return "", false
+}
+
+// parseAndLearn 解析并学习知识
+func (cs *ChatSystem) parseAndLearn(message, trigger, userName, prefix string) (string, bool) {
+	// 提取内容
+	idx := strings.Index(message, prefix)
+	if idx == -1 {
+		return "", false
+	}
+
+	content := strings.TrimSpace(message[idx+len(prefix):])
+	if content == "" {
+		return "❓ 学习内容不能为空哦～\n\n格式: " + trigger + "：关键词是答案", false
+	}
+
+	// 解析 "关键词是答案" 格式
+	parts := strings.SplitN(content, "是", 2)
+	if len(parts) != 2 {
+		return "❓ 格式不对哦～\n\n正确格式: " + trigger + "：关键词是答案\n\n例如: " + trigger + "：emby地址是https://xxx.com", false
+	}
+
+	keyword := strings.TrimSpace(parts[0])
+	answer := strings.TrimSpace(parts[1])
+
+	if keyword == "" || answer == "" {
+		return "❓ 关键词和答案都不能为空哦～", false
+	}
+
+	// 添加到知识库
+	entry, err := cs.kb.AddEntry(
+		[]string{keyword},
+		keyword+"是什么？",
+		answer,
+		"user_added", // 用户添加的分类
+	)
+
+	if err != nil {
+		log.Printf("[ChatSystem] Failed to add entry: %v", err)
+		return "❌ 添加失败了...稍后再试试喵", false
+	}
+
+	// 保存知识库
+	if err := cs.kb.Save(); err != nil {
+		log.Printf("[ChatSystem] Failed to save knowledge base: %v", err)
+		return "✅ 我记住啦！但保存有点问题...可能重启后会忘记喵", false
+	}
+
+	log.Printf("[ChatSystem] Learned from %s: %s = %s (ID: %s)", userName, keyword, answer, entry.ID)
+
+	// 返回确认消息
+	response := fmt.Sprintf("✅ 我记住啦！\n\n")
+	response += fmt.Sprintf("📝 %s = %s\n\n", keyword, answer)
+	response += fmt.Sprintf("谢谢 %s 教我！📚", userName)
+
+	return response, true
 }

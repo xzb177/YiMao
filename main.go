@@ -161,7 +161,16 @@ type TelegramUpdate struct {
 			ID   int64  `json:"id"`
 			Type string `json:"type"`
 		} `json:"chat"`
-		Text string `json:"text"`
+		Text            string `json:"text"`
+		ReplyToMessage  *struct {
+			MessageID int64 `json:"message_id"`
+			From      struct {
+				ID        int64  `json:"id"`
+				IsBot     bool   `json:"is_bot"`
+				FirstName string `json:"first_name"`
+				Username  string `json:"username"`
+			} `json:"from"`
+		} `json:"reply_to_message"`
 	} `json:"message"`
 	CallbackQuery *TelegramCallbackQuery `json:"callback_query"`
 }
@@ -1764,6 +1773,34 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 	}
 	issueReplyMutex.Unlock()
+
+	// 检查是否是回复机器人的消息（用于闲聊）
+	isReplyToBot := false
+	if update.Message.ReplyToMessage != nil && update.Message.ReplyToMessage.From.IsBot {
+		isReplyToBot = true
+	}
+
+	// 如果是回复机器人或非命令消息，尝试用聊天系统处理
+	if isReplyToBot || !strings.HasPrefix(command, "/") {
+		if chatSystem != nil {
+			displayName := update.Message.From.FirstName
+			if update.Message.From.Username != "" {
+				displayName = update.Message.From.Username
+			}
+
+			response := chatSystem.GetChatResponse(text, displayName, update.Message.From.ID)
+			if response != "" {
+				sendPrivateMessage(update.Message.From.ID, response, nil)
+				return
+			}
+		}
+	}
+
+	// 如果不是命令且聊天系统没有响应，返回错误
+	if !strings.HasPrefix(command, "/") {
+		sendPrivateMessage(update.Message.From.ID, "❓ 未知命令。请发送 /help 查看帮助。", nil)
+		return
+	}
 
 	switch command {
 	case "/start":
