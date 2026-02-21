@@ -5,10 +5,63 @@ services:
     build: .
     container_name: emby-telegram-bot
     restart: unless-stopped
+
     environment:
+      # Telegram Bot Configuration
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+
+      # Server Configuration
       - PORT=8080
+
+      # Emby Configuration
+      - EMBY_URL=${EMBY_URL}
+      - EMBY_API_KEY=${EMBY_API_KEY}
+      - EMBY_USER_ID=${EMBY_USER_ID}
+
+      # Jellyseerr Configuration
+      - JELLYSEERR_URL=${JELLYSEERR_URL}
+      - JELLYSEERR_API_KEY=${JELLYSEERR_API_KEY}
+
+      # AI Configuration (Optional)
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+
+      # Admin Configuration
+      - ADMINS=${ADMINS}
+
+      # API Security
+      - API_KEY=${API_KEY}
+
+      # Timezone
+      - TZ=Asia/Shanghai
+
     ports:
       - "8080:8080"
-    # If using reverse proxy, you can comment out the ports section
+
+    # Volume for persistent data (preferences, quotas, cache, etc.)
+    volumes:
+      - ./data:/app/data
+      - ./preferences.json:/app/preferences.json
+      - ./user_quotas.json:/app/user_quotas.json
+      - ./user_mapping.json:/app/user_mapping.json
+
+    # Network mode can be changed based on your setup
+    # network_mode: "host"  # Use if you need to access other services on the same host
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    # Resource limits (optional)
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
