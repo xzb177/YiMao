@@ -5534,6 +5534,11 @@ func main() {
 		log.Printf("Warning: Failed to set commands: %v", err)
 	}
 
+	// Set descriptions
+	if err := setTelegramDescriptions(); err != nil {
+		log.Printf("Warning: Failed to set descriptions: %v", err)
+	}
+
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal(err)
 	}
@@ -5640,6 +5645,58 @@ func setTelegramCommands() error {
 	}
 
 	log.Printf("Telegram commands set: %d commands", len(commands))
+	return nil
+}
+
+// setTelegramDescriptions sets the short and full descriptions for the bot
+func setTelegramDescriptions() error {
+	// Set short description
+	shortDesc := "影视搜索·智能推荐·一键求片"
+	shortDescURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMyShortDescription", botToken)
+	shortDescPayload := map[string]string{
+		"short_description": shortDesc,
+		"language_code":     "zh",
+	}
+	jsonData, _ := json.Marshal(shortDescPayload)
+	resp, err := httpClient.Post(shortDescURL, "application/json", bytes.NewBuffer(jsonData))
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			log.Printf("Telegram short description set: %s", shortDesc)
+		}
+	}
+
+	// Set full description
+	fullDesc := `🎬 Emby 影视机器人
+
+✨ 功能特色
+• 🔍 智能搜索 - 支持中英文片名搜索
+• 🎯 智能推荐 - AI 个性化推荐
+• 📺 热门推荐 - 实时热门榜单
+• 📋 一键求片 - 快速请求影视内容
+• 🔔 实时通知 - 入库/批准/可用通知
+• 👥 账号绑定 - 绑定 Jellyseerr 账号
+
+📱 常用命令
+/search - 搜索内容
+/recommend - 智能推荐
+/my - 我的请求
+/link - 绑定账号`
+
+	fullDescURL := fmt.Sprintf("https://api.telegram.org/bot%s/setMyDescription", botToken)
+	fullDescPayload := map[string]string{
+		"description":   fullDesc,
+		"language_code": "zh",
+	}
+	jsonData, _ = json.Marshal(fullDescPayload)
+	resp, err = httpClient.Post(fullDescURL, "application/json", bytes.NewBuffer(jsonData))
+	if err == nil {
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			log.Println("Telegram full description set")
+		}
+	}
+
 	return nil
 }
 
