@@ -6105,7 +6105,7 @@ func shouldUseNewModule(text string) bool {
 }
 
 // isExplicitSearchQuery 检查是否是明确的搜索请求
-// 只有明确是搜索的消息才返回 true，其他（聊天、闲聊）返回 false
+// 私聊中，媒体名称类的输入应该触发搜索
 func isExplicitSearchQuery(text string) bool {
 	if text == "" {
 		return false
@@ -6128,6 +6128,34 @@ func isExplicitSearchQuery(text string) bool {
 	// 例如："复仇者联盟 2012"、"阿凡达2009"
 	if containsYear(text) {
 		return true
+	}
+
+	// 私聊中：纯中文/英文名称（2-15字）且不含常见闲聊词，视为搜索
+	// 排除明显的闲聊词
+	chitchatWords := []string{
+		"你好", "hi", "hello", "在吗", "在不在", "谢谢", "感谢",
+		"早", "晚安", "开心", "难过", "生气", "无聊", "累", "饿",
+		"你是谁", "叫什么", "什么名字", "会什么", "怎么样", "好不好",
+		"喜欢", "爱", "讨厌", "哈哈", "嘿嘿", "哎呀", "嗯", "哦",
+		"今天", "明天", "昨天", "天气", "时间", "几点", "哪里",
+	}
+	for _, cw := range chitchatWords {
+		if strings.Contains(strings.ToLower(text), cw) {
+			return false // 是闲聊，不是搜索
+		}
+	}
+
+	// 文本长度在 2-20 字之间，且不包含标点符号结尾的问句，视为搜索
+	text = strings.TrimSpace(text)
+	textLen := len([]rune(text))
+	if textLen >= 2 && textLen <= 20 {
+		// 不以问号结尾的简短文本，当作搜索
+		if !strings.HasSuffix(text, "？") && !strings.HasSuffix(text, "?") {
+			// 不包含"吗"、"呢"、"吧"等语气词结尾的问句
+			if !strings.HasSuffix(text, "吗") && !strings.HasSuffix(text, "呢") && !strings.HasSuffix(text, "吧") {
+				return true
+			}
+		}
 	}
 
 	// 默认：不是搜索请求（是聊天）
