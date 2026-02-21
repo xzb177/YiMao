@@ -577,7 +577,8 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			var fileCount int
 			var seriesID string
 
-			for attempt := 0; attempt <= 2; attempt++ {
+			// Try multiple times to get complete media info (webhook might fire before media is fully scanned)
+			for attempt := 0; attempt <= 5; attempt++ {
 				if info, err := GetEmbyItemInfo(itemID); err == nil {
 					childCount = info.ChildCount
 					quality = GetMediaQuality(info)
@@ -595,13 +596,13 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 					if (quality != "" && quality != "未知") || totalSize > 0 {
 						break
 					}
-					// Wait before retry
-					if attempt < 2 {
-						time.Sleep(500 * time.Millisecond)
+					// Wait before retry (longer wait for media scanning)
+					if attempt < 5 {
+						time.Sleep(1 * time.Second)
 					}
 				} else {
-					if attempt < 2 {
-						time.Sleep(500 * time.Millisecond)
+					if attempt < 5 {
+						time.Sleep(1 * time.Second)
 					}
 				}
 			}
@@ -825,7 +826,7 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 			var fileCount int
 
 			// Try multiple times to get complete media info (webhook might fire before media is fully scanned)
-			for attempt := 0; attempt <= 2; attempt++ {
+			for attempt := 0; attempt <= 5; attempt++ {
 				if info, err := GetEmbyItemInfo(itemID); err == nil {
 					quality = GetMediaQuality(info)
 					totalSize = GetTotalSize(info)
@@ -838,13 +839,13 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 						break
 					}
 					// Wait before retry (only if not last attempt)
-					if attempt < 2 {
-						time.Sleep(500 * time.Millisecond)
+					if attempt < 5 {
+						time.Sleep(1 * time.Second)
 					}
 				} else {
 					// Wait before retry if API call failed
-					if attempt < 2 {
-						time.Sleep(500 * time.Millisecond)
+					if attempt < 5 {
+						time.Sleep(1 * time.Second)
 					}
 				}
 			}
