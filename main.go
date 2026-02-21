@@ -6203,6 +6203,19 @@ func isExplicitSearchQuery(text string) bool {
 		return false
 	}
 
+	// 排除自然语言查询 - 这些应该走 AI 聊天系统
+	nlQueryPatterns := []string{
+		"推荐", "有什么", "好看的", "想看", "来点", "给我",
+		"吗", "呢", "吧", "怎么样", "好不好", "如何",
+		"介绍", "讲讲", "说说", "为什么", "怎么",
+	}
+	lowerText := strings.ToLower(strings.TrimSpace(text))
+	for _, pattern := range nlQueryPatterns {
+		if strings.Contains(lowerText, pattern) {
+			return false // 自然语言查询，让聊天系统处理
+		}
+	}
+
 	// 排除非搜索的命令 - 这些命令应该由旧处理器处理
 	nonSearchCommands := []string{
 		"/feedback", "/fb", "/issues", "/allissues",
@@ -6217,7 +6230,7 @@ func isExplicitSearchQuery(text string) bool {
 	}
 	for _, cmd := range nonSearchCommands {
 		if strings.HasPrefix(text, cmd) {
-			return false // 这些不是搜索命令，让旧处理器处理
+			return false
 		}
 	}
 
