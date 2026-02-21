@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -616,8 +617,19 @@ func (m *UserSyncManager) loadMappings() {
 	var mappingData UserMappingData
 	if err := json.Unmarshal(data, &mappingData); err != nil {
 		log.Printf("User sync: Failed to load mappings: %v", err)
-		// Try old format
-		m.loadLegacyMappings(data)
+		// Try old format with string keys
+		m.loadStringKeyMappings(data)
+		return
+	}
+
+	// Check if we got any data (might be empty if JSON had string keys)
+	log.Printf("User sync: Parsed mappings - telegramToJellyseerr: %d, jellyseerrToTelegram: %d, usernames: %d",
+		len(mappingData.TelegramToJellyseerr), len(mappingData.JellyseerrToTelegram), len(mappingData.TelegramUsernames))
+
+	// If all maps are empty, try string key format
+	if len(mappingData.TelegramToJellyseerr) == 0 && len(mappingData.JellyseerrToTelegram) == 0 {
+		log.Printf("User sync: Empty mappings loaded, trying string key format...")
+		m.loadStringKeyMappings(data)
 		return
 	}
 
@@ -635,8 +647,61 @@ func (m *UserSyncManager) loadMappings() {
 	log.Printf("User sync: Loaded %d user mappings", len(m.telegramToJellyseerr))
 }
 
-// loadLegacyMappings loads mappings in the old format
-func (m *UserSyncManager) loadLegacyMappings(data []byte) {
+// loadStringKeyMappings loads mappings with string keys (old format)
+func (m *UserSyncManager) loadStringKeyMappings(data []byte) {
+	// Try to parse as UserMappingData but with string keys
+	type OldMappingData struct {
+		TelegramToJellyseerr map[string]int `json:"telegramToJellyseerr"`
+		JellyseerrToTelegram map[string]int `json:"jellyseerrToTelegram"`
+		JellyfinToTelegram   map[string]int64 `json:"jellyfinToTelegram"`
+		TelegramUsernames    map[string]string `json:"telegramUsernames"`
+	}
+
+	var oldData OldMappingData
+	if err := json.Unmarshal(data, &oldData); err != nil {
+		log.Printf("User sync: Failed to load string key mappings: %v", err)
+		// Try even older format (simple map)
+		m.loadVeryOldMappings(data)
+		return
+	}
+
+	// Convert string keys to int64 keys
+	m.mappingMutex.Lock()
+	m.telegramToJellyseerr = make(map[int64]int64)
+	m.jellyseerrToTelegram = make(map[int64]int64)
+	m.jellyfinToTelegram = make(map[string]int64)
+	m.telegramUsernames = make(map[int64]string)
+
+	for keyStr, val := range oldData.TelegramToJellyseerr {
+		if keyInt, err := strconv.ParseInt(keyStr, 10, 64); err == nil {
+			m.telegramToJellyseerr[keyInt] = int64(val)
+		}
+	}
+
+	for keyStr, val := range oldData.JellyseerrToTelegram {
+		if keyInt, err := strconv.ParseInt(keyStr, 10, 64); err == nil {
+			m.jellyseerrToTelegram[keyInt] = int64(val)
+		}
+	}
+
+	m.jellyfinToTelegram = oldData.JellyfinToTelegram
+
+	for keyStr, val := range oldData.TelegramUsernames {
+		if keyInt, err := strconv.ParseInt(keyStr, 10, 64); err == nil {
+			m.telegramUsernames[keyInt] = val
+		}
+	}
+
+	m.mappingMutex.Unlock()
+
+	log.Printf("User sync: Loaded %d user mappings from string-key format", len(m.telegramToJellyseerr))
+
+	// Save in new format immediately
+	m.saveMappings()
+}
+
+// loadVeryOldMappings loads very old format (simple map)
+func (m *UserSyncManager) loadVeryOldMappings(data []byte) {
 	var oldFormat map[int64]int64
 	if err := json.Unmarshal(data, &oldFormat); err != nil {
 		log.Printf("User sync: Failed to load legacy mappings: %v", err)
@@ -663,6 +728,7 @@ func (m *UserSyncManager) saveMappings() {
 }
 
 // saveMappingsUnsafe saves mappings without locking (caller must hold lock)
+// Uses atomic write when possible, falls back to direct write
 func (m *UserSyncManager) saveMappingsUnsafe() error {
 	mappingData := UserMappingData{
 		TelegramToJellyseerr: m.telegramToJellyseerr,
@@ -678,12 +744,49 @@ func (m *UserSyncManager) saveMappingsUnsafe() error {
 		return err
 	}
 
-	if err := os.WriteFile(m.mappingFile, data, 0644); err != nil {
-		log.Printf("User sync: Failed to save mappings: %v", err)
-		return err
+	// Try atomic write with temp file first
+	tmpFile := m.mappingFile + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
+		log.Printf("User sync: Failed to write temp file: %v", err)
+		// Fall back to direct write
+		return m.writeMappingsDirect(data)
 	}
 
+	// Try sync to ensure data is written
+	if err := syncFile(tmpFile); err != nil {
+		log.Printf("User sync: Failed to sync temp file: %v", err)
+	}
+
+	// Try atomic rename
+	if err := os.Rename(tmpFile, m.mappingFile); err != nil {
+		log.Printf("User sync: Failed to rename temp file: %v", err)
+		os.Remove(tmpFile)
+		// Fall back to direct write
+		return m.writeMappingsDirect(data)
+	}
+
+	log.Printf("User sync: Mappings saved atomically to %s", m.mappingFile)
 	return nil
+}
+
+// writeMappingsDirect writes mappings directly to file (fallback)
+func (m *UserSyncManager) writeMappingsDirect(data []byte) error {
+	if err := os.WriteFile(m.mappingFile, data, 0644); err != nil {
+		log.Printf("User sync: Failed to write mappings directly: %v", err)
+		return err
+	}
+	log.Printf("User sync: Mappings saved directly to %s", m.mappingFile)
+	return nil
+}
+
+// syncFile ensures data is written to disk
+func syncFile(filename string) error {
+	f, err := os.OpenFile(filename, os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
 }
 
 // loadVerificationCodes loads verification codes from file

@@ -47,7 +47,7 @@ func (s *SearchChain) SearchByTitle(query string, page int) (*SearchResult, erro
 	params.Set("query", query)
 	params.Set("page", strconv.Itoa(page+1)) // Jellyseerr uses 1-based paging
 
-	apiURL := fmt.Sprintf("/api/v1/search?%s", params.Encode())
+	apiURL := fmt.Sprintf("/search?%s", params.Encode())
 
 	var response struct {
 		PageInfo struct {
@@ -83,9 +83,9 @@ func (s *SearchChain) SearchByTitle(query string, page int) (*SearchResult, erro
 func (s *SearchChain) GetMediaDetails(mediaID int, mediaType string) (*SearchItem, error) {
 	var endpoint string
 	if mediaType == "tv" {
-		endpoint = fmt.Sprintf("/api/v1/tv/%d", mediaID)
+		endpoint = fmt.Sprintf("/tv/%d", mediaID)
 	} else {
-		endpoint = fmt.Sprintf("/api/v1/movie/%d", mediaID)
+		endpoint = fmt.Sprintf("/movie/%d", mediaID)
 	}
 
 	var item SearchItem

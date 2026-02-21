@@ -38,7 +38,7 @@ type DownloadResult struct {
 // DownloadFromURL downloads a torrent from URL
 func (d *DownloadChain) DownloadFromURL(torrentURL string) (*DownloadResult, error) {
 	// Send to Jellyseerr for download
-	endpoint := "/api/v1/download/push"
+	endpoint := "/download/push"
 
 	payload := map[string]string{
 		"magnet":   torrentURL,

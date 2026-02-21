@@ -75,7 +75,7 @@ type RequestInfo struct {
 
 // makeJellyseerrRequest makes a request to Jellyseerr API
 func (c *ChainBase) makeJellyseerrRequest(endpoint string, result interface{}) error {
-	url := c.jellyseerrURL + endpoint
+	url := c.jellyseerrURL + "/api/v1" + endpoint
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -104,7 +104,7 @@ func (c *ChainBase) makeJellyseerrRequest(endpoint string, result interface{}) e
 
 // postJellyseerrRequest makes a POST request to Jellyseerr API
 func (c *ChainBase) postJellyseerrRequest(endpoint string, payload, result interface{}) error {
-	url := c.jellyseerrURL + endpoint
+	url := c.jellyseerrURL + "/api/v1" + endpoint
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {

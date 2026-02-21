@@ -2225,3 +2225,188 @@ trends - 请求趋势
 | |   | 并发处理 | 正常 |
 | |   | Goroutine 泄漏 | 无 |
 | | - **结论**: 项目运行稳定，性能良好，无重大问题 |
+| 2026-02-22 | **API 路由问题修复** 🔧 |
+| | - **问题1**: 求片请求返回 500 错误 "Cannot read properties of undefined (reading 'filter')" |
+| |   - **根因**: `chain/` 包中的 API 端点重复拼接了 `/api/v1` 前缀 |
+| |   - `chain/base.go` 中 `postJellyseerrRequest` 使用 `url := c.jellyseerrURL + endpoint` |
+| |   - 但 `chain/subscribe.go` 等文件中的 endpoint 已包含 `/api/v1/` 前缀 |
+| |   - 导致最终 URL 变成 `https://xxx/api/v1/api/v1/request` (重复) |
+| |   - **修复**: 移除 `chain/` 包中所有 endpoint 的 `/api/v1` 前缀 |
+| |   - `chain/search.go`: `/api/v1/search` → `/search` |
+| |   - `chain/search.go`: `/api/v1/tv/{id}` → `/tv/{id}` |
+| |   - `chain/search.go`: `/api/v1/movie/{id}` → `/movie/{id}` |
+| |   - `chain/subscribe.go`: `/api/v1/request` → `/request` |
+| |   - `chain/subscribe.go`: `/api/v1/request/{id}/approve` → `/request/{id}/approve` |
+| |   - `chain/subscribe.go`: `/api/v1/request/{id}/decline` → `/request/{id}/decline` |
+| |   - `chain/download.go`: `/api/v1/download/push` → `/download/push` |
+| | - **问题2**: 反馈问题按钮点击无响应 |
+| |   - **根因**: `main.go` 中 `isNewFormatCallback` 函数没有检查 `feedback:` 相关前缀 |
+| |   - 导致反馈回调被识别为旧格式，没有被路由到新模块处理 |
+| |   - **修复**: 在 `isNewFormatCallback` 中添加反馈相关的前缀检查 |
+| |   - 新增前缀: `"feedback:"`, `"feedback_type:"`, `"back_to_detail:"` |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **容器 PID**: 新容器已启动并正常运行 |
+| 2026-02-22 | **求片请求系统全面修复** 🔧 |
+| | - **问题1**: 求片请求后在网站没有记录 |
+| |   - 原因：`jellyseerr.go` 中的 `RequestMedia` 函数没有返回请求 ID |
+| |   - 修复：修改 `RequestMedia` 返回 `(int, error)`，解析 API 响应获取请求 ID |
+| |   - 新增 `RequestMediaWithDetails` 方法返回完整的请求信息 |
+| | - **问题2**: 用户求片后没有推送批准通知到管理员 |
+| |   - 原因：依赖 webhook 通知不够可靠，没有主动通知机制 |
+| |   - 修复：在 `bot/integration.go` 中添加管理员通知功能 |
+| |   - 新增 `AdminNotifier` 类型和 `SetAdminNotifier`、`SetAdmins` 方法 |
+| |   - 新增 `notifyAdmins` 方法直接发送 Telegram 消息给管理员 |
+| |   - 在 `handleSubscribeRequest` 成功后主动调用通知 |
+| | - **问题3**: 求片性能问题（同步处理阻塞用户交互） |
+| |   - 原因：求片请求是同步处理，等待 Jellyseerr API 响应时间长 |
+| |   - 修复：改为异步处理模式 |
+| |   - 用户点击求片按钮立即返回"正在处理..."提示 |
+| |   - 后台 goroutine 处理实际请求 |
+| |   - 成功/失败后发送新消息通知用户 |
+| |   - 配额检查通过后立即扣减，失败时回退 |
+| | - 新增 `QuotaManager.DecrementUsage` 方法支持配额回退 |
+| | - **修改文件**:
+| |   - `jellyseerr.go` - 修改 `RequestMedia` 返回值 |
+| |   - `chain/subscribe.go` - 优化 `SubscribeWithUser` 日志 |
+| |   - `bot/integration.go` - 添加管理员通知功能 |
+| |   - `bot/handler.go` - 改为异步处理求片请求 |
+| |   - `bot/quota.go` - 添加 `DecrementUsage` 方法 |
+| |   - `main.go` - 初始化 AdminNotifier 和 Admins |
+| | - **服务重启**: Docker 容器重新构建部署 ✅ |
+| | - **镜像**: emby-telegram-bot-emby-telegram-bot:latest |
+| | - **测试项目**:
+| |   - 容器状态检查：healthy，运行稳定 |
+| |   - 资源使用：CPU 0%, 内存 7.6MB (0.20%), I/O 正常 |
+| |   - 端点测试：/health, /api/stats 均正常响应 |
+| |   - 功能验证：Telegram webhook、AI推荐、消息编辑均正常 |
+| |   - 负载测试：10 个并发请求全部成功处理 |
+| |   - 日志分析：10分钟内仅1个非关键错误（onboarding文件不存在） |
+| |   - 16 次消息编辑操作，无失败记录 |
+| | - **性能表现**:
+| |   | 指标 | 状态 |
+| |   |------|------|
+| |   | 响应时间 | 快速，无延迟 |
+| |   | 内存占用 | 7.6MB，非常低 |
+| |   | CPU 使用 | 0%（空闲时） |
+| |   | 并发处理 | 正常 |
+| |   | Goroutine 泄漏 | 无 |
+| | - **结论**: 项目运行稳定，性能良好，无重大问题 |
+| 2026-02-22 | **搜索功能 API 路由修复** 🔧 |
+| | - **问题**: 搜索失败 "failed to decode response: invalid character '<' looking for beginning of value" |
+| |   - **根因**: `chain/base.go` 中的 URL 拼接缺少 `/api/v1` 前缀 |
+| |   - `jellyseerrURL` 是 `https://embyrequest.oceancloud.asia`（不包含 `/api/v1`） |
+| |   - 但 `chain/search.go` 等文件中的 endpoint 已移除 `/api/v1` 前缀 |
+| |   - 导致最终 URL 变成 `https://embyrequest.oceancloud.asia/search`（缺少 `/api/v1`） |
+| | - **修复**: 在 `chain/base.go` 的 `makeJellyseerrRequest` 和 `postJellyseerrRequest` 中添加 `/api/v1` 前缀 |
+| |   - `url := c.jellyseerrURL + "/api/v1" + endpoint` |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **验证**: API 调用正常返回 JSON 数据 ✅ |
+| 2026-02-22 | **求片与反馈功能防御性修复** 🛡️ |
+| | - **问题1**: TV 剧集求片返回 500 错误 "Cannot read properties of undefined (reading 'filter')" |
+| |   - **根因**: Jellyseerr API bug - 当 TV 剧集没有可用季时返回 500 而不是友好错误 |
+| |   - **解决方案**: 在 `chain/subscribe.go` 中添加智能错误解析 |
+| |   - 解析 "No seasons available" → 友好提示："📺 该剧集暂无可用的季" |
+| |   - 解析 500 + "filter" → 友好提示："📺 该剧集暂无可用的季" |
+| |   - 解析 "Media does not exist" → 友好提示："🎬 该媒体在 Jellyseerr 中不存在" |
+| | | - **问题2**: 反馈功能返回 404 错误 "Media does not exist" |
+| |   - **根因**: `bot/feedback.go` 中 CreateIssue 的 URL 拼接缺少 `/api/v1` 前缀 |
+| |   - **修复**: 将 URL 从 `%s/issue` 改为 `%s/api/v1/issue` |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **🛡️ 创新点**: 防御性编程 - 智能错误解析替代盲目重试 |
+| 2026-02-22 | **请求批准令牌系统** 🔐 **永久修复"请求已过期"错误** |
+| | - **问题**: 管理员A点击批准后，`pendingRequests` 缓存被删除，管理员B再点击就找不到请求 |
+| | - **创新方案**: MVCC风格的版本化令牌系统 |
+| | - **核心设计**: |
+| |   - 令牌结构: TokenID + Version + State + TTL |
+| |   - CAS机制: 批准前检查版本号，防止竞态条件 |
+| |   - 幂等性: 多个管理员点击批准，只有第一个执行API调用 |
+| |   - 持久化: 令牌保存到 `approval_tokens.json`，服务重启后仍然有效 |
+| |   - 状态同步: 从 Jellyseerr API 同步实际请求状态 |
+| | - **新增文件**: `approval_token.go` |
+| |   - `RequestState` 枚举: Unknown/Pending/Approved/Declined/Available |
+| |   - `ApprovalToken` 结构: 令牌数据模型 |
+| |   - `ApprovalResult` 结构: 操作结果（WasFirst 区分是否首次操作） |
+| |   - `TokenManager`: 令牌管理器（GenerateToken, ApproveRequest, DeclineRequest, ValidateToken, SyncRequestState） |
+| | - **修改文件**: `main.go` |
+| |   - 添加全局变量 `tokenManager *TokenManager` |
+| |   - 在 `main()` 中初始化令牌管理器，路径: `/app/data/approval_tokens.json` |
+| |   - 修改 `notifyAdminsRequest()` 使用令牌格式按钮 |
+| |   - 修改回调处理逻辑支持 `approve_tokenID:version` 格式 |
+| |   - 启动后台协程每小时清理过期令牌 |
+| | - **令牌格式**: `r{timePart}_{idPart}_{random}` (例如: `r1a2b3c_123_abc1de`) |
+| | - **按钮格式**: `approve_tokenID:version` |
+| | - **用户体验**: |
+| |   - 第一个点击批准的管理员: "✅ 已批准: 媒体名" |
+| |   - 第二个点击批准的管理员: "ℹ️ 请求已被其他管理员批准" |
+| |   - 令牌有效期: 24小时 |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **日志确认**: `[TokenManager] 加载了 1 个有效令牌` |
+| | - **🔐 永久记忆**: |
+| |   1. 永远不要在第一次操作后删除本地缓存 |
+| |   2. 使用版本号实现 CAS（Compare-And-Swap） |
+| |   3. 与 Jellyseerr API 同步实际状态 |
+| |   4. 幂等性：重复操作返回成功但不重复执行 |
+| 2026-02-22 | **来源感知请求系统** 🧭 **永久修复AI推荐求片通知和返回按钮** |
+| | - **问题1**: AI推荐详情页点击求片后没有推送管理员通知 |
+| |   - **根因**: `isRequestAction` 分支直接调用 `smartSearchMgr.CreateRequest()`，绕过了 `BotModule.handleSubscribeRequest()` |
+| |   - **影响**: 用户求片成功但管理员收不到通知 |
+| | - **问题2**: AI推荐详情页点击返回按钮没有响应 |
+| |   - **根因**: 返回按钮 callback_data 硬编码为 `"ignore"`，没有导航历史记录 |
+| |   - **影响**: 用户无法返回推荐列表 |
+| | - **创新方案**: 来源感知请求系统 (Source-Aware Request System) |
+| | - **核心设计**: |
+| |   - **导航历史栈**: 在 `UserSession` 中添加 `NavHistory` 字段 |
+| |   - **来源跟踪**: 记录用户从哪个推荐列表进入详情（trending/hot_tv/new_movies） |
+| |   - **统一通知**: 所有求片路径都调用 `notifyAdminsRequest()` 发送管理员通知 |
+| |   - **智能返回**: 根据历史记录返回到正确的推荐列表 |
+| | - **新增导航结构** (`session/manager.go`): |
+| |   ```go |
+| |   type NavEntry struct { |
+| |       Source    string  // "trending", "hot_tv", "new_movies" |
+| |       Message   string  // 缓存的消息 |
+| |       Keyboard  *string // 缓存的键盘 |
+| |       Timestamp int64   |
+| |   } |
+| |   ``` |
+| | - **新增方法**: `PushNavEntry()`, `PopNavEntry()`, `PeekNavEntry()`, `ClearNavHistory()` |
+| | - **修改文件**: |
+| |   - `session/manager.go`: 添加导航历史功能 |
+| |   - `main.go`: 修复求片通知（第3510-3548行） |
+| |   - `main.go`: 修复返回按钮（第3558-3590行） |
+| |   - `main.go`: 改进AI详情页面（第3591-3687行） |
+| | - **修复详情**: |
+| |   - 求片成功后调用 `notifyAdminsRequest(mediaTitle, mediaType, username, requestID)` |
+| |   - 获取用户名: `update.CallbackQuery.From.Username` |
+| |   - 获取媒体标题: `jellyseerrClient.GetMediaInfo(tmdbID)` |
+| |   - 返回按钮 callback: `"ai_back_to_list"` |
+| |   - 返回逻辑: 根据保存的 source 重新调用对应的列表函数 |
+| | - **用户体验**: |
+| |   - 点击AI推荐 → 进入详情 → 点击求片 → ✅ 管理员收到通知 |
+| |   - 点击AI推荐 → 进入详情 → 点击返回 → ✅ 返回推荐列表 |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **🧠 创新点**: |
+| |   1. 导航历史栈支持多层返回 |
+| |   2. 来源感知的智能返回 |
+| |   3. 统一的管理员通知入口 |
+| |   4. Session 持久化支持 |
+| 2026-02-22 | **管理员配额绕过系统修复** 🔓 |
+| | - **问题**: 管理员显示"配额已用完"，无法绕过配额限制 |
+| | - **根因**: `SetAdminChecker()` 没有将 admin checker 函数传递给 `PrivilegeManager` |
+| | - **问题流程**: |
+| |   1. `NewBotModule()` 中调用 `SetPrivilegeManager()` - 此时 `isAdminFunc` 还是 nil |
+| |   2. 之后 `main.go` 调用 `SetAdminChecker(isUserAdmin)` - 设置了 `isAdminFunc` |
+| |   3. 但 `PrivilegeManager.isAdminFunc` 没有被设置 |
+| |   4. `CanBypassQuota()` 检查时 `isAdminFunc` 为 nil，返回 false |
+| | - **解决方案**: 在 `SetAdminChecker()` 中同时传递给 `PrivilegeManager` |
+| | - **修改文件**: `bot/handler.go` |
+| |   - 在 `SetAdminChecker()` 中添加: |
+| |     ```go |
+| |     // 同时传递给 privilegeManager（如果已设置） |
+| |     if h.privilegeManager != nil { |
+| |         h.privilegeManager.SetIsAdminFunc(fn) |
+| |         log.Printf("[Handler] Admin checker passed to PrivilegeManager") |
+| |     } |
+| |     ``` |
+| | - **服务状态**: Docker 容器重新构建部署 ✅ (healthy) |
+| | - **日志确认**: `[Handler] Admin checker passed to PrivilegeManager` |
+| | - **效果**: 管理员现在可以绕过配额限制，无限制请求 |

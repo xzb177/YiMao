@@ -337,8 +337,8 @@ func (c *JellyseerrClient) SearchMedia(query string) ([]JellyseerrSearchResult, 
 	return rawResponse.Results, nil
 }
 
-// RequestMedia creates a new media request
-func (c *JellyseerrClient) RequestMedia(tmdbID int, mediaType string, userID int) error {
+// RequestMedia creates a new media request and returns the request ID
+func (c *JellyseerrClient) RequestMedia(tmdbID int, mediaType string, userID int) (int, error) {
 	payload := map[string]interface{}{
 		"mediaType": mediaType,
 		"mediaId":   tmdbID,
@@ -346,14 +346,50 @@ func (c *JellyseerrClient) RequestMedia(tmdbID int, mediaType string, userID int
 	}
 
 	path := "/request"
-	_, err := c.makeRequest("POST", path, payload)
+	body, err := c.makeRequest("POST", path, payload)
 	if err != nil {
 		log.Printf("Error creating request: %v", err)
-		return err
+		return 0, err
 	}
 
-	log.Printf("Request created for media %d (type: %s)", tmdbID, mediaType)
-	return nil
+	// Parse response to get the request ID
+	var response struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		log.Printf("Error parsing request response: %v", err)
+		// Request was created but we couldn't get the ID
+		return 0, nil
+	}
+
+	log.Printf("Request created successfully: ID=%d, mediaID=%d, type=%s, userID=%d", response.ID, tmdbID, mediaType, userID)
+	return response.ID, nil
+}
+
+// RequestMediaWithDetails creates a new media request and returns detailed info
+func (c *JellyseerrClient) RequestMediaWithDetails(tmdbID int, mediaType string, userID int) (*JellyseerrRequest, error) {
+	payload := map[string]interface{}{
+		"mediaType": mediaType,
+		"mediaId":   tmdbID,
+		"userId":    userID,
+	}
+
+	path := "/request"
+	body, err := c.makeRequest("POST", path, payload)
+	if err != nil {
+		log.Printf("Error creating request: %v", err)
+		return nil, err
+	}
+
+	// Parse full response
+	var request JellyseerrRequest
+	if err := json.Unmarshal(body, &request); err != nil {
+		log.Printf("Error parsing request response: %v, body: %s", err, string(body))
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	log.Printf("Request created successfully: ID=%d, mediaID=%d, type=%s, userID=%d", request.ID, tmdbID, mediaType, userID)
+	return &request, nil
 }
 
 // FormatPendingRequests formats pending requests for display
@@ -533,7 +569,7 @@ func (c *JellyseerrClient) CreateSimplifiedRequest(tmdbID int, userID int) (stri
 	}
 
 	// Create request with detected type
-	err = c.RequestMedia(tmdbID, mediaInfo.MediaType, userID)
+	_, err = c.RequestMedia(tmdbID, mediaInfo.MediaType, userID)
 	if err != nil {
 		return "", err
 	}

@@ -42,7 +42,8 @@ services:
       - ./data:/app/data
       - ./preferences.json:/app/preferences.json
       - ./user_quotas.json:/app/user_quotas.json
-      - ./user_mapping.json:/app/user_mapping.json
+      - ./user_mappings.json:/app/user_mappings.json
+      - ./binding_requests.json:/app/binding_requests.json
 
     # Logging configuration
     logging:

@@ -28,8 +28,18 @@ type UserSession struct {
 	SelectedItem   *SearchItem
 	PendingAction  string
 	Context        map[string]interface{}
+	// 🎯 导航历史 - 支持从AI推荐详情页返回列表
+	NavHistory     []NavEntry
 
 	mu sync.RWMutex
+}
+
+// NavEntry represents a navigation history entry
+type NavEntry struct {
+	Source   string // "trending", "hot_tv", "new_movies", "search", etc.
+	Message  string // The cached message to restore
+	Keyboard *string // JSON string of the keyboard (cached)
+	Timestamp int64
 }
 
 // SearchItem represents a search result item
@@ -246,4 +256,65 @@ func (sm *SessionManager) GetAllSessions() []*UserSession {
 	}
 
 	return sessions
+}
+
+// PushNavEntry pushes a navigation entry onto the history stack
+func (s *UserSession) PushNavEntry(source, message string, keyboardJSON string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.NavHistory == nil {
+		s.NavHistory = make([]NavEntry, 0, 5)
+	}
+
+	entry := NavEntry{
+		Source:    source,
+		Message:   message,
+		Keyboard:  &keyboardJSON,
+		Timestamp: time.Now().Unix(),
+	}
+
+	// Keep only last 5 entries
+	s.NavHistory = append([]NavEntry{entry}, s.NavHistory...)
+	if len(s.NavHistory) > 5 {
+		s.NavHistory = s.NavHistory[:5]
+	}
+
+	log.Printf("[Session] Pushed nav entry: source=%s, history_len=%d", source, len(s.NavHistory))
+}
+
+// PopNavEntry pops the most recent navigation entry
+func (s *UserSession) PopNavEntry() (NavEntry, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if len(s.NavHistory) == 0 {
+		return NavEntry{}, false
+	}
+
+	entry := s.NavHistory[0]
+	s.NavHistory = s.NavHistory[1:]
+	log.Printf("[Session] Popped nav entry: source=%s, remaining=%d", entry.Source, len(s.NavHistory))
+	return entry, true
+}
+
+// PeekNavEntry peeks at the most recent navigation entry without removing it
+func (s *UserSession) PeekNavEntry() (NavEntry, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.NavHistory) == 0 {
+		return NavEntry{}, false
+	}
+
+	return s.NavHistory[0], true
+}
+
+// ClearNavHistory clears the navigation history
+func (s *UserSession) ClearNavHistory() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.NavHistory = nil
+	log.Printf("[Session] Cleared nav history")
 }

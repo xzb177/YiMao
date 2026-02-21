@@ -1,20 +1,48 @@
 package bot
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"emby-telegram-bot/chain"
 	"emby-telegram-bot/session"
 )
 
-// Global mutex for user_mappings.json file access
+// Global mutex for user_mappings.json file access (deprecated - using userSyncMgr instead)
 var userMappingsMutex sync.RWMutex
+
+// UserSyncGetter is an interface for getting user mappings
+// This allows BotModule to access the global userSyncMgr without direct coupling
+type UserSyncGetter interface {
+	GetJellyseerrUserID(telegramID int64) (int64, bool)
+	GetTelegramUsername(telegramID int64) string
+}
+
+// globalUserSyncGetter holds the reference to the user sync manager
+var globalUserSyncGetter UserSyncGetter
+
+// SetUserSyncGetter sets the global user sync getter
+func SetUserSyncGetter(getter UserSyncGetter) {
+	globalUserSyncGetter = getter
+	log.Printf("[BotModule] UserSyncGetter set")
+}
+
+// AdminNotifier is a function type for sending admin notifications
+type AdminNotifier func(mediaTitle, mediaType, username, requestID string)
+
+// httpClient for sending Telegram messages
+var httpClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
 
 // BotModule integrates all bot functionality
 type BotModule struct {
@@ -35,6 +63,11 @@ type BotModule struct {
 	jellyseerrURL string
 	jellyseerrAPIKey string
 
+	// Admin notification
+	adminNotifier AdminNotifier
+	admins        map[string]string // adminID -> adminName
+	adminsMutex   sync.RWMutex
+
 	mu sync.RWMutex
 }
 
@@ -46,6 +79,10 @@ func NewBotModule() *BotModule {
 		messageEditor:  NewMessageEditor(),
 		quotaManager:   NewQuotaManager("user_quotas.json"),
 	}
+
+	// 初始化特权管理器
+	privilegeMgr := NewPrivilegeManager("/app/data/admin_profiles.json")
+	module.handler.SetPrivilegeManager(privilegeMgr)
 
 	// FeedbackManager and ChatSystem will be initialized in Init()
 
@@ -258,8 +295,50 @@ func (m *BotModule) handleSubscribeRequest(userID int64, mediaID string, season 
 		return fmt.Errorf("请先使用 /link 命令绑定账号")
 	}
 
-	_, err = m.subscribeChain.SubscribeWithUser(id, mediaType, nil, jellyseerrUserID)
-	return err
+	// Create the subscription request
+	result, err := m.subscribeChain.SubscribeWithUser(id, mediaType, nil, jellyseerrUserID)
+	if err != nil {
+		log.Printf("[BotModule] Subscribe failed: %v", err)
+		return err
+	}
+
+	// Notify admins about the new request
+	if result != nil && result.ID > 0 {
+		// Get user info for notification
+		username := m.getTelegramUsername(userID)
+		requestID := strconv.Itoa(result.ID)
+
+		// 🎯 获取媒体标题（从 session）
+		mediaTitle := ""
+		userSession := m.GetSession(userID)
+		if userSession != nil {
+			if selectedItem := userSession.GetSelectedItem(); selectedItem != nil {
+				mediaTitle = selectedItem.Title
+			}
+		}
+		// 降级：使用 ID 作为标题
+		if mediaTitle == "" {
+			mediaTitle = fmt.Sprintf("ID:%d", id)
+		}
+
+		log.Printf("[BotModule] Notifying admins: requestID=%s, title=%s, media=%s, user=%s", requestID, mediaTitle, mediaType, username)
+		m.notifyAdmins(mediaTitle, mediaType, username, requestID)
+	} else {
+		log.Printf("[BotModule] Request created but no valid ID result, skipping admin notification")
+	}
+
+	return nil
+}
+
+// getTelegramUsername gets the Telegram username for a user ID
+// Uses the global UserSyncGetter instead of reading file directly
+func (m *BotModule) getTelegramUsername(userID int64) string {
+	if globalUserSyncGetter != nil {
+		if username := globalUserSyncGetter.GetTelegramUsername(userID); username != "" {
+			return username
+		}
+	}
+	return fmt.Sprintf("User_%d", userID)
 }
 
 func (m *BotModule) handleDownloadRequest(userID int64, torrentID string) error {
@@ -285,6 +364,124 @@ func (m *BotModule) SetAdminChecker(fn func(int64) bool) {
 	if m.chatSystem != nil {
 		m.chatSystem.SetAdminChecker(fn)
 		log.Printf("[BotModule] Admin checker set for both handler and chatSystem")
+	}
+}
+
+// SetAdminNotifier sets the admin notification function
+func (m *BotModule) SetAdminNotifier(notifier AdminNotifier) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.adminNotifier = notifier
+	log.Printf("[BotModule] Admin notifier set")
+}
+
+// SetAdmins sets the admin list
+func (m *BotModule) SetAdmins(admins map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.admins = admins
+	log.Printf("[BotModule] Admin list updated: %d admins", len(admins))
+}
+
+// notifyAdmins sends a notification to all admins about a new request
+// 优先使用全局 adminNotifier（它使用令牌系统），如果没有则使用旧方法
+func (m *BotModule) notifyAdmins(mediaTitle, mediaType, username, requestID string) {
+	m.mu.RLock()
+	notifier := m.adminNotifier
+	m.mu.RUnlock()
+
+	// 优先使用全局 adminNotifier（它使用令牌系统）
+	if notifier != nil {
+		log.Printf("[BotModule] Using global adminNotifier with token system: requestID=%s", requestID)
+		notifier(mediaTitle, mediaType, username, requestID)
+		return
+	}
+
+	// 降级到旧方法
+	m.mu.RLock()
+	botToken := m.botToken
+	admins := m.admins
+	m.mu.RUnlock()
+
+	if botToken == "" {
+		log.Printf("[BotModule] No bot token configured, skipping notification")
+		return
+	}
+
+	if len(admins) == 0 {
+		log.Printf("[BotModule] No admins configured, skipping notification")
+		return
+	}
+
+	log.Printf("[BotModule] Sending admin notification (legacy): requestID=%s, mediaType=%s, user=%s", requestID, mediaType, username)
+
+	// Determine emoji
+	mediaEmoji := "📀"
+	if mediaType == "movie" {
+		mediaEmoji = "🎬"
+	} else if mediaType == "tv" {
+		mediaEmoji = "📺"
+	}
+
+	// Create message
+	msg := fmt.Sprintf("%s *新求片请求*\n\n", mediaEmoji)
+	if mediaTitle != "" {
+		msg += fmt.Sprintf("📦 %s\n", mediaTitle)
+	}
+	msg += fmt.Sprintf("👤 %s 请求\n", username)
+	if requestID != "" {
+		msg += fmt.Sprintf("🆔 ID: %s", requestID)
+	}
+	msg += fmt.Sprintf("\n\n请选择操作：")
+
+	// Create inline keyboard (旧格式)
+	keyboard := map[string]interface{}{
+		"inline_keyboard": [][]map[string]string{
+			{
+				{"text": "✅ 批准", "callback_data": fmt.Sprintf("approve_%s", requestID)},
+				{"text": "❌ 拒绝", "callback_data": fmt.Sprintf("decline_%s", requestID)},
+			},
+		},
+	}
+
+	// Send to each admin
+	for adminID := range admins {
+		go m.sendToAdmin(adminID, msg, keyboard)
+	}
+}
+
+// sendToAdmin sends a message to a specific admin
+func (m *BotModule) sendToAdmin(adminID, msg string, keyboard map[string]interface{}) {
+	m.mu.RLock()
+	botToken := m.botToken
+	m.mu.RUnlock()
+
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", botToken)
+
+	payload := map[string]interface{}{
+		"chat_id":      adminID,
+		"text":         msg,
+		"reply_markup": keyboard,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("[BotModule] Failed to marshal admin message: %v", err)
+		return
+	}
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[BotModule] Failed to send admin notification to %s: %v", adminID, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[BotModule] Telegram API error for admin %s: status=%d, response=%s", adminID, resp.StatusCode, string(body))
+	} else {
+		log.Printf("[BotModule] Admin notification sent successfully to %s", adminID)
 	}
 }
 
@@ -319,14 +516,31 @@ func (m *BotModule) Stop() {
 }
 
 // getJellyseerrUserID gets the Jellyseerr user ID for a Telegram user
+// Uses the global UserSyncGetter instead of reading file directly
 func (m *BotModule) getJellyseerrUserID(telegramID int64) int {
-	// Use read lock for concurrent safe file reading
-	userMappingsMutex.RLock()
-	defer userMappingsMutex.RUnlock()
+	if globalUserSyncGetter == nil {
+		log.Printf("[BotModule] UserSyncGetter not initialized, falling back to file read")
+		return m.getJellyseerrUserIDFromFile(telegramID)
+	}
 
+	jid, exists := globalUserSyncGetter.GetJellyseerrUserID(telegramID)
+	if exists {
+		log.Printf("[BotModule] Found mapping via UserSyncGetter: telegramID=%d -> jellyseerrID=%d", telegramID, jid)
+		return int(jid)
+	}
+
+	log.Printf("[BotModule] No mapping found via UserSyncGetter: telegramID=%d", telegramID)
+	return 0
+}
+
+// getJellyseerrUserIDFromFile is a fallback method that reads directly from file
+// This should only be used when UserSyncGetter is not available
+func (m *BotModule) getJellyseerrUserIDFromFile(telegramID int64) int {
 	// Try to read from user_mappings.json
 	type MappingData struct {
-		TelegramToJellyseerr map[string]int `json:"telegramToJellyseerr"`
+		TelegramToJellyseerr map[int64]int64 `json:"telegramToJellyseerr"`
+		JellyseerrToTelegram map[int64]int64 `json:"jellyseerrToTelegram"`
+		TelegramUsernames    map[int64]string `json:"telegramUsernames"`
 	}
 
 	data, err := os.ReadFile("user_mappings.json")
@@ -341,13 +555,11 @@ func (m *BotModule) getJellyseerrUserID(telegramID int64) int {
 		return 0
 	}
 
-	// Convert telegramID to string for lookup
-	telegramIDStr := fmt.Sprintf("%d", telegramID)
-	if jid, exists := mappings.TelegramToJellyseerr[telegramIDStr]; exists {
-		log.Printf("[BotModule] Found mapping: telegramID=%d -> jellyseerrID=%d", telegramID, jid)
-		return jid
+	if jid, exists := mappings.TelegramToJellyseerr[telegramID]; exists {
+		log.Printf("[BotModule] Found mapping from file: telegramID=%d -> jellyseerrID=%d", telegramID, jid)
+		return int(jid)
 	}
 
-	log.Printf("[BotModule] No mapping found for telegramID=%d", telegramID)
+	log.Printf("[BotModule] No mapping found in file: telegramID=%d", telegramID)
 	return 0
 }

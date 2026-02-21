@@ -203,6 +203,9 @@ var (
 	// Pending issue replies (userID -> issueID)
 	pendingIssueReplies map[int64]int64
 	issueReplyMutex     sync.RWMutex
+
+	// Token Manager for request approval (MVCC-style versioned tokens)
+	tokenManager *TokenManager
 )
 
 // Global bot module instance
@@ -1637,7 +1640,7 @@ func sendTelegramPhoto(photoURL, caption string) error {
 	return nil
 }
 
-// notifyAdminsRequest notifies all admins about a new request with action buttons
+// notifyAdminsRequest notifies all admins about a new request with action tokens
 func notifyAdminsRequest(mediaTitle, mediaType, username, requestID string) {
 	log.Printf("[DEBUG] notifyAdminsRequest called, admins=%v", admins)
 	adminsMutex.RLock()
@@ -1650,19 +1653,26 @@ func notifyAdminsRequest(mediaTitle, mediaType, username, requestID string) {
 
 	log.Printf("🔔 准备发送管理员私聊通知，管理员数量: %d", len(admins))
 
-	// Create request ID for callback
-	callbackID := fmt.Sprintf("req_%s_%d", requestID, time.Now().Unix())
-
-	// Store pending request
-	requestsMutex.Lock()
-	pendingRequests[callbackID] = &PendingRequest{
-		RequestID:  requestID,
-		MediaTitle: mediaTitle,
-		MediaType:  mediaType,
-		Username:   username,
-		CreatedAt:  time.Now(),
+	// 解析请求ID
+	reqID, err := strconv.Atoi(requestID)
+	if err != nil {
+		log.Printf("❌ 无效的请求ID: %s", requestID)
+		return
 	}
-	requestsMutex.Unlock()
+
+	// 生成批准令牌（24小时有效期）
+	token, err := tokenManager.GenerateToken(reqID, mediaTitle, mediaType, username, 24*time.Hour)
+	if err != nil {
+		log.Printf("❌ 生成令牌失败: %v", err)
+		// 降级到旧方法
+		token = &ApprovalToken{
+			TokenID:    fmt.Sprintf("req_%s_%d", requestID, time.Now().Unix()),
+			RequestID:  reqID,
+			MediaTitle: mediaTitle,
+			MediaType:  mediaType,
+			Username:   username,
+		}
+	}
 
 	mediaEmoji := "📀"
 	if mediaType == "movie" {
@@ -1679,12 +1689,13 @@ func notifyAdminsRequest(mediaTitle, mediaType, username, requestID string) {
 	}
 	msg += fmt.Sprintf("\n\n请选择操作：")
 
-	// Create inline keyboard
+	// 创建带令牌的内联键盘
+	// 格式: approve_tokenID:version
 	keyboard := &TelegramInlineKeyboard{
 		InlineKeyboard: [][]map[string]string{
 			{
-				{"text": "✅ 批准", "callback_data": fmt.Sprintf("approve_%s", callbackID)},
-				{"text": "❌ 拒绝", "callback_data": fmt.Sprintf("decline_%s", callbackID)},
+				{"text": "✅ 批准", "callback_data": fmt.Sprintf("approve_%s:%d", token.TokenID, token.Version)},
+				{"text": "❌ 拒绝", "callback_data": fmt.Sprintf("decline_%s:%d", token.TokenID, token.Version)},
 			},
 			{
 				{"text": "🔗 详情", "url": fmt.Sprintf("%s/requests/%s", jellyseerrURL, requestID)},
@@ -1711,46 +1722,103 @@ func notifyAdminsRequest(mediaTitle, mediaType, username, requestID string) {
 }
 
 // handleRequestAction handles admin action on a request (approve/decline)
+// 支持多种格式：tokenID:version, approve_123, req_123_timestamp
 func handleRequestAction(action, callbackID string) string {
-	requestsMutex.Lock()
-	defer requestsMutex.Unlock()
+	// 先尝试从令牌系统或 pendingRequests 获取
+	// 如果找不到，直接使用 requestID 从 Jellyseerr 获取请求信息
 
-	request, exists := pendingRequests[callbackID]
-	if !exists {
+	// 提取 requestID
+	var requestIDStr string
+
+	// 格式1: tokenID:version (新令牌系统)
+	if strings.Contains(callbackID, ":") {
+		parts := strings.Split(callbackID, ":")
+		if len(parts) == 2 && strings.HasPrefix(parts[0], "r") {
+			// 这是令牌格式，应该由 tokenManager 处理
+			// 但这里作为降级处理
+			tokenID := parts[0]
+			if tokenManager != nil {
+				valid, token, errMsg := tokenManager.ValidateToken(tokenID)
+				if valid && token != nil {
+					requestIDStr = fmt.Sprintf("%d", token.RequestID)
+				} else {
+					return fmt.Sprintf("❌ %s", errMsg)
+				}
+			}
+		}
+	}
+
+	// 格式2: approve_123 (简化格式)
+	if requestIDStr == "" && strings.HasPrefix(callbackID, "approve_") {
+		requestIDStr = strings.TrimPrefix(callbackID, "approve_")
+	} else if requestIDStr == "" && strings.HasPrefix(callbackID, "decline_") {
+		requestIDStr = strings.TrimPrefix(callbackID, "decline_")
+	} else if requestIDStr == "" && strings.HasPrefix(callbackID, "req_") {
+		// 格式3: req_123_timestamp - 提取数字部分
+		parts := strings.Split(callbackID, "_")
+		if len(parts) >= 2 {
+			requestIDStr = parts[1]
+		}
+	} else if requestIDStr == "" {
+		// 直接使用 callbackID 作为 requestID
+		requestIDStr = callbackID
+	}
+
+	// 如果还是没有找到，尝试从 pendingRequests 查找
+	if requestIDStr == "" {
+		requestsMutex.Lock()
+		request, exists := pendingRequests[callbackID]
+		requestsMutex.Unlock()
+
+		if exists && request != nil {
+			requestIDStr = request.RequestID
+		}
+	}
+
+	// 如果仍然找不到，返回错误
+	if requestIDStr == "" {
 		return "❌ 请求已过期或不存在"
 	}
 
-	// Clean up old requests
-	delete(pendingRequests, callbackID)
-
-	// Convert request ID to int
-	requestID, err := strconv.Atoi(request.RequestID)
+	// 转换为整数
+	requestID, err := strconv.Atoi(requestIDStr)
 	if err != nil {
-		return fmt.Sprintf("❌ 无效的请求ID: %s", request.RequestID)
+		return fmt.Sprintf("❌ 无效的请求ID: %s", requestIDStr)
 	}
 
+	// 直接调用 Jellyseerr API 执行操作
 	switch action {
 	case "approve":
 		if jellyseerrClient == nil {
-			return fmt.Sprintf("⚠️ Jellyseerr API 未配置\n\n请在管理面板批准: %s", request.MediaTitle)
+			return fmt.Sprintf("⚠️ Jellyseerr API 未配置\n\n请在管理面板批准")
 		}
 		if err := jellyseerrClient.ApproveRequest(requestID); err != nil {
 			return fmt.Sprintf("❌ 批准失败: %v\n\n请在管理面板操作", err)
 		}
-		return fmt.Sprintf("✅ 已批准: %s\n\nJellyseerr 将自动下载此内容", request.MediaTitle)
+		return fmt.Sprintf("✅ 已批准请求 ID: %d\n\nJellyseerr 将自动下载此内容", requestID)
 
 	case "decline":
 		if jellyseerrClient == nil {
-			return fmt.Sprintf("⚠️ Jellyseerr API 未配置\n\n请在管理面板拒绝: %s", request.MediaTitle)
+			return fmt.Sprintf("⚠️ Jellyseerr API 未配置\n\n请在管理面板拒绝")
 		}
 		if err := jellyseerrClient.DeclineRequest(requestID); err != nil {
 			return fmt.Sprintf("❌ 拒绝失败: %v\n\n请在管理面板操作", err)
 		}
-		return fmt.Sprintf("❌ 已拒绝: %s", request.MediaTitle)
+		return fmt.Sprintf("❌ 已拒绝请求 ID: %d", requestID)
 
 	default:
 		return "❓ 未知操作"
 	}
+}
+
+// findRequestByRequestID finds a pending request by its actual request ID
+func findRequestByRequestID(requestID string) (*PendingRequest, bool) {
+	for _, req := range pendingRequests {
+		if req.RequestID == requestID {
+			return req, true
+		}
+	}
+	return nil, false
 }
 
 // sendPrivateMessage sends a message to a specific user via private chat
@@ -3369,11 +3437,43 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 		// Parse callback data
 		// Support both formats: "action:args" (new) and "action_args" (legacy)
+		// 🎯 特殊处理: approve_tokenID:version 和 decline_tokenID:version 格式
 		var action string
 		var args string
 		var parts []string // Keep for legacy compatibility
 
-		if strings.Contains(data, ":") {
+		// 检查是否是令牌格式的批准/拒绝按钮: action_tokenID:version
+		if strings.HasPrefix(data, "approve_") || strings.HasPrefix(data, "decline_") {
+			// 格式: approve_tokenID:version 或 decline_tokenID:version
+			// 需要分离最后的 :version 部分
+			lastColonIndex := strings.LastIndex(data, ":")
+			if lastColonIndex > 0 {
+				action = data[:lastColonIndex]           // 例如: "approve_r12345_abc"
+				args = data[lastColonIndex+1:]           // 例如: "1" (version)
+				// 同时设置 parts 为 action 按 _ 分割的结果
+				parts = strings.Split(action, "_")
+				// 重写 action 为纯操作名
+				if len(parts) > 0 {
+					action = parts[0]  // "approve" 或 "decline"
+					// args 保持为 version
+					// 同时需要重新构造 tokenID 部分
+					if len(parts) > 1 {
+						tokenID := strings.Join(parts[1:], "_")  // 例如: "r12345_abc"
+						// 将 tokenID:version 作为新的 args 格式
+						args = tokenID + ":" + args
+					}
+				}
+				log.Printf("[DEBUG] Token format parsed: action=%s, args=%s", action, args)
+			} else {
+				// 没有 :version 部分，按旧格式处理
+				parts = strings.Split(data, "_")
+				action = parts[0]
+				if len(parts) > 1 {
+					args = strings.Join(parts[1:], "_")
+				}
+			}
+		} else if strings.Contains(data, ":") {
+			// 普通的 action:args 格式
 			colonParts := strings.SplitN(data, ":", 2)
 			action = colonParts[0]
 			if len(colonParts) > 1 {
@@ -3382,6 +3482,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				parts = strings.Split(args, "_")
 			}
 		} else {
+			// action_args 格式
 			parts = strings.Split(data, "_")
 			action = parts[0]
 			if len(parts) > 1 {
@@ -3428,7 +3529,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					mediaType := parts[2]
 
 					if err == nil && smartSearchMgr != nil {
-						log.Printf("[DEBUG] Processing request action: tmdbID=%d, type=%s", tmdbID, mediaType)
+						log.Printf("[DEBUG] Processing request action: userID=%d, tmdbID=%d, type=%s", userID, tmdbID, mediaType)
 
 						// Get Jellyseerr user ID
 						jellyseerrUserID, _ := smartSearchMgr.GetJellyseerrUserID(userID)
@@ -3437,6 +3538,12 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 							answerCallbackQuery(callbackID, responseText)
 							w.WriteHeader(http.StatusOK)
 							return
+						}
+
+						// Get username for notification
+						username := update.CallbackQuery.From.Username
+						if username == "" {
+							username = fmt.Sprintf("User_%d", userID)
 						}
 
 						// Create request
@@ -3461,9 +3568,57 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 							if id, ok := resultData["id"].(float64); ok {
 								requestID = fmt.Sprintf("%.0f", id)
 							}
-							responseText = fmt.Sprintf("✅ 请求成功！\n\n📋 请求 ID: %s\n\n请等待管理员处理", requestID)
+
+							// 🎯 永久修复: 调用统一的管理员通知系统
+							log.Printf("[DEBUG] AI推荐请求成功，调用管理员通知: requestID=%s, tmdbID=%d, type=%s", requestID, tmdbID, mediaType)
+
+							// 获取媒体标题（从TMDB获取）
+							mediaTitle := fmt.Sprintf("TMDB:%d", tmdbID)
+							if jellyseerrClient != nil {
+								if mediaInfo, err := jellyseerrClient.GetMediaInfo(tmdbID); err == nil && mediaInfo != nil {
+									mediaTitle = mediaInfo.Title
+								}
+							}
+
+							// 发送管理员通知（使用令牌系统）
+							notifyAdminsRequest(mediaTitle, mediaType, username, requestID)
+
+							responseText = fmt.Sprintf("✅ 请求成功！📋 请求 ID: %s\n\n已通知管理员处理~", requestID)
 						}
 
+						answerCallbackQuery(callbackID, responseText)
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+				}
+			} else if data == "ai_back_to_list" {
+				// 🎯 永久修复: 处理从AI推荐详情页返回列表
+				userSession := botModule.GetSession(userID)
+				if userSession != nil {
+					if entry, hasHistory := userSession.PopNavEntry(); hasHistory {
+						log.Printf("[DEBUG] AI Back to list: source=%s", entry.Source)
+
+						// 根据保存的来源重新构建列表
+						var backgroundTask func()
+						switch entry.Source {
+						case "search_trending":
+							newMsg, newKeyboard, editMessage, backgroundTask = handleTrendingSearchCallback(userID, messageID)
+						case "search_tv_hot":
+							newMsg, newKeyboard, editMessage, backgroundTask = handleHotTVSearchCallback(userID, messageID)
+						case "search_movie_new":
+							newMsg, newKeyboard, editMessage, backgroundTask = handleNewMoviesSearchCallback(userID, messageID)
+						default:
+							// 降级到热门推荐
+							newMsg, newKeyboard, editMessage, backgroundTask = handleTrendingSearchCallback(userID, messageID)
+						}
+
+						// 执行后台任务（如果有）
+						if backgroundTask != nil {
+							go backgroundTask()
+						}
+					} else {
+						// 没有历史记录，返回默认提示
+						responseText = "💡 请从菜单选择推荐类型"
 						answerCallbackQuery(callbackID, responseText)
 						w.WriteHeader(http.StatusOK)
 						return
@@ -3474,8 +3629,48 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				// Format: ai_<source>_<tmdbID>_<type>
 				parts := strings.Split(data, "_")
 				if len(parts) >= 4 {
+					source := parts[1] // trending, hot_tv, new_movie, random
 					tmdbID, _ := strconv.Atoi(parts[2])
 					mediaType := parts[3]
+
+					// 🎯 保存导航历史到 session，支持返回功能
+					userSession := botModule.GetSession(userID)
+					if userSession != nil {
+						// 构建原始列表的回调数据，用于返回
+						var sourceCallback string
+						switch source {
+						case "trending":
+							sourceCallback = "search_trending"
+						case "hot":
+							sourceCallback = "search_tv_hot"
+						case "new":
+							sourceCallback = "search_movie_new"
+						case "random":
+							sourceCallback = "search_trending" // 随机推荐也返回热门
+						default:
+							sourceCallback = "search_trending"
+						}
+
+						// 保存导航历史
+						userSession.PushNavEntry(sourceCallback, "", "")
+					}
+
+					// 获取完整媒体信息
+					var mediaTitle string
+					var mediaOverview string
+
+					// 尝试从 Jellyseerr 获取完整信息
+					if jellyseerrClient != nil {
+						if mediaInfo, err := jellyseerrClient.GetMediaInfo(tmdbID); err == nil && mediaInfo != nil {
+							mediaTitle = mediaInfo.Title
+							mediaOverview = mediaInfo.Overview
+						}
+					}
+
+					// 如果没有获取到标题，使用默认
+					if mediaTitle == "" {
+						mediaTitle = fmt.Sprintf("TMDB ID: %d", tmdbID)
+					}
 
 					// Build details message with request button
 					var sb strings.Builder
@@ -3488,20 +3683,35 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 						typeLabel = "剧集"
 					}
 
-					sb.WriteString(fmt.Sprintf("┌─ ✨ 详情 ─────────┐\n\n"))
-					sb.WriteString(fmt.Sprintf("%s TMDB ID: %d\n", emoji, tmdbID))
+					// 如果没有获取到标题，使用默认
+					if mediaTitle == "" {
+						mediaTitle = fmt.Sprintf("TMDB ID: %d", tmdbID)
+					}
+
+					sb.WriteString(fmt.Sprintf("┌─ ✨ %s详情 ─────────┐\n\n", typeLabel))
+					sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, mediaTitle))
 					sb.WriteString(fmt.Sprintf("🏷️ 类型: %s\n\n", typeLabel))
-					sb.WriteString("━━━━━━━━━━━━━━━\n\n")
+
+					if mediaOverview != "" {
+						// 截断过长的简介
+						overview := mediaOverview
+						if len(overview) > 100 {
+							overview = overview[:97] + "..."
+						}
+						sb.WriteString(fmt.Sprintf("\n📝 %s\n", overview))
+					}
+					sb.WriteString("\n━━━━━━━━━━━━━━━\n\n")
 					sb.WriteString("💡 点击下方按钮发起请求\n")
 
-					// Create keyboard with request button
+					// Create keyboard with request button and working back button
 					requestButton := map[string]string{
 						"text":         "📋 发起请求",
 						"callback_data": fmt.Sprintf("request_%d_%s", tmdbID, mediaType),
 					}
+					// 🎯 永久修复: 使用正确的回调数据支持返回功能
 					backButton := map[string]string{
-						"text":         "🔙 返回列表",
-						"callback_data": "ignore", // Just ignore for now
+						"text":         "⬅️ 返回列表",
+						"callback_data": "ai_back_to_list",
 					}
 					keyboard := &TelegramInlineKeyboard{
 						InlineKeyboard: [][]map[string]string{{requestButton}, {backButton}},
@@ -3543,18 +3753,64 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				// Normal switch for single-part actions
 				switch action {
 				case "approve", "decline":
-				// Admin only actions (legacy)
-				userIDStr := fmt.Sprintf("%d", userID)
-				adminsMutex.RLock()
-				_, isAdmin := admins[userIDStr]
-				adminsMutex.RUnlock()
+					// 检查是否是令牌格式
+					if strings.Contains(args, ":") {
+						// 新格式：tokenID:version
+						parts := strings.Split(args, ":")
+						if len(parts) == 2 {
+							tokenID := parts[0]
+							version, _ := strconv.ParseInt(parts[1], 10, 64)
 
-				if !isAdmin {
-					answerCallbackQuery(callbackID, "❌ 你不是管理员")
-					w.WriteHeader(http.StatusOK)
-					return
-				}
-				responseText = handleRequestAction(action, args)
+							// 验证令牌
+							valid, token, errMsg := tokenManager.ValidateToken(tokenID)
+							if !valid {
+								responseText = "❌ " + errMsg
+								answerCallbackQuery(callbackID, responseText)
+								w.WriteHeader(http.StatusOK)
+								return
+							}
+
+							// 先尝试同步实际状态
+							tokenManager.SyncRequestState(token.RequestID)
+
+							// 执行操作
+							var result *ApprovalResult
+							if action == "approve" {
+								result = tokenManager.ApproveRequest(tokenID, version)
+							} else {
+								result = tokenManager.DeclineRequest(tokenID, version)
+							}
+
+							// 构建响应消息
+							if result.WasFirst {
+								responseText = "✅ " + result.Message
+								editMessage = true
+								newMsg = responseText
+								newKeyboard = nil // 移除按钮
+							} else if result.Success {
+								// 幂等响应
+								responseText = "ℹ️ " + result.Message
+							} else {
+								responseText = "❌ " + result.Message
+							}
+							answerCallbackQuery(callbackID, responseText)
+							w.WriteHeader(http.StatusOK)
+							return
+						}
+					}
+
+					// 降级到旧格式处理
+					userIDStr := fmt.Sprintf("%d", userID)
+					adminsMutex.RLock()
+					_, isAdmin := admins[userIDStr]
+					adminsMutex.RUnlock()
+
+					if !isAdmin {
+						answerCallbackQuery(callbackID, "❌ 你不是管理员")
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+					responseText = handleRequestAction(action, args)
 
 			case "approve_bind":
 				// Approve binding request (admin only)
@@ -5880,6 +6136,19 @@ func main() {
 	mediaSecurityChecker = NewMediaSecurityChecker()
 	mediaSecurityChecker.SetBotToken(botToken)
 
+	// Initialize Token Manager for request approval
+	tokenManager = NewTokenManager("/app/data/approval_tokens.json")
+	log.Println("✅ 令牌管理器已初始化")
+
+	// 启动后台清理协程
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			tokenManager.CleanupExpiredTokens()
+		}
+	}()
+
 	// 初始化新的模块化 Bot 系统
 	log.Println("[Main] Calling InitBotModule...")
 	if err := InitBotModule(); err != nil {
@@ -5891,6 +6160,19 @@ func main() {
 		if botModule != nil {
 			botModule.SetAdminChecker(isUserAdmin)
 			log.Println("[Main] Admin checker set for botModule")
+
+			// Set admin notifier and admin list
+			botModule.SetAdminNotifier(notifyAdminsRequest)
+			botModule.SetAdmins(admins)
+			log.Println("[Main] Admin notifier and admin list set for botModule")
+
+			// Set UserSyncGetter for unified user mapping access
+			if userSyncMgr != nil {
+				bot.SetUserSyncGetter(userSyncMgr)
+				log.Println("[Main] UserSyncGetter set for botModule")
+			} else {
+				log.Println("[Main] Warning: userSyncMgr is nil, BotModule will use fallback file reading")
+			}
 		}
 	}
 
@@ -6432,7 +6714,7 @@ func isNewFormatCallback(data string) bool {
 	}
 
 	// New format callbacks
-	newActions := []string{"search:", "subscribe:", "download:", "page:", "cancel:", "select:", "back:"}
+	newActions := []string{"search:", "subscribe:", "download:", "page:", "cancel:", "select:", "back:", "feedback:", "feedback_type:", "back_to_detail:"}
 	for _, action := range newActions {
 		if strings.HasPrefix(data, action) {
 			return true

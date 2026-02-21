@@ -131,6 +131,29 @@ func (qm *QuotaManager) IncrementUsage(userID int64, mediaType string) {
 	qm.saveQuotasUnsafe()
 }
 
+// DecrementUsage decrements the usage counter for a media type (used for rollback on error)
+func (qm *QuotaManager) DecrementUsage(userID int64, mediaType string) {
+	qm.mu.Lock()
+	defer qm.mu.Unlock()
+
+	quota := qm.quotas[userID]
+	if quota == nil {
+		return // No quota record, nothing to decrement
+	}
+
+	if mediaType == "movie" {
+		if quota.MovieUsed > 0 {
+			quota.MovieUsed--
+		}
+	} else if mediaType == "tv" {
+		if quota.TVUsed > 0 {
+			quota.TVUsed--
+		}
+	}
+
+	qm.saveQuotasUnsafe()
+}
+
 // saveQuotasUnsafe saves without locking (caller must hold lock)
 func (qm *QuotaManager) saveQuotasUnsafe() {
 	data, err := json.MarshalIndent(qm.quotas, "", "  ")

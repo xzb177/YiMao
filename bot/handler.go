@@ -20,6 +20,7 @@ type Handler struct {
 	messageEditor  *MessageEditor
 	displayBuilder *DisplayBuilder
 	quotaManager   *QuotaManager
+	privilegeManager *PrivilegeManager // 特权管理器
 	chatSystem     *ChatSystem // 添加聊天系统
 	feedbackManager *FeedbackManager // 反馈管理器
 	isAdminFunc    func(int64) bool // 管理员检查函数
@@ -95,6 +96,12 @@ func (h *Handler) SetAdminChecker(fn func(int64) bool) {
 	if h.chatSystem != nil {
 		h.chatSystem.SetAdminChecker(fn)
 		log.Printf("[Handler] Admin checker passed to existing ChatSystem")
+	}
+
+	// 🎯 同时传递给 privilegeManager（如果已设置）
+	if h.privilegeManager != nil {
+		h.privilegeManager.SetIsAdminFunc(fn)
+		log.Printf("[Handler] Admin checker passed to PrivilegeManager")
 	}
 }
 
@@ -826,8 +833,44 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 		quotaMediaType = "tv"
 	}
 
+	// 检查管理员特权 - 管理员可以绕过配额限制
+	userName := ""
+	if session.Context != nil {
+		if name, ok := session.Context["username"].(string); ok {
+			userName = name
+		}
+	}
+	if userName == "" {
+		userName = fmt.Sprintf("User_%d", session.UserID)
+	}
+
+	isAdmin := false
+	if h.isAdminFunc != nil {
+		isAdmin = h.isAdminFunc(session.UserID)
+	}
+
+	// 使用特权管理器检查是否可以绕过配额
+	canBypass := false
+	if h.privilegeManager != nil && isAdmin {
+		var bypassed bool
+		var reason string
+		var needsVerification bool
+		bypassed, reason, needsVerification = h.privilegeManager.CanBypassQuota(session.UserID, userName, quotaMediaType, title, 0)
+		if bypassed {
+			canBypass = true
+			log.Printf("[Handler] 管理员 %d 绕过配额检查: %s", session.UserID, reason)
+		}
+		if needsVerification {
+			return &CallbackResponse{
+				ShowAlert: true,
+				EditMode:  true,
+				Text:     "⚠️ 账号活动异常，请稍后再试\n\n如需帮助，请联系超级管理员",
+			}
+		}
+	}
+
 	// Check quota if available - with better message
-	if h.quotaManager != nil {
+	if h.quotaManager != nil && !canBypass {
 		quota := h.quotaManager.GetUserQuota(session.UserID)
 		canRequest := false
 		var quotaMsg string
@@ -885,51 +928,18 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 
 	log.Printf("[Handler] Calling subscribe handler with: %s", fullMediaID)
 
-	err = handler(session.UserID, fullMediaID, 0)
-	if err != nil {
-		log.Printf("[Handler] Subscribe error: %v", err)
-
-		// Check for common errors and provide helpful messages
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "请先使用") || strings.Contains(errMsg, "绑定账号") {
-			return &CallbackResponse{
-				ShowAlert: true,
-				EditMode:  true,
-				Text:     "❌ 需要先绑定账号\n\n请使用 /link 命令绑定你的 Jellyfin 账号\n\n绑定格式：/link 账号 密码",
-			}
-		}
-
-		// Check if media already exists in library
-		if strings.Contains(errMsg, "已存在") || strings.Contains(errMsg, "already exists") || strings.Contains(errMsg, "available") {
-			displayTitle := title
-			if displayTitle == "" {
-				displayTitle = "这部内容"
-			}
-			return &CallbackResponse{
-				ShowAlert: true,
-				EditMode:  true,
-				Text:     fmt.Sprintf("✨ %s 已经在库中了！\n\n🎬 可以直接观看，无需请求\n\n去媒体库搜索一下吧", displayTitle),
-			}
-		}
-
-		// Generic error with helpful message
-		displayTitle := title
-		if displayTitle == "" {
-			displayTitle = "这部内容"
-		}
-		return &CallbackResponse{
-			ShowAlert: true,
-			EditMode:  true,
-			Text:     fmt.Sprintf("❌ 请求失败\n\n%s", errMsg),
-		}
-	}
-
-	// Increment quota usage
-	if h.quotaManager != nil {
+	// Increment quota usage immediately (optimistic)
+	// 管理员绕过配额时不增加计数
+	if h.quotaManager != nil && !canBypass {
 		h.quotaManager.IncrementUsage(session.UserID, quotaMediaType)
 	}
 
-	// Return success message with more details
+	// 记录请求活动（包括管理员）
+	if h.privilegeManager != nil {
+		h.privilegeManager.RecordRequest(session.UserID, userName, quotaMediaType, title, id, false)
+	}
+
+	// Build success message for immediate response
 	displayTitle := title
 	if displayTitle == "" {
 		displayTitle = "这部内容"
@@ -937,35 +947,100 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 
 	// Build success message
 	var msg strings.Builder
-	msg.WriteString(fmt.Sprintf("✅ 请求已发送！\n\n🎬 %s\n\n", displayTitle))
-	msg.WriteString("📋 状态：等待管理员处理\n")
-	msg.WriteString("🔔 完成后会自动通知你\n")
-
-	// Show remaining quota if available
-	if h.quotaManager != nil {
-		quota := h.quotaManager.GetUserQuota(session.UserID)
-		if quotaMediaType == "movie" {
-			remaining := quota.MovieLimit - quota.MovieUsed
-			if remaining > 0 {
-				msg.WriteString(fmt.Sprintf("\n💡 今日还可请求 %d 部电影", remaining))
-			} else {
-				msg.WriteString("\n🎊 今日电影配额已用完！")
-			}
-		} else {
-			remaining := quota.TVLimit - quota.TVUsed
-			if remaining > 0 {
-				msg.WriteString(fmt.Sprintf("\n💡 今日还可请求 %d 部剧集", remaining))
-			} else {
-				msg.WriteString("\n🎊 今日剧集配额已用完！")
-			}
-		}
+	if canBypass {
+		msg.WriteString(fmt.Sprintf("⏳ 正在处理请求... (管理员特权)\n\n🎬 %s\n\n", displayTitle))
+		msg.WriteString("📋 请求已提交，请稍候")
+	} else {
+		msg.WriteString(fmt.Sprintf("⏳ 正在处理请求...\n\n🎬 %s\n\n", displayTitle))
+		msg.WriteString("📋 请求已提交，请稍候")
 	}
 
-	return &CallbackResponse{
+	// Return immediate response to user (fast response)
+	immediateResponse := &CallbackResponse{
 		Text:     msg.String(),
 		ShowAlert: true,
-		EditMode: true,  // 编辑原消息显示状态
+		EditMode: false, // Don't edit, show as new message or alert
 	}
+
+	// Process request asynchronously (performance optimization)
+	go func() {
+		log.Printf("[Handler] Async subscribe: userID=%d, mediaID=%s", session.UserID, fullMediaID)
+
+		// Call the subscribe handler
+		err := handler(session.UserID, fullMediaID, 0)
+
+		// Handle result
+		if err != nil {
+			log.Printf("[Handler] Async subscribe error: %v", err)
+
+			// Rollback quota on error (仅当未绕过配额时)
+			if h.quotaManager != nil && !canBypass {
+				h.quotaManager.DecrementUsage(session.UserID, quotaMediaType)
+			}
+
+			// 记录失败活动
+			if h.privilegeManager != nil {
+				h.privilegeManager.RecordRequest(session.UserID, userName, quotaMediaType, title, id, false)
+			}
+
+			// Send error message to user
+			errMsg := err.Error()
+			var userMsg string
+
+			if strings.Contains(errMsg, "请先使用") || strings.Contains(errMsg, "绑定账号") {
+				userMsg = fmt.Sprintf("❌ 需要先绑定账号\n\n请使用 /link 命令绑定你的 Jellyfin 账号\n\n绑定格式：/link 账号 密码")
+			} else if strings.Contains(errMsg, "已存在") || strings.Contains(errMsg, "already exists") || strings.Contains(errMsg, "available") {
+				userMsg = fmt.Sprintf("✨ %s 已经在库中了！\n\n🎬 可以直接观看，无需请求", displayTitle)
+			} else {
+				userMsg = fmt.Sprintf("❌ 请求失败\n\n%s", errMsg)
+			}
+
+			// Send error notification via message editor
+			if h.messageEditor != nil {
+				h.messageEditor.SendMessage(session.UserID, userMsg, nil)
+			}
+		} else {
+			log.Printf("[Handler] Async subscribe success: userID=%d, mediaID=%s", session.UserID, fullMediaID)
+
+			// 记录成功活动
+			if h.privilegeManager != nil {
+				h.privilegeManager.RecordRequest(session.UserID, userName, quotaMediaType, title, id, true)
+			}
+
+			// Build final success message
+			var finalMsg strings.Builder
+			finalMsg.WriteString(fmt.Sprintf("✅ 请求已发送！\n\n🎬 %s\n\n", displayTitle))
+			finalMsg.WriteString("📋 状态：等待管理员处理\n")
+			finalMsg.WriteString("🔔 完成后会自动通知你\n")
+
+			// Show remaining quota if available (管理员不显示配额)
+			if h.quotaManager != nil && !canBypass {
+				quota := h.quotaManager.GetUserQuota(session.UserID)
+				if quotaMediaType == "movie" {
+					remaining := quota.MovieLimit - quota.MovieUsed
+					if remaining > 0 {
+						finalMsg.WriteString(fmt.Sprintf("\n💡 今日还可请求 %d 部电影", remaining))
+					} else {
+						finalMsg.WriteString("\n🎊 今日电影配额已用完！")
+					}
+				} else {
+					remaining := quota.TVLimit - quota.TVUsed
+					if remaining > 0 {
+						finalMsg.WriteString(fmt.Sprintf("\n💡 今日还可请求 %d 部剧集", remaining))
+					} else {
+						finalMsg.WriteString("\n🎊 今日剧集配额已用完！")
+					}
+				}
+			}
+
+			// Send success notification via message editor
+			if h.messageEditor != nil {
+				h.messageEditor.SendMessage(session.UserID, finalMsg.String(), nil)
+			}
+		}
+	}()
+
+	return immediateResponse
 }
 
 func (h *Handler) handleDownloadCallback(session *session.UserSession, cb *callback.Callback) *CallbackResponse {
@@ -1406,6 +1481,18 @@ func (h *Handler) SetMessageEditor(me *MessageEditor) {
 // SetQuotaManager sets the quota manager dependency
 func (h *Handler) SetQuotaManager(qm *QuotaManager) {
 	h.quotaManager = qm
+}
+
+// SetPrivilegeManager sets the privilege manager dependency
+func (h *Handler) SetPrivilegeManager(pm *PrivilegeManager) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.privilegeManager = pm
+	// 设置管理员检查函数
+	if h.isAdminFunc != nil {
+		pm.SetIsAdminFunc(h.isAdminFunc)
+	}
+	log.Printf("[Handler] PrivilegeManager set")
 }
 
 // SetFeedbackManager sets the feedback manager
