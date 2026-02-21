@@ -431,9 +431,9 @@ func (kb *KnowledgeBase) initDefaultEntries() {
 		},
 		{
 			ID:       "kb_player_client",
-			Keywords: []string{"播放器", "客户端", "app", "用什么播放", "用什么看", "下载app", "怎么播放"},
+			Keywords: []string{"播放器", "客户端", "app", "用什么播放", "用什么看", "下载app", "怎么播放", "软件下载"},
 			Question: "用什么播放器看？",
-			Answer:   "📺 **播放方式**\n\n🌐 网页播放: https://emby.oceancloud.asia\n\n📱 推荐客户端:\n• iOS: Infuse (付费) / Jellyfin Mobile (免费)\n• Android: Jellyfin Mobile (免费)\n• 电视/盒子: Jellyfin Android TV\n\n💡 绑定账号后直接登录即可观看",
+			Answer:   "📺 **播放软件下载**\n\n连接协议请选择「Emby」或「其他Emby」\n\n📱 **iOS & iPad OS**\nInfuse / yybx / iemc / Fileball / HamHub / SenPlayer / Conflux / iPlay / Forward / Reflix / Vidhub\n\n📺 **Apple TV**\nInfuse / yybx / Fileball / HamHub / SenPlayer / Conflux / iPlay / Vidhub\n\n🤖 **Android**\nAfusekt / Yamby / Emby小秘版 / iPlay / Jellyfin / Findroid / Emby kirlif版 / Femor / Vidhub / Hills\n\n📺 **Android TV**\nAfusekt TV版 / Jellyfin Android TV / Emby小秘版 / Emby kirlif版 / Yamby / Vidhub\n\n🖥️ **Windows**\nJellyfin Media Player / Emby小秘版 / Tsukimi / Femor / 小幻影视 / Hills Lite\n\n📱 **华为鸿蒙**\nHosPlayer\n\n⚠️ 注意：本服禁止开启Infuse的「媒体库模式」功能\n\n📋 完整下载列表: https://t.me/oceancloudemby/138",
 			Category: "info",
 			Enabled:  true,
 			Priority: 100, // 高优先级
@@ -449,9 +449,9 @@ func (kb *KnowledgeBase) initDefaultEntries() {
 		},
 		{
 			ID:       "kb_how_to_download",
-			Keywords: []string{"怎么下载", "如何下载", "能下载吗", "下载方法", "离线下载"},
+			Keywords: []string{"怎么下载", "如何下载", "能下载吗", "下载方法", "离线下载", "软件下载"},
 			Question: "能下载吗？",
-			Answer:   "📥 **关于下载**\n\n本站不支持直接下载，仅在线观看。\n\n如需下载功能，请联系管理员商讨。\n\n💡 推荐使用 Infuse 等支持缓存功能的客户端",
+			Answer:   "📥 **关于下载**\n\n本站提供在线观看，推荐使用专用客户端获得最佳体验。\n\n📱 **播放软件下载**: https://t.me/oceancloudemby/138\n\n• iOS推荐: Infuse / Playbox\n• Android推荐: Jellyfin / Afusekt\n• Windows推荐: Jellyfin Media Player\n\n💡 部分客户端支持缓存/离线下载功能",
 			Category: "faq",
 			Enabled:  true,
 			Priority: 90,
