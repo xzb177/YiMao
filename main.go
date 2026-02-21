@@ -6203,7 +6203,25 @@ func isExplicitSearchQuery(text string) bool {
 		return false
 	}
 
-	// 命令总是搜索
+	// 排除非搜索的命令 - 这些命令应该由旧处理器处理
+	nonSearchCommands := []string{
+		"/feedback", "/fb", "/issues", "/allissues",
+		"/link", "/unlink", "/quota", "/my", "/myrequests",
+		"/start", "/help", "/prefs", "/status",
+		"/register", "/bindrequests", "/approvebind", "/rejectbind",
+		"/pending", "/approve", "/decline", "/addadmin", "/deladmin", "/users", "/admins",
+		"/top", "/activity", "/trends", "/stats", "/stuck",
+		"/verify", "/mapuser", "/setprefs", "/resetprefs", "/unregister",
+		"/daily", "/challenges", "/leaderboard", "/badges", "/profile", "/me",
+		"/history", "/random", "/recommend", "/rec", "/suggest",
+	}
+	for _, cmd := range nonSearchCommands {
+		if strings.HasPrefix(text, cmd) {
+			return false // 这些不是搜索命令，让旧处理器处理
+		}
+	}
+
+	// 其他命令总是搜索
 	if strings.HasPrefix(text, "/") {
 		return true
 	}
