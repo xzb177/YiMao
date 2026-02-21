@@ -776,7 +776,7 @@ func formatEmbyNotificationWithPhoto(payload EmbyWebhookPayload) (string, string
 				epIndex = payload.Item.IndexNumber
 			}
 
-			notifyMilestone := fmt.Sprintf("新增第%d集", currentCount)
+			notifyMilestone := fmt.Sprintf("新增第%d集", epIndex)
 			text.WriteString(fmt.Sprintf("✅ %s %s %sE%02d\n\n",
 				notifyMilestone, seriesName, seasonNum, epIndex))
 			text.WriteString("───────────────────\n\n")
