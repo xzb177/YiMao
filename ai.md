@@ -2110,4 +2110,60 @@ trends - 请求趋势
 | | - **效果**: 用户输入"仙逆"、"三体"等直接触发搜索，输入闲聊内容走AI聊天 |
 | | - **提交**: 656e2f8 |
 | | - **服务重启**: Docker 容器重启成功 ✅ |
-
+| 2026-02-21 | **新手引导优化** 🎯 |
+| | - **问题**: 新用户和老用户看到相同的 /start 欢迎消息，缺乏针对性 |
+| | - **优化内容**: |
+| |   - 根据用户配额状态区分新老用户 |
+| |   - 新用户：显示详细的三步引导教程（绑定→搜索→请求） |
+| |   - 老用户：显示简洁的欢迎消息，直接提示搜索 |
+| |   - 新用户按钮：1️⃣ 绑定账号、🔍 搜索教程、🔥 热门推荐、❓ 详细帮助 |
+| |   - 老用户按钮：🔍 搜索内容、🔥 热门推荐、📺 热播剧集、🎬 最新电影、🎲 随机推荐、📋 我的请求、⚙️ 设置 |
+| | - **新增回调处理**: `handleGuideCallback()` 函数处理引导流程 |
+| |   - `guide_link`: 绑定账号教程 |
+| |   - `guide_search`: 搜索教程 |
+| |   - `guide_request`: 请求教程 |
+| | - **文件修改**: |
+| |   - `bot/handler.go`: 修改 `handleStartCommand` 函数，根据配额状态显示不同消息 |
+| |   - `main.go`: 添加新手引导回调处理函数 |
+| | - **提交**: 27b26da |
+| | - **服务重启**: Docker 容器重启成功 ✅ |
+| | - **容器状态**: healthy (28 user quotas loaded) |
+| 2026-02-21 | **详情弹窗反馈功能** 🐛 |
+| | - **问题**: 反馈问题功能分散，用户体验不够流畅 |
+| | - **优化内容**: |
+| |   - 在影片详情弹窗中添加"🐛 反馈问题"按钮 |
+| |   - 点击后显示问题类型选择（音频/字幕/视频/其他） |
+| |   - 选择类型后引导用户直接输入问题描述 |
+| |   - 通过 Jellyseerr API 提交 issue |
+| | - **新增文件修改**: |
+| |   - `bot/display.go`: 在 `buildDetailsKeyboard()` 中添加反馈按钮 |
+| |   - `bot/handler.go`: 添加 `handleFeedbackCallback()`, `handleFeedbackTypeCallback()`, `handleFeedbackMessage()` |
+| |   - `bot/handler.go`: 在 `HandleCallback` 中添加 `feedback`, `feedback_type`, `back_to_detail` 处理 |
+| |   - `bot/handler.go`: 在 `HandleMessage` 中添加 `awaiting_feedback_message` 状态处理 |
+| |   - `bot/integration.go`: 初始化 `FeedbackManager` 并传递给 `Handler` |
+| | - **用户流程**: 搜索→选片→详情→点击反馈按钮→选择类型→输入描述→提交 |
+| 2026-02-21 | **求片按钮弹窗提示修复** 🔔 |
+| | - **问题**: 用户点击求片按钮后没有弹窗提示成功/失败 |
+| | - **优化内容**: |
+| |   - 修改 `answerCallbackQuery()` 函数，默认设置 `show_alert: true` |
+| |   - 新增 `answerCallbackQueryWithAlert()` 支持可选的 alert 显示 |
+| |   - 求片成功显示：`✅ 请求成功！📋 请求 ID: xxx` |
+| |   - 求片失败显示：`❌ 请求失败: 错误原因` |
+| | - **文件修改**: `main.go` 的 `answerCallbackQuery()` 和新增 `answerCallbackQueryWithAlert()` |
+| | - **Bug 修复**: 同时修复了 `bot/handler.go:622` 的格式化字符串类型错误 (`%d` → `%s`) |
+| | - **服务重启**: Docker 容器重启成功 ✅ |
+| | - **容器状态**: healthy (39 user quotas loaded) |
+| 2026-02-22 | **消息编辑优化** ✏️ |
+| | - **问题**: AI推荐加载和搜索无结果时发送新消息，造成消息刷屏 |
+| | - **优化内容**: |
+| |   - AI推荐加载时，显示 loading 消息，加载完成后编辑原消息 |
+| |   - 搜索无结果时，编辑原消息显示提示而不是发送新消息 |
+| | - **新增函数**: `editPrivateMessage(userID, messageID, text, replyMarkup)` - 编辑私聊消息 |
+| | - **文件修改**: |
+| |   - `main.go`: 添加 `editPrivateMessage()` 函数 |
+| |   - `main.go`: 修改 `handleTrendingSearchCallback()`, `handleHotTVSearchCallback()`, `handleNewMoviesSearchCallback()` 函数签名 |
+| |   - 函数新增 `messageID` 参数和返回 `backgroundTask` 函数 |
+| |   - `bot/display.go`: 修改 `BuildNoResultsMessage()` 添加 `EditMode: true` |
+| | - **用户流程**: 点击推荐按钮→显示 loading→后台获取→编辑原消息显示结果 |
+| | - **服务重启**: Docker 容器重启成功 ✅ |
+| | - **容器状态**: healthy (41 user quotas loaded) |

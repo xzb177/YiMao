@@ -22,8 +22,8 @@ type BotModule struct {
 	sessionManager *session.SessionManager
 	messageEditor  *MessageEditor
 	quotaManager   *QuotaManager
-	feedbackManager *FeedbackManager
 	chatSystem     *ChatSystem // 添加聊天系统
+	feedbackManager *FeedbackManager // 反馈管理器
 
 	searchChain    *chain.SearchChain
 	subscribeChain *chain.SubscribeChain
@@ -77,10 +77,6 @@ func (m *BotModule) Init(botToken, chatID, jellyseerrURL, jellyseerrAPIKey strin
 	m.subscribeChain = chain.NewSubscribeChain(jellyseerrURL, jellyseerrAPIKey)
 	m.downloadChain = chain.NewDownloadChain(jellyseerrURL, jellyseerrAPIKey, "", "", "")
 
-	// Initialize feedback manager with Jellyseerr config
-	m.feedbackManager = NewFeedbackManager(jellyseerrURL, jellyseerrAPIKey)
-	m.handler.SetFeedbackManager(m.feedbackManager)
-
 	// Set bot token for message editor
 	m.messageEditor.SetBotToken(botToken)
 
@@ -88,6 +84,11 @@ func (m *BotModule) Init(botToken, chatID, jellyseerrURL, jellyseerrAPIKey strin
 	kb := NewKnowledgeBase(".")
 	m.chatSystem = NewChatSystem(kb)
 	m.handler.SetChatSystem(m.chatSystem)
+
+	// Initialize feedback manager
+	m.feedbackManager = NewFeedbackManager(jellyseerrURL, jellyseerrAPIKey)
+	m.handler.SetFeedbackManager(m.feedbackManager)
+
 	// Note: Admin checker should be set via SetAdminChecker() from main.go
 
 	log.Printf("[BotModule] Initialized with Jellyseerr: %s", jellyseerrURL)

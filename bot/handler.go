@@ -20,8 +20,8 @@ type Handler struct {
 	messageEditor  *MessageEditor
 	displayBuilder *DisplayBuilder
 	quotaManager   *QuotaManager
-	feedbackManager *FeedbackManager
 	chatSystem     *ChatSystem // 添加聊天系统
+	feedbackManager *FeedbackManager // 反馈管理器
 	isAdminFunc    func(int64) bool // 管理员检查函数
 
 	// Event handlers
@@ -187,6 +187,9 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 	case text == "n" || text == "N":
 		return h.handlePagination(session, 1)
 
+	case session.PendingAction == "awaiting_feedback_message":
+		return h.handleFeedbackMessage(session, text)
+
 	default:
 		// Treat as search query
 		return h.handleSearch(session, text)
@@ -250,6 +253,26 @@ func (h *Handler) HandleCallback(update *TelegramUpdate) *CallbackResponse {
 
 	case "back":
 		return h.handleBackCallback(session, cb)
+
+	case "feedback":
+		return h.handleFeedbackCallback(session, cb)
+
+	case "feedback_type":
+		// Extract problem type from raw callback data
+		// Format: feedback_type:audio
+		parts := strings.Split(cb.Raw, ":")
+		if len(parts) >= 2 {
+			problemType := parts[1]
+			return h.handleFeedbackTypeCallback(session, problemType)
+		}
+		return &CallbackResponse{Text: "无效的问题类型"}
+
+	case "back_to_detail":
+		// Return to item detail view
+		if session.SelectedItem != nil {
+			return h.buildItemDetailsCallbackResponse(session, session.SelectedItem)
+		}
+		return &CallbackResponse{Text: "详情已过期，请重新搜索"}
 
 	default:
 		log.Printf("[Handler] Unknown callback action: %s", cb.Action)
@@ -316,15 +339,6 @@ func (h *Handler) handleCommand(session *session.UserSession, command string) *M
 	case "/quota":
 		return h.handleQuotaCommand(session)
 
-	case "/feedback", "/fb":
-		return h.handleFeedback(session, args)
-
-	case "/issues":
-		return h.handleMyIssues(session)
-
-	case "/allissues":
-		return h.handleAllIssues(session)
-
 	case "/ai":
 		return h.handleAICommand(session, args)
 
@@ -335,150 +349,6 @@ func (h *Handler) handleCommand(session *session.UserSession, command string) *M
 		return &MessageResponse{
 			Text: fmt.Sprintf("未知命令: %s\n使用 /help 查看帮助", cmd),
 		}
-	}
-}
-
-// handleFeedback handles feedback command
-func (h *Handler) handleFeedback(session *session.UserSession, args string) *MessageResponse {
-	if h.feedbackManager == nil {
-		return &MessageResponse{
-			Text: "反馈功能暂不可用",
-		}
-	}
-
-	if args == "" {
-		return &MessageResponse{
-			Text: "📝 报告问题\n\n" +
-				"格式: /feedback <问题类型> <媒体ID> <描述>\n\n" +
-				"问题类型:\n" +
-				"• audio - 🔊 音频问题\n" +
-				"• subtitle - 📝 字幕问题\n" +
-				"• video - 🎬 视频问题\n" +
-				"• other - 💬 其他问题\n\n" +
-				"示例: /feedback video 12345 这部电影画面模糊",
-		}
-	}
-
-	// Parse args: <type> [mediaID] <message>
-	parts := strings.Fields(args)
-	if len(parts) < 2 {
-		return &MessageResponse{
-			Text: "格式错误，请使用: /feedback <类型> <描述>\n" +
-				"或者: /feedback <类型> <媒体ID> <描述>",
-		}
-	}
-
-	problemType := parts[0]
-	var message string
-	var mediaID int
-
-	// Check if second part is a number (media ID)
-	if len(parts) >= 2 {
-		if id, err := strconv.Atoi(parts[1]); err == nil && len(parts) >= 3 {
-			mediaID = id
-			message = strings.Join(parts[2:], " ")
-		} else {
-			message = strings.Join(parts[1:], " ")
-		}
-	}
-
-	if message == "" {
-		return &MessageResponse{
-			Text: "请提供问题描述",
-		}
-	}
-
-	// Default media type if no media ID provided
-	mediaType := "movie"
-	if mediaID == 0 {
-		// No media ID, create a general issue
-		mediaID = 1 // Use a dummy ID for general issues
-	}
-
-	// Create issue
-	issue, err := h.feedbackManager.CreateIssue(session.UserID, fmt.Sprintf("用户%d", session.UserID), problemType, message, mediaID, mediaType)
-	if err != nil {
-		return &MessageResponse{
-			Text: fmt.Sprintf("❌ 创建失败: %s", err.Error()),
-		}
-	}
-
-	return &MessageResponse{
-		Text: fmt.Sprintf("✅ 问题已报告！\n\n%s", FormatIssue(issue)),
-	}
-}
-
-// handleMyIssues shows user's issues
-func (h *Handler) handleMyIssues(session *session.UserSession) *MessageResponse {
-	if h.feedbackManager == nil {
-		return &MessageResponse{
-			Text: "反馈功能暂不可用",
-		}
-	}
-
-	issues, err := h.feedbackManager.GetMyIssues(session.UserID)
-	if err != nil {
-		return &MessageResponse{
-			Text: fmt.Sprintf("❌ 获取失败: %s", err.Error()),
-		}
-	}
-
-	if len(issues) == 0 {
-		return &MessageResponse{
-			Text: "📝 您还没有报告过问题",
-		}
-	}
-
-	msg := fmt.Sprintf("📝 您的问题 (%d 条)\n\n", len(issues))
-
-	for i, issue := range issues {
-		if i >= 10 {
-			msg += fmt.Sprintf("... 还有 %d 条\n", len(issues)-10)
-			break
-		}
-		msg += FormatIssue(&issue)
-		msg += "\n\n"
-	}
-
-	return &MessageResponse{
-		Text: msg,
-	}
-}
-
-// handleAllIssues shows all issues (admin)
-func (h *Handler) handleAllIssues(session *session.UserSession) *MessageResponse {
-	if h.feedbackManager == nil {
-		return &MessageResponse{
-			Text: "反馈功能暂不可用",
-		}
-	}
-
-	issues, err := h.feedbackManager.GetAllIssues(20)
-	if err != nil {
-		return &MessageResponse{
-			Text: fmt.Sprintf("❌ 获取失败: %s", err.Error()),
-		}
-	}
-
-	if len(issues) == 0 {
-		return &MessageResponse{
-			Text: "📝 暂无问题报告",
-		}
-	}
-
-	msg := fmt.Sprintf("📝 所有问题 (%d 条)\n\n", len(issues))
-
-	for i, issue := range issues {
-		if i >= 15 {
-			msg += fmt.Sprintf("... 还有 %d 条\n", len(issues)-15)
-			break
-		}
-		msg += FormatIssue(&issue)
-		msg += fmt.Sprintf(" 👤 %s\n\n", issue.CreatedBy.DisplayName)
-	}
-
-	return &MessageResponse{
-		Text: msg,
 	}
 }
 
@@ -749,7 +619,7 @@ func (h *Handler) performSubscribe(session *session.UserSession, item *SearchIte
 		}
 	}
 
-	mediaID := fmt.Sprintf("%s:%d", item.Type, item.ID)
+	mediaID := fmt.Sprintf("%s:%s", item.Type, item.ID)
 	err := handler(session.UserID, mediaID, 1)
 	if err != nil {
 		return &MessageResponse{
@@ -943,6 +813,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 	if mediaID == "" {
 		return &CallbackResponse{
 			ShowAlert: true,
+			EditMode:  true,
 			Text:     "❌ 操作失败：缺少媒体信息\n\n请重新搜索后重试",
 		}
 	}
@@ -976,6 +847,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 		if !canRequest {
 			return &CallbackResponse{
 				ShowAlert: true,
+				EditMode:  true,
 				Text:     quotaMsg,
 			}
 		}
@@ -986,6 +858,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 	if err != nil {
 		return &CallbackResponse{
 			ShowAlert: true,
+			EditMode:  true,
 			Text:     "❌ 操作失败：媒体信息格式错误\n\n请重新搜索后重试",
 		}
 	}
@@ -998,6 +871,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 	if !exists {
 		return &CallbackResponse{
 			ShowAlert: true,
+			EditMode:  true,
 			Text:     "❌ 订阅功能暂时不可用\n\n请稍后再试或联系管理员",
 		}
 	}
@@ -1020,6 +894,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 		if strings.Contains(errMsg, "请先使用") || strings.Contains(errMsg, "绑定账号") {
 			return &CallbackResponse{
 				ShowAlert: true,
+				EditMode:  true,
 				Text:     "❌ 需要先绑定账号\n\n请使用 /link 命令绑定你的 Jellyfin 账号\n\n绑定格式：/link 账号 密码",
 			}
 		}
@@ -1032,6 +907,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 			}
 			return &CallbackResponse{
 				ShowAlert: true,
+				EditMode:  true,
 				Text:     fmt.Sprintf("✨ %s 已经在库中了！\n\n🎬 可以直接观看，无需请求\n\n去媒体库搜索一下吧", displayTitle),
 			}
 		}
@@ -1043,7 +919,8 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 		}
 		return &CallbackResponse{
 			ShowAlert: true,
-			Text:     fmt.Sprintf("❌ 请求失败：\n\n%s\n\n可能的原因：\n• 媒体已存在于库中\n• 网络连接问题\n• 服务器暂时不可用\n\n请稍后再试或联系管理员", errMsg),
+			EditMode:  true,
+			Text:     fmt.Sprintf("❌ 请求失败\n\n%s", errMsg),
 		}
 	}
 
@@ -1087,6 +964,7 @@ func (h *Handler) handleSubscribeCallback(session *session.UserSession, cb *call
 	return &CallbackResponse{
 		Text:     msg.String(),
 		ShowAlert: true,
+		EditMode: true,  // 编辑原消息显示状态
 	}
 }
 
@@ -1138,6 +1016,183 @@ func (h *Handler) handleBackCallback(session *session.UserSession, cb *callback.
 		return h.buildSearchResultsCallbackResponse(session)
 	}
 	return &CallbackResponse{Text: "未知返回目标"}
+}
+
+// handleFeedbackCallback handles the feedback button press
+func (h *Handler) handleFeedbackCallback(session *session.UserSession, cb *callback.Callback) *CallbackResponse {
+	// Get media info from callback data
+	mediaID := cb.Data["id"]
+	title := cb.Data["title"]
+	mediaType := cb.Data["type"]
+
+	if mediaID == "" || title == "" {
+		return &CallbackResponse{
+			ShowAlert: true,
+			Text:     "❌ 媒体信息不完整，请重新搜索后重试",
+		}
+	}
+
+	// Store feedback context in session
+	session.SetContext("feedback_media_id", mediaID)
+	session.SetContext("feedback_media_title", title)
+	session.SetContext("feedback_media_type", mediaType)
+	session.PendingAction = "awaiting_feedback_type"
+
+	// Build feedback type selection keyboard
+	keyboard := [][]map[string]string{
+		{
+			{"text": "🎵 音频问题", "callback_data": "feedback_type:audio"},
+			{"text": "📝 字幕问题", "callback_data": "feedback_type:subtitle"},
+		},
+		{
+			{"text": "🎬 视频问题", "callback_data": "feedback_type:video"},
+			{"text": "📦 其他问题", "callback_data": "feedback_type:other"},
+		},
+		{
+			{"text": "⬅️ 返回", "callback_data": "back_to_detail"},
+		},
+	}
+
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("🐛 **反馈问题**\n\n"))
+	msg.WriteString(fmt.Sprintf("🎬 影片: %s\n\n", title))
+	msg.WriteString("请选择问题类型：")
+
+	return &CallbackResponse{
+		Text:     msg.String(),
+		Keyboard: keyboard,
+		EditMode:  true,
+	}
+}
+
+// handleFeedbackTypeCallback handles the feedback type selection
+func (h *Handler) handleFeedbackTypeCallback(session *session.UserSession, problemType string) *CallbackResponse {
+	// Get media info from context
+	mediaID, _ := session.GetContext("feedback_media_id")
+	title, _ := session.GetContext("feedback_media_title")
+
+	if mediaID == nil || title == nil {
+		return &CallbackResponse{
+			ShowAlert: true,
+			Text:     "❌ 会话已过期，请重新选择影片",
+		}
+	}
+
+	// Store the problem type
+	session.SetContext("feedback_problem_type", problemType)
+	session.PendingAction = "awaiting_feedback_message"
+
+	// Build problem type description text
+	typeDesc := map[string]string{
+		"audio":    "🎵 音频问题 - 如：无声音、音画不同步、音轨缺失等",
+		"subtitle": "📝 字幕问题 - 如：无字幕、字幕不显示、字幕翻译错误等",
+		"video":    "🎬 视频问题 - 如：画面模糊、卡顿、无法播放等",
+		"other":    "📦 其他问题 - 如：下载失败、元数据错误等",
+	}
+
+	var msg strings.Builder
+	msg.WriteString(fmt.Sprintf("🐛 **反馈问题**\n\n"))
+	msg.WriteString(fmt.Sprintf("🎬 影片: %s\n", title))
+	msg.WriteString(fmt.Sprintf("📋 问题类型: %s\n\n", typeDesc[problemType]))
+	msg.WriteString("💬 请直接发送问题描述\n\n")
+	msg.WriteString("例如：\n")
+	msg.WriteString("• \"第3集没有声音\"\n")
+	msg.WriteString("• \"字幕显示乱码\"\n")
+	msg.WriteString("• \"播放到一半就卡住了\"\n\n")
+	msg.WriteString("发送 /cancel 取消反馈")
+
+	return &CallbackResponse{
+		Text:     msg.String(),
+		EditMode: true,
+	}
+}
+
+// handleFeedbackMessage handles the user's feedback message input
+func (h *Handler) handleFeedbackMessage(session *session.UserSession, message string) *MessageResponse {
+	// Clear pending action
+	session.PendingAction = ""
+
+	// Get feedback context
+	mediaID, _ := session.GetContext("feedback_media_id")
+	title, _ := session.GetContext("feedback_media_title")
+	mediaType, _ := session.GetContext("feedback_media_type")
+	problemType, _ := session.GetContext("feedback_problem_type")
+
+	// Validate context
+	if mediaID == nil || title == nil || problemType == nil {
+		return &MessageResponse{
+			Text: "❌ 会话已过期，请重新选择影片和问题类型",
+		}
+	}
+
+	// Clean up context
+	session.SetContext("feedback_media_id", nil)
+	session.SetContext("feedback_media_title", nil)
+	session.SetContext("feedback_media_type", nil)
+	session.SetContext("feedback_problem_type", nil)
+
+	// Get user info (for logging purposes)
+	userName := fmt.Sprintf("用户%d", session.UserID)
+
+	// Parse media ID as integer
+	var id int
+	var err error
+	idStr := fmt.Sprintf("%v", mediaID)
+	if idStr != "" {
+		_, err = fmt.Sscanf(idStr, "%d", &id)
+		if err != nil {
+			// Try to parse as int directly
+			id, err = strconv.Atoi(idStr)
+		}
+	}
+
+	if err != nil || id <= 0 {
+		return &MessageResponse{
+			Text: "❌ 媒体 ID 格式错误，请重新尝试",
+		}
+	}
+
+	// Determine media type for Jellyseerr
+	jellyseerrMediaType := "movie"
+	if mediaType, ok := mediaType.(string); ok && mediaType == "tv" {
+		jellyseerrMediaType = "tv"
+	}
+
+	// Call feedback manager if available
+	if h.feedbackManager == nil {
+		return &MessageResponse{
+			Text: "❌ 反馈功能暂未启用\n\n请联系管理员配置",
+		}
+	}
+
+	// Create the issue
+	issue, err := h.feedbackManager.CreateIssue(
+		session.UserID,
+		userName,
+		fmt.Sprintf("%v", problemType),
+		message,
+		id,
+		jellyseerrMediaType,
+	)
+
+	if err != nil {
+		log.Printf("[Handler] Feedback error: %v", err)
+		return &MessageResponse{
+			Text: fmt.Sprintf("❌ 反馈提交失败\n\n错误: %s", err.Error()),
+		}
+	}
+
+	// Success message
+	var msg strings.Builder
+	msg.WriteString("✅ **反馈已提交**\n\n")
+	msg.WriteString(fmt.Sprintf("🎬 影片: %s\n", title))
+	msg.WriteString(fmt.Sprintf("📋 问题 ID: #%d\n\n", issue.ID))
+	msg.WriteString("💬 我们会尽快处理你的反馈\n")
+	msg.WriteString("🔔 处理完成后会通知你")
+
+	return &MessageResponse{
+		Text: msg.String(),
+	}
 }
 
 // buildSearchResultsCallbackResponse builds the search results response for callback
@@ -1353,9 +1408,12 @@ func (h *Handler) SetQuotaManager(qm *QuotaManager) {
 	h.quotaManager = qm
 }
 
-// SetFeedbackManager sets the feedback manager dependency
+// SetFeedbackManager sets the feedback manager
 func (h *Handler) SetFeedbackManager(fm *FeedbackManager) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	h.feedbackManager = fm
+	log.Printf("[Handler] FeedbackManager set")
 }
 
 // Cleanup

@@ -445,6 +445,18 @@ func (d *DisplayBuilder) buildDetailsKeyboard(sess *session.UserSession, item *s
 		}})
 	}
 
+	// ========== Feedback Button ==========
+	// Add feedback button in a separate row
+	feedbackRow := []map[string]string{{
+		"text":         "🐛 反馈问题",
+		"callback_data": d.callbackParser.FormatWithData("feedback", map[string]string{
+			"id":    item.ID,
+			"title": displayTitle,
+			"type":  item.Type,
+		}),
+	}}
+	keyboard = append(keyboard, feedbackRow)
+
 	// ========== Secondary Buttons ==========
 	secondaryRow := []map[string]string{
 		{"text": "⬅️ 返回列表", "callback_data": d.callbackParser.Format("back", "results")},
@@ -499,7 +511,8 @@ func (d *DisplayBuilder) BuildNoResultsMessage(query string) *MessageResponse {
 	text.WriteString("\n└──────────────────────┘")
 
 	return &MessageResponse{
-		Text: text.String(),
+		Text:     text.String(),
+		EditMode: true, // Enable edit mode to update the original message
 	}
 }
 

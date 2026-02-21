@@ -1784,6 +1784,41 @@ func sendPrivateMessage(userID int64, text string, replyMarkup *TelegramInlineKe
 	return nil
 }
 
+// editPrivateMessage edits a message in private chat
+func editPrivateMessage(userID int64, messageID int64, text string, replyMarkup *TelegramInlineKeyboard) error {
+	url := fmt.Sprintf("https://api.telegram.org/bot%s/editMessageText", botToken)
+
+	msg := map[string]interface{}{
+		"chat_id":      fmt.Sprintf("%d", userID),
+		"message_id":   messageID,
+		"text":         text,
+		"parse_mode":   "", // Disable parse mode to avoid markdown parsing issues
+	}
+
+	if replyMarkup != nil {
+		msg["reply_markup"] = replyMarkup
+	}
+
+	jsonData, err := json.Marshal(msg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal message: %w", err)
+	}
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to edit message: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		log.Printf("Telegram API error: %s", string(bodyBytes))
+		return fmt.Errorf("telegram API returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
 // notifyAdminsPrivately notifies all admins about urgent issues
 func notifyAdminsPrivately(message string) {
 	adminsMutex.RLock()
@@ -3370,13 +3405,18 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 			if isSpecialAction {
 				log.Printf("[DEBUG] isSpecialAction=true, data=%s", data)
+				var backgroundTask func()
 				switch data {
 				case "search_trending":
-					newMsg, newKeyboard, editMessage = handleTrendingSearchCallback(userID)
+					newMsg, newKeyboard, editMessage, backgroundTask = handleTrendingSearchCallback(userID, messageID)
 				case "search_tv_hot":
-					newMsg, newKeyboard, editMessage = handleHotTVSearchCallback(userID)
+					newMsg, newKeyboard, editMessage, backgroundTask = handleHotTVSearchCallback(userID, messageID)
 				case "search_movie_new":
-					newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
+					newMsg, newKeyboard, editMessage, backgroundTask = handleNewMoviesSearchCallback(userID, messageID)
+				}
+				// Execute background task if present
+				if backgroundTask != nil {
+					go backgroundTask()
 				}
 				log.Printf("[DEBUG] After special action handler: newMsg=%q, editMessage=%v", newMsg[:50]+"...", editMessage)
 			} else if isRequestAction {
@@ -3645,15 +3685,27 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 			case "search_trending":
 				// Trending search - show popular content with enterprise-grade fallback
-				newMsg, newKeyboard, editMessage = handleTrendingSearchCallback(userID)
+				var backgroundTask func()
+				newMsg, newKeyboard, editMessage, backgroundTask = handleTrendingSearchCallback(userID, messageID)
+				if backgroundTask != nil {
+					go backgroundTask()
+				}
 
 			case "search_tv_hot":
 				// Hot TV shows - search for popular TV series with enterprise-grade fallback
-				newMsg, newKeyboard, editMessage = handleHotTVSearchCallback(userID)
+				var backgroundTask func()
+				newMsg, newKeyboard, editMessage, backgroundTask = handleHotTVSearchCallback(userID, messageID)
+				if backgroundTask != nil {
+					go backgroundTask()
+				}
 
 			case "search_movie_new":
 				// New movies - search for recent movies with enterprise-grade fallback
-				newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
+				var backgroundTask func()
+				newMsg, newKeyboard, editMessage, backgroundTask = handleNewMoviesSearchCallback(userID, messageID)
+				if backgroundTask != nil {
+					go backgroundTask()
+				}
 
 			case "guide_link", "guide_search", "guide_request":
 				// New user guide callbacks
@@ -4262,11 +4314,17 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 // answerCallbackQuery answers a callback query
 func answerCallbackQuery(callbackID string, text string) error {
+	return answerCallbackQueryWithAlert(callbackID, text, true)
+}
+
+// answerCallbackQueryWithAlert answers a callback query with optional alert
+func answerCallbackQueryWithAlert(callbackID string, text string, showAlert bool) error {
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/answerCallbackQuery", botToken)
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"callback_query_id": callbackID,
-		"text":             text,
+		"text":              text,
+		"show_alert":        showAlert,
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -5246,8 +5304,8 @@ func handleGuideCallback(userID int64, action string) (string, *TelegramInlineKe
 }
 
 // handleTrendingSearchCallback handles trending search with comprehensive fallback
-func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
-	log.Printf("[Callback] handleTrendingSearchCallback for user %d", userID)
+func handleTrendingSearchCallback(userID int64, messageID int64) (string, *TelegramInlineKeyboard, bool, func()) {
+	log.Printf("[Callback] handleTrendingSearchCallback for user %d, messageID %d", userID, messageID)
 
 	// Check if AI is enabled and cache is fresh
 	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
@@ -5258,30 +5316,37 @@ func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
 			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🔥 热门推荐 (AI精选)", cacheKey)
-			return msg, keyboard, true
+			return msg, keyboard, true, nil
 		}
 
 		// Cache is stale or empty - need to fetch from AI
 		// Send loading message first and tell user to wait
 		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
-		log.Printf("[Callback] Returning loading message for trending movies")
 
-		// Fetch in background and send update
-		go func(uid int64) {
+		// Create background task to fetch and edit message
+		backgroundTask := func() {
 			log.Printf("[Callback] Background goroutine started for trending movies")
 			results, err := trendingAIManager.GetTrendingMovies(8)
 			if err == nil && len(results) > 0 {
-				log.Printf("[Callback] Got %d trending results, sending to user", len(results))
+				log.Printf("[Callback] Got %d trending results, editing message", len(results))
 				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🔥 热门推荐 (AI精选)", "trending_movies")
-				sendPrivateMessage(uid, msg, keyboard)
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, msg, keyboard)
+				} else {
+					sendPrivateMessage(userID, msg, keyboard)
+				}
 			} else {
 				log.Printf("[Callback] AI trending failed: %v", err)
-				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+				errMsg := "❌ 获取推荐失败，请稍后再试"
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, errMsg, nil)
+				} else {
+					sendPrivateMessage(userID, errMsg, nil)
+				}
 			}
-		}(userID)
+		}
 
-		// Return loading message immediately
-		return loadingMsg, nil, true
+		return loadingMsg, nil, true, backgroundTask
 	}
 
 	// Fallback 1: Try smartSearchMgr
@@ -5295,7 +5360,7 @@ func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard
 			log.Printf("[Callback] Trending search via smartSearchMgr failed: %v", err)
 		} else {
 			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "🔥 *热门推荐*\n\n" + msg, keyboard, true
+			return "🔥 *热门推荐*\n\n" + msg, keyboard, true, nil
 		}
 	}
 
@@ -5304,7 +5369,7 @@ func handleTrendingSearchCallback(userID int64) (string, *TelegramInlineKeyboard
 		results, err := jellyseerrClient.SearchMedia("2024")
 		if err == nil && len(results) > 0 {
 			msg := formatSimpleSearchResults("🔥 热门推荐", "2024", results)
-			return msg, nil, true
+			return msg, nil, true, nil
 		}
 	}
 
@@ -5320,12 +5385,12 @@ AI 推荐服务正在初始化中
 
 💡 或者直接输入任何内容名开始搜索`
 
-	return msg, nil, true
+	return msg, nil, true, nil
 }
 
 // handleHotTVSearchCallback handles hot TV search with comprehensive fallback
-func handleHotTVSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
-	log.Printf("[Callback] handleHotTVSearchCallback for user %d", userID)
+func handleHotTVSearchCallback(userID int64, messageID int64) (string, *TelegramInlineKeyboard, bool, func()) {
+	log.Printf("[Callback] handleHotTVSearchCallback for user %d, messageID %d", userID, messageID)
 
 	// Check if AI is enabled and cache is fresh
 	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
@@ -5336,29 +5401,36 @@ func handleHotTVSearchCallback(userID int64) (string, *TelegramInlineKeyboard, b
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
 			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "📺 热播剧集 (AI精选)", cacheKey)
-			return msg, keyboard, true
+			return msg, keyboard, true, nil
 		}
 
 		// Cache is stale or empty - need to fetch from AI
 		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
-		log.Printf("[Callback] Returning loading message for hot TV shows")
 
-		// Fetch in background and send update
-		go func(uid int64) {
+		// Create background task to fetch and edit message
+		backgroundTask := func() {
 			log.Printf("[Callback] Background goroutine started for hot TV shows")
 			results, err := trendingAIManager.GetHotTVShows(8)
 			if err == nil && len(results) > 0 {
-				log.Printf("[Callback] Got %d hot TV results, sending to user", len(results))
+				log.Printf("[Callback] Got %d hot TV results, editing message", len(results))
 				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "📺 热播剧集 (AI精选)", "hot_tv_shows")
-				sendPrivateMessage(uid, msg, keyboard)
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, msg, keyboard)
+				} else {
+					sendPrivateMessage(userID, msg, keyboard)
+				}
 			} else {
 				log.Printf("[Callback] AI trending TV failed: %v", err)
-				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+				errMsg := "❌ 获取推荐失败，请稍后再试"
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, errMsg, nil)
+				} else {
+					sendPrivateMessage(userID, errMsg, nil)
+				}
 			}
-		}(userID)
+		}
 
-		// Return loading message immediately
-		return loadingMsg, nil, true
+		return loadingMsg, nil, true, backgroundTask
 	}
 
 	// Fallback 1: Try smartSearchMgr
@@ -5375,7 +5447,7 @@ func handleHotTVSearchCallback(userID int64) (string, *TelegramInlineKeyboard, b
 			log.Printf("[Callback] Hot TV search via smartSearchMgr failed: %v", err)
 		} else {
 			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "📺 *热播剧集 (2024)*\n\n" + msg, keyboard, true
+			return "📺 *热播剧集 (2024)*\n\n" + msg, keyboard, true, nil
 		}
 	}
 
@@ -5386,7 +5458,7 @@ func handleHotTVSearchCallback(userID int64) (string, *TelegramInlineKeyboard, b
 			tvResults := filterResultsByMediaType(results, "tv")
 			if len(tvResults) > 0 {
 				msg := formatSimpleSearchResults("📺 热播剧集", "2024 剧集", tvResults)
-				return msg, nil, true
+				return msg, nil, true, nil
 			}
 		}
 	}
@@ -5403,11 +5475,11 @@ AI 推荐服务正在初始化中
 
 💡 或者直接输入任何剧名开始搜索`
 
-	return msg, nil, true
+	return msg, nil, true, nil
 }
 
-func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboard, bool) {
-	log.Printf("[Callback] handleNewMoviesSearchCallback for user %d", userID)
+func handleNewMoviesSearchCallback(userID int64, messageID int64) (string, *TelegramInlineKeyboard, bool, func()) {
+	log.Printf("[Callback] handleNewMoviesSearchCallback for user %d, messageID %d", userID, messageID)
 
 	// Check if AI is enabled and cache is fresh
 	if trendingAIManager != nil && trendingAIManager.IsEnabled() {
@@ -5418,29 +5490,36 @@ func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboar
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
 			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🎬 最新上映 (AI精选)", cacheKey)
-			return msg, keyboard, true
+			return msg, keyboard, true, nil
 		}
 
 		// Cache is stale or empty - need to fetch from AI
 		loadingMsg := "🔄 正在获取 AI 推荐内容...\n\n这可能需要 15-20 秒\n\n💡 请稍候..."
-		log.Printf("[Callback] Returning loading message for new releases")
 
-		// Fetch in background and send update
-		go func(uid int64) {
+		// Create background task to fetch and edit message
+		backgroundTask := func() {
 			log.Printf("[Callback] Background goroutine started for new releases")
 			results, err := trendingAIManager.GetNewReleases(8)
 			if err == nil && len(results) > 0 {
-				log.Printf("[Callback] Got %d new release results, sending to user", len(results))
+				log.Printf("[Callback] Got %d new release results, editing message", len(results))
 				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🎬 最新上映 (AI精选)", "new_releases")
-				sendPrivateMessage(uid, msg, keyboard)
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, msg, keyboard)
+				} else {
+					sendPrivateMessage(userID, msg, keyboard)
+				}
 			} else {
 				log.Printf("[Callback] AI new releases failed: %v", err)
-				sendPrivateMessage(uid, "❌ 获取推荐失败，请稍后再试", nil)
+				errMsg := "❌ 获取推荐失败，请稍后再试"
+				if messageID > 0 {
+					editPrivateMessage(userID, messageID, errMsg, nil)
+				} else {
+					sendPrivateMessage(userID, errMsg, nil)
+				}
 			}
-		}(userID)
+		}
 
-		// Return loading message immediately
-		return loadingMsg, nil, true
+		return loadingMsg, nil, true, backgroundTask
 	}
 
 	// Fallback 1: Try smartSearchMgr
@@ -5457,7 +5536,7 @@ func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboar
 			log.Printf("[Callback] New movies search via smartSearchMgr failed: %v", err)
 		} else {
 			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "🎬 *最新电影 (2024)*\n\n" + msg, keyboard, true
+			return "🎬 *最新电影 (2024)*\n\n" + msg, keyboard, true, nil
 		}
 	}
 
@@ -5468,7 +5547,7 @@ func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboar
 			movieResults := filterResultsByMediaType(results, "movie")
 			if len(movieResults) > 0 {
 				msg := formatSimpleSearchResults("🎬 最新电影", "2024 电影", movieResults)
-				return msg, nil, true
+				return msg, nil, true, nil
 			}
 		}
 	}
@@ -5485,7 +5564,7 @@ func handleNewMoviesSearchCallback(userID int64) (string, *TelegramInlineKeyboar
 
 💡 或者直接输入任何电影名开始搜索`
 
-	return msg, nil, true
+	return msg, nil, true, nil
 }
 
 // formatSimpleSearchResults formats search results in a simple way
