@@ -420,6 +420,51 @@ func (kb *KnowledgeBase) initDefaultEntries() {
 			Enabled:  true,
 			Priority: 45,
 		},
+		{
+			ID:       "kb_how_to_request_full",
+			Keywords: []string{"求片", "求电影", "求剧", "求资源", "怎么求", "如何求", "在哪求片", "到哪里求"},
+			Question: "怎么求片？",
+			Answer:   "📝 **求片教程**\n\n1️⃣ 私聊我，输入影片名搜索\n2️⃣ 选择想要的影片\n3️⃣ 点击「发起请求」按钮\n4️⃣ 等待处理，完成后会通知你\n\n🎬 观看地址: https://emby.oceancloud.asia\n\n💡 每天有配额限制，电影/剧集各2次",
+			Category: "help",
+			Enabled:  true,
+			Priority: 100, // 高优先级
+		},
+		{
+			ID:       "kb_player_client",
+			Keywords: []string{"播放器", "客户端", "app", "用什么播放", "用什么看", "下载app", "怎么播放"},
+			Question: "用什么播放器看？",
+			Answer:   "📺 **播放方式**\n\n🌐 网页播放: https://emby.oceancloud.asia\n\n📱 推荐客户端:\n• iOS: Infuse (付费) / Jellyfin Mobile (免费)\n• Android: Jellyfin Mobile (免费)\n• 电视/盒子: Jellyfin Android TV\n\n💡 绑定账号后直接登录即可观看",
+			Category: "info",
+			Enabled:  true,
+			Priority: 100, // 高优先级
+		},
+		{
+			ID:       "kb_emby_address",
+			Keywords: []string{"emby地址", "emby链接", "服务器", "地址是啥", "播放地址", "在哪看", "哪里看"},
+			Question: "Emby地址是多少？",
+			Answer:   "🎬 **观看地址**\n\n🌐 https://emby.oceancloud.asia\n\n使用你绑定的 Jellyfin 账号登录即可观看\n\n💡 没账号的可以用 /link 命令绑定",
+			Category: "info",
+			Enabled:  true,
+			Priority: 100, // 高优先级
+		},
+		{
+			ID:       "kb_how_to_download",
+			Keywords: []string{"怎么下载", "如何下载", "能下载吗", "下载方法", "离线下载"},
+			Question: "能下载吗？",
+			Answer:   "📥 **关于下载**\n\n本站不支持直接下载，仅在线观看。\n\n如需下载功能，请联系管理员商讨。\n\n💡 推荐使用 Infuse 等支持缓存功能的客户端",
+			Category: "faq",
+			Enabled:  true,
+			Priority: 90,
+		},
+		{
+			ID:       "kb_recommend_content",
+			Keywords: []string{"推荐", "推荐个", "推荐部", "推荐电影", "推荐剧集", "有啥好看", "有什么好看", "好看的"},
+			Question: "有什么推荐？",
+			Answer:   "🎬 **推荐影片**\n\n私聊我，直接输入片名搜索即可！\n\n或者告诉我你喜欢的类型：\n• `/recommend 悬疑` - 悬疑片推荐\n• `/recommend 喜剧` - 喜剧片推荐\n• `/recommend 科幻` - 科幻片推荐\n\n💡 也可以直接说「推荐个XX片」",
+			Category: "help",
+			Enabled:  true,
+			Priority: 90,
+		},
 	}
 
 	kb.entries = make(map[string]*KnowledgeEntry)
