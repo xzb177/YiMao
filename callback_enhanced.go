@@ -28,6 +28,9 @@ func (h *EnhancedCallbackHandler) HandleStartPageButton(userID int64, callbackDa
 	case "action_search", "action_myrequests", "action_settings", "action_help":
 		return h.handleQuickAction(action, userID)
 
+	case "engage_recommend", "engage_daily":
+		return h.handleTrendingSearch(userID)
+
 	case "search_trending":
 		return h.handleTrendingSearch(userID)
 
@@ -48,6 +51,9 @@ func (h *EnhancedCallbackHandler) handleQuickAction(action string, userID int64)
 	var message string
 
 	switch action {
+	case "search_trending":
+		return h.handleTrendingSearch(userID)
+
 	case "action_search":
 		message = `🔍 *搜索内容*
 
