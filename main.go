@@ -3365,6 +3365,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 			// Also handles AI result selection like "ai_trending_<tmdbID>_<type>"
 			isSpecialAction := data == "search_trending" || data == "search_tv_hot" || data == "search_movie_new"
 			isAISelection := strings.HasPrefix(data, "ai_trending_") || strings.HasPrefix(data, "ai_hot_tv_") || strings.HasPrefix(data, "ai_new_movie_") || strings.HasPrefix(data, "ai_random_")
+			isRequestAction := strings.HasPrefix(data, "request_") && strings.Count(data, "_") >= 2
 
 			if isSpecialAction {
 				log.Printf("[DEBUG] isSpecialAction=true, data=%s", data)
@@ -3377,6 +3378,56 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					newMsg, newKeyboard, editMessage = handleNewMoviesSearchCallback(userID)
 				}
 				log.Printf("[DEBUG] After special action handler: newMsg=%q, editMessage=%v", newMsg[:50]+"...", editMessage)
+			} else if isRequestAction {
+				// Handle request action: request_<tmdbID>_<type>
+				// Call smartSearchMgr to create the request
+				parts := strings.Split(data, "_")
+				if len(parts) >= 3 {
+					tmdbID, err := strconv.Atoi(parts[1])
+					mediaType := parts[2]
+
+					if err == nil && smartSearchMgr != nil {
+						log.Printf("[DEBUG] Processing request action: tmdbID=%d, type=%s", tmdbID, mediaType)
+
+						// Get Jellyseerr user ID
+						jellyseerrUserID, _ := smartSearchMgr.GetJellyseerrUserID(userID)
+						if jellyseerrUserID == 0 {
+							responseText = "❌ 请先使用 /link 命令绑定账号"
+							answerCallbackQuery(callbackID, responseText)
+							w.WriteHeader(http.StatusOK)
+							return
+						}
+
+						// Create request
+						requestType := "movie"
+						if mediaType == "tv" {
+							requestType = "tv"
+						}
+
+						result, err := smartSearchMgr.CreateRequest(jellyseerrUserID, tmdbID, requestType)
+						if err != nil {
+							log.Printf("[DEBUG] CreateRequest error: %v", err)
+							responseText = fmt.Sprintf("❌ 请求失败: %s", err.Error())
+							// Check for specific error messages
+							if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Failed to fetch") {
+								responseText = "❌ TMDB 找不到此影片\n\n可能原因：\n• TMDB ID 不正确\n• 影片信息已被移除\n\n💡 请尝试重新搜索"
+							}
+						} else {
+							// Parse result ID from JSON response
+							var resultData map[string]interface{}
+							json.Unmarshal([]byte(result), &resultData)
+							requestID := "未知"
+							if id, ok := resultData["id"].(float64); ok {
+								requestID = fmt.Sprintf("%.0f", id)
+							}
+							responseText = fmt.Sprintf("✅ 请求成功！\n\n📋 请求 ID: %s\n\n请等待管理员处理", requestID)
+						}
+
+						answerCallbackQuery(callbackID, responseText)
+						w.WriteHeader(http.StatusOK)
+						return
+					}
+				}
 			} else if isAISelection {
 				// Handle AI result button selection
 				// Format: ai_<source>_<tmdbID>_<type>
