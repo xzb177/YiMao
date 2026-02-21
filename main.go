@@ -3139,18 +3139,6 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("[DEBUG] telegramWebhookHandler called, callback=%v", update.CallbackQuery != nil)
-
-	// 调试：记录 reply_to_message 信息
-	if update.Message != nil && update.Message.ReplyToMessage != nil {
-		log.Printf("[DEBUG] ReplyToMessage found: MessageID=%d, FromID=%d, IsBot=%v",
-			update.Message.ReplyToMessage.MessageID,
-			update.Message.ReplyToMessage.From.ID,
-			update.Message.ReplyToMessage.From.IsBot)
-	} else if update.Message != nil {
-		log.Printf("[DEBUG] No ReplyToMessage in update.Message")
-	}
-
 	// 尝试使用新模块处理消息
 	if botModule != nil {
 		// 检查是否是新格式的回调 (以 search:subscribe:download:page:cancel 开头)
@@ -4015,23 +4003,9 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 	if update.Message != nil {
 		// Check if this is a reply to bot message
 		isReplyToBot := false
-		if update.Message.ReplyToMessage != nil {
-			log.Printf("[DEBUG] Group message: user %d replied to message_id=%d, from.IsBot=%v",
-				update.Message.From.ID,
-				update.Message.ReplyToMessage.MessageID,
-				update.Message.ReplyToMessage.From.IsBot)
-			if update.Message.ReplyToMessage.From.IsBot {
-				isReplyToBot = true
-			}
+		if update.Message.ReplyToMessage != nil && update.Message.ReplyToMessage.From.IsBot {
+			isReplyToBot = true
 		}
-
-		// Log incoming group message for debugging
-		log.Printf("[DEBUG] Group message received: chatID=%d, userID=%d, text=%q, chatSystem=%v, isReplyToBot=%v",
-			update.Message.Chat.ID,
-			update.Message.From.ID,
-			update.Message.Text,
-			chatSystem != nil,
-			isReplyToBot)
 
 		// First, check if this is a chat message that needs response
 		// Chat system handles: @mentions, replies to bot, learning commands
@@ -4049,8 +4023,6 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				ChatType:  update.Message.Chat.Type,
 				IsReplyToBot: isReplyToBot,  // 传递是否回复机器人
 			})
-
-			log.Printf("[DEBUG] ChatSystem response: ShouldReply=%v, Reply=%q", response.ShouldReply, response.Reply)
 
 			if response.ShouldReply {
 				// Send chat response to group
@@ -5417,6 +5389,11 @@ func main() {
 		log.Println("Continuing with legacy handler...")
 	} else {
 		log.Println("✅ New modular bot system initialized")
+		// Set admin checker for botModule
+		if botModule != nil {
+			botModule.SetAdminChecker(isUserAdmin)
+			log.Println("[Main] Admin checker set for botModule")
+		}
 	}
 
 	http.HandleFunc("/webhook", webhookHandler)

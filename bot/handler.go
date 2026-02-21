@@ -22,6 +22,7 @@ type Handler struct {
 	quotaManager   *QuotaManager
 	feedbackManager *FeedbackManager
 	chatSystem     *ChatSystem // 添加聊天系统
+	isAdminFunc    func(int64) bool // 管理员检查函数
 
 	// Event handlers
 	searchHandlers   map[string]SearchHandler
@@ -75,6 +76,26 @@ func (h *Handler) SetChatSystem(cs *ChatSystem) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.chatSystem = cs
+
+	// If admin checker is already set, pass it to chat system
+	if h.isAdminFunc != nil {
+		cs.SetAdminChecker(h.isAdminFunc)
+		log.Printf("[Handler] Admin checker passed to ChatSystem")
+	}
+}
+
+// SetAdminChecker sets the admin checker function (for integration)
+func (h *Handler) SetAdminChecker(fn func(int64) bool) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.isAdminFunc = fn
+	log.Printf("[Handler] Admin checker set")
+
+	// Also pass to chat system if it's already set
+	if h.chatSystem != nil {
+		h.chatSystem.SetAdminChecker(fn)
+		log.Printf("[Handler] Admin checker passed to existing ChatSystem")
+	}
 }
 
 // RegisterSearchHandler registers a search handler
@@ -116,18 +137,9 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 
 	// 检查是否是回复机器人的消息
 	isReplyToBot := false
-	if message.ReplyToMessage != nil {
-		log.Printf("[Handler] ReplyToMessage detected: MessageID=%d, FromID=%d, FromUsername=%q, IsBot=%v",
-			message.ReplyToMessage.MessageID,
-			message.ReplyToMessage.From.ID,
-			message.ReplyToMessage.From.Username,
-			message.ReplyToMessage.From.IsBot)
-		if message.ReplyToMessage.From.IsBot {
-			isReplyToBot = true
-		}
+	if message.ReplyToMessage != nil && message.ReplyToMessage.From.IsBot {
+		isReplyToBot = true
 	}
-
-	log.Printf("[Handler] User %d (chat type: %s, replyToBot: %v): %s", userID, chatType, isReplyToBot, text)
 
 	// 处理聊天系统的回复（回复消息或@机器人）
 	if h.chatSystem != nil {
@@ -145,7 +157,6 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 	// 限制：搜索功能仅在私聊中使用
 	if chatType != "private" && !strings.HasPrefix(text, "/") {
 		// 非私聊且不是命令，忽略
-		log.Printf("[Handler] Ignoring non-private chat message")
 		return nil
 	}
 
@@ -1481,10 +1492,4 @@ func formatAIError(err error) string {
 	return "抱歉，AI 服务暂时不可用\n\n💡 请稍后再试"
 }
 
-// SetAdminChecker sets the admin checker function (for integration)
-func (h *Handler) SetAdminChecker(fn func(int64) bool) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	// Store the checker for use in security checks
-	log.Printf("[Handler] Admin checker set")
-}
+// Duplicate SetAdminChecker removed - now at line 87

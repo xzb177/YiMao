@@ -272,9 +272,15 @@ func (m *BotModule) GetActiveSessionCount() int {
 	return m.sessionManager.GetActiveSessionCount()
 }
 
-// SetAdminChecker sets the admin checker function for the handler
+// SetAdminChecker sets the admin checker function for the handler and chat system
 func (m *BotModule) SetAdminChecker(fn func(int64) bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.handler.SetAdminChecker(fn)
+	if m.chatSystem != nil {
+		m.chatSystem.SetAdminChecker(fn)
+		log.Printf("[BotModule] Admin checker set for both handler and chatSystem")
+	}
 }
 
 // GinRoute returns the Gin route handler for webhook

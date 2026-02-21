@@ -92,7 +92,7 @@ func (cs *ChatSystem) GetChatResponse(message string, userName string, userID in
 		isAdmin = cs.isAdminFunc(userID)
 	}
 
-	log.Printf("[ChatSystem] GetChatResponse called: user=%s, admin=%v, msg=%s", userName, isAdmin, message)
+	log.Printf("[ChatSystem] GetChatResponse: user=%s (ID=%d, admin=%v), msg=%s", userName, userID, isAdmin, message)
 
 	// 优先使用 AI
 	if ai.GetManager() != nil && ai.GetManager().IsEnabled() {
@@ -283,9 +283,6 @@ type ChatResponse struct {
 func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 	isMention := IsMentioningBot(data.Message)
 
-	log.Printf("[ChatSystem] ProcessChatMessage: Message=%q, IsReplyToBot=%v, IsMention=%v, UserID=%d",
-		data.Message, data.IsReplyToBot, isMention, data.UserID)
-
 	// @机器人100%回复
 	if isMention {
 		cs.mu.Lock()
@@ -313,8 +310,6 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 
 	// 判断是否应该回复：@机器人 或 回复机器人
 	if !cs.ShouldReply(data.UserID, data.Message) && !isMention && !data.IsReplyToBot {
-		log.Printf("[ChatSystem] ShouldReply=false - not replying (ShouldReply=%v, isMention=%v, IsReplyToBot=%v)",
-			cs.ShouldReply(data.UserID, data.Message), isMention, data.IsReplyToBot)
 		return &ChatResponse{ShouldReply: false}
 	}
 
