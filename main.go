@@ -1718,6 +1718,28 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		command = text[:idx]
 	}
 
+	// ========== 聊天系统优先：非命令消息先用聊天系统处理 ==========
+	// 只有明确的搜索请求才跳过聊天系统
+	if !strings.HasPrefix(command, "/") && !isExplicitSearchQuery(text) {
+		log.Printf("[CHAT] Using chat system for message: %s", text)
+		if chatSystem != nil {
+			displayName := update.Message.From.FirstName
+			if update.Message.From.Username != "" {
+				displayName = update.Message.From.Username
+			}
+
+			response := chatSystem.GetChatResponse(text, displayName, update.Message.From.ID)
+			if response != "" {
+				log.Printf("[CHAT] Chat system response: %s", response)
+				sendPrivateMessage(update.Message.From.ID, response, nil)
+				return
+			}
+			log.Printf("[CHAT] Chat system returned empty response")
+		}
+		// 聊天系统没有响应，继续下面的处理
+	}
+	// ============================================================
+
 	// Check if user has a pending issue reply (admin only)
 	issueReplyMutex.Lock()
 	if pendingIssueID, hasPending := pendingIssueReplies[update.Message.From.ID]; hasPending {
@@ -1773,34 +1795,6 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 	}
 	issueReplyMutex.Unlock()
-
-	// 检查是否是回复机器人的消息（用于闲聊）
-	isReplyToBot := false
-	if update.Message.ReplyToMessage != nil && update.Message.ReplyToMessage.From.IsBot {
-		isReplyToBot = true
-	}
-
-	// 如果是回复机器人或非命令消息，尝试用聊天系统处理
-	if isReplyToBot || !strings.HasPrefix(command, "/") {
-		if chatSystem != nil {
-			displayName := update.Message.From.FirstName
-			if update.Message.From.Username != "" {
-				displayName = update.Message.From.Username
-			}
-
-			response := chatSystem.GetChatResponse(text, displayName, update.Message.From.ID)
-			if response != "" {
-				sendPrivateMessage(update.Message.From.ID, response, nil)
-				return
-			}
-		}
-	}
-
-	// 如果不是命令且聊天系统没有响应，返回错误
-	if !strings.HasPrefix(command, "/") {
-		sendPrivateMessage(update.Message.From.ID, "❓ 未知命令。请发送 /help 查看帮助。", nil)
-		return
-	}
 
 	switch command {
 	case "/start":
@@ -3137,18 +3131,31 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// 检查是否是新的消息格式 (直接搜索、订阅等)
-		// 限制：仅在私聊中使用，群组中禁用
+		// 私聊优先让聊天系统处理，只有明确的搜索关键词才用搜索模块
 		if update.Message != nil && update.Message.Text != "" {
 			chatType := update.Message.Chat.Type
 			text := update.Message.Text
 
-			// 仅在私聊中使用新模块的搜索功能
-			if chatType == "private" && shouldUseNewModule(text) {
-				log.Printf("[BotModule] Using new module for message (private): %s", text)
-				botModule.HandleMessage(convertToBotUpdate(&update))
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprintf(w, "OK")
-				return
+			// 私聊：检查是否是明确的搜索请求
+			if chatType == "private" {
+				isSearchRequest := isExplicitSearchQuery(text)
+				if isSearchRequest {
+					log.Printf("[BotModule] Using new module for search (private): %s", text)
+					botModule.HandleMessage(convertToBotUpdate(&update))
+					w.WriteHeader(http.StatusOK)
+					fmt.Fprintf(w, "OK")
+					return
+				}
+				log.Printf("[ROUTE] Private chat message (not search), passing to chat system: %s", text)
+			} else {
+				// 群组：使用原来的逻辑
+				if shouldUseNewModule(text) {
+					log.Printf("[BotModule] Using new module for message (group): %s", text)
+					botModule.HandleMessage(convertToBotUpdate(&update))
+					w.WriteHeader(http.StatusOK)
+					fmt.Fprintf(w, "OK")
+					return
+				}
 			}
 		}
 	}
@@ -3971,8 +3978,14 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Handle group messages with mentions and chat
 	if update.Message != nil {
+		// Check if this is a reply to bot message
+		isReplyToBot := false
+		if update.Message.ReplyToMessage != nil && update.Message.ReplyToMessage.From.IsBot {
+			isReplyToBot = true
+		}
+
 		// First, check if this is a chat message that needs response
-		// Chat system handles: @mentions, learning commands, casual conversation
+		// Chat system handles: @mentions, replies to bot, learning commands
 		if chatSystem != nil && update.Message.Text != "" {
 			userID := update.Message.From.ID
 			userName := getDisplayName(update.Message.From)
@@ -3985,12 +3998,13 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				UserName:  userName,
 				UserID:    userID,
 				ChatType:  update.Message.Chat.Type,
+				IsReplyToBot: isReplyToBot,  // 传递是否回复机器人
 			})
 
 			if response.ShouldReply {
 				// Send chat response to group
 				sendGroupMessage(chatID, response.Reply)
-				log.Printf("[ChatSystem] Replied to group message from user %d", userID)
+				log.Printf("[ChatSystem] Replied to group message from user %d (isReplyToBot=%v)", userID, isReplyToBot)
 				w.WriteHeader(http.StatusOK)
 				return
 			}
@@ -5846,8 +5860,14 @@ func isNewFormatCallback(data string) bool {
 }
 
 // shouldUseNewModule checks if message should be handled by new module
+// 短消息（<=5字符）不使用新模块，让聊天系统处理
 func shouldUseNewModule(text string) bool {
 	if text == "" {
+		return false
+	}
+
+	// 短消息可能是聊天，不使用新模块搜索
+	if len(text) <= 5 {
 		return false
 	}
 
@@ -5867,6 +5887,47 @@ func shouldUseNewModule(text string) bool {
 		}
 	}
 
+	return false
+}
+
+// isExplicitSearchQuery 检查是否是明确的搜索请求
+// 只有明确是搜索的消息才返回 true，其他（聊天、闲聊）返回 false
+func isExplicitSearchQuery(text string) bool {
+	if text == "" {
+		return false
+	}
+
+	// 命令总是搜索
+	if strings.HasPrefix(text, "/") {
+		return true
+	}
+
+	// 明确的搜索关键词
+	searchKeywords := []string{"搜索", "search", "求片", "找", "看", "watch"}
+	for _, kw := range searchKeywords {
+		if strings.Contains(strings.ToLower(text), kw) {
+			return true
+		}
+	}
+
+	// 媒体名称格式检测（包含年份的通常是搜索）
+	// 例如："复仇者联盟 2012"、"阿凡达2009"
+	if containsYear(text) {
+		return true
+	}
+
+	// 默认：不是搜索请求（是聊天）
+	return false
+}
+
+// containsYear 检查文本中是否包含年份（用于判断是否是搜索）
+func containsYear(text string) bool {
+	// 检查 1900-2099 年份
+	for year := 1990; year <= 2030; year++ {
+		if strings.Contains(text, fmt.Sprintf("%d", year)) {
+			return true
+		}
+	}
 	return false
 }
 

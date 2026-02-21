@@ -265,10 +265,11 @@ func (cs *ChatSystem) UpdateCooldown(userID int64) {
 
 // ChatTriggerData 聊天触发数据
 type ChatTriggerData struct {
-	Message  string
-	UserName string
-	UserID   int64
-	ChatType string
+	Message     string
+	UserName    string
+	UserID      int64
+	ChatType    string
+	IsReplyToBot bool // 是否是回复机器人的消息
 }
 
 // ChatResponse 聊天响应
@@ -307,8 +308,8 @@ func (cs *ChatSystem) ProcessChatMessage(data *ChatTriggerData) *ChatResponse {
 		}
 	}
 
-	// 判断是否应该回复
-	if !cs.ShouldReply(data.UserID, data.Message) && !isMention {
+	// 判断是否应该回复：@机器人 或 回复机器人
+	if !cs.ShouldReply(data.UserID, data.Message) && !isMention && !data.IsReplyToBot {
 		return &ChatResponse{ShouldReply: false}
 	}
 
