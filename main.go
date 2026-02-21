@@ -3712,7 +3712,6 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				newMsg, newKeyboard, editMessage = handleGuideCallback(userID, action)
 				if newMsg != "" {
 					responseText = newMsg
-					newKeyboard = newKeyboard
 				}
 
 			case "myreq_feedback":

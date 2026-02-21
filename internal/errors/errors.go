@@ -111,7 +111,7 @@ func InvalidMediaType(mediaType string) *AppError {
 	return BadRequest(fmt.Sprintf("invalid media type: %s", mediaType))
 }
 
-func QuotaExceeded(quotaType, remaining int) *AppError {
+func QuotaExceeded(quotaType string, remaining int) *AppError {
 	return BadRequest(fmt.Sprintf("%s quota exceeded. Remaining: %d", quotaType, remaining))
 }
 

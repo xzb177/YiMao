@@ -24,7 +24,6 @@ type SubscribeRequest struct {
 	Seasons         []int  `json:"seasons,omitempty"`
 	Is4K            bool   `json:"is4K,omitempty"`
 	ServerID        int    `json:"serverId,omitempty"`
-	ProfileID       int    `json:"qualityProfileId,omitempty"`
 	RootFolder      string `json:"rootFolder,omitempty"`
 	QualityProfileID int   `json:"qualityProfileId,omitempty"`
 	UserID          int    `json:"userId,omitempty"`

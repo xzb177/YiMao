@@ -154,7 +154,7 @@ func AssertNotNil(t *testing.T, value interface{}) {
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > len(substr) &&
 		(s[:len(substr)] == substr || s[len(s)-len(substr):] == substr ||
-		index := indexOf(s, substr); index >= 0))
+		indexOf(s, substr) >= 0))
 }
 
 func indexOf(s, substr string) int {

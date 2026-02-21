@@ -294,12 +294,6 @@ func (udb *UserDB) GetUser(telegramID int64) (*UserData, error) {
 		return nil, err
 	}
 
-	// Convert boolean fields
-	user.IsBot = intToBool(user.IsBot)
-	user.IsAdmin = intToBool(user.IsAdmin)
-	user.IsPremium = intToBool(user.IsPremium)
-	user.NotificationEnabled = intToBool(user.NotificationEnabled)
-
 	// Parse notification types
 	json.Unmarshal([]byte(notifTypesJSON), &user.NotificationTypes)
 
@@ -578,8 +572,6 @@ func (udb *UserDB) GetUserByJellyseerrID(jellyseerrID int) (*UserData, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	user.IsAdmin = intToBool(user.IsAdmin)
 
 	return user, nil
 }
