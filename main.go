@@ -3004,8 +3004,52 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 
 	case "/trending", "/hot":
-		// Show trending searches - disabled
-		sendPrivateMessage(update.Message.From.ID, "❌ 热门搜索功能暂不可用", nil)
+		// Show trending searches
+		log.Printf("[COMMAND] /trending from user %d (%s)", update.Message.From.ID, username)
+
+		parts := strings.Fields(text)
+		mediaType := "movie" // 默认电影
+		count := 5
+
+		if len(parts) > 1 {
+			switch parts[1] {
+			case "剧", "剧集", "tv":
+				mediaType = "tv"
+			default:
+				// 尝试解析数量
+				if c, err := strconv.Atoi(parts[1]); err == nil && c > 0 && c <= 20 {
+					count = c
+				}
+			}
+		}
+
+		if trendingAIManager == nil || !trendingAIManager.IsEnabled() {
+			sendPrivateMessage(update.Message.From.ID, "❌ AI 推荐功能未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY", nil)
+			return
+		}
+
+		var results []*ai.TrendingResult
+		var err error
+
+		if mediaType == "tv" {
+			results, err = trendingAIManager.GetHotTVShows(count)
+		} else {
+			results, err = trendingAIManager.GetTrendingMovies(count)
+		}
+
+		if err != nil {
+			sendPrivateMessage(update.Message.From.ID, "❌ 获取热门失败: "+err.Error(), nil)
+			return
+		}
+
+		if len(results) == 0 {
+			sendPrivateMessage(update.Message.From.ID, "😕 暂时没有热门内容", nil)
+			return
+		}
+
+		// 格式化结果
+		msg := ai.FormatTrendingResults(results, "🔥 热门榜单")
+		sendPrivateMessage(update.Message.From.ID, msg, nil)
 
 	case "/history", "/hist":
 		// Show search history - disabled
