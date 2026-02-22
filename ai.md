@@ -2774,3 +2774,32 @@ trends - 请求趋势
 | 2026-02-22 | **美学系统完全移除** 🧹 |
 | | - **问题**: 美学愿望系统过于复杂，不符合工具型机器人的定位 |
 | | - **部署状态**: ✅ Docker 容器已重新构建并运行 |
+| 2026-02-22 | **AI 推荐菜单集成与详情页优化** 🤖✨ |
+| | - **需求**: 将 AI 推荐功能集成到 /start 菜单，并修复详情页显示问题 |
+| | - **问题1**: /start 菜单中 AI 按钮使用 URL 跳转，无法正常工作 |
+| | - **问题2**: AI 推荐详情页只显示 "TMDB ID: xxx"，没有实际内容 |
+| | - **创新解决方案**: Session 缓存机制 |
+| |   - 新增 `session.AIRecommendationItem` 结构体存储完整推荐信息 |
+| |   - 缓存字段: TmdbID, Title, Overview, Reason, Year, Rating, MediaType |
+| |   - `CacheAIItem()` - 缓存单个推荐项 |
+| |   - `GetCachedAIItem()` - 获取缓存的推荐项 |
+| | - **修改文件**: |
+| |   - main.go: |
+| |     - /start 菜单 AI 按钮改为 callback_data: "start_ai" |
+| |     - 新增 start_ai 回调处理，显示 AI 推荐子菜单 |
+| |     - 新增 start_search, start_trending, start_my, start_link, start_help 回调 |
+| |     - buildTrendingResultsMessageWithKeyboard() 添加 userID 参数并缓存结果 |
+| |     - AI 详情页优先从 session 获取缓存信息（标题、理由等） |
+| |     - 详情页显示：标题、年份·评分、推荐理由、简介 |
+| |     - 更新 /random 命令和 action_random 回调也进行缓存 |
+| |   - session/manager.go: |
+| |     - 新增 AIRecommendationItem 结构体 |
+| |     - 新增 CacheAIItem() 方法 |
+| |     - 新增 GetCachedAIItem() 方法 |
+| |     - 新增 CacheAIResults() 方法 |
+| |     - 添加 fmt 包导入 |
+| | - **效果**: |
+| |   - /start → 点击 🤖 AI 推荐 → 选择推荐类型 → 查看详情页（完整信息） |
+| |   - 详情页即使 Jellyseerr API 不可用也能显示标题和推荐理由 |
+| | - **部署状态**: ✅ Docker 容器已重启 (healthy) |
+| | - **提交**: e704eaf |
