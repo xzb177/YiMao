@@ -2,6 +2,7 @@ package response
 
 import (
 	"fmt"
+	"time"
 )
 
 // CommandType represents different command types for responses
@@ -42,20 +43,58 @@ func NewCommandBuilder(ctx *CommandContext) *CommandResponseBuilder {
 func (b *CommandResponseBuilder) BuildStartCommand() *Response {
 	builder := NewBuilder()
 
-	// Different message for new vs returning users
+	// 不同用户返回不同消息
 	if b.context.IsNewUser {
 		return b.buildWelcomeForNewUser()
 	}
 
+	// 回归用户 - 个性化欢迎
+	displayName := b.getDisplayName()
+
+	// 根据时间段生成问候
+	hour := time.Now().Hour()
+	var greeting string
+	switch {
+	case hour >= 5 && hour < 9:
+		greeting = "早安"
+	case hour >= 9 && hour < 12:
+		greeting = "上午好"
+	case hour >= 12 && hour < 14:
+		greeting = "中午好"
+	case hour >= 14 && hour < 18:
+		greeting = "下午好"
+	case hour >= 18 && hour < 23:
+		greeting = "晚上好"
+	default:
+		greeting = "夜深了"
+	}
+
+	message := fmt.Sprintf("👋 *%s，%s！*\n\n", greeting, displayName)
+	message += "又见面啦~ 今天想看点什么？\n\n"
+	message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+	message += "🎬 *探索新片*\n"
+	message += "直接输入影片名称搜索\n\n"
+
+	message += "🤖 *AI 推荐*\n"
+	message += "`/ai 推荐` - 智能推荐\n"
+	message += "`/trending` - 热门榜单\n\n"
+
+	message += "📋 *我的请求*\n"
+	message += "`/my` - 查看我的请求\n\n"
+
+	message += "⚙️ *更多*\n"
+	message += "`/help` - 查看所有命令"
+
 	return builder.
 		WithType(ResponseTypeInfo).
-		WithTitle("👋 欢迎回来！").
-		WithMessage(fmt.Sprintf("你好，%s！", b.getDisplayName())).
-		WithDetails("我可以帮你搜索和请求影视内容").
+		WithTitle("👋 欢迎回来").
+		WithMessage(message).
+		WithDetails("今天想看什么呢？").
 		WithSuggestions(
-			"🔍 搜索内容 - 直接输入电影/剧集名称",
-			"🎯 智能推荐 - 使用 /recommend",
-			"📋 查看帮助 - 使用 /help",
+			"🔍 搜索影片 - 输入名称即可",
+			"🤖 AI推荐 - /ai 推荐",
+			"🔥 热门榜单 - /trending",
+			"📋 我的请求 - /my",
 		).
 		Build()
 }
@@ -64,19 +103,59 @@ func (b *CommandResponseBuilder) BuildStartCommand() *Response {
 func (b *CommandResponseBuilder) buildWelcomeForNewUser() *Response {
 	builder := NewBuilder()
 
-	message := "🎉 *欢迎来到云海看板娘！*\n\n"
-	message += "我是你的智能影视助手，帮你：\n\n"
-	message += "🔍 *搜索内容* - 直接输入电影/剧集名称\n"
-	message += "📋 *发起请求* - 自动下载你想看的内容\n"
-	message += "🔔 *自动通知* - 完成后第一时间通知你\n\n"
-	message += "💡 *快速开始*\n"
-	message += "试试输入：「复仇者联盟」"
+	displayName := b.getDisplayName()
+
+	// 根据时间段生成问候
+	hour := time.Now().Hour()
+	var timeGreeting string
+	switch {
+	case hour >= 5 && hour < 9:
+		timeGreeting = "美好的一天"
+	case hour >= 9 && hour < 12:
+		timeGreeting = "充满活力的上午"
+	case hour >= 12 && hour < 14:
+		timeGreeting = "惬意的午后"
+	case hour >= 14 && hour < 18:
+		timeGreeting = "美好的下午"
+	case hour >= 18 && hour < 23:
+		timeGreeting = "精彩的夜晚"
+	default:
+		timeGreeting = "宁静的深夜"
+	}
+
+	message := fmt.Sprintf("🌟 *欢迎，%s！*\n\n", displayName)
+	message += "我是云海看板娘，你的智能影视助手~\n\n"
+	message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+	message += "🎬 *我能为你做什么？*\n\n"
+
+	message += "🔍 **一键搜索**\n"
+	message += "直接告诉我片名，「复仇者联盟」「权力的游戏」都行\n\n"
+
+	message += "📋 **智能求片**\n"
+	message += "搜索后点击「📋 请求」，管理员批准后自动下载\n"
+	message += "下载完成第一时间通知你~\n\n"
+
+	message += "🤖 **AI 推荐**\n"
+	message += "不知道看什么？试试：\n"
+	message += "• `/ai 推荐` - 随机推荐好片\n"
+	message += "• `/ai 推荐 喜剧` - 按类型推荐\n"
+	message += "• `/ai 推荐 怀疑片` - 看你的口味\n\n"
+
+	message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+	message += "💡 *新手必看*\n"
+	message += "第一次使用？试试输入：**盗梦空间**"
 
 	return builder.
 		WithType(ResponseTypeInfo).
-		WithTitle("👋 欢迎使用").
+		WithTitle("🎉 欢迎使用").
 		WithMessage(message).
 		WithAlert(true).
+		WithDetails("开始你的影视之旅").
+		WithSuggestions(
+			"🔍 搜索影片 - 输入「盗梦空间」试试",
+			"🤖 AI 推荐 - /ai 推荐",
+			"📋 查看帮助 - /help",
+		).
 		Build()
 }
 
@@ -85,27 +164,41 @@ func (b *CommandResponseBuilder) buildWelcomeForNewUser() *Response {
 func (b *CommandResponseBuilder) BuildHelpCommand() *Response {
 	builder := NewBuilder()
 
-	message := "📖 *使用指南*\n\n"
-	message += "🔍 *搜索内容*\n"
-	message += "直接输入电影或剧集名称即可搜索\n\n"
+	message := "🤖 *影视助手使用指南*\n\n"
+	message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+	message += "🔍 *搜索影片*\n"
+	message += "直接输入影片名称即可\n"
+	message += "支持中文、英文、拼音搜索\n\n"
 
 	message += "📋 *发起请求*\n"
-	message += "搜索后点击「📋 请求」按钮\n\n"
+	message += "搜索结果中点击「📋 请求」按钮\n"
+	message += "管理员批准后自动下载\n\n"
 
-	message += "🎯 *高级功能*\n"
-	message += "`/recommend` - 智能推荐\n"
-	message += "`/trending` - 热门搜索\n"
-	message += "`/profile` - 我的资料\n"
-	message += "`/link` - 绑定账号\n\n"
+	message += "🤖 *AI 智能推荐*\n"
+	message += "`/ai 推荐 <类型>` - 智能推荐\n"
+	message += "`/ai 推荐 喜剧` - 推荐喜剧片\n"
+	message += "`/ai 推荐 悬疑` - 推荐悬疑片\n"
+	message += "`/trending` - 查看热门搜索\n\n"
 
-	message += "💡 *小贴士*\n"
-	message += "• 支持中英文搜索\n"
-	message += "• 可以按年份、类型筛选\n"
-	message += "• 完成后自动通知你"
+	message += "👤 *个人中心*\n"
+	message += "`/my` 或 `/me` - 我的请求\n"
+	message += "`/prefs` - 通知设置\n\n"
+
+	message += "🔗 *账号绑定*\n"
+	message += "`/link` - 绑定 Jellyseerr 账号\n"
+	message += "`/verify` - 获取验证码\n"
+	message += "绑定后可直接从 Jellyseerr 请求\n\n"
+
+	message += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+	message += "💡 *使用小贴士*\n"
+	message += "• 搜索结果支持按类型/年份筛选\n"
+	message += "• 请求完成后会收到通知\n"
+	message += "• 建议绑定 Jellyseerr 账号获得更好体验"
 
 	return builder.
 		WithType(ResponseTypeInfo).
-		WithTitle("❓ 帮助中心").
+		WithTitle("📖 使用指南").
 		WithMessage(message).
 		Build()
 }

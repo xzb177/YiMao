@@ -5933,19 +5933,13 @@ type BotCommand struct {
 // setTelegramCommands sets the command list for the bot
 func setTelegramCommands() error {
 	commands := []BotCommand{
-		{Command: "start", Description: "👋 开始"},
-		{Command: "help", Description: "❓ 帮助"},
-		{Command: "search", Description: "🔍 搜索"},
-		{Command: "recommend", Description: "🎯 推荐"},
-		{Command: "random", Description: "🎲 随机"},
+		{Command: "start", Description: "👋 开始使用"},
+		{Command: "help", Description: "❓ 使用帮助"},
+		{Command: "search", Description: "🔍 搜索影片"},
+		{Command: "ai", Description: "🤖 AI 推荐"},
+		{Command: "trending", Description: "🔥 热门榜单"},
 		{Command: "my", Description: "📋 我的请求"},
-		{Command: "quota", Description: "📊 配额"},
-		{Command: "daily", Description: "🎁 签到"},
 		{Command: "link", Description: "🔗 绑定账号"},
-		{Command: "prefs", Description: "⚙️ 设置"},
-		{Command: "pending", Description: "⏳ 待处理"},
-		{Command: "users", Description: "👥 用户"},
-		{Command: "stats", Description: "📊 统计"},
 	}
 
 	type CommandsRequest struct {
