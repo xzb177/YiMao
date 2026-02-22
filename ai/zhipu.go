@@ -20,6 +20,12 @@ func min(a, b int) int {
 	return b
 }
 
+// AIChatMessage represents a chat message in the AI API
+type AIChatMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // ZhipuClient represents the Zhipu AI API client
 type ZhipuClient struct {
 	apiKey     string
@@ -35,7 +41,7 @@ type ZhipuClient struct {
 // ZhipuRequest represents the API request structure
 type ZhipuRequest struct {
 	Model       string    `json:"model"`
-	Messages    []Message `json:"messages"`
+	Messages    []AIChatMessage `json:"messages"`
 	MaxTokens   int       `json:"max_tokens,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
 	TopP        float64   `json:"top_p,omitempty"`
@@ -124,12 +130,12 @@ func (c *ZhipuClient) Send(userMessage string, systemPrompt string) (string, err
 		return cached, nil
 	}
 
-	messages := []Message{
+	messages := []AIChatMessage{
 		{Role: "user", Content: userMessage},
 	}
 
 	if systemPrompt != "" {
-		messages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
+		messages = append([]AIChatMessage{{Role: "system", Content: systemPrompt}}, messages...)
 	}
 
 	request := ZhipuRequest{
@@ -199,13 +205,13 @@ func (c *ZhipuClient) Send(userMessage string, systemPrompt string) (string, err
 }
 
 // SendWithConversation sends a message with conversation history
-func (c *ZhipuClient) SendWithConversation(messages []Message, systemPrompt string) (string, error) {
+func (c *ZhipuClient) SendWithConversation(messages []AIChatMessage, systemPrompt string) (string, error) {
 	if !c.IsEnabled() {
 		return "", fmt.Errorf("Zhipu client is not enabled")
 	}
 
 	if systemPrompt != "" {
-		messages = append([]Message{{Role: "system", Content: systemPrompt}}, messages...)
+		messages = append([]AIChatMessage{{Role: "system", Content: systemPrompt}}, messages...)
 	}
 
 	request := ZhipuRequest{

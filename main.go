@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"runtime"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -176,10 +177,40 @@ type TelegramUpdate struct {
 	CallbackQuery *TelegramCallbackQuery `json:"callback_query"`
 }
 
+// Intent represents the parsed intent from natural language
+type Intent int
+
+const (
+	IntentUnknown Intent = iota
+	IntentSearch
+	IntentRequest
+	IntentMovie
+	IntentTV
+	IntentStatus
+	IntentHelp
+	IntentStats
+	IntentAdmin
+	IntentQuota
+	IntentLink
+	IntentVerify
+	IntentUnlink
+	IntentUsers
+)
+
+// SearchParams represents parsed search parameters
+type SearchParams struct {
+	Query     string
+	MediaType string // "movie" or "tv"
+	Year      int
+	Season    int
+	Episode   int
+}
+
 var (
 	botToken    string
 	chatID      string
 	serverPort  string
+	startTime   time.Time
 
 	// HTTP client with timeout for all requests
 	httpClient *http.Client
@@ -220,6 +251,61 @@ var mediaSecurityChecker *MediaSecurityChecker
 // Chat system for group conversations
 var chatSystem *bot.ChatSystem
 var knowledgeBase *bot.KnowledgeBase
+
+// NLP parser for natural language processing (set to nil when disabled)
+var nlpParser *struct{}
+
+// ParseNLP parses natural language input to extract intent and parameters
+// This is a simple implementation that can be extended with proper NLP
+func ParseNLP(text string) (Intent, *SearchParams, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return IntentUnknown, nil, fmt.Errorf("empty text")
+	}
+
+	params := &SearchParams{Query: text}
+
+	// Check for help keywords
+	if strings.Contains(text, "帮助") || strings.Contains(text, "help") {
+		return IntentHelp, params, nil
+	}
+
+	// Check for status keywords
+	if strings.Contains(text, "状态") || strings.Contains(text, "我的请求") || strings.Contains(text, "status") {
+		return IntentStatus, params, nil
+	}
+
+	// Check for stats keywords (admin only)
+	if strings.Contains(text, "统计") || strings.Contains(text, "stats") {
+		return IntentStats, params, nil
+	}
+
+	// Check for search/request keywords
+	if strings.HasPrefix(text, "搜索") || strings.HasPrefix(text, "找") ||
+		strings.HasPrefix(text, "求") || strings.HasPrefix(text, "request") ||
+		strings.HasPrefix(text, "search") {
+		// Extract query after the keyword
+		query := strings.TrimSpace(text[3:])
+		if query == "" {
+			query = text
+		}
+		params.Query = query
+		return IntentSearch, params, nil
+	}
+
+	// Check for movie keywords
+	if strings.Contains(text, "电影") || strings.Contains(text, "movie") {
+		return IntentMovie, params, nil
+	}
+
+	// Check for TV keywords
+	if strings.Contains(text, "剧集") || strings.Contains(text, "电视剧") || strings.Contains(text, "tv") {
+		return IntentTV, params, nil
+	}
+
+	// Default to search intent with full text as query
+	return IntentSearch, params, nil
+}
 
 // InitBotModule initializes the new modular bot system
 func InitBotModule() error {
@@ -463,41 +549,11 @@ func init() {
 	// Initialize user request manager
 	InitUserRequestManager()
 
-	// Initialize smart search
-	InitSmartSearch()
-
-	// Initialize request tracker
-	InitRequestTracker()
-
-	// Initialize NLP parser
-	InitNLP()
-
-	// Initialize smart search manager (enhanced)
-	InitSmartSearchManager()
-
-	// Initialize onboarding manager
-	InitOnboarding()
-
 	// Initialize admin panel manager
 	InitAdminPanelManager()
 
 	// Initialize user sync manager
 	InitUserSyncManager()
-
-	// Initialize new modules (2026-02-18)
-	InitLogger(os.Getenv("LOG_LEVEL"), "/tmp/emby-bot.log")        // Enhanced logging
-	InitQuickLinkManager()                                          // Quick account linking
-	InitSearchHistoryManager()                                     // Search history
-	InitRecommendationEngine()                                     // AI recommendations
-	InitQuotaReminderManager()                                     // Quota reminders
-
-	// Initialize engagement and retention systems (2026-02-18)
-	InitEngagementSystem()                                         // Gamification
-	InitNotificationRewards()                                      // Random rewards
-	InitPushNotificationSystem()                                   // Re-engagement
-
-	// Initialize command center and help system (2026-02-18)
-	InitCommands()                                                 // Centralized command handling
 
 	// Initialize AI trending manager (2026-02-20)
 	InitAITrending()
@@ -1383,28 +1439,14 @@ func formatJellyseerrNotification(payload JellyseerrWebhookPayload) string {
 			text += fmt.Sprintf(" · #%s", requestID)
 		}
 
-		log.Printf("[DEBUG] Before TrackRequest")
-		// Track request for auto-reminder and notification
-		tmdbID := 0
-		if payload.TmdbID != "" {
-			fmt.Sscanf(payload.TmdbID, "%d", &tmdbID)
-		}
-		TrackRequest(requestID, mediaTitle, mediaType, tmdbID, payload.UserID, username)
-		log.Printf("[DEBUG] After TrackRequest")
-
 		// Send private notification to admins with buttons
 		notifyAdminsRequest(mediaTitle, mediaType, username, requestID)
-		log.Printf("[DEBUG] After notifyAdminsRequest")
-
-		log.Printf("[DEBUG] REQUEST_CREATED case done, text length=%d", len(text))
 
 	case "REQUEST_APPROVED", "request_approved", "MEDIA_APPROVED":
 		// Update analytics
 		if analytics != nil && requestID != "" {
 			UpdateRequestStatus(requestID, "approved")
 		}
-		// Update tracker
-		UpdateTrackedRequestStatus(requestID, "approved")
 
 		text = "╔════════════════════════════════════╗\n"
 		text += "║     ✅ 请求已批准 · Approved        ║\n"
@@ -1419,8 +1461,6 @@ func formatJellyseerrNotification(payload JellyseerrWebhookPayload) string {
 		if analytics != nil && requestID != "" {
 			UpdateRequestStatus(requestID, "available")
 		}
-		// Update tracker (will notify requester)
-		UpdateTrackedRequestStatus(requestID, "available")
 
 		text = "╔════════════════════════════════════╗\n"
 		text += "║     🎉 已可用 · Available           ║\n"
@@ -1434,12 +1474,6 @@ func formatJellyseerrNotification(payload JellyseerrWebhookPayload) string {
 		// Update analytics
 		if analytics != nil && requestID != "" {
 			UpdateRequestStatus(requestID, "declined")
-		}
-		// Remove from tracker
-		if requestTracker != nil {
-			requestTracker.requestMutex.Lock()
-			delete(requestTracker.pendingRequests, requestID)
-			requestTracker.requestMutex.Unlock()
 		}
 
 		text = "╔════════════════════════════════════╗\n"
@@ -2057,44 +2091,25 @@ func handlePrivateMessage(update *TelegramUpdate) {
 	case "/start":
 		// /start command - Welcome message with keyboard buttons
 		log.Printf("[COMMAND] /start from user %d (%s)", update.Message.From.ID, username)
-		isNewUser := ShouldShowOnboarding(update.Message.From.ID)
 
-		var startMsg string
-		var keyboard *TelegramInlineKeyboard
-
-		if isNewUser {
-			// New user - use GetWelcomeForNewUser which includes keyboard
-			startMsg, keyboard = GetWelcomeForNewUser(update.Message.From.ID, username)
-		} else {
-			// Returning user - greeting with quick actions keyboard
-			displayName := update.Message.From.FirstName
+		displayName := update.Message.From.FirstName
+		if displayName == "" {
+			displayName = username
 			if displayName == "" {
-				displayName = username
-				if displayName == "" {
-					displayName = "朋友"
-				}
+				displayName = "朋友"
 			}
-
-			startMsg = fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
-			startMsg += "我可以帮你搜索和请求影视内容\n\n"
-			startMsg += "💡 点击下方按钮快速开始"
-
-			// Use QuickStartKeyboard for returning users
-			keyboard = GetQuickStartKeyboard()
 		}
 
-		sendPrivateMessage(update.Message.From.ID, startMsg, keyboard)
+		startMsg := fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
+		startMsg += "我可以帮你搜索和请求影视内容\n\n"
+		startMsg += "💡 使用 /help 查看帮助"
 
-		// Complete onboarding after first interaction
-		if isNewUser && onboardingMgr != nil {
-			onboardingMgr.CompleteOnboarding(update.Message.From.ID)
-		}
+		sendPrivateMessage(update.Message.From.ID, startMsg, nil)
 
 	case "/help":
 		// /help command - Comprehensive help guide
 		log.Printf("[COMMAND] /help from user %d (%s)", update.Message.From.ID, username)
-		// Get help message from command_center
-		helpMsg := FormatHelpMessage(isAdminUser(update.Message.From.ID))
+		helpMsg := GetHelpMessage(LevelNormal)
 		sendPrivateMessage(update.Message.From.ID, helpMsg, nil)
 
 	case "/my", "/myrequests", "/me":
@@ -2249,81 +2264,32 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		// Performance monitoring command (admin only)
 		if update.Message != nil {
 			if isAdminUser(update.Message.From.ID) {
-				sendPrivateMessage(update.Message.From.ID, GetRuntimeInfo(), nil)
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				msg := fmt.Sprintf("📊 *运行状态*\n\n")
+				msg += fmt.Sprintf("🧠 内存使用: %.2f MB\n", float64(m.Alloc)/1024/1024)
+				msg += fmt.Sprintf("⏱️ 运行时间: %s\n", time.Since(startTime).Round(time.Second))
+				msg += fmt.Sprintf("🔄 Goroutines: %d", runtime.NumGoroutine())
+				sendPrivateMessage(update.Message.From.ID, msg, nil)
 			} else {
 				sendPrivateMessage(update.Message.From.ID, "❌ 此命令仅管理员可用", nil)
 			}
 		}
 
 	case "/search":
-		// Enhanced search with filters
-		// Usage: /search  [筛选参数]
-		// Filters: --year=2024 --type=movie --rating=7 --genre=action
+		// Basic search
 		parts := strings.Fields(text)
 		if len(parts) < 2 {
-			sendPrivateMessage(update.Message.From.ID, "❓ 用法: [筛选条件]\n\n"+
-				"*筛选条件:*\n"+
-				"• `--type=movie` - 只搜索电影\n"+
-				"• `--type=tv` - 只搜索剧集\n"+
-				"• `--year=2024` - 指定年份\n"+
-				"• `--rating=7` - 最低评分\n"+
-				"• `--genre=动作` - 类型筛选\n\n"+
-				"*示例:*\n"+
-				"/search 漫威 --type=movie --year=2024 --rating=7", nil)
+			sendPrivateMessage(update.Message.From.ID, "❓ 用法: /search <关键词>", nil)
 			return
 		}
 
-		// Parse query and filters
-		var queryParts []string
-		filter := SearchFilter{
-			MinRating: 0,
-		}
+		query := strings.Join(parts[1:], " ")
 
-		for _, part := range parts[1:] {
-			if strings.HasPrefix(part, "--") {
-				// This is a filter
-				kv := strings.TrimPrefix(part, "--")
-				if strings.Contains(kv, "=") {
-					parts := strings.SplitN(kv, "=", 2)
-					key := strings.ToLower(parts[0])
-					value := parts[1]
-
-					switch key {
-					case "type":
-						filter.MediaType = value
-					case "year":
-						filter.Year = value
-					case "rating":
-						if rating, err := strconv.ParseFloat(value, 64); err == nil {
-							filter.MinRating = rating
-						}
-					case "genre":
-						filter.Genre = value
-					}
-				}
-			} else {
-				queryParts = append(queryParts, part)
-			}
-		}
-
-		query := strings.Join(queryParts, " ")
-
-		if smartSearch != nil && smartSearch.apiKey != "" {
-			// Use smart search with filters
-			results, err := smartSearch.SearchWithFilter(query, filter)
-			if err != nil {
-				sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "搜索"), nil)
-				log.Printf("Error searching with filter: %v", err)
-				return
-			}
-
-			msg := FormatSearchResultsWithDetails(results, query)
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-		} else if jellyseerrClient != nil {
-			// Fallback to basic search
+		if jellyseerrClient != nil {
 			results, err := jellyseerrClient.SearchMedia(query)
 			if err != nil {
-				sendPrivateMessage(update.Message.From.ID, formatAPIError(err, "搜索"), nil)
+				sendPrivateMessage(update.Message.From.ID, "❌ 搜索失败: "+err.Error(), nil)
 				log.Printf("Error searching media: %v", err)
 				return
 			}
@@ -2447,7 +2413,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}(update.Message.From.ID, mediaType)
 
 	case "/stuck":
-		// Show stuck requests (admin only)
+		// Show stuck requests (admin only) - disabled
 		adminsMutex.RLock()
 		_, isCallerAdmin := admins[userID]
 		adminsMutex.RUnlock()
@@ -2457,9 +2423,7 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			return
 		}
 
-		stuck := GetStuckRequests()
-		msg := FormatStuckRequests(stuck)
-		sendPrivateMessage(update.Message.From.ID, msg, nil)
+		sendPrivateMessage(update.Message.From.ID, "❌ 此功能已禁用", nil)
 
 	case "/request":
 		// Direct request by TMDB ID
@@ -2776,13 +2740,8 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		sendPrivateMessage(update.Message.From.ID, "✅ 偏好已重置为默认设置", nil)
 
 	case "/quota":
-		// Show user's request quota
-		if smartSearchMgr != nil {
-			quotaInfo := smartSearchMgr.GetUserQuotaInfo(update.Message.From.ID)
-			sendPrivateMessage(update.Message.From.ID, quotaInfo, nil)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 配额功能暂不可用", nil)
-		}
+		// Show user's request quota - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 配额功能暂不可用", nil)
 
 	case "/link":
 		// Link Jellyseerr account with verification code
@@ -2965,75 +2924,23 @@ func handlePrivateMessage(update *TelegramUpdate) {
 
 	case "/profile", "/card":
 		// Show user profile card
-		if engagementSys != nil {
-			displayName := update.Message.From.FirstName
-			if update.Message.From.LastName != "" {
-				displayName += " " + update.Message.From.LastName
-			}
-			if update.Message.From.Username != "" {
-				displayName += " @" + update.Message.From.Username
-			}
-			msg := engagementSys.FormatUserCard(update.Message.From.ID, displayName)
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-
-			// Record activity
-			engagementSys.RecordActivity(update.Message.From.ID, "login", 1)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 用户功能暂不可用", nil)
-		}
+		sendPrivateMessage(update.Message.From.ID, "❌ 用户功能暂不可用", nil)
 
 	case "/daily", "/checkin", "/bonus", "/signin":
-		// Claim daily bonus
-		if engagementSys != nil {
-			msg, _, err := engagementSys.ClaimDailyBonus(update.Message.From.ID)
-			if err != nil {
-				sendPrivateMessage(update.Message.From.ID, "❌ "+err.Error(), nil)
-			} else {
-				sendPrivateMessage(update.Message.From.ID, msg, nil)
-				// Try drop reward
-				TryDropReward(update.Message.From.ID, "每日签到")
-			}
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 签到功能暂不可用", nil)
-		}
+		// Claim daily bonus - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 签到功能暂不可用", nil)
 
 	case "/leaderboard", "/lb":
-		// Show leaderboard
-		if engagementSys != nil {
-			msg := engagementSys.FormatLeaderboard(10)
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 排行榜功能暂不可用", nil)
-		}
+		// Show leaderboard - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 排行榜功能暂不可用", nil)
 
 	case "/challenges", "/tasks", "/dailies":
-		// Show daily challenges
-		if engagementSys != nil {
-			msg := engagementSys.FormatChallenges(update.Message.From.ID)
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 挑战功能暂不可用", nil)
-		}
+		// Show daily challenges - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 挑战功能暂不可用", nil)
 
 	case "/badges", "/achievements", "/trophies":
-		// Show user badges
-		if engagementSys != nil {
-			user := engagementSys.GetUserData(update.Message.From.ID)
-			if len(user.Badges) == 0 {
-				msg := "🏅 *我的成就*\n\n你还没有获得任何成就\n\n"
-				msg += "💡 多使用机器人可以获得成就！"
-				sendPrivateMessage(update.Message.From.ID, msg, nil)
-			} else {
-				msg := "🏅 *我的成就*\n\n"
-				for _, badge := range user.Badges {
-					msg += fmt.Sprintf("  %s\n", engagementSys.getBadgeEmoji(badge))
-				}
-				msg += fmt.Sprintf("\n共 %d 个成就", len(user.Badges))
-				sendPrivateMessage(update.Message.From.ID, msg, nil)
-			}
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 成就功能暂不可用", nil)
-		}
+		// Show user badges - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 成就功能暂不可用", nil)
 
 	case "/ai":
 		// AI assistant command
@@ -3097,42 +3004,16 @@ func handlePrivateMessage(update *TelegramUpdate) {
 		}
 
 	case "/trending", "/hot":
-		// Show trending searches
-		if searchHistoryMgr != nil {
-			trending := searchHistoryMgr.GetTrendingSearches(10)
-			msg := "🔥 *热门搜索*\n\n"
-			if len(trending) == 0 {
-				msg += "暂无热门搜索"
-			} else {
-				for i, item := range trending {
-					msg += fmt.Sprintf("%d. %s (%d次)\n", i+1, item.Query, item.Count)
-				}
-			}
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 热门搜索功能暂不可用", nil)
-		}
+		// Show trending searches - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 热门搜索功能暂不可用", nil)
 
 	case "/history", "/hist":
-		// Show search history
-		if searchHistoryMgr != nil {
-			history := searchHistoryMgr.GetUserHistory(update.Message.From.ID, 20)
-			msg := "📜 *搜索历史*\n\n"
-			if len(history) == 0 {
-				msg += "暂无搜索历史"
-			} else {
-				for i, item := range history {
-					msg += fmt.Sprintf("%d. %s\n", i+1, item.Query)
-				}
-			}
-			sendPrivateMessage(update.Message.From.ID, msg, nil)
-		} else {
-			sendPrivateMessage(update.Message.From.ID, "❌ 搜索历史功能暂不可用", nil)
-		}
+		// Show search history - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 搜索历史功能暂不可用", nil)
 
 	case "/quicklink", "/fastbind":
-		// Quick link command
-		handleQuickLinkCommand(update.Message.From.ID, text)
+		// Quick link command - disabled
+		sendPrivateMessage(update.Message.From.ID, "❌ 此功能暂不可用", nil)
 
 	default:
 		// Try NLP parsing for natural language input
@@ -3228,50 +3109,9 @@ func handleNaturalLanguageIntent(userID int64, intent Intent, params *SearchPara
 		} else {
 			sendPrivateMessage(userID, "❌ 你不是管理员", nil)
 		}
-	case IntentQuota:
-		// Show user's quota information
-		log.Printf("[DEBUG] Handling quota intent for user %d", userID)
-		if smartSearchMgr != nil {
-			quotaInfo := smartSearchMgr.GetUserQuotaInfo(userID)
-			log.Printf("[DEBUG] Quota info: %s", quotaInfo)
-			err := sendPrivateMessage(userID, quotaInfo, nil)
-			if err != nil {
-				log.Printf("[ERROR] Error sending quota info: %v", err)
-			} else {
-				log.Printf("[DEBUG] Quota info sent successfully")
-			}
-		} else {
-			log.Printf("[DEBUG] SmartSearchMgr is nil")
-			sendPrivateMessage(userID, "❌ 配额功能暂不可用", nil)
-		}
-	case IntentLink:
-		// Link Jellyseerr account
-		linkCmd := "/link"
-		if params.Query != "" {
-			linkCmd = "/link " + params.Query
-		}
-		handleLinkCommand(userID, "", linkCmd)
-	case IntentVerify:
-		// Generate verification code
-		handleVerifyCommand(userID, "")
-	case IntentUnlink:
-		// Unlink account
-		handleUnlinkCommand(userID)
-	case IntentUsers:
-		// Show user list (admin only)
-		userIDStr := fmt.Sprintf("%d", userID)
-		adminsMutex.RLock()
-		_, isAdmin := admins[userIDStr]
-		adminsMutex.RUnlock()
-
-		if !isAdmin {
-			sendPrivateMessage(userID, "❌ 你不是管理员，无权查看用户列表", nil)
-		} else if userSyncMgr != nil {
-			msg := userSyncMgr.FormatUserMappings()
-			sendPrivateMessage(userID, msg, nil)
-		} else {
-			sendPrivateMessage(userID, "❌ 用户同步功能暂不可用", nil)
-		}
+	case IntentQuota, IntentLink, IntentVerify, IntentUnlink, IntentUsers:
+		// These features are disabled
+		sendPrivateMessage(userID, "❌ 此功能暂不可用", nil)
 	default:
 		// Fallback to help
 		msg := GetHelpMessage(LevelSimple)
@@ -3281,47 +3121,25 @@ func handleNaturalLanguageIntent(userID int64, intent Intent, params *SearchPara
 
 // handleSmartSearch handles smart search with NLP params
 func handleSmartSearch(userID int64, params *SearchParams) {
-	if smartSearchMgr == nil {
-		sendPrivateMessage(userID, "❌ 搜索功能暂不可用", nil)
-		return
-	}
-
 	query := params.Query
 	if query == "" {
-		// Show quick search menu
-		msg, keyboard := FormatQuickSearchMenu(userID)
-		sendPrivateMessage(userID, msg, keyboard)
+		sendPrivateMessage(userID, "❌ 请提供搜索关键词", nil)
 		return
 	}
 
-	// Check for special keywords that should show quota info instead of searching
-	if strings.Contains(query, "配额") || strings.Contains(query, "限额") || strings.Contains(query, "quota") || strings.Contains(query, "limit") {
-		if smartSearchMgr != nil {
-			quotaInfo := smartSearchMgr.GetUserQuotaInfo(userID)
-			sendPrivateMessage(userID, quotaInfo, nil)
-		} else {
-			sendPrivateMessage(userID, "❌ 配额功能暂不可用", nil)
+	// Use basic search via Jellyseerr
+	if jellyseerrClient != nil {
+		results, err := jellyseerrClient.SearchMedia(query)
+		if err != nil {
+			sendPrivateMessage(userID, "❌ 搜索失败: "+err.Error(), nil)
+			return
 		}
-		return
-	}
 
-	// Create search context
-	ctx := &SearchContext{
-		UserID: userID,
-		Query:  query,
-		Params: params,
+		msg := FormatSearchResults(results, query)
+		sendPrivateMessage(userID, msg, nil)
+	} else {
+		sendPrivateMessage(userID, "❌ 搜索功能暂不可用", nil)
 	}
-
-	// Perform search
-	if err := smartSearchMgr.Search(ctx); err != nil {
-		log.Printf("Search error: %v", err)
-		sendPrivateMessage(userID, "❌ 搜索失败，请稍后再试", nil)
-		return
-	}
-
-	// Format and send results
-	msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-	sendPrivateMessage(userID, msg, keyboard)
 }
 
 // telegramWebhookHandler handles updates from Telegram
@@ -3522,75 +3340,11 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				log.Printf("[DEBUG] After special action handler: newMsg=%q, editMessage=%v", newMsg[:50]+"...", editMessage)
 			} else if isRequestAction {
 				// Handle request action: request_<tmdbID>_<type>
-				// Call smartSearchMgr to create the request
-				parts := strings.Split(data, "_")
-				if len(parts) >= 3 {
-					tmdbID, err := strconv.Atoi(parts[1])
-					mediaType := parts[2]
-
-					if err == nil && smartSearchMgr != nil {
-						log.Printf("[DEBUG] Processing request action: userID=%d, tmdbID=%d, type=%s", userID, tmdbID, mediaType)
-
-						// Get Jellyseerr user ID
-						jellyseerrUserID, _ := smartSearchMgr.GetJellyseerrUserID(userID)
-						if jellyseerrUserID == 0 {
-							responseText = "❌ 请先使用 /link 命令绑定账号"
-							answerCallbackQuery(callbackID, responseText)
-							w.WriteHeader(http.StatusOK)
-							return
-						}
-
-						// Get username for notification
-						username := update.CallbackQuery.From.Username
-						if username == "" {
-							username = fmt.Sprintf("User_%d", userID)
-						}
-
-						// Create request
-						requestType := "movie"
-						if mediaType == "tv" {
-							requestType = "tv"
-						}
-
-						result, err := smartSearchMgr.CreateRequest(jellyseerrUserID, tmdbID, requestType)
-						if err != nil {
-							log.Printf("[DEBUG] CreateRequest error: %v", err)
-							responseText = fmt.Sprintf("❌ 请求失败: %s", err.Error())
-							// Check for specific error messages
-							if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "Failed to fetch") {
-								responseText = "❌ TMDB 找不到此影片\n\n可能原因：\n• TMDB ID 不正确\n• 影片信息已被移除\n\n💡 请尝试重新搜索"
-							}
-						} else {
-							// Parse result ID from JSON response
-							var resultData map[string]interface{}
-							json.Unmarshal([]byte(result), &resultData)
-							requestID := "未知"
-							if id, ok := resultData["id"].(float64); ok {
-								requestID = fmt.Sprintf("%.0f", id)
-							}
-
-							// 🎯 永久修复: 调用统一的管理员通知系统
-							log.Printf("[DEBUG] AI推荐请求成功，调用管理员通知: requestID=%s, tmdbID=%d, type=%s", requestID, tmdbID, mediaType)
-
-							// 获取媒体标题（从TMDB获取）
-							mediaTitle := fmt.Sprintf("TMDB:%d", tmdbID)
-							if jellyseerrClient != nil {
-								if mediaInfo, err := jellyseerrClient.GetMediaInfo(tmdbID); err == nil && mediaInfo != nil {
-									mediaTitle = mediaInfo.Title
-								}
-							}
-
-							// 发送管理员通知（使用令牌系统）
-							notifyAdminsRequest(mediaTitle, mediaType, username, requestID)
-
-							responseText = fmt.Sprintf("✅ 请求成功！📋 请求 ID: %s\n\n已通知管理员处理~", requestID)
-						}
-
-						answerCallbackQuery(callbackID, responseText)
-						w.WriteHeader(http.StatusOK)
-						return
-					}
-				}
+				// This feature is now simplified
+				responseText = "❌ 此功能暂时不可用，请使用 /search 命令搜索后请求"
+				answerCallbackQuery(callbackID, responseText)
+				w.WriteHeader(http.StatusOK)
+				return
 			} else if data == "ai_back_to_list" {
 				// 🎯 永久修复: 处理从AI推荐详情页返回列表
 				userSession := botModule.GetSession(userID)
@@ -3728,14 +3482,10 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 
 				log.Printf("[DEBUG] Processing title search: %s", title)
 
-				// Search using smartSearchMgr
-				if smartSearchMgr != nil {
-					ctx := &SearchContext{
-						UserID: userID,
-						Query:  title,
-						Params: nil,
-					}
-					if err := smartSearchMgr.Search(ctx); err != nil {
+				// Search using jellyseerrClient
+				if jellyseerrClient != nil {
+					results, err := jellyseerrClient.SearchMedia(title)
+					if err != nil {
 						log.Printf("[DEBUG] Title search error: %v", err)
 						responseText = "❌ 搜索失败，请稍后再试"
 						answerCallbackQuery(callbackID, responseText)
@@ -3743,10 +3493,9 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 
-					// Format results with keyboard
-					msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
+					// Format results
+					msg := FormatSearchResults(results, title)
 					newMsg = msg
-					newKeyboard = keyboard
 					editMessage = true
 				}
 			} else {
@@ -3919,22 +3668,10 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					tmdbID, _ := strconv.Atoi(parts[1])
 					mediaType := parts[2]
 
-					// Try to create request
-					if smartSearchMgr != nil {
-						msg, err := smartSearchMgr.CreateOneClickRequest(userID, tmdbID, mediaType)
-						if err != nil {
-							responseText = "❌ 请求失败: " + err.Error()
-						} else {
-							// Edit the message to show request details
-							newMsg = msg
-							editMessage = true
-							responseText = "✅ 已生成请求链接"
-						}
-					} else {
-						newMsg = HandleQuickRequest(userID, tmdbID, mediaType)
-						editMessage = true
-						responseText = "✅ 已生成请求链接"
-					}
+					// Try to create request using simple method
+					newMsg = HandleQuickRequest(userID, tmdbID, mediaType)
+					editMessage = true
+					responseText = "✅ 已生成请求链接"
 				} else {
 					responseText = "❌ 无效的请求"
 				}
@@ -3989,20 +3726,12 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				responseText = "🔄 正在刷新..."
 
 			case "search":
-				// Quick search from button (only if not the special trending actions)
-				query := strings.Join(parts[1:], "_")
-				if smartSearchMgr != nil {
-					newMsg, newKeyboard, _ = HandleQuickSearchCallback(userID, query)
-					editMessage = true
-				} else {
-					responseText = "❌ 搜索功能暂不可用"
-				}
+				// Quick search from button (only if not the special trending actions) - disabled
+				responseText = "❌ 请使用 /search 命令搜索"
 
 			case "onboard":
-				// Onboarding flow
-				onboardAction := strings.Join(parts[1:], "_")
-				newMsg, newKeyboard, _ = HandleOnboardingCallback(userID, username, onboardAction)
-				editMessage = true
+				// Onboarding flow - disabled
+				responseText = "❌ 此功能暂不可用"
 
 			case "action":
 				// Quick action buttons - enterprise-grade handling
@@ -4044,22 +3773,12 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 💡 点击左下角菜单快速访问所有功能`
 						editMessage = true
 					case "settings":
-						quotaText := "未绑定账号"
-						if smartSearchMgr != nil {
-							quotaInfo := smartSearchMgr.GetUserQuotaInfo(userID)
-							if quotaInfo != "" {
-								quotaText = quotaInfo
-							}
-						}
-						newMsg = fmt.Sprintf(`⚙️ *设置*
-
-📊 *今日配额*
-%s
+						newMsg = `⚙️ *设置*
 
 💡 *其他设置*
 /prefs - 通知设置
 /link - 绑定账号
-/quota - 配额详情`, quotaText)
+/quota - 配额详情`
 						editMessage = true
 					case "random":
 						// Random recommendations - trigger like /random command
@@ -4147,26 +3866,8 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				}
 
 			case "page":
-				// Pagination for search results
-				// Format: page__
-				if len(parts) >= 3 {
-					query := strings.Join(parts[1:len(parts)-1], "_")
-					pageNum, _ := strconv.Atoi(parts[len(parts)-1])
-
-					if smartSearchMgr != nil {
-						newMsg, newKeyboard = smartSearchMgr.FormatPageResults(userID, query, pageNum)
-						if newMsg != "" {
-							editMessage = true
-							responseText = "✅ 已翻页"
-						} else {
-							responseText = "❌ 翻页失败，搜索结果已过期"
-						}
-					} else {
-						responseText = "❌ 搜索功能暂不可用"
-					}
-				} else {
-					responseText = "❌ 无效的分页"
-				}
+				// Pagination for search results - disabled
+				responseText = "❌ 分页功能暂不可用"
 
 			case "request_link":
 				// User clicked to request linking an account
@@ -5714,22 +5415,7 @@ func handleTrendingSearchCallback(userID int64, messageID int64) (string, *Teleg
 		return loadingMsg, nil, true, backgroundTask
 	}
 
-	// Fallback 1: Try smartSearchMgr
-	if smartSearchMgr != nil {
-		ctx := &SearchContext{
-			UserID: userID,
-			Query:  "2024",
-			Params: &SearchParams{},
-		}
-		if err := smartSearchMgr.Search(ctx); err != nil {
-			log.Printf("[Callback] Trending search via smartSearchMgr failed: %v", err)
-		} else {
-			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "🔥 *热门推荐*\n\n" + msg, keyboard, true, nil
-		}
-	}
-
-	// Fallback 2: Try direct Jellyseerr search
+	// Fallback: Try direct Jellyseerr search
 	if jellyseerrClient != nil {
 		results, err := jellyseerrClient.SearchMedia("2024")
 		if err == nil && len(results) > 0 {
@@ -5798,25 +5484,7 @@ func handleHotTVSearchCallback(userID int64, messageID int64) (string, *Telegram
 		return loadingMsg, nil, true, backgroundTask
 	}
 
-	// Fallback 1: Try smartSearchMgr
-	if smartSearchMgr != nil {
-		ctx := &SearchContext{
-			UserID: userID,
-			Query:  "2024",
-			Params: &SearchParams{
-				MediaType: "tv",
-				Year:      "2024",
-			},
-		}
-		if err := smartSearchMgr.Search(ctx); err != nil {
-			log.Printf("[Callback] Hot TV search via smartSearchMgr failed: %v", err)
-		} else {
-			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "📺 *热播剧集 (2024)*\n\n" + msg, keyboard, true, nil
-		}
-	}
-
-	// Fallback 2: Try direct Jellyseerr search with TV filter
+	// Fallback: Try direct Jellyseerr search with TV filter
 	if jellyseerrClient != nil {
 		results, err := jellyseerrClient.SearchMedia("2024")
 		if err == nil && len(results) > 0 {
@@ -5887,25 +5555,7 @@ func handleNewMoviesSearchCallback(userID int64, messageID int64) (string, *Tele
 		return loadingMsg, nil, true, backgroundTask
 	}
 
-	// Fallback 1: Try smartSearchMgr
-	if smartSearchMgr != nil {
-		ctx := &SearchContext{
-			UserID: userID,
-			Query:  "2024",
-			Params: &SearchParams{
-				MediaType: "movie",
-				Year:      "2024",
-			},
-		}
-		if err := smartSearchMgr.Search(ctx); err != nil {
-			log.Printf("[Callback] New movies search via smartSearchMgr failed: %v", err)
-		} else {
-			msg, keyboard := FormatSearchResultsWithKeyboard(ctx)
-			return "🎬 *最新电影 (2024)*\n\n" + msg, keyboard, true, nil
-		}
-	}
-
-	// Fallback 2: Try direct Jellyseerr search with movie filter
+	// Fallback: Try direct Jellyseerr search with movie filter
 	if jellyseerrClient != nil {
 		results, err := jellyseerrClient.SearchMedia("2024")
 		if err == nil && len(results) > 0 {
@@ -6108,6 +5758,7 @@ func summaryHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	startTime = time.Now()
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.SetOutput(os.Stdout) // 确保输出到 stdout
 	log.Println("[Main] Starting application...")
@@ -6564,11 +6215,6 @@ func linkUserAccount(telegramID int64, user *JellyseerrUserProfile) {
 		return
 	}
 
-	// Update smart search manager's mapping too
-	if smartSearchMgr != nil {
-		smartSearchMgr.SetUserMapping(telegramID, int64(user.ID))
-	}
-
 	displayName := user.DisplayName
 	if displayName == "" {
 		displayName = user.Username
@@ -6638,15 +6284,6 @@ func handleUnlinkCommand(telegramID int64) {
 
 	// Remove mapping
 	userSyncMgr.RemoveUserMapping(telegramID)
-
-	// Also update smart search manager
-	if smartSearchMgr != nil {
-		mappingMutex := &smartSearchMgr.mappingMutex
-		mappingMutex.Lock()
-		delete(smartSearchMgr.userMapping, telegramID)
-		mappingMutex.Unlock()
-		smartSearchMgr.saveUserMapping()
-	}
 
 	msg := "✅ *账号已解绑*\n\n"
 	msg += fmt.Sprintf("Jellyseerr ID: %d\n\n", jellyseerrID)

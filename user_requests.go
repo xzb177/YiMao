@@ -95,9 +95,8 @@ func HandleMentionCommand(update *TelegramUpdate) bool {
 				query := strings.Join(parts[2:], " ")
 				handleSearchCommand(userID, query, update.Message.Chat.ID)
 			} else {
-				// Show quick search menu
-				msg, keyboard := FormatQuickSearchMenu(userID)
-				sendGroupMessageWithKeyboard(update.Message.Chat.ID, msg, keyboard)
+				// Show quick search menu - disabled
+				sendGroupMessage(update.Message.Chat.ID, "🔍 请输入搜索关键词")
 			}
 		case "help", "帮助":
 			sendMentionHelp(userID, update.Message.Chat.ID)
@@ -106,14 +105,6 @@ func HandleMentionCommand(update *TelegramUpdate) bool {
 		case "my", "我的", "myrequests":
 			handleMyRequestsCommand(userID, update.Message.Chat.ID)
 		default:
-			// Try NLP parsing for the entire message
-			if nlpParser != nil {
-				intent, params, err := ParseNLP(text)
-				if err == nil && intent != IntentUnknown {
-					handleGroupNLPIntent(userID, update.Message.Chat.ID, intent, params)
-					return true
-				}
-			}
 			sendMentionHelp(userID, update.Message.Chat.ID)
 		}
 		return true
@@ -127,15 +118,14 @@ func HandleMentionCommand(update *TelegramUpdate) bool {
 	return false
 }
 
-// handleGroupNLPIntent handles NLP intents in group chat
+// handleGroupNLPIntent handles NLP intents in group chat - simplified
 func handleGroupNLPIntent(userID int64, chatID int64, intent Intent, params *SearchParams) {
 	switch intent {
 	case IntentSearch, IntentRequest, IntentMovie, IntentTV:
 		if params.Query != "" {
 			handleSearchCommand(userID, params.Query, chatID)
 		} else {
-			msg, keyboard := FormatQuickSearchMenu(userID)
-			sendGroupMessageWithKeyboard(chatID, msg, keyboard)
+			sendGroupMessage(chatID, "🔍 请输入搜索关键词")
 		}
 	case IntentStatus:
 		handleMyRequestsCommand(userID, chatID)
@@ -168,112 +158,7 @@ func getDisplayName(user struct {
 
 // handleSearchCommand handles media search
 func handleSearchCommand(userID int64, query string, chatID int64) {
-	// Try NLP parsing for better query handling
-	var params *SearchParams
-	if nlpParser != nil {
-		_, params, _ = ParseNLP(query)
-	}
-
-	// Use smart search manager if available
-	if smartSearchMgr != nil {
-		ctx := &SearchContext{
-			UserID: userID,
-			Query:  query,
-			Params: params,
-		}
-
-		if err := smartSearchMgr.Search(ctx); err != nil {
-			log.Printf("Smart search error: %v", err)
-			// Fall back to basic search
-			handleBasicSearchCommand(userID, query, chatID)
-			return
-		}
-
-		// Format results for group
-		if len(ctx.Results) == 0 {
-			sendGroupMessage(chatID, fmt.Sprintf("🔍 未找到 \"%s\" 相关内容", query))
-			return
-		}
-
-		msg := fmt.Sprintf("🔍 *搜索结果: %s*\n\n", query)
-		msg += fmt.Sprintf("找到 %d 个结果\n\n", len(ctx.Results))
-
-		// Show top 3 results
-		displayCount := 3
-		if len(ctx.Results) < displayCount {
-			displayCount = len(ctx.Results)
-		}
-
-		for i, result := range ctx.Results {
-			if i >= displayCount {
-				msg += fmt.Sprintf("\n... 还有 %d 个结果", len(ctx.Results)-displayCount)
-				break
-			}
-
-			emoji := "🎬"
-			typeName := "电影"
-			if result.MediaType == "tv" {
-				emoji = "📺"
-				typeName = "剧集"
-			}
-
-			title := result.Title
-			if title == "" {
-				title = result.OriginalTitle
-			}
-
-			msg += fmt.Sprintf("%d. %s *%s*", i+1, emoji, title)
-
-			if result.Year != "" {
-				msg += fmt.Sprintf(" (%s)", result.Year)
-			}
-
-			if result.Rating > 0 {
-				msg += fmt.Sprintf(" - %.1f分", result.Rating)
-			}
-
-			msg += fmt.Sprintf(" - %s\n", typeName)
-		}
-
-		msg += "\n💡 点击下方按钮快速请求"
-
-		// Create inline keyboard with quick request buttons
-		keyboard := &TelegramInlineKeyboard{
-			InlineKeyboard: [][]map[string]string{},
-		}
-
-		for i, result := range ctx.Results {
-			if i >= displayCount {
-				break
-			}
-
-			title := result.Title
-			if title == "" {
-				title = result.OriginalTitle
-			}
-			if len(title) > 20 {
-				title = title[:20] + "..."
-			}
-
-			emoji := "🎬"
-			if result.MediaType == "tv" {
-				emoji = "📺"
-			}
-
-			btnText := fmt.Sprintf("%s %s", emoji, title)
-			callbackData := fmt.Sprintf("request_%d_%s", result.TmdbID, result.MediaType)
-
-			row := []map[string]string{
-				{"text": btnText, "callback_data": callbackData},
-			}
-			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, row)
-		}
-
-		sendGroupMessageWithKeyboard(chatID, msg, keyboard)
-		return
-	}
-
-	// Fall back to basic search
+	// Use basic search
 	handleBasicSearchCommand(userID, query, chatID)
 }
 

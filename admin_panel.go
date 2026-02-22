@@ -25,7 +25,6 @@ type AdminPanelData struct {
 	PendingRequests []JellyseerrRequest
 	Stats           Statistics
 	LastUpdated     time.Time
-	StuckRequests   []*TrackedRequest
 }
 
 // AdminActionHandler handles admin actions
@@ -39,7 +38,6 @@ const (
 	AdminActionApprove      AdminActionType = "approve"      // Approve a request
 	AdminActionDecline      AdminActionType = "decline"      // Decline a request
 	AdminActionStats        AdminActionType = "stats"        // View statistics
-	AdminActionStuck        AdminActionType = "stuck"        // View stuck requests
 	AdminActionUsers        AdminActionType = "users"        // View user list
 	AdminActionAdmins       AdminActionType = "admins"       // Manage admins
 	AdminActionTrends       AdminActionType = "trends"       // View trends
@@ -69,7 +67,6 @@ func (m *AdminPanelManager) registerHandlers() {
 	m.actionHandlers[string(AdminActionApprove)] = m.handleApprove
 	m.actionHandlers[string(AdminActionDecline)] = m.handleDecline
 	m.actionHandlers[string(AdminActionStats)] = m.handleStats
-	m.actionHandlers[string(AdminActionStuck)] = m.handleStuck
 	m.actionHandlers[string(AdminActionUsers)] = m.handleUsers
 	m.actionHandlers[string(AdminActionAdmins)] = m.handleAdmins
 	m.actionHandlers[string(AdminActionTrends)] = m.handleTrends
@@ -150,7 +147,6 @@ func (m *AdminPanelManager) buildMainKeyboard(hasPending bool) *TelegramInlineKe
 
 	// More options row
 	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []map[string]string{
-		{"text": "🔥 超时请求", "callback_data": "admin_stuck"},
 		{"text": "🎬 热门媒体", "callback_data": "admin_media"},
 	})
 
@@ -214,9 +210,6 @@ func (m *AdminPanelManager) getPanelData() (*AdminPanelData, error) {
 	statsMutex.Lock()
 	data.Stats = stats
 	statsMutex.Unlock()
-
-	// Get stuck requests
-	data.StuckRequests = GetStuckRequests()
 
 	// Update cache
 	m.panelCache[0] = data // Use 0 as shared key
@@ -381,35 +374,6 @@ func (m *AdminPanelManager) handleStats(userID int64, params map[string]string) 
 	msg += "*其他:*\n"
 	msg += fmt.Sprintf("🐛 问题报告: %d\n", stats.IssueCount)
 	msg += fmt.Sprintf("📀 新增媒体: %d\n", stats.MediaAdded)
-
-	return msg, m.buildBackKeyboard(), nil
-}
-
-func (m *AdminPanelManager) handleStuck(userID int64, params map[string]string) (string, *TelegramInlineKeyboard, error) {
-	stuck := GetStuckRequests()
-
-	if len(stuck) == 0 {
-		msg := "✅ *没有超时的请求*\n\n"
-		msg += "所有请求都在正常处理中"
-		return msg, m.buildBackKeyboard(), nil
-	}
-
-	msg := fmt.Sprintf("⚠️ *超时未处理请求* (%d)\n\n", len(stuck))
-
-	for i, req := range stuck {
-		if i >= 10 {
-			msg += fmt.Sprintf("\n... 还有 %d 个请求", len(stuck)-10)
-			break
-		}
-
-		emoji := "🎬"
-		if req.MediaType == "tv" {
-			emoji = "📺"
-		}
-
-		msg += fmt.Sprintf("%d. %s %s\n", i+1, emoji, req.MediaTitle)
-		msg += fmt.Sprintf("   👤 %s | ⏱️ %s\n\n", req.RequesterName, formatDuration(time.Since(req.RequestedAt)))
-	}
 
 	return msg, m.buildBackKeyboard(), nil
 }
