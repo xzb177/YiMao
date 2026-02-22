@@ -2945,4 +2945,25 @@ trends - 请求趋势
 | | - **Dockerfile**: 已更新为使用新架构 (cmd/server/main.go) |
 | | - **备份文件**: Dockerfile.backup |
 | | - **迁移完成**: 新架构已完全替代旧架构 |
-| | - **下一步**: 迁移剩余功能 (AI 推荐、用户绑定、配额管理等) |
+| 2026-02-22 | **功能完善与迁移** ✨ |
+| | - **搜索功能**: |
+| |   - 创建 SearchService (internal/services/search.go) |
+| |   - 更新 SearchHandler 支持搜索查询和分页 |
+| |   - 支持文本消息搜索输入 |
+| | - - **AI 推荐功能**: |
+| |   - 创建 AIService (internal/services/ai.go) |
+| |   - 更新 AIHandler 支持热门/剧集/新片/随机推荐 |
+| |   - 使用 Jellyseerr 搜索 API 作为回退 |
+| |   - 缓存推荐结果到 session |
+| | - **请求功能**: |
+| |   - RequestHandler 支持电影和剧集请求 |
+| |   - 配额检查 |
+| |   - Jellyseerr API 集成 |
+| | - **用户绑定**: |
+| |   - LinkHandler 处理绑定流程 |
+| |   - MyRequestsHandler 显示请求列表 |
+| | - **回调格式兼容**: |
+| |   - 解析器支持 start_* 格式自动转换 |
+| |   - 支持 /telegram-webhook 路由 |
+| | - **部署状态**: ✅ 运行中 |
+| | - **编译状态**: ✅ 通过编译 |

@@ -62,7 +62,7 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 		msg.Newline()
 
 		for i, req := range requests {
-			if i >= 10 { // Limit to 10 requests
+			if i >= 10 {
 				msg.Textf("... 还有 %d 条请求", len(requests)-10)
 				break
 			}
@@ -189,116 +189,5 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-// AIHandler handles AI recommendation callbacks
-type AIHandler struct {
-	cfg         *config.Config
-	sessMgr     *session.Manager
-	telegram    *services.TelegramClient
-	jellyseerr  *services.JellyseerrClient
-}
-
-func NewAIHandler(
-	cfg *config.Config,
-	sessMgr *session.Manager,
-	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
-) *AIHandler {
-	return &AIHandler{
-		cfg:        cfg,
-		sessMgr:    sessMgr,
-		telegram:   telegram,
-		jellyseerr: jellyseerr,
-	}
-}
-
-func (h *AIHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	if !h.cfg.EnableAI {
-		return &callback.Response{
-			Text:        "❌ AI 推荐功能未启用",
-			CallbackMsg: "功能未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Get AI sub-action from params
-	subAction, hasAction := ctx.Callback.Params["type"]
-
-	if !hasAction {
-		// Show AI menu
-		return h.showAIMenu()
-	}
-
-	switch subAction {
-	case "trending":
-		return h.handleTrending(ctx)
-	case "hot":
-		return h.handleHot(ctx)
-	case "new":
-		return h.handleNew(ctx)
-	case "random":
-		return h.handleRandom(ctx)
-	default:
-		return &callback.Response{
-			Text:        "❌ 未知的 AI 推荐类型",
-			CallbackMsg: "未知类型",
-			ShowAlert:   true,
-		}, nil
-	}
-}
-
-func (h *AIHandler) showAIMenu() (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🤖 AI 智能推荐").Newline()
-	msg.Newline()
-	msg.Text("请选择推荐类型：").Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门推荐", "ai:type:trending")
-	kb.AddButton("📺 热门剧集", "ai:type:hot")
-	kb.NewRow()
-	kb.AddButton("🆕 新片上线", "ai:type:new")
-	kb.AddButton("🎲 随机推荐", "ai:type:random")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-func (h *AIHandler) handleTrending(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "🔥 正在加载热门推荐...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
-	}, nil
-}
-
-func (h *AIHandler) handleHot(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "📺 正在加载热门剧集...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
-	}, nil
-}
-
-func (h *AIHandler) handleNew(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "🆕 正在加载新片...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
-	}, nil
-}
-
-func (h *AIHandler) handleRandom(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "🎲 正在随机推荐...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
 	}, nil
 }
