@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -317,4 +318,78 @@ func (s *UserSession) ClearNavHistory() {
 
 	s.NavHistory = nil
 	log.Printf("[Session] Cleared nav history")
+}
+
+// AIRecommendationItem represents a cached AI recommendation item
+type AIRecommendationItem struct {
+	TmdbID    int
+	Title     string
+	Overview  string
+	Reason    string
+	Year      int
+	Rating    float64
+	MediaType string
+}
+
+// CacheAIItem caches an AI recommendation item for detail view
+func (s *UserSession) CacheAIItem(item *AIRecommendationItem) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.Context == nil {
+		s.Context = make(map[string]interface{})
+	}
+
+	// Store in context map with TMDB ID as key
+	cacheKey := fmt.Sprintf("ai_item_%d", item.TmdbID)
+	s.Context[cacheKey] = item
+
+	// Also maintain a list of recently cached items for cleanup
+	cachedList, _ := s.Context["ai_cached_items"].([]int)
+	cachedList = append(cachedList, item.TmdbID)
+
+	// Keep only last 20 items
+	if len(cachedList) > 20 {
+		cachedList = cachedList[len(cachedList)-20:]
+	}
+	s.Context["ai_cached_items"] = cachedList
+
+	log.Printf("[Session] Cached AI item: TMDB=%d, Title=%s", item.TmdbID, item.Title)
+}
+
+// GetCachedAIItem retrieves a cached AI recommendation item
+func (s *UserSession) GetCachedAIItem(tmdbID int) *AIRecommendationItem {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.Context == nil {
+		return nil
+	}
+
+	cacheKey := fmt.Sprintf("ai_item_%d", tmdbID)
+	if item, exists := s.Context[cacheKey].(*AIRecommendationItem); exists {
+		return item
+	}
+
+	return nil
+}
+
+// CacheAIResults caches multiple AI recommendation items at once
+func (s *UserSession) CacheAIResults(results interface{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.Context == nil {
+		s.Context = make(map[string]interface{})
+	}
+
+	// Handle different result types
+	switch items := results.(type) {
+	case []*AIRecommendationItem:
+		for _, item := range items {
+			cacheKey := fmt.Sprintf("ai_item_%d", item.TmdbID)
+			s.Context[cacheKey] = item
+		}
+		log.Printf("[Session] Cached %d AI items", len(items))
+	}
 }

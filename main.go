@@ -20,6 +20,7 @@ import (
 
 	"emby-telegram-bot/ai"
 	"emby-telegram-bot/bot"
+	"emby-telegram-bot/session"
 )
 
 // EmbyWebhookPayload represents the incoming webhook from Emby
@@ -2100,11 +2101,53 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			}
 		}
 
-		startMsg := fmt.Sprintf("👋 *欢迎回来，%s！*\n\n", displayName)
-		startMsg += "我可以帮你搜索和请求影视内容\n\n"
-		startMsg += "💡 使用 /help 查看帮助"
+		// 根据时间段生成问候
+		hour := time.Now().Hour()
+		var greeting string
+		switch {
+		case hour >= 5 && hour < 9:
+			greeting = "早安"
+		case hour >= 9 && hour < 12:
+			greeting = "上午好"
+		case hour >= 12 && hour < 14:
+			greeting = "中午好"
+		case hour >= 14 && hour < 18:
+			greeting = "下午好"
+		case hour >= 18 && hour < 23:
+			greeting = "晚上好"
+		default:
+			greeting = "夜深了"
+		}
 
-		sendPrivateMessage(update.Message.From.ID, startMsg, nil)
+		startMsg := fmt.Sprintf("👋 *%s，%s！*\n\n", greeting, displayName)
+		startMsg += "今天想看点什么？\n\n"
+		startMsg += "━━━━━━━━━━━━━━━━━━━━━━\n\n"
+
+		// 创建内联键盘
+		// 从 botToken 提取机器人用户名
+		botUsername := strings.TrimPrefix(botToken, ":")
+		if idx := strings.Index(botUsername, ":"); idx > 0 {
+			botUsername = botUsername[:idx]
+		}
+
+		keyboard := &TelegramInlineKeyboard{
+			InlineKeyboard: [][]map[string]string{
+				{
+					{"text": "🔍 搜索影片", "callback_data": "start_search"},
+					{"text": "🤖 AI 推荐", "callback_data": "start_ai"},
+				},
+				{
+					{"text": "🔥 热门榜单", "callback_data": "start_trending"},
+					{"text": "📋 我的请求", "callback_data": "start_my"},
+				},
+				{
+					{"text": "🔗 绑定账号", "callback_data": "start_link"},
+					{"text": "❓ 帮助", "callback_data": "start_help"},
+				},
+			},
+		}
+
+		sendPrivateMessage(update.Message.From.ID, startMsg, keyboard)
 
 	case "/help":
 		// /help command - Comprehensive help guide
@@ -2353,6 +2396,26 @@ func handlePrivateMessage(update *TelegramUpdate) {
 			if err != nil {
 				sendPrivateMessage(userID, fmt.Sprintf("❌ 获取推荐失败: %v", err), nil)
 				return
+			}
+
+			// 🎯 缓存 AI 推荐项到 session
+			if botModule != nil {
+				if userSession := botModule.GetSession(userID); userSession != nil {
+					for _, item := range results {
+						if item.TmdbID > 0 {
+							aiItem := &session.AIRecommendationItem{
+								TmdbID:    item.TmdbID,
+								Title:     item.Title,
+								Reason:    item.Reason,
+								Year:      item.Year,
+								Rating:    item.Rating,
+								MediaType: item.MediaType,
+							}
+							userSession.CacheAIItem(aiItem)
+						}
+					}
+					log.Printf("[AI Cache] Cached %d random items for user %d", len(results), userID)
+				}
 			}
 
 			// Format results with buttons
@@ -3424,7 +3487,7 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			} else if isAISelection {
 				// Handle AI result button selection
-				// Format: ai_<source>_<tmdbID>_<type>
+				// Format: ai_<source>_<tmdbID>_<type>[:base64 encoded metadata]
 				parts := strings.Split(data, "_")
 				if len(parts) >= 4 {
 					source := parts[1] // trending, hot_tv, new_movie, random
@@ -3453,15 +3516,35 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 						userSession.PushNavEntry(sourceCallback, "", "")
 					}
 
-					// 获取完整媒体信息
+					// 🎯 创新方案：从 session 获取缓存的 AI 推荐结果
 					var mediaTitle string
 					var mediaOverview string
+					var aiReason string
+					var itemYear int
+					var itemRating float64
 
-					// 尝试从 Jellyseerr 获取完整信息
-					if jellyseerrClient != nil {
+					// 首先尝试从 session 获取 AI 推荐的原始信息
+					if userSession != nil {
+						if cachedItem := userSession.GetCachedAIItem(tmdbID); cachedItem != nil {
+							mediaTitle = cachedItem.Title
+							aiReason = cachedItem.Reason
+							itemYear = cachedItem.Year
+							itemRating = cachedItem.Rating
+							log.Printf("[AI Detail] Got cached info for TMDB %d: %s", tmdbID, mediaTitle)
+						}
+					}
+
+					// 如果 session 没有缓存，尝试从 Jellyseerr 获取完整信息
+					if mediaTitle == "" && jellyseerrClient != nil {
 						if mediaInfo, err := jellyseerrClient.GetMediaInfo(tmdbID); err == nil && mediaInfo != nil {
 							mediaTitle = mediaInfo.Title
 							mediaOverview = mediaInfo.Overview
+							if mediaInfo.ReleaseDate != "" {
+								if len(mediaInfo.ReleaseDate) >= 4 {
+									year, _ := strconv.Atoi(mediaInfo.ReleaseDate[:4])
+									itemYear = year
+								}
+							}
 						}
 					}
 
@@ -3481,23 +3564,43 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 						typeLabel = "剧集"
 					}
 
-					// 如果没有获取到标题，使用默认
-					if mediaTitle == "" {
-						mediaTitle = fmt.Sprintf("TMDB ID: %d", tmdbID)
-					}
-
+					// 🎨 沉浸式详情页面
 					sb.WriteString(fmt.Sprintf("┌─ ✨ %s详情 ─────────┐\n\n", typeLabel))
-					sb.WriteString(fmt.Sprintf("%s *%s*\n", emoji, mediaTitle))
+					sb.WriteString(fmt.Sprintf("%s *%s*", emoji, mediaTitle))
+
+					// 添加年份和评分
+					if itemYear > 0 || itemRating > 0 {
+						sb.WriteString(" · ")
+						if itemYear > 0 {
+							sb.WriteString(fmt.Sprintf("%d", itemYear))
+						}
+						if itemRating > 0 {
+							if itemYear > 0 {
+								sb.WriteString(" · ")
+							}
+							sb.WriteString(fmt.Sprintf("⭐%.1f", itemRating))
+						}
+					}
+					sb.WriteString("\n\n")
+
+					sb.WriteString(fmt.Sprintf("🏷️ TMDB: %d\n", tmdbID))
 					sb.WriteString(fmt.Sprintf("🏷️ 类型: %s\n\n", typeLabel))
 
+					// 🎯 AI 推荐理由优先显示
+					if aiReason != "" {
+						sb.WriteString(fmt.Sprintf("✨ *推荐理由*\n%s\n\n", aiReason))
+					}
+
+					// Jellyfin/简介
 					if mediaOverview != "" {
 						// 截断过长的简介
 						overview := mediaOverview
-						if len(overview) > 100 {
-							overview = overview[:97] + "..."
+						if len(overview) > 150 {
+							overview = overview[:147] + "..."
 						}
-						sb.WriteString(fmt.Sprintf("\n📝 %s\n", overview))
+						sb.WriteString(fmt.Sprintf("📝 *简介*\n%s\n", overview))
 					}
+
 					sb.WriteString("\n━━━━━━━━━━━━━━━\n\n")
 					sb.WriteString("💡 点击下方按钮发起请求\n")
 
@@ -3744,6 +3847,89 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 					go backgroundTask()
 				}
 
+			case "start_ai":
+				// AI 推荐 - 显示 AI 推荐菜单
+				newMsg = `🤖 *AI 智能推荐*
+
+━━━━━━━━━━━━━━━━━━━━━━
+
+请选择推荐类型：
+
+🔥 *热门推荐* - AI 精选热门内容
+📺 *热播剧集* - 正在热播的剧集
+🎬 *最新电影* - 最新上映的电影
+🎲 *随机推荐* - 随机推荐内容
+
+💡 *AI 推荐*
+根据你的喜好智能推荐
+使用 /ai 命令开始对话
+
+━━━━━━━━━━━━━━━━━━━━━━`
+				newKeyboard = &TelegramInlineKeyboard{
+					InlineKeyboard: [][]map[string]string{
+						{
+							{"text": "🔥 热门推荐", "callback_data": "search_trending"},
+							{"text": "📺 热播剧集", "callback_data": "search_tv_hot"},
+						},
+						{
+							{"text": "🎬 最新电影", "callback_data": "search_movie_new"},
+							{"text": "🎲 随机推荐", "callback_data": "action_random"},
+						},
+					},
+				}
+				editMessage = true
+
+			case "start_search":
+				// 搜索指引
+				newMsg = `🔍 *搜索影片*
+
+直接输入影片名称即可搜索
+
+💡 *搜索技巧*
+• 输入中文名：复仇者联盟
+• 输入英文名：Avatar
+• 输入年份：2024年电影
+• 输入类型：科幻剧
+
+现在就可以开始搜索！`
+				editMessage = true
+
+			case "start_trending":
+				// 热门榜单
+				var backgroundTask func()
+				newMsg, newKeyboard, editMessage, backgroundTask = handleTrendingSearchCallback(userID, messageID)
+				if backgroundTask != nil {
+					go backgroundTask()
+				}
+
+			case "start_my":
+				// 我的请求
+				go handleMyRequestsPrivate(userID)
+				newMsg = `📋 *我的请求*
+
+正在获取您的请求列表...
+
+💡 *提示*
+使用 /link 绑定账号后可查看详细信息`
+				editMessage = true
+
+			case "start_link":
+				// 绑定账号
+				newMsg = `🔗 *绑定账号*
+
+请使用命令绑定你的账号：
+
+/link 账号 密码
+
+💡 *示例*
+/link user123 pass456`
+				editMessage = true
+
+			case "start_help":
+				// 帮助
+				newMsg = GetHelpMessage(LevelNormal)
+				editMessage = true
+
 			case "guide_link", "guide_search", "guide_request":
 				// New user guide callbacks
 				newMsg, newKeyboard, editMessage = handleGuideCallback(userID, action)
@@ -3847,6 +4033,26 @@ func telegramWebhookHandler(w http.ResponseWriter, r *http.Request) {
 								sb.WriteString("┌─── 🎲 随机推荐 ────┐\n\n")
 								sb.WriteString("  📅 更新时间: 刚刚\n\n")
 								sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+								// 🎯 缓存 AI 推荐项到 session
+								if botModule != nil {
+									if userSession := botModule.GetSession(uid); userSession != nil {
+										for _, item := range results {
+											if item.TmdbID > 0 {
+												aiItem := &session.AIRecommendationItem{
+													TmdbID:    item.TmdbID,
+													Title:     item.Title,
+													Reason:    item.Reason,
+													Year:      item.Year,
+													Rating:    item.Rating,
+													MediaType: item.MediaType,
+												}
+												userSession.CacheAIItem(aiItem)
+											}
+										}
+										log.Printf("[AI Cache] Cached %d random items for user %d", len(results), uid)
+									}
+								}
 
 								var keyboard [][]map[string]string
 
@@ -5425,7 +5631,7 @@ func handleTrendingSearchCallback(userID int64, messageID int64) (string, *Teleg
 		cached := trendingAIManager.GetCachedResults(cacheKey)
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
-			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🔥 热门推荐 (AI精选)", cacheKey)
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🔥 热门推荐 (AI精选)", cacheKey, userID)
 			return msg, keyboard, true, nil
 		}
 
@@ -5439,7 +5645,7 @@ func handleTrendingSearchCallback(userID int64, messageID int64) (string, *Teleg
 			results, err := trendingAIManager.GetTrendingMovies(8)
 			if err == nil && len(results) > 0 {
 				log.Printf("[Callback] Got %d trending results, editing message", len(results))
-				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🔥 热门推荐 (AI精选)", "trending_movies")
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🔥 热门推荐 (AI精选)", "trending_movies", userID)
 				if messageID > 0 {
 					editPrivateMessage(userID, messageID, msg, keyboard)
 				} else {
@@ -5495,7 +5701,7 @@ func handleHotTVSearchCallback(userID int64, messageID int64) (string, *Telegram
 		cached := trendingAIManager.GetCachedResults(cacheKey)
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
-			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "📺 热播剧集 (AI精选)", cacheKey)
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "📺 热播剧集 (AI精选)", cacheKey, userID)
 			return msg, keyboard, true, nil
 		}
 
@@ -5508,7 +5714,7 @@ func handleHotTVSearchCallback(userID int64, messageID int64) (string, *Telegram
 			results, err := trendingAIManager.GetHotTVShows(8)
 			if err == nil && len(results) > 0 {
 				log.Printf("[Callback] Got %d hot TV results, editing message", len(results))
-				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "📺 热播剧集 (AI精选)", "hot_tv_shows")
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "📺 热播剧集 (AI精选)", "hot_tv_shows", userID)
 				if messageID > 0 {
 					editPrivateMessage(userID, messageID, msg, keyboard)
 				} else {
@@ -5566,7 +5772,7 @@ func handleNewMoviesSearchCallback(userID int64, messageID int64) (string, *Tele
 		cached := trendingAIManager.GetCachedResults(cacheKey)
 		if cached != nil && len(cached) > 0 {
 			// Fresh cache - display immediately
-			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🎬 最新上映 (AI精选)", cacheKey)
+			msg, keyboard := buildTrendingResultsMessageWithKeyboard(cached, "🎬 最新上映 (AI精选)", cacheKey, userID)
 			return msg, keyboard, true, nil
 		}
 
@@ -5579,7 +5785,7 @@ func handleNewMoviesSearchCallback(userID int64, messageID int64) (string, *Tele
 			results, err := trendingAIManager.GetNewReleases(8)
 			if err == nil && len(results) > 0 {
 				log.Printf("[Callback] Got %d new release results, editing message", len(results))
-				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🎬 最新上映 (AI精选)", "new_releases")
+				msg, keyboard := buildTrendingResultsMessageWithKeyboard(results, "🎬 最新上映 (AI精选)", "new_releases", userID)
 				if messageID > 0 {
 					editPrivateMessage(userID, messageID, msg, keyboard)
 				} else {
@@ -5733,13 +5939,33 @@ func buildTrendingResultsMessage(results []*ai.TrendingResult, title, cacheKey s
 }
 
 // buildTrendingResultsMessageWithKeyboard builds a trending results message with number buttons
-func buildTrendingResultsMessageWithKeyboard(results []*ai.TrendingResult, title, cacheKey string) (string, *TelegramInlineKeyboard) {
+func buildTrendingResultsMessageWithKeyboard(results []*ai.TrendingResult, title, cacheKey string, userID int64) (string, *TelegramInlineKeyboard) {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("┌─── %s ────┐\n\n", title))
 	sb.WriteString(fmt.Sprintf("  📅 更新时间: %s\n", trendingAIManager.FormatUpdateTime(cacheKey)))
 	sb.WriteString(fmt.Sprintf("  📄 共 %d 条结果\n\n", len(results)))
 	sb.WriteString("  ━━━━━━━━━━━━━━━  \n\n")
+
+	// 🎯 创新方案：缓存 AI 推荐项到 session，以便详情页使用
+	if botModule != nil {
+		if userSession := botModule.GetSession(userID); userSession != nil {
+			for _, item := range results {
+				if item.TmdbID > 0 {
+					aiItem := &session.AIRecommendationItem{
+						TmdbID:    item.TmdbID,
+						Title:     item.Title,
+						Reason:    item.Reason,
+						Year:      item.Year,
+						Rating:    item.Rating,
+						MediaType: item.MediaType,
+					}
+					userSession.CacheAIItem(aiItem)
+				}
+			}
+			log.Printf("[AI Cache] Cached %d items for user %d", len(results), userID)
+		}
+	}
 
 	// Create keyboard with number buttons (4 per row)
 	var keyboard [][]map[string]string
