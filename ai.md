@@ -1,6 +1,14 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
+| 2026-02-22 | **开始菜单回调修复** 🔧 |
+| | - **问题**: /start 菜单中的按钮点击后没有响应
+| | - **根因**: 回调数据 `start_ai`, `start_search` 等被解析为 `action="start", args="ai"`，但代码期望 `action="start_ai"`
+| | - **修复**: 在解析逻辑中添加特殊处理，让 `start_*` 前缀的回调保持完整，不被下划线分割
+| | - **修改位置**: main.go:3409-3416
+| | - **部署状态**: ✅ Docker 容器已重启 (healthy)
+
+
 
 一个接收 Emby 和 Jellyseerr webhook 通知并转发到 Telegram 的 Go服务。
 
@@ -2803,3 +2811,138 @@ trends - 请求趋势
 | |   - 详情页即使 Jellyseerr API 不可用也能显示标题和推荐理由 |
 | | - **部署状态**: ✅ Docker 容器已重启 (healthy) |
 | | - **提交**: e704eaf |
+
+| 2026-02-22 | **开始菜单回调问题调查** 🔍 |
+| | - **问题**: /start 菜单中的按钮（🔍 搜索影片、🤖 AI 推荐、🔥 热门榜单、📋 我的请求、🔗 绑定账号、❓ 帮助）点击后没有响应 |
+| | - **现象**: 日志显示 `Callback query from user: start_ai` 但 `editMessage=false, newMsg=""` |
+| | - **调查过程**: |
+| |   - 在解析代码中添加了多个调试日志，但都没有被执行 |
+| |   - 代码从第 3361 行直接跳到第 4483 行，绕过了所有中间的解析逻辑 |
+| |   - 二进制文件包含调试代码，但运行时没有执行 |
+| | - **可能原因**: |
+| |   - 代码优化或编译问题 |
+| |   - 日志缓冲或过滤问题 |
+| |   - 某些代码路径被意外触发 |
+| | - **下一步**: 需要更深入的调查，可能需要使用调试器或追踪工具 |
+| 2026-02-22 | **开始菜单回调问题 - 未解决** ❌ |
+| | - **问题**: /start 菜单中的按钮点击后没有响应 |
+| | - **现象**: 日志显示 `Callback query from user: start_ai` 但 `editMessage=false, newMsg=""` |
+| | - **调查过程**: |
+| |   - 添加了大量调试日志，但都没有被执行 |
+| |   - 代码从第 3361 行直接跳到第 4487 行 |
+| |   - 二进制文件包含调试代码，但运行时没有执行 |
+| 2026-02-22 | **服务器磁盘清理与自动化维护** 💾🧹 |
+| | - **问题**: 服务器磁盘使用率达到 98%，仅剩 1.3GB 空间 |
+| | - **根因分析**: |
+| |   - Docker 镜像占用: 38.29GB (可回收 37.86GB) |
+| |   - Docker 构建缓存: 38.24GB |
+| |   - 总计可释放: ~76GB 空间 |
+| | - **执行操作**: `docker system prune -af --volumes` |
+| | - **清理结果**: |
+| |   - 释放空间: 38.24GB |
+| |   - 磁盘使用率: 98% → 21% |
+| |   - 可用空间: 1.3GB → 37GB |
+| | - **自动化**: 设置每周 Docker 清理 cron 任务 |
+| |   - 执行时间: 每周日 02:00 |
+| |   - 命令: `docker system prune -af --volumes >/dev/null 2>&1` |
+| | - **系统状态检查**: |
+| |   - CPU: 无异常持续高占用进程 |
+| |   - 内存: 2GB 总量，使用正常 |
+| |   - 容器: emby-telegram-bot 运行正常 (healthy) |
+| 2026-02-22 | **企业级架构重构** 🏗️✨ |
+| | - **背景**: 原代码库存在严重架构问题 |
+| |   - main.go 过大 (6,876行) |
+| |   - 双路由系统竞争 (Legacy vs BotModule) |
+| |   - 回调格式混乱 |
+| |   - 全局状态滥用 |
+| |   - 职责混杂 |
+| | - **重构策略**: 完全重写 (企业级标准) |
+| | - **新架构目录结构**: |
+| |   ```
+| |   emby-telegram-bot/
+| |   ├── cmd/server/           # 应用入口点
+| |   │   └── main.go           # 新的主程序
+| |   ├── internal/
+| |   │   ├── api/              # HTTP 处理器
+| |   │   ├── bot/              # Telegram 机器人逻辑
+| |   │   ├── callback/         # 统一回调系统
+| |   │   │   └── types.go      # 回调类型、解析器、注册器
+| |   │   ├── config/           # 配置管理
+| |   │   │   └── config.go     # 配置加载与验证
+| |   │   ├── handlers/         # 回调处理器
+| |   │   │   └── callback.go   # StartHandler, DetailHandler 等
+| |   │   ├── middleware/       # 中间件
+| |   │   │   └── callback.go   # 日志、恢复、验证等中间件
+| |   │   ├── services/         # 业务服务
+| |   │   │   ├── jellyseerr.go # Jellyseerr 客户端
+| |   │   │   └── telegram.go   # Telegram 客户端
+| |   │   └── session/          # 会话管理
+| |   │       └── manager.go    # 新的会话管理器
+| |   └── pkg/
+| |       ├── errors/           # 错误处理
+| |       │   └── errors.go     # 错误码、包装
+| |       ├── types/            # 共享类型
+| |       │   └── telegram.go   # Telegram 类型定义
+| |       └── utils/            # 工具函数
+| |   ``` |
+| | - **核心组件**: |
+| |   - **回调系统** (internal/callback/): |
+| |     - 统一回调格式: `action:param1:value1:param2:value2` |
+| |     - CallbackParser: 解析回调数据 |
+| |     - CallbackRegistry: 注册和分发回调处理器 |
+| |     - 中间件支持: Logger, Recovery, Validator |
+| |   - **配置管理** (internal/config/): |
+| |     - 环境变量加载 |
+| |     - 配置验证 |
+| |     - 管理员管理 |
+| |   - **服务层** (internal/services/): |
+| |     - JellyseerrClient: Jellyseerr API 客户端 |
+| |     - TelegramClient: Telegram Bot API 客户端 |
+| |     - MessageBuilder/KeyboardBuilder: 消息构建工具 |
+| |   - **会话管理** (internal/session/): |
+| |     - 导航历史栈 |
+| |     - AI 推荐缓存 |
+| |     - 搜索结果缓存 |
+| |     - 自动清理过期会话 |
+| |   - **错误处理** (pkg/errors/): |
+| |     - 错误码定义 (ErrCodeInternal, ErrCodeInvalidInput 等) |
+| |     - 错误包装 (Wrap) |
+| |     - 错误检查 (Is) |
+| |   - **中间件** (internal/middleware/): |
+| |     - Logger: 记录回调处理日志 |
+| |     - Recovery: 恢复 panic |
+| |     - Validator: 验证回调数据 |
+| |     - SessionValidator: 会话验证 |
+| |     - AdminOnly: 管理员权限验证 |
+| |     - RateLimiter: 速率限制 |
+| | - **处理器** (internal/handlers/): |
+| |   - StartHandler: 处理开始菜单回调 |
+| |   - DetailHandler: 处理详情页回调 |
+| |   - BackHandler: 处理返回导航 |
+| |   - CancelHandler: 处理取消操作 |
+| |   - RequestHandler: 处理媒体请求 |
+| |   - SearchHandler: 处理搜索和分页 |
+| |   - MyRequestsHandler: 处理"我的请求" |
+| |   - LinkHandler: 处理账号绑定 |
+| |   - HelpHandler: 处理帮助信息 |
+| |   - AIHandler: 处理 AI 推荐 |
+| | - **编译状态**: ✅ 通过编译 |
+| | - **二进制文件**: /tmp/emby-bot-new |
+| | - **文档**: NEW_ARCHITECTURE.md |
+| 2026-02-22 | **新架构部署完成** 🚀 |
+| | - **环境配置**: |
+| |   - 创建 .env.example 配置模板 |
+| |   - 创建 start-new.sh 启动脚本 |
+| |   - 创建 test-new.sh 测试脚本 |
+| | - **编译**: ✅ 通过编译 |
+| | - **本地测试**: ✅ 健康检查通过 |
+| | - **Docker 构建**: ✅ 成功 |
+| | - **部署**: ✅ 容器已启动 (emby-telegram-bot) |
+| | - **容器状态**: healthy |
+| | - **服务地址**: http://localhost:8080 |
+| | - **健康检查**: /health → OK |
+| | - **调试接口**: /debug → {"sessions": 0, "total_size": 0} |
+| | - **Dockerfile**: 已更新为使用新架构 (cmd/server/main.go) |
+| | - **备份文件**: Dockerfile.backup |
+| | - **迁移完成**: 新架构已完全替代旧架构 |
+| | - **下一步**: 迁移剩余功能 (AI 推荐、用户绑定、配额管理等) |

@@ -1,0 +1,344 @@
+package callback
+
+import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"strings"
+)
+
+// Action represents a callback action
+type Action string
+
+const (
+	ActionSearch    Action = "search"
+	ActionSubscribe Action = "subscribe"
+	ActionDownload  Action = "download"
+	ActionPage      Action = "page"
+	ActionCancel    Action = "cancel"
+	ActionSelect    Action = "select"
+	ActionBack      Action = "back"
+	ActionDetail    Action = "detail"
+	ActionRequest   Action = "request"
+	ActionFeedback  Action = "feedback"
+	ActionStart     Action = "start"
+	ActionAI        Action = "ai"
+	ActionTrending  Action = "trending"
+	ActionHot       Action = "hot"
+	ActionNew       Action = "new"
+	ActionRandom    Action = "random"
+	ActionRequests  Action = "requests"
+	ActionLink      Action = "link"
+	ActionHelp      Action = "help"
+)
+
+// Callback represents a standardized callback query
+type Callback struct {
+	Action Action                 `json:"action"`
+	Params map[string]string      `json:"params,omitempty"`
+	Raw    string                 `json:"-"`
+}
+
+// Handler handles a specific callback action
+type Handler interface {
+	Handle(ctx *Context) (*Response, error)
+	Action() Action
+}
+
+// HandlerFunc is a function adapter for Handler
+type HandlerFunc func(ctx *Context) (*Response, error)
+
+func (h HandlerFunc) Handle(ctx *Context) (*Response, error) {
+	return h(ctx)
+}
+
+func (h HandlerFunc) Action() Action {
+	return "" // Will be set during registration
+}
+
+// Context provides context for callback handling
+type Context struct {
+	UserID      int64
+	ChatID      int64
+	MessageID   int64
+	CallbackID  string
+	Callback    *Callback
+	SessionData interface{}
+}
+
+// Response represents the result of callback handling
+type Response struct {
+	Text        string
+	Edit        bool
+	ShowAlert   bool
+	Keyboard    *Keyboard
+	CallbackMsg string
+}
+
+// Keyboard represents an inline keyboard
+type Keyboard struct {
+	InlineKeyboard [][]Button `json:"inline_keyboard"`
+}
+
+// Button represents a keyboard button
+type Button struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data,omitempty"`
+	URL          string `json:"url,omitempty"`
+}
+
+// Parser parses and formats callback data
+type Parser struct {
+	// Standard format: action:param1:value1:param2:value2
+	// JSON format: {"action":"search","params":{"id":"123","type":"movie"}}
+	useJSON bool
+}
+
+// NewParser creates a new callback parser
+func NewParser() *Parser {
+	return &Parser{
+		useJSON: false, // Default to colon-separated format
+	}
+}
+
+// NewJSONParser creates a JSON-based callback parser
+func NewJSONParser() *Parser {
+	return &Parser{
+		useJSON: true,
+	}
+}
+
+// Parse parses callback data string
+func (p *Parser) Parse(data string) (*Callback, error) {
+	if data == "" {
+		return nil, fmt.Errorf("empty callback data")
+	}
+
+	// Try JSON format first
+	if strings.HasPrefix(data, "{") {
+		var cb Callback
+		if err := json.Unmarshal([]byte(data), &cb); err != nil {
+			return nil, fmt.Errorf("invalid JSON callback: %w", err)
+		}
+		cb.Raw = data
+		if cb.Params == nil {
+			cb.Params = make(map[string]string)
+		}
+		return &cb, nil
+	}
+
+	// Parse colon-separated format: action:param1:value1:param2:value2
+	parts := strings.Split(data, ":")
+	if len(parts) < 1 {
+		return nil, fmt.Errorf("invalid callback format")
+	}
+
+	// Handle legacy start_* format by stripping "start_" prefix
+	actionStr := parts[0]
+	if strings.HasPrefix(actionStr, "start_") {
+		actionStr = strings.TrimPrefix(actionStr, "start_")
+	}
+
+	cb := &Callback{
+		Action: Action(actionStr),
+		Params: make(map[string]string),
+		Raw:    data,
+	}
+
+	// Parse key-value pairs
+	for i := 1; i < len(parts); i += 2 {
+		if i+1 < len(parts) {
+			key := parts[i]
+			value := parts[i+1]
+			cb.Params[key] = value
+		}
+	}
+
+	return cb, nil
+}
+
+// MustParse parses callback data or panics
+func (p *Parser) MustParse(data string) *Callback {
+	cb, err := p.Parse(data)
+	if err != nil {
+		panic(err)
+	}
+	return cb
+}
+
+// Format formats a callback to string
+func (p *Parser) Format(action Action, params map[string]string) string {
+	if p.useJSON {
+		cb := Callback{
+			Action: action,
+			Params: params,
+		}
+		data, err := json.Marshal(cb)
+		if err != nil {
+			// Fallback to colon format
+			return p.formatColon(action, params)
+		}
+		return string(data)
+	}
+
+	return p.formatColon(action, params)
+}
+
+// formatColon formats callback as colon-separated string
+func (p *Parser) formatColon(action Action, params map[string]string) string {
+	if len(params) == 0 {
+		return string(action)
+	}
+
+	parts := []string{string(action)}
+	for key, value := range params {
+		parts = append(parts, key, value)
+	}
+	return strings.Join(parts, ":")
+}
+
+// FormatSimple formats a simple callback with just an action
+func (p *Parser) FormatSimple(action Action) string {
+	return p.Format(action, nil)
+}
+
+// Registry manages callback handlers
+type Registry struct {
+	handlers map[Action]Handler
+	middleware []Middleware
+	parser *Parser
+}
+
+// Middleware is a function that wraps a handler
+type Middleware func(Handler) Handler
+
+// NewRegistry creates a new callback registry
+func NewRegistry() *Registry {
+	return &Registry{
+		handlers: make(map[Action]Handler),
+		middleware: make([]Middleware, 0),
+		parser: NewParser(),
+	}
+}
+
+// Use adds a middleware to the registry
+func (r *Registry) Use(mw Middleware) {
+	r.middleware = append(r.middleware, mw)
+}
+
+// Register registers a handler for an action
+func (r *Registry) Register(action Action, handler Handler) {
+	r.handlers[action] = handler
+}
+
+// RegisterFunc registers a handler function for an action
+func (r *Registry) RegisterFunc(action Action, handler func(ctx *Context) (*Response, error)) {
+	r.Register(action, HandlerFunc(handler))
+}
+
+// Get retrieves a handler for an action
+func (r *Registry) Get(action Action) (Handler, bool) {
+	handler, exists := r.handlers[action]
+	if !exists {
+		return nil, false
+	}
+
+	// Apply middleware
+	for i := len(r.middleware) - 1; i >= 0; i-- {
+		handler = r.middleware[i](handler)
+	}
+
+	return handler, true
+}
+
+// Parser returns the parser
+func (r *Registry) Parser() *Parser {
+	return r.parser
+}
+
+// Match checks if a callback data matches an action pattern
+// Supports wildcards, e.g., "search:*" matches all search callbacks
+func (r *Registry) Match(pattern string, data string) bool {
+	cb, err := r.parser.Parse(data)
+	if err != nil {
+		return false
+	}
+
+	// Exact match
+	if pattern == string(cb.Action) {
+		return true
+	}
+
+	// Wildcard match
+	if strings.HasSuffix(pattern, "*") {
+		prefix := strings.TrimSuffix(pattern, "*")
+		return strings.HasPrefix(string(cb.Action), prefix)
+	}
+
+	// Regex match
+	if strings.HasPrefix(pattern, "^") && strings.HasSuffix(pattern, "$") {
+		matched, _ := regexp.MatchString(pattern, data)
+		return matched
+	}
+
+	return false
+}
+
+// Helper functions for building callbacks
+
+// BuildCallback builds a callback string
+func BuildCallback(action Action, params map[string]string) string {
+	p := NewParser()
+	return p.Format(action, params)
+}
+
+// BuildSimpleCallback builds a simple callback with just an action
+func BuildSimpleCallback(action Action) string {
+	return BuildCallback(action, nil)
+}
+
+// BuildSearchCallback builds a search callback
+func BuildSearchCallback(mediaID, mediaType string) string {
+	return BuildCallback(ActionSearch, map[string]string{
+		"id":   mediaID,
+		"type": mediaType,
+	})
+}
+
+// BuildDetailCallback builds a detail callback
+func BuildDetailCallback(mediaID, mediaType string) string {
+	return BuildCallback(ActionDetail, map[string]string{
+		"id":   mediaID,
+		"type": mediaType,
+	})
+}
+
+// BuildRequestCallback builds a request callback
+func BuildRequestCallback(mediaID, mediaType string, season int) string {
+	params := map[string]string{
+		"id":   mediaID,
+		"type": mediaType,
+	}
+	if season > 0 {
+		params["season"] = fmt.Sprintf("%d", season)
+	}
+	return BuildCallback(ActionRequest, params)
+}
+
+// BuildPageCallback builds a page navigation callback
+func BuildPageCallback(page int, source string) string {
+	return BuildCallback(ActionPage, map[string]string{
+		"num":   fmt.Sprintf("%d", page),
+		"source": source,
+	})
+}
+
+// BuildBackCallback builds a back navigation callback
+func BuildBackCallback() string {
+	return BuildSimpleCallback(ActionBack)
+}
+
+// BuildCancelCallback builds a cancel callback
+func BuildCancelCallback() string {
+	return BuildSimpleCallback(ActionCancel)
+}
