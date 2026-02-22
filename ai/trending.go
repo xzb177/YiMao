@@ -290,17 +290,6 @@ func (m *TrendingAIManager) parseTrendingResults(response string, expectedType s
 
 	return results, nil
 }
-
-// cleanAIResponse removes markdown code blocks and trims whitespace
-func cleanAIResponse(response string) string {
-	response = strings.TrimSpace(response)
-	response = strings.TrimPrefix(response, "```json")
-	response = strings.TrimPrefix(response, "```")
-	response = strings.TrimSuffix(response, "```")
-	response = strings.TrimSpace(response)
-	return response
-}
-
 // fixTrendingJSON attempts to fix common JSON formatting issues
 func fixTrendingJSON(input string) string {
 	// Remove trailing commas
