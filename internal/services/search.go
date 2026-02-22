@@ -10,14 +10,14 @@ import (
 
 // SearchService handles media search operations
 type SearchService struct {
-	jellyseerr *JellyseerrClient
+	moviepilot *MoviePilotClient
 	sessMgr    *session.Manager
 }
 
 // NewSearchService creates a new search service
-func NewSearchService(jellyseerr *JellyseerrClient, sessMgr *session.Manager) *SearchService {
+func NewSearchService(moviepilot *MoviePilotClient, sessMgr *session.Manager) *SearchService {
 	return &SearchService{
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
 		sessMgr:    sessMgr,
 	}
 }
@@ -34,32 +34,29 @@ type ExtendedSearchResult struct {
 func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedSearchResult, error) {
 	log.Printf("[SearchService] Searching: query=%s, page=%d", query, page)
 
-	// Call Jellyseerr search API
-	result, err := s.jellyseerr.Search(query, page)
+	// Call MoviePilot search API
+	result, err := s.moviepilot.SearchMedia(query, page)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	// Convert results
+	// Convert results - MoviePilot returns array directly
 	items := make([]session.SearchItem, len(result.Results))
 	for i, media := range result.Results {
-		year := 0
-		if media.ReleaseDate != "" && len(media.ReleaseDate) >= 4 {
-			fmt.Sscanf(media.ReleaseDate[:4], "%d", &year)
-		}
-
-		title := media.Title
-		if title == "" {
-			title = media.Name
+		// Map MoviePilot type to internal type
+		mediaType := "movie"
+		if media.Type == "电视剧" || media.Type == "tv" {
+			mediaType = "tv"
 		}
 
 		items[i] = session.SearchItem{
-			ID:     strconv.Itoa(media.ID),
-			Title:  title,
-			Year:   year,
-			Type:   media.MediaType,
-			Poster: media.PosterPath,
-			Rating: media.VoteAverage,
+			ID:       strconv.Itoa(media.ID),
+			Title:    media.Title,
+			Year:     media.Year.Int(),
+			Type:     mediaType,
+			Poster:   media.Poster,
+			Rating:   media.Rating,
+			Overview: media.Overview,
 		}
 	}
 
@@ -67,10 +64,16 @@ func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedS
 	sess := s.sessMgr.GetOrCreate(userID)
 	sess.SetSearchResults(items, page, query)
 
+	// Total is approximated as 20 per page * current page + current results
+	total := page * 20
+	if len(items) > 0 {
+		total = (page-1)*20 + len(items)
+	}
+
 	return &ExtendedSearchResult{
 		Query:   query,
 		Page:    page,
-		Total:   result.TotalResults,
+		Total:   total,
 		Results: items,
 	}, nil
 }

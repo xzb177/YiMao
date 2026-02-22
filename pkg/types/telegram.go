@@ -10,12 +10,13 @@ type TelegramUpdate struct {
 
 // TelegramMessage represents a message
 type TelegramMessage struct {
-	MessageID int64 `json:"message_id"`
-	From      *TelegramUser `json:"from"`
-	Chat      *TelegramChat `json:"chat"`
-	Date      int64 `json:"date"`
-	Text      string `json:"text,omitempty"`
-	Photo     []*TelegramPhotoSize `json:"photo,omitempty"`
+	MessageID       int64 `json:"message_id"`
+	From            *TelegramUser `json:"from"`
+	Chat            *TelegramChat `json:"chat"`
+	Date            int64 `json:"date"`
+	Text            string `json:"text,omitempty"`
+	Photo           []*TelegramPhotoSize `json:"photo,omitempty"`
+	ReplyToMessage  *TelegramMessage `json:"reply_to_message,omitempty"`
 }
 
 // TelegramCallbackQuery represents a callback query
@@ -33,6 +34,7 @@ type TelegramUser struct {
 	LastName  string `json:"last_name,omitempty"`
 	Username  string `json:"username,omitempty"`
 	LanguageCode string `json:"language_code,omitempty"`
+	IsBot     bool   `json:"is_bot,omitempty"`
 }
 
 // TelegramChat represents a chat

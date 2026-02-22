@@ -3,33 +3,55 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strings"
+	"time"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/errors"
+	"emby-telegram-bot/pkg/types"
 )
 
 // RequestHandler handles media request callbacks
 type RequestHandler struct {
-	sessMgr    *session.Manager
-	telegram   *services.TelegramClient
-	jellyseerr *services.JellyseerrClient
+	sessMgr        *session.Manager
+	telegram       *services.TelegramClient
+	moviepilot     *services.MoviePilotClient
+	adminService   *services.AdminService
+	webhookService *services.WebhookService
+	userMapping    *services.UserMappingService
+	quotaService   *services.QuotaService
+	reviewService  *services.ReviewService
+	enableReview   bool // Enable review system
 }
 
 func NewRequestHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
+	adminService *services.AdminService,
+	webhookService *services.WebhookService,
+	userMapping *services.UserMappingService,
+	quotaService *services.QuotaService,
+	reviewService *services.ReviewService,
 ) *RequestHandler {
 	return &RequestHandler{
-		sessMgr:    sessMgr,
-		telegram:   telegram,
-		jellyseerr: jellyseerr,
+		sessMgr:        sessMgr,
+		telegram:       telegram,
+		moviepilot:     moviepilot,
+		adminService:   adminService,
+		webhookService: webhookService,
+		userMapping:    userMapping,
+		quotaService:   quotaService,
+		reviewService:  reviewService,
+		enableReview:   true, // Enable review system by default
 	}
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	log.Printf("[RequestHandler] Starting: userID=%d, mediaID=%s, mediaType=%s", ctx.UserID, ctx.Callback.Params["id"], ctx.Callback.Params["type"])
+
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
 	mediaType, hasType := ctx.Callback.Params["type"]
@@ -44,89 +66,210 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if tmdbID == 0 {
 		return nil, errors.InvalidInput("invalid media ID")
 	}
+	log.Printf("[RequestHandler] Parsed TMDB ID: %d", tmdbID)
 
-	// Get Jellyseerr user ID from session
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	jellyseerrID := sess.GetJellyseerrUserID()
-	if jellyseerrID == 0 {
+	// Get MoviePilot user ID from user mapping
+	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	if !exists || moviepilotID == 0 {
+		log.Printf("[RequestHandler] No moviepilot ID found for user %d", ctx.UserID)
 		return &callback.Response{
-			Text:        "❌ 请先使用 /link 命令绑定 Jellyseerr 账号",
+			Text:        "❌ 请先使用 /link 命令绑定 MoviePilot 账号",
 			CallbackMsg: "需要绑定账号",
 			ShowAlert:   true,
 		}, nil
 	}
+	log.Printf("[RequestHandler] User mapped to moviepilotID: %d", moviepilotID)
 
-	// Check quota
-	quota, err := h.jellyseerr.GetUserQuota(jellyseerrID)
-	if err != nil {
-		log.Printf("[RequestHandler] Failed to get quota: %v", err)
+	// Check quota using quota service
+	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
+		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
+		log.Printf("[RequestHandler] Quota check failed for user %d", ctx.UserID)
+		return &callback.Response{
+			Text:        fmt.Sprintf("❌ 今日配额已用完\n\n%s", quotaText),
+			CallbackMsg: "配额已用完",
+			ShowAlert:   true,
+		}, nil
 	}
 
-	// For TV shows, get season selection
+	// Get media info from session for better display
+	sess := h.sessMgr.Get(ctx.UserID)
+	if sess == nil {
+		return &callback.Response{
+			Text:        "❌ 会话已过期，请重新搜索",
+			CallbackMsg: "会话过期",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get user name from session
+	userName := "用户"
+	if name, ok := sess.GetString("user_name"); ok {
+		userName = name
+	}
+
+	// Find media from recent search results
+	var mediaTitle string
+	var mediaYear int
+	var posterPath string
+	var overview string
+
+	searchResults, searchPage, searchQuery, found := sess.GetSearchResults()
+	log.Printf("[RequestHandler] Search results: found=%v, count=%d, query=%s, page=%d", found, len(searchResults), searchQuery, searchPage)
+	if found && len(searchResults) > 0 {
+		for i, item := range searchResults {
+			log.Printf("[RequestHandler]   Result[%d]: ID=%s, Title=%s, Year=%d", i, item.ID, item.Title, item.Year)
+		}
+	}
+	if found {
+		for _, item := range searchResults {
+			// Parse TMDB ID from SearchItem.ID (format: "id:123" or just "123")
+			itemID := item.ID
+			if strings.HasPrefix(itemID, "id:") {
+				itemID = strings.TrimPrefix(itemID, "id:")
+			}
+			itemTmdbID := 0
+			fmt.Sscanf(itemID, "%d", &itemTmdbID)
+
+			log.Printf("[RequestHandler] Checking item: ID=%s, parsedTmdbID=%d, targetTmdbID=%d, Title=%s", item.ID, itemTmdbID, tmdbID, item.Title)
+
+			if itemTmdbID == tmdbID {
+				mediaTitle = item.Title
+				mediaYear = item.Year
+				posterPath = item.Poster
+				overview = item.Overview
+				log.Printf("[RequestHandler] Found matching media: %s (%d)", mediaTitle, mediaYear)
+				break
+			}
+		}
+	}
+
+	if mediaTitle == "" {
+		log.Printf("[RequestHandler] No matching media found in search results, using fallback")
+		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
+	}
+
+	// Create review request
+	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
+
+	review := &services.ReviewRequest{
+		RequestID:    reviewID,
+		TelegramID:   ctx.UserID,
+		TelegramName: userName,
+		MoviePilotID: moviepilotID,
+		TmdbID:       tmdbID,
+		MediaTitle:   mediaTitle,
+		MediaYear:    mediaYear,
+		MediaType:    services.MediaTypeMovie,
+		PosterPath:   posterPath,
+		Overview:     overview,
+	}
+
 	if mediaType == "tv" {
-		return h.handleTVRequest(ctx, tmdbID, jellyseerrID, quota)
+		review.MediaType = services.MediaTypeTV
 	}
 
-	// For movies, request directly
-	return h.handleMovieRequest(ctx, tmdbID, jellyseerrID, quota)
-}
-
-func (h *RequestHandler) handleMovieRequest(
-	ctx *callback.Context,
-	tmdbID int,
-	jellyseerrID int64,
-	quota *services.QuotaInfo,
-) (*callback.Response, error) {
-	// Check movie quota
-	if quota != nil && quota.MovieRemaining == 0 {
+	if err := h.reviewService.CreateRequest(review); err != nil {
+		log.Printf("[RequestHandler] Failed to create review request: %v", err)
 		return &callback.Response{
-			Text:        "❌ 今日电影配额已用完",
-			CallbackMsg: "配额已用完",
+			Text:        "❌ 创建请求失败",
+			CallbackMsg: "失败",
 			ShowAlert:   true,
-		}, nil
+		}, err
 	}
 
-	// Create request
-	req, err := h.jellyseerr.RequestMedia(jellyseerrID, tmdbID, "movie", nil)
-	if err != nil {
-		return nil, errors.JellyseerrErr("failed to create request", err)
-	}
-
-	log.Printf("[RequestHandler] Created request: ID=%d, MediaID=%d, Type=movie", req.ID, tmdbID)
+	// Notify admins about the review request
+	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "✅ 请求已提交",
-		CallbackMsg: "请求成功",
+		Text:        "✅ 求片请求已提交\n\n等待管理员审核",
+		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
 }
 
-func (h *RequestHandler) handleTVRequest(
-	ctx *callback.Context,
-	tmdbID int,
-	jellyseerrID int64,
-	quota *services.QuotaInfo,
-) (*callback.Response, error) {
-	// Check TV quota
-	if quota != nil && quota.TVRemaining == 0 {
-		return &callback.Response{
-			Text:        "❌ 今日剧集配额已用完",
-			CallbackMsg: "配额已用完",
-			ShowAlert:   true,
-		}, nil
+// notifyAdminsForReview notifies all admins about a new review request
+func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
+	adminIDs := h.adminService.GetAdminIDs()
+	if len(adminIDs) == 0 {
+		log.Printf("[RequestHandler] No admins to notify")
+		return
 	}
 
-	// For simplicity, request all seasons (can be enhanced later)
-	req, err := h.jellyseerr.RequestMedia(jellyseerrID, tmdbID, "tv", nil)
-	if err != nil {
-		return nil, errors.JellyseerrErr("failed to create request", err)
+	log.Printf("[RequestHandler] Notifying %d admins about review request: %s", len(adminIDs), review.RequestID)
+
+	mediaTypeLabel := "电影"
+	if review.MediaType == services.MediaTypeTV {
+		mediaTypeLabel = "剧集"
 	}
 
-	log.Printf("[RequestHandler] Created request: ID=%d, MediaID=%d, Type=tv", req.ID, tmdbID)
+	// Build message with poster if available
+	message := fmt.Sprintf("🎬 新求片审核\n\n📺 %s", review.MediaTitle)
+	if review.MediaYear > 0 {
+		message += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+	message += fmt.Sprintf("\n\n🏷️ 类型: %s", mediaTypeLabel)
 
-	return &callback.Response{
-		Text:        "✅ 请求已提交",
-		CallbackMsg: "请求成功",
-		ShowAlert:   true,
-	}, nil
+	if review.Overview != "" && len(review.Overview) > 0 {
+		// Truncate overview to 100 chars
+		overview := review.Overview
+		if len(overview) > 100 {
+			overview = overview[:97] + "..."
+		}
+		message += fmt.Sprintf("\n\n📝 %s", overview)
+	}
+
+	message += fmt.Sprintf("\n\n👤 用户: %s (ID: %d)", review.TelegramName, review.TelegramID)
+
+	// Add action buttons
+	for _, adminID := range adminIDs {
+		keyboard := &types.TelegramInlineKeyboard{
+			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+				{
+					{Text: "✅ 批准", CallbackData: fmt.Sprintf("review_approve:id:%s", review.RequestID)},
+					{Text: "❌ 拒绝", CallbackData: fmt.Sprintf("review_reject:id:%s", review.RequestID)},
+				},
+			},
+		}
+		log.Printf("[RequestHandler] Sending review notification to admin %d", adminID)
+		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
+			log.Printf("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
+		} else {
+			log.Printf("[RequestHandler] Successfully notified admin %d", adminID)
+		}
+	}
+}
+
+// notifyAdmins notifies all admins about a new request (legacy, for direct submission)
+func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
+	adminIDs := h.adminService.GetAdminIDs()
+	if len(adminIDs) == 0 {
+		return
+	}
+
+	mediaTypeLabel := "电影"
+	if mediaType == "tv" {
+		mediaTypeLabel = "剧集"
+	}
+
+	title := fmt.Sprintf("媒体 #%d", req.MediaID)
+	if req.Media != nil && req.Media.Title != "" {
+		title = req.Media.Title
+	}
+
+	message := fmt.Sprintf("🎬 新求片请求\n\n%s\n%s\n\n请求ID: %d", title, mediaTypeLabel, req.ID)
+
+	// Add action buttons
+	for _, adminID := range adminIDs {
+		keyboard := &types.TelegramInlineKeyboard{
+			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+				{
+					{Text: "✅ 批准", CallbackData: fmt.Sprintf("admin_approve:id:%d", req.ID)},
+					{Text: "❌ 拒绝", CallbackData: fmt.Sprintf("admin_decline:id:%d", req.ID)},
+				},
+			},
+		}
+		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
+			log.Printf("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
+		}
+	}
 }

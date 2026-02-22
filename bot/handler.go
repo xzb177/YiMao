@@ -148,7 +148,7 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 		isReplyToBot = true
 	}
 
-	// 处理聊天系统的回复（回复消息或@机器人）
+	// 处理聊天系统的回复（回复消息或@机器人）- 群聊和私聊都支持
 	if h.chatSystem != nil {
 		// 检查是否应该触发聊天（回复机器人或@机器人）
 		if isReplyToBot || IsMentioningBot(text) {
@@ -161,9 +161,11 @@ func (h *Handler) HandleMessage(update *TelegramUpdate) *MessageResponse {
 		}
 	}
 
-	// 限制：搜索功能仅在私聊中使用
-	if chatType != "private" && !strings.HasPrefix(text, "/") {
-		// 非私聊且不是命令，忽略
+	// 限制：搜索功能和非 AI 命令仅在私聊中使用
+	// 群聊中只允许 AI 聊天（已通过上面的 chatSystem 处理）
+	if chatType != "private" {
+		// 群聊中只允许 AI 聊天功能，其他所有功能都忽略
+		// 注意：命令在这里被忽略，只有 @机器人 或回复机器人才会触发 chatSystem
 		return nil
 	}
 

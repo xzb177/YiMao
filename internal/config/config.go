@@ -13,13 +13,16 @@ type Config struct {
 	TelegramBotToken string
 	TelegramChatID   string
 
-	// Jellyseerr
-	JellyseerrURL    string
-	JellyseerrAPIKey string
+	// MoviePilot
+	MoviePilotURL    string
+	MoviePilotAPIKey string
 
 	// Emby (optional)
 	EmbyURL    string
 	EmbyAPIKey string
+
+	// TMDB
+	TMDBAPIKey string
 
 	// AI Services
 	AnthropicAPIKey string
@@ -59,10 +62,11 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
-		JellyseerrURL:       getEnv("JELLYSEERR_URL", ""),
-		JellyseerrAPIKey:    getEnv("JELLYSEERR_API_KEY", ""),
+		MoviePilotURL:       getEnv("MOVIEPILOT_URL", ""),
+		MoviePilotAPIKey:    getEnv("MOVIEPILOT_API_KEY", ""),
 		EmbyURL:             getEnv("EMBY_URL", ""),
 		EmbyAPIKey:          getEnv("EMBY_API_KEY", ""),
+		TMDBAPIKey:          getEnv("TMDB_API_KEY", ""),
 		AnthropicAPIKey:     getEnv("ANTHROPIC_API_KEY", ""),
 		ZhipuAPIKey:         getEnv("ZHIPU_API_KEY", ""),
 		OpenAIAPIKey:        getEnv("OPENAI_API_KEY", ""),
@@ -106,11 +110,11 @@ func (c *Config) validate() error {
 	if c.TelegramBotToken == "" {
 		return fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
 	}
-	if c.JellyseerrURL == "" {
-		return fmt.Errorf("JELLYSEERR_URL is required")
+	if c.MoviePilotURL == "" {
+		return fmt.Errorf("MOVIEPILOT_URL is required")
 	}
-	if c.JellyseerrAPIKey == "" {
-		return fmt.Errorf("JELLYSEERR_API_KEY is required")
+	if c.MoviePilotAPIKey == "" {
+		return fmt.Errorf("MOVIEPILOT_API_KEY is required")
 	}
 	return nil
 }

@@ -17,21 +17,27 @@ type StartHandler struct {
 	cfg         *config.Config
 	sessMgr     *session.Manager
 	telegram    *services.TelegramClient
-	jellyseerr  *services.JellyseerrClient
+	moviepilot  *services.MoviePilotClient
+	adminService *services.AdminService
 }
 
 func NewStartHandler(
 	cfg *config.Config,
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
 ) *StartHandler {
 	return &StartHandler{
 		cfg:        cfg,
 		sessMgr:    sessMgr,
 		telegram:   telegram,
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
 	}
+}
+
+// SetAdminService sets the admin service
+func (h *StartHandler) SetAdminService(adminSvc *services.AdminService) {
+	h.adminService = adminSvc
 }
 
 func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -61,7 +67,13 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	msg.Newline()
 	msg.Text("请选择操作：").Newline()
 
-	keyboard := services.BuildStartKeyboard()
+	// Check if user is admin to add admin menu button
+	isAdmin := false
+	if h.adminService != nil {
+		isAdmin = h.adminService.IsAdmin(ctx.UserID)
+	}
+
+	keyboard := services.BuildStartKeyboard(isAdmin)
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -143,25 +155,28 @@ func (h *StartHandler) HandleNew(ctx *callback.Context) (*callback.Response, err
 type DetailHandler struct {
 	sessMgr    *session.Manager
 	telegram   *services.TelegramClient
-	jellyseerr *services.JellyseerrClient
+	moviepilot *services.MoviePilotClient
+	tmdb       *services.TMDBClient
 }
 
 func NewDetailHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
+	tmdb *services.TMDBClient,
 ) *DetailHandler {
 	return &DetailHandler{
 		sessMgr:    sessMgr,
 		telegram:   telegram,
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
+		tmdb:       tmdb,
 	}
 }
 
 func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
-	_, hasType := ctx.Callback.Params["type"]
+	mediaType, hasType := ctx.Callback.Params["type"]
 
 	if !hasID || !hasType {
 		return nil, errors.InvalidInput("media ID and type are required")
@@ -174,56 +189,181 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		return nil, errors.InvalidInput("invalid media ID")
 	}
 
-	// Check if we have cached data from AI
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+
+	// Check if we have cached data from search results first
+	items, _, _, hasSearch := sess.GetSearchResults()
+	if hasSearch {
+		for _, item := range items {
+			if item.ID == mediaID {
+				// Use search result data - it already has all we need
+				log.Printf("[DetailHandler] Using search result info for: %s", item.Title)
+				return h.buildDetailFromSearch(item, mediaType, sess), nil
+			}
+		}
+	}
+
+	// Check if we have cached data from AI
 	if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
 		return h.buildDetailFromCache(cachedItem, sess), nil
 	}
 
-	// Fetch from Jellyseerr
-	media, err := h.jellyseerr.GetMediaInfo(tmdbID)
-	if err != nil {
-		return nil, errors.MediaNotFound(fmt.Sprintf("failed to get media info: %v", err))
+	// Try TMDB API for details
+	if h.tmdb != nil {
+		tmdbMedia, err := h.tmdb.GetMediaByType(tmdbID, mediaType)
+		if err == nil && tmdbMedia != nil {
+			log.Printf("[DetailHandler] Got media info from TMDB: %s", tmdbMedia.GetTitle())
+			return h.buildDetailFromTMDB(tmdbMedia, sess), nil
+		}
+		log.Printf("[DetailHandler] TMDB API failed: %v", err)
 	}
 
-	return h.buildDetailFromMedia(media, sess), nil
+	// If all else fails, build a simple detail page
+	return h.buildSimpleDetail(tmdbID, mediaType, sess), nil
 }
 
 func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
 	msg := services.NewMessageBuilder()
 
-	// Header
-	msg.Bold(fmt.Sprintf("%s (%d)", item.Title, item.Year))
-	if item.Rating > 0 {
-		msg.Textf(" ⭐ %.1f", item.Rating)
+	// Type icon and label
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	if item.MediaType == "tv" {
+		typeIcon = "📺"
+		typeLabel = "剧集"
 	}
-	msg.Newline()
+
+	// Header with title
+	msg.Bold(fmt.Sprintf("%s %s", typeIcon, item.Title)).Newline()
+
+	// Year and rating on same line
+	infoLine := ""
+	if item.Year > 0 {
+		infoLine = fmt.Sprintf("📅 %d年", item.Year)
+	}
+	if item.Rating > 0 {
+		if infoLine != "" {
+			infoLine += "  •  "
+		}
+		infoLine += fmt.Sprintf("⭐ %.1f分", item.Rating)
+	}
+	if infoLine != "" {
+		msg.Text(infoLine).Newline()
+	}
+
+	// Media type badge
+	msg.Text(fmt.Sprintf("🏷️ %s", typeLabel)).Newline()
 	msg.Newline()
 
 	// AI Reason
 	if item.Reason != "" {
-		msg.Italic("💭 " + item.Reason).Newline()
+		msg.Bold("💭 AI推荐理由").Newline()
+		msg.Text(item.Reason).Newline()
 		msg.Newline()
 	}
 
-	// Overview
+	// Overview (truncate if too long)
 	if item.Overview != "" {
-		msg.Text(item.Overview).Newline()
+		overview := item.Overview
+		if len(overview) > 150 {
+			overview = overview[:150] + "..."
+		}
+		msg.Text(overview).Newline()
+		msg.Newline()
 	}
 
-	// Quota info
-	quotaText := "📊 今日配额：充足"
-	if q, _ := sess.GetString("quota_status"); q != "" {
-		quotaText = q
+	// Request button label
+	buttonLabel := "✅ 立即求片"
+	if item.MediaType == "tv" {
+		buttonLabel = "✅ 求剧集"
 	}
-	msg.Newline().Newline()
-	msg.Text(quotaText)
 
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("✅ 确认请求", fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
+	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
+func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
+	msg := services.NewMessageBuilder()
+
+	// Type icon
+	typeIcon := "🎬"
+	if media.MediaType == "tv" {
+		typeIcon = "📺"
+	}
+
+	// Header
+	msg.Bold(fmt.Sprintf("%s %s", typeIcon, media.GetTitle())).Newline()
+
+	// Year and rating
+	infoLine := ""
+	year := media.GetYear()
+	if year > 0 {
+		infoLine = fmt.Sprintf("📅 %d年", year)
+	}
+	if media.VoteAverage > 0 {
+		if infoLine != "" {
+			infoLine += "  •  "
+		}
+		infoLine += fmt.Sprintf("⭐ %.1f分", media.VoteAverage)
+	}
+	if infoLine != "" {
+		msg.Text(infoLine).Newline()
+	}
+
+	// Runtime
+	runtime := media.GetRuntime()
+	if runtime > 0 {
+		hours := runtime / 60
+		mins := runtime % 60
+		if hours > 0 {
+			msg.Text(fmt.Sprintf("⏱️ 时长: %d小时%d分钟", hours, mins))
+		} else {
+			msg.Text(fmt.Sprintf("⏱️ 时长: %d分钟", runtime))
+		}
+		msg.Newline()
+	}
+
+	// Genres
+	genres := media.GetGenres()
+	if genres != "" {
+		msg.Text(fmt.Sprintf("🎭 %s", genres)).Newline()
+	}
+
+	msg.Newline()
+
+	// Overview (truncate if too long)
+	if media.Overview != "" {
+		overview := media.Overview
+		if len(overview) > 200 {
+			overview = overview[:200] + "..."
+		}
+		msg.Text(overview).Newline()
+		msg.Newline()
+	}
+
+	// TMDB ID
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", media.ID)).Newline()
+
+	// Request button label
+	buttonLabel := "✅ 立即求片"
+	if media.MediaType == "tv" {
+		buttonLabel = "✅ 求剧集"
+	}
+
+	// Keyboard
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, media.MediaType))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -235,50 +375,64 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *session.Session) *callback.Response {
 	msg := services.NewMessageBuilder()
 
-	// Header
+	// Get title
 	title := media.Title
-	if title == "" {
-		title = media.Name
-	}
-	year := ""
-	if media.ReleaseDate != "" && len(media.ReleaseDate) >= 4 {
-		year = media.ReleaseDate[:4]
+
+	// Type icon
+	typeIcon := "🎬"
+	if media.Type == services.MediaTypeTV {
+		typeIcon = "📺"
 	}
 
-	msg.Bold(fmt.Sprintf("%s", title))
-	if year != "" {
-		msg.Textf(" (%s)", year)
-	}
-	if media.VoteAverage > 0 {
-		msg.Textf(" ⭐ %.1f", media.VoteAverage)
-	}
-	msg.Newline()
-	msg.Newline()
+	// Header
+	msg.Bold(fmt.Sprintf("%s %s", typeIcon, title)).Newline()
 
-	// Details
-	if media.Runtime > 0 {
-		msg.Text(fmt.Sprintf("⏱️ 时长：%d分钟", media.Runtime))
+	// Year and rating
+	infoLine := ""
+	if media.Year > 0 {
+		infoLine = fmt.Sprintf("📅 %d年", media.Year)
 	}
-	if len(media.Genres) > 0 {
-		msg.Text("  🎭 类型：")
-		for i, g := range media.Genres {
-			if i > 0 {
-				msg.Text(" / ")
-			}
-			msg.Text(g.Name)
+	if media.Rating > 0 {
+		if infoLine != "" {
+			infoLine += "  •  "
 		}
+		infoLine += fmt.Sprintf("⭐ %.1f分", media.Rating)
 	}
+	if infoLine != "" {
+		msg.Text(infoLine).Newline()
+	}
+
+	// Genres - not available in MoviePilot MediaInfo
+	// Skip genre display for now
+
 	msg.Newline()
 
-	// Overview
+	// Overview (truncate if too long)
 	if media.Overview != "" {
+		overview := media.Overview
+		if len(overview) > 200 {
+			overview = overview[:200] + "..."
+		}
+		msg.Text(overview).Newline()
 		msg.Newline()
-		msg.Text(media.Overview)
+	}
+
+	// TMDB ID
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", media.ID)).Newline()
+
+	// Request button label
+	buttonLabel := "✅ 立即求片"
+	if media.Type == services.MediaTypeTV {
+		buttonLabel = "✅ 求剧集"
 	}
 
 	// Keyboard
+	mediaTypeStr := "movie"
+	if media.Type == services.MediaTypeTV {
+		mediaTypeStr = "tv"
+	}
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("✅ 请求", fmt.Sprintf("request:id:%d:type:%s", media.ID, media.MediaType))
+	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "back")
 
@@ -289,13 +443,127 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	}
 }
 
+// buildDetailFromSearch builds detail page from search result item
+func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType string, sess *session.Session) *callback.Response {
+	msg := services.NewMessageBuilder()
+
+	// Type icon and label
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	if mediaType == "tv" || item.Type == "tv" {
+		typeIcon = "📺"
+		typeLabel = "剧集"
+	}
+
+	// Header with title
+	msg.Bold(fmt.Sprintf("%s %s", typeIcon, item.Title)).Newline()
+
+	// Year and rating on same line
+	infoLine := ""
+	if item.Year > 0 {
+		infoLine = fmt.Sprintf("📅 %d年", item.Year)
+	}
+	if item.Rating > 0 {
+		if infoLine != "" {
+			infoLine += "  •  "
+		}
+		infoLine += fmt.Sprintf("⭐ %.1f分", item.Rating)
+	}
+	if infoLine != "" {
+		msg.Text(infoLine).Newline()
+	}
+
+	// Media type badge
+	msg.Text(fmt.Sprintf("🏷️ %s", typeLabel)).Newline()
+	msg.Newline()
+
+	// Overview (truncate if too long)
+	if item.Overview != "" {
+		overview := item.Overview
+		if len(overview) > 200 {
+			overview = overview[:200] + "..."
+		}
+		msg.Text(overview).Newline()
+		msg.Newline()
+	}
+
+	// TMDB info
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %s", item.ID)).Newline()
+
+	// Request button label
+	buttonLabel := "✅ 立即求片"
+	if mediaType == "tv" || item.Type == "tv" {
+		buttonLabel = "✅ 求剧集"
+	}
+
+	// Keyboard
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回搜索", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
+// buildSimpleDetail builds a simple detail page when API fails
+func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *session.Session) *callback.Response {
+	msg := services.NewMessageBuilder()
+
+	// Type icon and label
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	if mediaType == "tv" {
+		typeIcon = "📺"
+		typeLabel = "剧集"
+	}
+
+	// Header
+	msg.Bold(fmt.Sprintf("%s 影片详情", typeIcon)).Newline().Newline()
+
+	// TMDB ID
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", tmdbID)).Newline()
+	msg.Text(fmt.Sprintf("🏷️ 类型: %s", typeLabel)).Newline()
+	msg.Newline()
+
+	// Note
+	msg.Italic("💡 完整信息暂时无法获取，但您仍然可以发起请求").Newline().Newline()
+
+	// Request button label
+	buttonLabel := "✅ 立即求片"
+	if mediaType == "tv" {
+		buttonLabel = "✅ 求剧集"
+	}
+
+	// Keyboard
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
 // BackHandler handles back navigation
 type BackHandler struct {
-	sessMgr *session.Manager
+	sessMgr      *session.Manager
+	adminService *services.AdminService
 }
 
 func NewBackHandler(sessMgr *session.Manager) *BackHandler {
 	return &BackHandler{sessMgr: sessMgr}
+}
+
+// SetAdminService sets the admin service
+func (h *BackHandler) SetAdminService(adminSvc *services.AdminService) {
+	h.adminService = adminSvc
 }
 
 func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -304,10 +572,11 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
 		// No history, show start menu
+		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 		return &callback.Response{
 			Text:     "🌟 欢迎回来",
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboard()),
+			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
 		}, nil
 	}
 
@@ -335,10 +604,11 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			ShowAlert:   true,
 		}, nil
 	default:
+		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 		return &callback.Response{
 			Text:     "🌟 欢迎回来",
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboard()),
+			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
 		}, nil
 	}
 }

@@ -9,14 +9,14 @@ import (
 
 // AIService handles AI-powered media recommendations
 type AIService struct {
-	jellyseerr *JellyseerrClient
+	moviepilot *MoviePilotClient
 	sessMgr    *session.Manager
 }
 
 // NewAIService creates a new AI service
-func NewAIService(jellyseerr *JellyseerrClient, sessMgr *session.Manager) *AIService {
+func NewAIService(moviepilot *MoviePilotClient, sessMgr *session.Manager) *AIService {
 	return &AIService{
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
 		sessMgr:    sessMgr,
 	}
 }
@@ -33,16 +33,16 @@ func (s *AIService) GetTrendingMovies(userID int64, page int) (*TrendingResult, 
 	log.Printf("[AIService] Getting trending movies, page=%d", page)
 
 	// Use search as fallback - search for recent popular movies
-	result, err := s.jellyseerr.Search("2024", page)
+	result, err := s.moviepilot.SearchMedia("2024", page)
 	if err != nil {
 		// Try another query
-		result, err = s.jellyseerr.Search("movie", page)
+		result, err = s.moviepilot.SearchMedia("movie", page)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get trending movies: %w", err)
 		}
 	}
 
-	items := s.convertToSearchItems(result.Results)
+	items := s.convertSearchResults(result.Results)
 	s.cacheResults(userID, items, "ai_trending")
 
 	return &TrendingResult{
@@ -57,7 +57,7 @@ func (s *AIService) GetHotTV(userID int64, page int) (*TrendingResult, error) {
 	log.Printf("[AIService] Getting hot TV shows, page=%d", page)
 
 	// Search for popular TV shows
-	result, err := s.jellyseerr.Search("tv", page)
+	result, err := s.moviepilot.SearchMedia("tv", page)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get hot TV: %w", err)
 	}
@@ -65,8 +65,8 @@ func (s *AIService) GetHotTV(userID int64, page int) (*TrendingResult, error) {
 	// Filter to TV shows only
 	var tvItems []session.SearchItem
 	for _, item := range result.Results {
-		if item.MediaType == "tv" {
-			tvItems = append(tvItems, s.convertToSearchItem(item))
+		if item.Type == "电视剧" || item.Type == "tv" {
+			tvItems = append(tvItems, s.convertSearchResultToSearchItem(item))
 		}
 	}
 
@@ -84,10 +84,10 @@ func (s *AIService) GetNewMovies(userID int64, page int) (*TrendingResult, error
 	log.Printf("[AIService] Getting new movies, page=%d", page)
 
 	// Search for 2024-2025 movies
-	result, err := s.jellyseerr.Search("2025", page)
+	result, err := s.moviepilot.SearchMedia("2025", page)
 	if err != nil {
 		// Fallback to 2024
-		result, err = s.jellyseerr.Search("2024", page)
+		result, err = s.moviepilot.SearchMedia("2024", page)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get new movies: %w", err)
 		}
@@ -96,8 +96,8 @@ func (s *AIService) GetNewMovies(userID int64, page int) (*TrendingResult, error
 	// Filter to movies only
 	var movieItems []session.SearchItem
 	for _, item := range result.Results {
-		if item.MediaType == "movie" {
-			movieItems = append(movieItems, s.convertToSearchItem(item))
+		if item.Type == "电影" || item.Type == "movie" {
+			movieItems = append(movieItems, s.convertSearchResultToSearchItem(item))
 		}
 	}
 
@@ -115,12 +115,12 @@ func (s *AIService) GetRandom(userID int64, count int) (*TrendingResult, error) 
 	log.Printf("[AIService] Getting random recommendations, count=%d", count)
 
 	// Get trending movies as base
-	result, err := s.jellyseerr.Search("movie", 1)
+	result, err := s.moviepilot.SearchMedia("movie", 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get random: %w", err)
 	}
 
-	items := s.convertToSearchItems(result.Results)
+	items := s.convertSearchResults(result.Results)
 	if len(items) > count {
 		items = items[:count]
 	}
@@ -134,34 +134,24 @@ func (s *AIService) GetRandom(userID int64, count int) (*TrendingResult, error) 
 	}, nil
 }
 
-// convertToSearchItems converts Jellyseerr media results to session.SearchItem
-func (s *AIService) convertToSearchItems(mediaList []MediaInfo) []session.SearchItem {
+// convertSearchResults converts MoviePilot search results to session.SearchItem
+func (s *AIService) convertSearchResults(mediaList []SearchResult) []session.SearchItem {
 	items := make([]session.SearchItem, len(mediaList))
 	for i, media := range mediaList {
-		items[i] = s.convertToSearchItem(media)
+		items[i] = s.convertSearchResultToSearchItem(media)
 	}
 	return items
 }
 
-// convertToSearchItem converts a single Jellyseerr media result to session.SearchItem
-func (s *AIService) convertToSearchItem(media MediaInfo) session.SearchItem {
-	year := 0
-	if media.ReleaseDate != "" && len(media.ReleaseDate) >= 4 {
-		fmt.Sscanf(media.ReleaseDate[:4], "%d", &year)
-	}
-
-	title := media.Title
-	if title == "" {
-		title = media.Name
-	}
-
+// convertSearchResultToSearchItem converts a single MoviePilot search result to session.SearchItem
+func (s *AIService) convertSearchResultToSearchItem(media SearchResult) session.SearchItem {
 	return session.SearchItem{
 		ID:     fmt.Sprintf("%d", media.ID),
-		Title:  title,
-		Year:   year,
-		Type:   media.MediaType,
-		Poster: media.PosterPath,
-		Rating: media.VoteAverage,
+		Title:  media.Title,
+		Year:   media.Year.Int(),
+		Type:   string(media.Type),
+		Poster: media.Poster,
+		Rating: media.Rating,
 	}
 }
 

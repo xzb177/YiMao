@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the new binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o emby-telegram-bot ./cmd/server/main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -o emby-telegram-bot .
 
 # Final stage
 FROM alpine:latest
@@ -35,9 +35,9 @@ ENV TZ=Asia/Shanghai
 # Expose port
 EXPOSE 8080
 
-# Health check
+# Health check (BusyBox wget uses --spider instead of -s)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget -q -s http://localhost:8080/health || exit 1
+  CMD wget -q --spider http://localhost:8080/health || exit 1
 
 # Run the application
 CMD ["./emby-telegram-bot"]

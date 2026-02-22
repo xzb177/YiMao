@@ -35,12 +35,13 @@ type NavEntry struct {
 
 // SearchItem represents a search result item
 type SearchItem struct {
-	ID     string `json:"id"`
-	Title  string `json:"title"`
-	Year   int    `json:"year"`
-	Type   string `json:"type"`
-	Poster string `json:"poster,omitempty"`
-	Rating float64 `json:"rating,omitempty"`
+	ID       string  `json:"id"`
+	Title    string  `json:"title"`
+	Year     int     `json:"year"`
+	Type     string  `json:"type"`
+	Poster   string  `json:"poster,omitempty"`
+	Rating   float64 `json:"rating,omitempty"`
+	Overview string  `json:"overview,omitempty"`
 }
 
 // AIRecommendationItem represents a cached AI recommendation
@@ -289,7 +290,10 @@ func (s *Session) GetSearchResults() ([]SearchItem, int, string, bool) {
 	}
 
 	items := make([]SearchItem, 0)
+
+	// Try to get items - handle both []interface{} (from JSON) and []SearchItem (direct storage)
 	if itemsData, ok := data["items"].([]interface{}); ok {
+		// JSON deserialized format
 		for _, item := range itemsData {
 			if itemMap, ok := item.(map[string]interface{}); ok {
 				item := SearchItem{}
@@ -311,9 +315,15 @@ func (s *Session) GetSearchResults() ([]SearchItem, int, string, bool) {
 				if rating, ok := itemMap["rating"].(float64); ok {
 					item.Rating = rating
 				}
+				if overview, ok := itemMap["overview"].(string); ok {
+					item.Overview = overview
+				}
 				items = append(items, item)
 			}
 		}
+	} else if itemsData, ok := data["items"].([]SearchItem); ok {
+		// Direct slice format (not JSON deserialized)
+		items = itemsData
 	}
 
 	page := 1
@@ -388,7 +398,17 @@ func (s *Session) SetJellyseerrUserID(jellyseerrID int64) {
 }
 
 // GetJellyseerrUserID retrieves the Jellyseerr user ID
+// Deprecated: Use GetMoviePilotUserID instead
 func (s *Session) GetJellyseerrUserID() int64 {
+	return s.GetMoviePilotUserID()
+}
+
+// GetMoviePilotUserID retrieves the MoviePilot user ID
+func (s *Session) GetMoviePilotUserID() int64 {
+	if id, ok := s.GetInt("moviepilot_id"); ok {
+		return int64(id)
+	}
+	// Fallback to legacy field
 	if id, ok := s.GetInt("jellyseerr_id"); ok {
 		return int64(id)
 	}

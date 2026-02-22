@@ -100,6 +100,19 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 	return err
 }
 
+// SendPhoto sends a photo with caption to a chat
+func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string) (*types.TelegramMessage, error) {
+	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
+
+	payload := map[string]interface{}{
+		"chat_id":    chatID,
+		"photo":      photoURL,
+		"caption":    caption,
+	}
+
+	return c.makeRequest(apiURL, payload)
+}
+
 // SetWebhook sets the webhook URL
 func (c *TelegramClient) SetWebhook(webhookURL string) error {
 	apiURL := fmt.Sprintf("%s/setWebhook", c.baseURL)
@@ -110,6 +123,45 @@ func (c *TelegramClient) SetWebhook(webhookURL string) error {
 
 	_, err := c.makeRequest(apiURL, payload)
 	return err
+}
+
+// DeleteWebhook deletes the webhook
+func (c *TelegramClient) DeleteWebhook() error {
+	apiURL := fmt.Sprintf("%s/deleteWebhook", c.baseURL)
+
+	_, err := c.makeRequest(apiURL, nil)
+	return err
+}
+
+// GetUpdates fetches updates from Telegram (for polling)
+func (c *TelegramClient) GetUpdates(offset int, limit int) ([]types.TelegramUpdate, error) {
+	apiURL := fmt.Sprintf("%s/getUpdates?offset=%d&limit=%d&timeout=10", c.baseURL, offset, limit)
+
+	resp, err := c.httpClient.Get(apiURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var response struct {
+		OK     bool                     `json:"ok"`
+		Result []types.TelegramUpdate `json:"result"`
+	}
+
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, err
+	}
+
+	if !response.OK {
+		return nil, fmt.Errorf("Telegram API error: %s", string(body))
+	}
+
+	return response.Result, nil
 }
 
 // GetWebhookInfo gets webhook info
@@ -409,7 +461,7 @@ type SearchItemButton struct {
 }
 
 // BuildStartKeyboard builds the start menu keyboard
-func BuildStartKeyboard() *types.TelegramInlineKeyboard {
+func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
 	kb.AddButton("🔍 搜索影片", "start_search")
@@ -422,6 +474,12 @@ func BuildStartKeyboard() *types.TelegramInlineKeyboard {
 	kb.NewRow()
 	kb.AddButton("🔗 绑定账号", "start_link")
 	kb.AddButton("❓ 帮助", "start_help")
+
+	// Add admin button for admin users
+	if isAdmin {
+		kb.NewRow()
+		kb.AddButton("🔧 管理员菜单", "admin_menu")
+	}
 
 	return kb.Build()
 }

@@ -12,25 +12,25 @@ import (
 
 // AIHandler handles AI recommendation callbacks
 type AIHandler struct {
-	cfg       *config.Config
-	sessMgr   *session.Manager
-	telegram  *services.TelegramClient
-	jellyseerr *services.JellyseerrClient
-	aiService *services.AIService
+	cfg        *config.Config
+	sessMgr    *session.Manager
+	telegram   *services.TelegramClient
+	moviepilot *services.MoviePilotClient
+	aiService  *services.AIService
 }
 
 func NewAIHandler(
 	cfg *config.Config,
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
 ) *AIHandler {
-	aiSvc := services.NewAIService(jellyseerr, sessMgr)
+	aiSvc := services.NewAIService(moviepilot, sessMgr)
 	return &AIHandler{
 		cfg:        cfg,
 		sessMgr:    sessMgr,
 		telegram:   telegram,
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
 		aiService:  aiSvc,
 	}
 }

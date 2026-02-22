@@ -22,7 +22,8 @@ const (
 	ErrCodeQuotaExceeded  ErrorCode = "QUOTA_EXCEEDED"
 
 	// Service errors
-	ErrCodeJellyseerrError ErrorCode = "JELLYSEERR_ERROR"
+	ErrCodeMoviePilotError ErrorCode = "MOVIEPILOT_ERROR"
+	ErrCodeJellyseerrError ErrorCode = "JELLYSEERR_ERROR" // Deprecated, kept for compatibility
 	ErrCodeAIError         ErrorCode = "AI_ERROR"
 	ErrCodeMediaNotFound   ErrorCode = "MEDIA_NOT_FOUND"
 )
@@ -120,6 +121,10 @@ func QuotaExceeded(msg string) *AppError {
 
 func JellyseerrErr(msg string, cause error) *AppError {
 	return Wrap(ErrCodeJellyseerrError, msg, cause)
+}
+
+func MoviePilotErr(msg string, cause error) *AppError {
+	return Wrap(ErrCodeMoviePilotError, msg, cause)
 }
 
 func AIErr(msg string, cause error) *AppError {

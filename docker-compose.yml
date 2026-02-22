@@ -17,9 +17,12 @@ services:
       - EMBY_API_KEY=${EMBY_API_KEY}
       - EMBY_USER_ID=${EMBY_USER_ID}
 
-      # Jellyseerr Configuration
-      - JELLYSEERR_URL=${JELLYSEERR_URL}
-      - JELLYSEERR_API_KEY=${JELLYSEERR_API_KEY}
+      # MoviePilot Configuration
+      - MOVIEPILOT_URL=${MOVIEPILOT_URL}
+      - MOVIEPILOT_API_KEY=${MOVIEPILOT_API_KEY}
+
+      # TMDB Configuration (Optional - will use default if not provided)
+      - TMDB_API_KEY=${TMDB_API_KEY}
 
       # AI Configuration (Optional)
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}

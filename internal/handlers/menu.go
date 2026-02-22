@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/errors"
@@ -12,28 +11,28 @@ import (
 type MyRequestsHandler struct {
 	sessMgr    *session.Manager
 	telegram   *services.TelegramClient
-	jellyseerr *services.JellyseerrClient
+	moviepilot *services.MoviePilotClient
 }
 
 func NewMyRequestsHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
 ) *MyRequestsHandler {
 	return &MyRequestsHandler{
 		sessMgr:    sessMgr,
 		telegram:   telegram,
-		jellyseerr: jellyseerr,
+		moviepilot: moviepilot,
 	}
 }
 
 func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	// Get Jellyseerr user ID from session
+	// Get MoviePilot user ID from session
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	jellyseerrID := sess.GetJellyseerrUserID()
-	if jellyseerrID == 0 {
+	moviepilotID := sess.GetMoviePilotUserID()
+	if moviepilotID == 0 {
 		return &callback.Response{
-			Text: "❌ 请先使用 /link 命令绑定 Jellyseerr 账号",
+			Text: "❌ 请先使用 /link 命令绑定 MoviePilot 账号",
 			Edit: true,
 			Keyboard: &callback.Keyboard{
 				InlineKeyboard: [][]callback.Button{
@@ -45,9 +44,9 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 	}
 
 	// Fetch user requests
-	requests, err := h.jellyseerr.GetUserRequests(jellyseerrID, 1)
+	requests, err := h.moviepilot.GetUserRequests(moviepilotID)
 	if err != nil {
-		return nil, errors.JellyseerrErr("failed to get requests", err)
+		return nil, errors.MoviePilotErr("failed to get requests", err)
 	}
 
 	// Build response message
@@ -82,12 +81,9 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 
 			// Media title
 			title := req.Media.Title
-			if title == "" {
-				title = req.Media.Name
-			}
 
 			msg.Textf("%s %s", statusIcon, title)
-			if req.Media.MediaType == "tv" {
+			if req.Media.Type == services.MediaTypeTV {
 				msg.Text(" (剧集)")
 			}
 			msg.Newline()
@@ -104,44 +100,6 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-// LinkHandler handles account linking callbacks
-type LinkHandler struct {
-	cfg       *config.Config
-	sessMgr   *session.Manager
-	telegram  *services.TelegramClient
-}
-
-func NewLinkHandler(
-	cfg *config.Config,
-	sessMgr *session.Manager,
-	telegram *services.TelegramClient,
-) *LinkHandler {
-	return &LinkHandler{
-		cfg:      cfg,
-		sessMgr:  sessMgr,
-		telegram: telegram,
-	}
-}
-
-func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🔗 绑定 Jellyseerr 账号").Newline()
-	msg.Newline()
-	msg.Text("请发送您的 Jellyseerr 用户名进行绑定").Newline()
-	msg.Newline()
-	msg.Italic("💡 您的 Jellyseerr 用户名可以在设置页面查看")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: &callback.Keyboard{
-			InlineKeyboard: [][]callback.Button{
-				{{Text: "⬅️ 返回", CallbackData: "start"}},
-			},
-		},
 	}, nil
 }
 
@@ -170,7 +128,7 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	msg.Newline()
 
 	msg.Bold("🔗 绑定账号").Newline()
-	msg.Text("  绑定您的 Jellyseerr 账号以使用请求功能").Newline()
+	msg.Text("  绑定您的 MoviePilot 账号以使用请求功能").Newline()
 	msg.Newline()
 
 	msg.Bold("⌨️ 命令列表").Newline()

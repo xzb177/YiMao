@@ -1,12 +1,38 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
-| 2026-02-22 | **开始菜单回调修复** 🔧 |
-| | - **问题**: /start 菜单中的按钮点击后没有响应
-| | - **根因**: 回调数据 `start_ai`, `start_search` 等被解析为 `action="start", args="ai"`，但代码期望 `action="start_ai"`
-| | - **修复**: 在解析逻辑中添加特殊处理，让 `start_*` 前缀的回调保持完整，不被下划线分割
-| | - **修改位置**: main.go:3409-3416
-| | - **部署状态**: ✅ Docker 容器已重启 (healthy)
+| 2026-02-22 | **绑定账号命令修复** 🔗 |
+| | - **问题**: `/link 用户名 密码` 命令显示"未知命令" |
+| | - **根因**: `handleCommand` 使用精确匹配 `switch msg.Text`，无法处理带参数的命令 |
+| | - **解决方案**: |
+| |   - 修改 `handleCommand` 使用 `strings.Fields` 解析命令和参数 |
+| |   - 新增 `handleLinkCommand` 函数处理带凭证的绑定请求 |
+| |   - 更新 `handleWebhook`, `handleMessage`, `createServer` 函数签名传递 `linkHandler` |
+| | - **支持的格式**: `/link`, `/link 用户名`, `/link 用户名 密码` |
+| | | - **部署状态**: ✅ 已部署 (Docker 容器运行中) |
+
+| 2026-02-22 | **AI 聊天功能与入库通知增强** 🤖🎬 |
+| | - **问题1**: AI 聊天功能在新架构中丢失，只保留简单回复
+| | - **问题2**: 入库通知格式简单，缺少媒体详细信息
+| | - **解决方案**: |
+| |   - **新增 `internal/services/chat.go`** - 企业级 AI 聊天服务
+| |     - 支持知识库快捷响应（求片教程、绑定教程、配额说明等）
+| |     - 集成 AI Agent (智谱 GLM-4-Flash) 支持智能对话
+| |     - 管理员特殊称呼和权限处理
+| |     - 多种对话风格（友好/专业/调皮）
+| |     - 上下文记忆和情绪识别
+| |   - **增强 `internal/services/webhook.go`** - 入库通知增强
+| |     - 从 Emby API 获取详细媒体信息（评分、类型、时长、文件大小）
+| |     - 智能质量检测（4K/1080p/720p/SD）
+| |     - 支持 Emby 背景图展示
+| |     - 重试机制（最多5次，间隔1秒）确保获取完整信息
+| |   - **新增 `TelegramClient.SendPhoto()`** - 支持带图片的消息
+| |   - **添加 `TelegramMessage.ReplyToMessage`** - 支持回复消息检测
+| |   - **添加 `TelegramUser.IsBot`** - 支持机器人检测
+| | - **聊天触发条件**: @机器人、回复机器人消息、主动闲聊检测
+| | - **消息格式化**: 电影显示年份、评分、类型、时长、大小、文件数
+| | | - **部署状态**: ✅ 已部署 (Docker 容器运行中) |
+| | | - **注意**: 需要在 .env 中配置 `ZHIPU_API_KEY` 以启用 AI 功能 |
 
 
 
@@ -2967,3 +2993,185 @@ trends - 请求趋势
 | |   - 支持 /telegram-webhook 路由 |
 | | - **部署状态**: ✅ 运行中 |
 | | - **编译状态**: ✅ 通过编译 |
+| 2026-02-22 | **企业级架构功能迁移完成** 🚀 |
+| | - **新增服务模块**:
+| |   - `internal/services/admin.go` - 管理员管理服务
+| |     - IsAdmin() - 检查用户是否为管理员
+| |     - AddAdmin() - 添加管理员
+| |     - RemoveAdmin() - 删除管理员
+| |     - GetAllAdmins() - 获取所有管理员
+| |     - GetAdminIDs() - 获取管理员ID列表
+| |   - `internal/services/quota.go` - 配额管理服务
+| |     - CheckMovieQuota() - 检查电影配额
+| |     - CheckTVQuota() - 检查剧集配额
+| |     - UseQuota() - 使用配额
+| |     - RestoreQuota() - 恢复配额
+| |     - SyncFromJellyseerr() - 从服务器同步配额
+| |     - GetQuotaText() - 获取配额文本
+| |     - FormatQuotaStatus() - 格式化配额状态
+| |   - `internal/services/webhook.go` - Webhook 处理服务
+| |     - HandleEmbyWebhook() - 处理 Emby webhook
+| |     - HandleJellyseerrWebhook() - 处理 Jellyseerr webhook
+| |     - 支持入库通知、求片通知、问题报告通知
+| |     - 管理员通知带操作按钮
+| | - **新增处理器**:
+| |   - `internal/handlers/admin.go` - 管理员回调处理
+| |     - handleApprove - 批准请求
+| |     - handleDecline - 拒绝请求
+| |     - handlePending - 待处理请求列表
+| |     - handleIssueReply - 问题回复
+| |   - `internal/handlers/link.go` - 账号绑定处理
+| |     - HandleWithCredentials() - 凭证绑定
+| |     - HandleUnlink() - 解绑账号
+| | - **新增 API 路由器**:
+| |   - `internal/api/router.go` - REST API 路由器
+| |     - GET /health - 健康检查
+| |     - GET /api/stats - 统计数据
+| |     - GET/POST /api/admins - 管理员管理
+| |     - POST /api/summary - 每日汇总
+| |     - GET /debug - 调试信息
+| | - **Jellyseerr 客户端扩展**:
+| |     - GetPendingRequests() - 获取待处理请求
+| |     - ApproveRequest() - 批准请求
+| |     - DeclineRequest() - 拒绝请求
+| |     - GetRequest() - 获取单个请求
+| | - **主入口更新** (cmd/server/main.go):
+| |     - 集成 AdminService
+| |     - 集成 QuotaService
+| |     - 集成 WebhookService
+| |     - 集成 API Router
+| |     - 更新处理器构造函数参数
+| | - **编译状态**: ✅ 通过编译
+| | - **二进制文件**: emby-telegram-bot-new
+| 2026-02-22 | **健康检查修复** 🏥 |
+| | - **问题**: Docker 容器状态 unhealthy
+| | - **根因**: BusyBox wget 不支持 -s 选项（标准 wget 的 --spider 等效）
+| | - **修复**: 将健康检查命令从 `wget -q -s` 改为 `wget -q --spider`
+| | - **问题2**: 编译错误 - pkg/types 导入路径、未使用变量等
+| | - **修复**: 
+| |   - 修复导入路径: `pkg/types` → `emby-telegram-bot/pkg/types`
+| |   - 移除未使用的 internal/api 导入
+| |   - 修复变量名: telegram → telegramClient, userMapping → userMappingService
+| |   - 修复 getTitle 调用: 传入指针 `&item` 而非值
+| |   - 移除未使用的 emoji 变量
+| | - **部署状态**: ✅ Docker 容器 healthy
+| | - **服务地址**: http://localhost:8080
+| 2026-02-22 | **MoviePilot 请求参数修复** 🔧 |
+| | - **编译错误**: `internal/handlers/request.go:94` - `RequestMedia` 函数调用参数不匹配
+| | - **根因**: 函数签名需要 5 个参数 `(name string, year int, tmdbID int, mediaType MediaType, season int)`，但只传了 4 个
+| | - **修复**:
+| |   - 添加 name 参数: `fmt.Sprintf("TMDB:%d", tmdbID)`
+| |   - 添加 year 参数: `0`
+| |   - 添加 season 参数: `1` (TV show 默认季)
+| | - **部署状态**: ✅ Docker 容器已重新构建部署
+| | - **容器状态**: healthy
+| | - **健康检查**: /health → OK
+| | - **调试接口**: /debug → {"sessions": 0, "total_size": 0}
+| 2026-02-22 | **群组功能限制修复** 🔒 |
+| | - **问题**: 群组中非 @提及消息会触发搜索功能，显示"未找到相关内容"
+| | - **需求**: 群组只启用 AI 聊天功能，其他功能（搜索、AI推荐等）只允许私聊
+| | - **修复**: 修改 `main.go` 中的 `handleTextQuery` 函数
+| |   - 群组消息只处理 AI 聊天（@提及 或 回复机器人）
+| |   - 群组中不触发搜索、AI推荐等功能
+| |   - 私聊保持所有功能正常
+| | - **逻辑流程**:
+| |   ```
+| |   群组消息 → 检查是否@提及/回复 → 是则AI聊天 → 直接返回（不做其他处理）
+| |   私聊消息 → AI聊天检查 → AI推荐检查 → 执行搜索
+| |   ```
+| | - **部署状态**: ✅ Docker 容器已重新构建部署
+| | - **容器状态**: healthy
+| | - **测试状态**: ❌ 失败 - 群组 @机器人没有回复
+| 2026-02-22 | **轮询模式 AI 聊天修复** 🔄💬 |
+| | - **问题**: 轮询模式使用 `handlePollMessage` 函数，直接调用搜索，完全绕过 AI 聊天逻辑
+| | - **根因**: 轮询和 Webhook 使用不同的消息处理入口
+| | - **修复**:
+| |   - 修改 `pollForUpdates` 函数添加 `chatService` 参数
+| |   - 修改 `handlePollMessage` 函数添加 `chatService` 参数
+| |   - 在 `handlePollMessage` 中添加群组/私聊区分逻辑
+| |   - 群组消息：只处理 AI 聊天（@提及 或 回复机器人）
+| |   - 私聊消息：保持搜索功能正常
+| |   - 添加调试日志追踪群组 AI 聊天流程
+| | - **部署状态**: ✅ Docker 容器已重新构建部署
+| | - **容器状态**: healthy
+| | - **测试状态**: ✅ 成功
+| |   - 群组 @机器人 AI 聊天正常
+| |   - 群组不 @机器人无任何回复（搜索已禁用）
+| |   - 私聊所有功能正常
+| 2026-02-22 | **MoviePilot 自动注册功能** ✨📝 |
+| | - **需求**: 用户绑定账号时，如果 MoviePilot 中不存在该用户，自动注册新用户
+| | - **实现**:
+| |   - 新增 `RegisterUserRequest` 结构体到 `moviepilot.go`
+| |   - 新增 `RegisterUser(username, password, email)` 方法
+| |     - 调用 `POST /api/v1/user/` 创建用户
+| |   - 修改 `HandleWithCredentials` 绑定逻辑：
+| |     - 先尝试获取用户
+| |     - 用户不存在时自动调用 `RegisterUser`
+| |     - 注册成功后继续绑定流程
+| | - **API 测试**:
+| |   - `POST /api/v1/user/` with `{"name":"xxx","password":"xxx"}` → 成功
+| | - **部署状态**: ✅ Docker 容器已重新构建部署
+| | - **容器状态**: healthy
+| | - **功能**: 用户使用 `/link 用户名 密码` 绑定时，如果用户不存在会自动注册
+| 2026-02-22 | **管理员无限配额功能** 👑✨ |
+| | - **需求**: 管理员用户拥有无限配额，不受每日限制约束
+| | - **当前配额设置**:
+| |   - 普通用户：电影 2 部/天，剧集 2 部/天
+| |   - 管理员用户：电影无限，剧集无限
+| |   - 每日自动重置（00:00 后首次请求时）
+| | - **实现**:
+| |   - `QuotaService` 添加 `adminIDs map[int64]bool` 字段
+| |   - 新增 `SetAdminIDs(adminIDs)` 方法设置管理员列表
+| |   - 新增 `isAdmin(telegramID)` 方法检查用户是否为管理员
+| |   - 修改 `CheckMovieQuota()` 和 `CheckTVQuota()`：
+| |     - 管理员直接返回 true，跳过配额检查
+| |   - main.go 初始化时从 AdminService 获取管理员列表并设置到 QuotaService
+| | - **管理员添加**:
+| |   - 修改 `/app/data/admins.json` 文件
+| |   - 格式：`{"admins": {"5779291957": "Admin"}}`
+| | - **部署状态**: ✅ Docker 容器已重启
+| | - **日志确认**: `[QuotaService] Set 1 admin IDs for unlimited quota`
+| | - **当前管理员**: 5779291957 (Admin)
+| 2026-02-22 | **求片审核系统** 🔍📋 |
+| | - **需求**: 用户求片请求先经过管理员审核，批准后才提交到 MoviePilot
+| | - **目的**: 过滤低质量资源请求，管理员把控内容质量
+| | - **新增文件**:
+| |   - `internal/services/review.go` - 审核服务
+| |     - `ReviewRequest` 结构体：存储审核请求信息
+| |     - `ReviewService`：管理待审核请求（pending/approved/rejected）
+| |     - `CreateRequest()` - 创建审核请求
+| |     - `Approve()`/`Reject()` - 审核操作
+| | |   - `internal/handlers/review.go` - 审核处理器
+| | |     - `review_approve` - 批准并提交到 MoviePilot
+| | |     - `review_reject` - 拒绝并通知用户
+| | |     - `review_cancel` - 用户取消自己的请求
+| | |     - `my_reviews` - 用户查看自己的求片状态
+| | |     - `review_list` - 管理员查看待审核列表
+| | - **修改文件**:
+| |   - `internal/handlers/request.go` - 改为创建审核请求而非直接提交
+| |   - `main.go` - 注册 ReviewService 和审核回调
+| | | - **请求流程**:
+| |   ```
+| |   1. 用户点击求片 → 创建 ReviewRequest (pending)
+| |   2. 管理员收到通知 → 带 ✅批准 / ❌拒绝 按钮
+| |   3. 批准 → 提交到 MoviePilot → 通知用户成功
+| |   4. 拒绝 → 通知用户被拒绝
+| |   5. 用户可查看 /my_reviews 了解状态
+| |   ```
+| | - **管理员通知格式**:
+| | |   ```
+| | |   🎬 新求片审核
+| | |
+| | |   📺 影片名 (2024)
+| | |
+| | |   📝 简介...
+| | |
+| | |   👤 用户: xxx (ID: xxx)
+| | |
+| | |   [✅ 批准] [❌ 拒绝]
+| | |   ```
+| | - **数据持久化**: `/app/data/review_requests.json`
+| | - **自动清理**: 7 天后清理已处理的审核记录
+| | - **部署状态**: ✅ Docker 容器已重启
+| | - **测试**: 请测试求片审核流程
+| | - **功能**: 用户使用 `/link 用户名 密码` 绑定时，如果用户不存在会自动注册

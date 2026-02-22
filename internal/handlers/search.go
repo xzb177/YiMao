@@ -11,23 +11,26 @@ import (
 
 // SearchHandler handles search callbacks and queries
 type SearchHandler struct {
-	sessMgr      *session.Manager
-	telegram     *services.TelegramClient
-	jellyseerr   *services.JellyseerrClient
-	searchService *services.SearchService
+	sessMgr        *session.Manager
+	telegram       *services.TelegramClient
+	moviepilot     *services.MoviePilotClient
+	tmdb           *services.TMDBClient
+	searchService  *services.SearchService
 }
 
 func NewSearchHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	moviepilot *services.MoviePilotClient,
+	tmdb *services.TMDBClient,
 ) *SearchHandler {
-	searchSvc := services.NewSearchService(jellyseerr, sessMgr)
+	searchSvc := services.NewSearchService(moviepilot, sessMgr)
 	return &SearchHandler{
-		sessMgr:      sessMgr,
-		telegram:     telegram,
-		jellyseerr:   jellyseerr,
-		searchService: searchSvc,
+		sessMgr:        sessMgr,
+		telegram:       telegram,
+		moviepilot:     moviepilot,
+		tmdb:           tmdb,
+		searchService:  searchSvc,
 	}
 }
 
@@ -74,7 +77,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	// Build results message
 	msg := services.NewMessageBuilder()
 	msg.Bold(fmt.Sprintf("🔍 搜索结果: %s", query)).Newline()
-	msg.Textf("找到 %d 个结果 (第 %d 页)", result.Total, result.Page).Newline()
+	msg.Textf("找到 %d 个结果", len(result.Results)).Newline()
 	msg.Newline()
 
 	// Build keyboard with results
@@ -107,7 +110,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	}
 
 	// Add pagination if needed
-	if result.Total > len(result.Results) {
+	if len(result.Results) >= 20 {
 		kb.AddButton("➡️ 下一页", fmt.Sprintf("search:query:%s:page:%d", query, 2))
 		kb.NewRow()
 	}
@@ -123,12 +126,25 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 	// Redirect to detail handler - build detail callback data
 	detailCallback := fmt.Sprintf("detail:id:%s:type:movie", tmdbIDStr)
 
+	// Try to detect type from search results
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	_, _, _, hasSearch := sess.GetSearchResults()
+	if hasSearch {
+		items, _, _, _ := sess.GetSearchResults()
+		for _, item := range items {
+			if item.ID == tmdbIDStr {
+				detailCallback = fmt.Sprintf("detail:id:%s:type:%s", item.ID, item.Type)
+				break
+			}
+		}
+	}
+
 	// Parse and delegate to detail handler
 	parser := callback.NewParser()
 	cb, _ := parser.Parse(detailCallback)
 	ctx.Callback = cb
 
-	detailHandler := NewDetailHandler(h.sessMgr, h.telegram, h.jellyseerr)
+	detailHandler := NewDetailHandler(h.sessMgr, h.telegram, h.moviepilot, h.tmdb)
 	return detailHandler.Handle(ctx)
 }
 
@@ -159,7 +175,7 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	// Build results message
 	msg := services.NewMessageBuilder()
 	msg.Bold(fmt.Sprintf("🔍 搜索结果: %s", query)).Newline()
-	msg.Textf("找到 %d 个结果 (第 %d 页)", result.Total, newPage).Newline()
+	msg.Textf("找到 %d 个结果 (第 %d 页)", len(result.Results), newPage).Newline()
 	msg.Newline()
 
 	kb := services.NewKeyboardBuilder()
