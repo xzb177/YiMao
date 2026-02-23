@@ -370,7 +370,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, media.MediaType))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
+	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -441,7 +441,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
+	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
 		Text:     msg.Build(),

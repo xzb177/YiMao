@@ -436,7 +436,7 @@ func handlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 
 	// Add navigation buttons
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回", CallbackData: "start"},
+		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 	}
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
@@ -604,7 +604,7 @@ func handleSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramCl
 
 	// Add navigation buttons
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回", CallbackData: "start"},
+		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 	}
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
@@ -1088,7 +1088,7 @@ func performSearch(
 	// Add navigation row
 	navRow := []types.TelegramInlineKeyboardButton{}
 	navRow = append(navRow, types.TelegramInlineKeyboardButton{
-		Text:         "⬅️ 返回",
+		Text:         "⬅️ 返回主菜单",
 		CallbackData: "start",
 	})
 
