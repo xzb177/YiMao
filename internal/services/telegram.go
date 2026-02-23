@@ -87,17 +87,15 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 
 	payload := map[string]interface{}{
 		"callback_query_id": callbackID,
-		"text":             text,
 		"show_alert":       showAlert,
 	}
 
 	// Only include text if it's not empty
-	if text == "" {
-		delete(payload, "text")
+	if text != "" {
+		payload["text"] = text
 	}
 
-	_, err := c.makeRequest(apiURL, payload)
-	return err
+	return c.makeSimpleRequest(apiURL, payload)
 }
 
 // SendPhoto sends a photo with caption to a chat
@@ -129,8 +127,7 @@ func (c *TelegramClient) SetWebhook(webhookURL string) error {
 func (c *TelegramClient) DeleteWebhook() error {
 	apiURL := fmt.Sprintf("%s/deleteWebhook", c.baseURL)
 
-	_, err := c.makeRequest(apiURL, nil)
-	return err
+	return c.makeSimpleRequest(apiURL, nil)
 }
 
 // GetUpdates fetches updates from Telegram (for polling)
@@ -235,6 +232,48 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 
 	return result.Result, nil
+}
+
+// makeSimpleRequest makes an API request that returns a boolean result (like answerCallbackQuery)
+func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]interface{}) error {
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[Telegram] Request: %s, payload: %s", apiURL, string(jsonData))
+
+	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	log.Printf("[Telegram] Response: %s", string(body))
+
+	var result struct {
+		OK     bool                 `json:"ok"`
+		Result bool                 `json:"result"`
+		Error  *types.TelegramError `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.OK {
+		if result.Error != nil {
+			return result.Error
+		}
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	return nil
 }
 
 // KeyboardBuilder helps build inline keyboards
