@@ -243,14 +243,31 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 	adminIDs := s.adminService.GetAdminIDs()
 	today := time.Now().Format("2006-01-02")
 
-	// Get all settings first (before acquiring lock) to avoid deadlock
+	// Get all settings first WITHOUT holding any lock
+	// Copy settings to avoid holding lock while processing
 	adminSettings := make(map[int64]*AdminNotificationSettings)
 	s.mu.RLock()
 	for _, adminID := range adminIDs {
-		adminSettings[adminID] = s.GetSettings(adminID)
+		if settings, exists := s.settings[adminID]; exists {
+			// Copy the settings to avoid holding reference to map data
+			settingsCopy := *settings
+			adminSettings[adminID] = &settingsCopy
+		} else {
+			// Return default settings without calling GetSettings (which would try to acquire lock again)
+			adminSettings[adminID] = &AdminNotificationSettings{
+				AdminID:           adminID,
+				DailyTime:         "12:59",
+				Enabled:           true,
+				InstantEnabled:    true,
+				DailySummaryEnabled: false,
+				Libraries:         []string{},
+				Format:           FormatDetailed,
+			}
+		}
 	}
 	s.mu.RUnlock()
 
+	// Now process with write lock for pendingItems
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -289,19 +306,18 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 		// Send instant notification if enabled (unlock before sending to avoid deadlock)
 		if settings.InstantEnabled {
 			s.mu.Unlock()
-			s.sendInstantNotification(adminID, item)
+			s.sendInstantNotification(adminID, item, settings.Format)
 			s.mu.Lock()
 		}
 	}
 }
 
 // sendInstantNotification sends an instant notification for a single item
-func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *MediaItem) {
-	settings := s.GetSettings(adminID)
+func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *MediaItem, format NotificationFormat) {
 	var message string
 
 	// Choose format based on settings
-	if settings.Format == FormatDetailed {
+	if format == FormatDetailed {
 		message = s.formatDetailedMessage(item)
 	} else {
 		message = s.formatSimpleMessage(item)
@@ -575,13 +591,38 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 	currentTime := now.Format("15:04")
 	today := now.Format("2006-01-02")
 
+	adminIDs := s.adminService.GetAdminIDs()
+
+	// Get all settings first WITHOUT holding any lock
+	adminSettings := make(map[int64]*AdminNotificationSettings)
+	s.mu.RLock()
+	for _, adminID := range adminIDs {
+		if settings, exists := s.settings[adminID]; exists {
+			settingsCopy := *settings
+			adminSettings[adminID] = &settingsCopy
+		} else {
+			adminSettings[adminID] = &AdminNotificationSettings{
+				AdminID:           adminID,
+				DailyTime:         "12:59",
+				Enabled:           true,
+				InstantEnabled:    true,
+				DailySummaryEnabled: false,
+				Libraries:         []string{},
+				Format:           FormatDetailed,
+			}
+		}
+	}
+	s.mu.RUnlock()
+
+	// Now acquire write lock for pendingItems manipulation
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	adminIDs := s.adminService.GetAdminIDs()
-
 	for _, adminID := range adminIDs {
-		settings := s.GetSettings(adminID)
+		settings := adminSettings[adminID]
+		if settings == nil {
+			continue
+		}
 
 		// Only process admins with daily summary enabled and overall enabled
 		if !settings.DailySummaryEnabled || !settings.Enabled {
