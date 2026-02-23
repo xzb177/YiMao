@@ -101,10 +101,18 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	log.Printf("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
 
+	// Save subscription ID to review
+	if err := h.reviewService.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
+		log.Printf("[ReviewHandler] Failed to update subscription info: %v", err)
+	}
+
+	// Get subscription status
+	statusText := services.GetSubscriptionStateText("N")
+
 	// Notify user about approval
 	h.telegram.SendMessage(review.TelegramID,
-		fmt.Sprintf("✅ 你的求片请求已批准并提交！\n\n📺 %s (%d)\n\n请求 ID: %d",
-			review.MediaTitle, review.MediaYear, req.ID), "", nil)
+		fmt.Sprintf("✅ 你的求片请求已批准并提交！\n\n📺 %s (%d)\n\n订阅 ID: %d\n状态: %s",
+			review.MediaTitle, review.MediaYear, req.ID, statusText), "", nil)
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 已批准并提交\n\n📺 %s", review.MediaTitle),
@@ -202,6 +210,15 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 		case "approved":
 			statusIcon = "✅"
 			statusText = "已批准"
+			// Show subscription status if available
+			if review.SubscriptionID > 0 {
+				subState := review.SubscriptionState
+				if subState == "" {
+					subState = "N" // Default to new if not set
+				}
+				subStatusText := services.GetSubscriptionStateText(subState)
+				statusText = fmt.Sprintf("%s\n   订阅: %s", subStatusText, statusText)
+			}
 		case "rejected":
 			statusIcon = "❌"
 			statusText = "已拒绝"

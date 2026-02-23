@@ -29,13 +29,18 @@ type ReviewRequest struct {
 	RejectionReason string   `json:"rejection_reason,omitempty"`
 	EmbyExists     bool      `json:"emby_exists,omitempty"` // Media already exists in Emby
 	EmbyInfo       *EmbySearchResult `json:"emby_info,omitempty"`   // Emby media info if exists
+
+	// MoviePilot subscription info
+	SubscriptionID    int    `json:"subscription_id,omitempty"`    // MoviePilot subscription ID
+	SubscriptionState string `json:"subscription_state,omitempty"` // N, R, S, D, C, F, X
 }
 
 // ReviewService manages review requests
 type ReviewService struct {
-	reviewsFile string
-	reviews     map[string]*ReviewRequest // requestID -> review
-	mu          sync.RWMutex
+	reviewsFile  string
+	reviews      map[string]*ReviewRequest // requestID -> review
+	mu           sync.RWMutex
+	moviepilot   *MoviePilotClient // For updating subscription status
 }
 
 // NewReviewService creates a new review service
@@ -53,6 +58,13 @@ func NewReviewService(dataDir string) *ReviewService {
 	go service.cleanupRoutine()
 
 	return service
+}
+
+// SetMoviePilotClient sets the MoviePilot client (called after initialization)
+func (s *ReviewService) SetMoviePilotClient(mp *MoviePilotClient) {
+	s.moviepilot = mp
+	// Start subscription status refresh routine
+	go s.refreshSubscriptionStatus()
 }
 
 // load loads reviews from file
@@ -186,6 +198,46 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64) (*ReviewRequ
 	return review, s.saveLocked()
 }
 
+// UpdateSubscriptionInfo updates the MoviePilot subscription info for a review
+func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID int, state string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+
+	review.SubscriptionID = subscriptionID
+	review.SubscriptionState = state
+
+	log.Printf("[ReviewService] Updated subscription info for %s: ID=%d, State=%s", requestID, subscriptionID, state)
+
+	return s.saveLocked()
+}
+
+// GetSubscriptionStateText returns user-friendly text for subscription state
+func GetSubscriptionStateText(state string) string {
+	switch state {
+	case "N": // New
+		return "⏳ 等待搜索"
+	case "R": // Recycled
+		return "🔄 重新搜索"
+	case "S": // Searching
+		return "🔍 搜索中"
+	case "D": // Downloading
+		return "📥 下载中"
+	case "C": // Completed
+		return "✅ 已完成"
+	case "F": // Failed
+		return "❌ 失败"
+	case "X": // Cancelled
+		return "🚫 已取消"
+	default:
+		return "❓ 未知状态"
+	}
+}
+
 // Reject rejects a review request
 func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string) (*ReviewRequest, error) {
 	s.mu.Lock()
@@ -274,4 +326,78 @@ func (s *ReviewService) GetStats() map[string]int {
 	}
 
 	return stats
+}
+
+// refreshSubscriptionStatus periodically updates subscription status from MoviePilot
+func (s *ReviewService) refreshSubscriptionStatus() {
+	if s.moviepilot == nil {
+		return
+	}
+
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+
+	// Initial refresh
+	s.updateAllSubscriptionStatus()
+
+	for range ticker.C {
+		s.updateAllSubscriptionStatus()
+	}
+}
+
+// updateAllSubscriptionStatus updates subscription status for all approved reviews
+func (s *ReviewService) updateAllSubscriptionStatus() {
+	s.mu.RLock()
+	var toUpdate []struct {
+		requestID string
+		subID     int
+	}
+	for _, review := range s.reviews {
+		if review.Status == "approved" && review.SubscriptionID > 0 {
+			toUpdate = append(toUpdate, struct {
+				requestID string
+				subID     int
+			}{
+				requestID: review.RequestID,
+				subID:     review.SubscriptionID,
+			})
+		}
+	}
+	s.mu.RUnlock()
+
+	if len(toUpdate) == 0 {
+		return
+	}
+
+	log.Printf("[ReviewService] Updating subscription status for %d requests", len(toUpdate))
+
+	// Get all subscriptions from MoviePilot
+	subs, err := s.moviepilot.GetAllSubscriptions()
+	if err != nil {
+		log.Printf("[ReviewService] Failed to get subscriptions: %v", err)
+		return
+	}
+
+	// Create a map for quick lookup
+	subMap := make(map[int]*SubscribeStatus)
+	for i := range subs {
+		subMap[subs[i].ID] = &subs[i]
+	}
+
+	// Update each review
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, item := range toUpdate {
+		if sub, exists := subMap[item.subID]; exists {
+			if review, ok := s.reviews[item.requestID]; ok {
+				if review.SubscriptionState != sub.State {
+					review.SubscriptionState = sub.State
+					log.Printf("[ReviewService] Updated %s: %s -> %s", item.requestID, review.SubscriptionState, sub.State)
+				}
+			}
+		}
+	}
+
+	s.saveLocked()
 }

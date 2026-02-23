@@ -396,6 +396,23 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 	return &response.Data, nil
 }
 
+// GetAllSubscriptions retrieves all subscriptions from MoviePilot
+func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
+	endpoint := "/api/v1/subscribe/?page=1&count=1000"
+
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []SubscribeStatus
+	if err := json.Unmarshal(body, &items); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return items, nil
+}
+
 // GetUserRequests retrieves all subscription requests for a user
 func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error) {
 	// MoviePilot uses /api/v1/subscribe/ endpoint

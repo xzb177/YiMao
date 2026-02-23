@@ -133,6 +133,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	adminService := services.NewAdminService(cfg.DataDir)
 	quotaService := services.NewQuotaService(cfg.DataDir, moviepilotClient)
 	reviewService := services.NewReviewService(cfg.DataDir)
+	reviewService.SetMoviePilotClient(moviepilotClient)
 
 	// Initialize Media Notification Service
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService)
