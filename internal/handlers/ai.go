@@ -42,7 +42,8 @@ func (h *AIHandler) SetTMDBClient(tmdb *services.TMDBClient) {
 }
 
 func (h *AIHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	if !h.cfg.EnableAI {
+	// Check if AI is enabled (default to true if cfg is nil)
+	if h.cfg != nil && !h.cfg.EnableAI {
 		return &callback.Response{
 			Text:        "❌ AI 推荐功能未启用",
 			CallbackMsg: "功能未启用",
