@@ -228,8 +228,12 @@ func (h *AIHandler) buildResultsMessage(userID int64, result *services.TrendingR
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	// Cache all AI recommendation items for later use in request handler
+	// AND save navigation history for "back" button
 	sess := h.sessMgr.GetOrCreate(userID)
 	if sess != nil && len(result.Items) > 0 {
+		// Save navigation entry before showing results
+		sess.PushNavEntry("ai", result.Source, fmt.Sprintf("AI 推荐: %s", title))
+
 		cacheItems := make([]*session.AIRecommendationItem, 0, len(result.Items))
 		for _, item := range result.Items {
 			tmdbID := 0
@@ -247,7 +251,7 @@ func (h *AIHandler) buildResultsMessage(userID int64, result *services.TrendingR
 			}
 		}
 		sess.CacheAIResults(cacheItems)
-		log.Printf("[AIHandler] Cached %d AI recommendation items", len(cacheItems))
+		log.Printf("[AIHandler] Cached %d AI recommendation items, saved nav history", len(cacheItems))
 	}
 
 	return &callback.Response{

@@ -293,6 +293,13 @@ func (s *ReviewService) cleanup() {
 	var toDelete []string
 
 	for id, review := range s.reviews {
+		// Also delete approved reviews without subscription ID (old data before tracking)
+		if review.Status == "approved" && review.SubscriptionID == 0 && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+			toDelete = append(toDelete, id)
+			log.Printf("[ReviewService] Cleaning up old approved review without subscription: %s", id)
+			continue
+		}
+
 		if (review.Status == "approved" || review.Status == "rejected") &&
 			review.ReviewedAt.Before(cutoff) {
 			toDelete = append(toDelete, id)

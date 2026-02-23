@@ -721,10 +721,21 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
-		// No history, show start menu
+		// No history, show start menu with full content
+		msg := services.NewMessageBuilder()
+		msg.Bold("👋 欢迎使用云海影视助手").Newline()
+		msg.Newline()
+		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
+		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
+		msg.Newline()
+		msg.Italic("💡 点击下方按钮开始探索").Newline()
+
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
+
 		return &callback.Response{
-			Text:     "🌟 欢迎回来",
+			Text:     msg.Build(),
 			Edit:     true,
 			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
 		}, nil
@@ -754,9 +765,21 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			ShowAlert:   true,
 		}, nil
 	default:
+		// Show start menu with full content for any other source
+		msg := services.NewMessageBuilder()
+		msg.Bold("👋 欢迎使用云海影视助手").Newline()
+		msg.Newline()
+		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
+		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
+		msg.Newline()
+		msg.Italic("💡 点击下方按钮开始探索").Newline()
+
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
+
 		return &callback.Response{
-			Text:     "🌟 欢迎回来",
+			Text:     msg.Build(),
 			Edit:     true,
 			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
 		}, nil

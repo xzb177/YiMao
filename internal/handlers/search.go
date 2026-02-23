@@ -315,6 +315,9 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	msg.Textf("找到 %d 个结果 (第 %d 页)", len(result.Results), newPage).Newline()
 	msg.Newline()
 
+	// Save navigation entry for back button
+	sess.PushNavEntry("search", query, fmt.Sprintf("搜索: %s", query))
+
 	kb := services.NewKeyboardBuilder()
 
 	displayCount := len(result.Results)
