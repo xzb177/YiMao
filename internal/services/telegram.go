@@ -511,9 +511,9 @@ func BuildDetailKeyboard(mediaID, mediaType string, hasQuota bool) *types.Telegr
 	kb := NewKeyboardBuilder()
 
 	if hasQuota {
-		kb.AddButton("✅ 请求", fmt.Sprintf("request:id:%s:type:%s", mediaID, mediaType))
+		kb.AddButton("✅ 求片", fmt.Sprintf("request:id:%s:type:%s", mediaID, mediaType))
 	} else {
-		kb.AddButton("⚠️ 配额已用完", "quota_exceeded")
+		kb.AddButton("📊 配额已用完", "quota_exceeded")
 	}
 
 	kb.NewRow()
@@ -575,7 +575,7 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 	// Add admin button for admin users
 	if isAdmin {
 		kb.NewRow()
-		kb.AddButton("🔧 管理员菜单", "admin_menu")
+		kb.AddButton("⚙️ 管理菜单", "admin_menu")
 	}
 
 	return kb.Build()

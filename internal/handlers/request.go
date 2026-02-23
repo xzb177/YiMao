@@ -80,7 +80,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if !exists || moviepilotID == 0 {
 		log.Printf("[RequestHandler] No moviepilot ID found for user %d", ctx.UserID)
 		return &callback.Response{
-			Text:        "❌ 请先使用 /link 命令绑定 MoviePilot 账号",
+			Text:        "❓ 请先使用 /link 命令绑定账号",
 			CallbackMsg: "需要绑定账号",
 			ShowAlert:   true,
 		}, nil
@@ -92,7 +92,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 		log.Printf("[RequestHandler] Quota check failed for user %d", ctx.UserID)
 		return &callback.Response{
-			Text:        fmt.Sprintf("❌ 今日配额已用完\n\n%s", quotaText),
+			Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
 			CallbackMsg: "配额已用完",
 			ShowAlert:   true,
 		}, nil
@@ -102,7 +102,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	sess := h.sessMgr.Get(ctx.UserID)
 	if sess == nil {
 		return &callback.Response{
-			Text:        "❌ 会话已过期，请重新搜索",
+			Text:        "⏰ 会话已过期，请重新搜索",
 			CallbackMsg: "会话过期",
 			ShowAlert:   true,
 		}, nil
@@ -175,7 +175,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		log.Printf("[RequestHandler] Media found in Emby: %s (ID: %s)", existingMedia.Title, existingMedia.ID)
 
 		// Build message showing media already exists
-		message := fmt.Sprintf("⚠️ 该内容已在媒体库中\n\n📺 %s", existingMedia.Title)
+		message := fmt.Sprintf("⚠️ 媒体库中已存在\n\n📺 %s", existingMedia.Title)
 		if existingMedia.Year > 0 {
 			message += fmt.Sprintf(" (%d)", existingMedia.Year)
 		}
@@ -199,7 +199,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 				{
 					{Text: "❌ 取消", CallbackData: "cancel_request"},
-					{Text: "💪 仍要订阅", CallbackData: fmt.Sprintf("force_subscribe:tmdb:%d:type:%s", tmdbID, mediaType)},
+					{Text: "👍 仍要订阅", CallbackData: fmt.Sprintf("force_subscribe:tmdb:%d:type:%s", tmdbID, mediaType)},
 				},
 			},
 		}
@@ -237,7 +237,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if err := h.reviewService.CreateRequest(review); err != nil {
 		log.Printf("[RequestHandler] Failed to create review request: %v", err)
 		return &callback.Response{
-			Text:        "❌ 创建请求失败",
+			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err
@@ -247,7 +247,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "✅ 求片请求已提交\n\n等待管理员审核",
+		Text:        "✅ 求片已提交，等待管理员审核",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
@@ -273,13 +273,13 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 	if review.MediaYear > 0 {
 		message += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
-	message += fmt.Sprintf("\n\n🏷️ 类型: %s", mediaTypeLabel)
+	message += fmt.Sprintf("\n🏷️ %s", mediaTypeLabel)
 
 	// Add season info for TV shows
 	if review.MediaType == services.MediaTypeTV && review.Season > 0 {
-		message += fmt.Sprintf("\n📺 第 %d 季", review.Season)
+		message += fmt.Sprintf("\n📺 第%d季", review.Season)
 	} else if review.MediaType == services.MediaTypeTV {
-		message += "\n📺 全季"
+		message += "\n📺 全季订阅"
 	}
 
 	if review.Overview != "" && len(review.Overview) > 0 {
@@ -291,7 +291,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		message += fmt.Sprintf("\n\n📝 %s", overview)
 	}
 
-	message += fmt.Sprintf("\n\n👤 用户: %s (ID: %d)", review.TelegramName, review.TelegramID)
+	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
 
 	// Add action buttons
 	for _, adminID := range adminIDs {
@@ -375,7 +375,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	if !exists || moviepilotID == 0 {
 		return &callback.Response{
-			Text:        "❌ 请先使用 /link 命令绑定 MoviePilot 账号",
+			Text:        "❓ 请先使用 /link 命令绑定账号",
 			CallbackMsg: "需要绑定账号",
 			ShowAlert:   true,
 		}, nil
@@ -385,7 +385,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
 		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 		return &callback.Response{
-			Text:        fmt.Sprintf("❌ 今日配额已用完\n\n%s", quotaText),
+			Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
 			CallbackMsg: "配额已用完",
 			ShowAlert:   true,
 		}, nil
@@ -395,7 +395,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	sess := h.sessMgr.Get(ctx.UserID)
 	if sess == nil {
 		return &callback.Response{
-			Text:        "❌ 会话已过期，请重新搜索",
+			Text:        "⏰ 会话已过期，请重新搜索",
 			CallbackMsg: "会话过期",
 			ShowAlert:   true,
 		}, nil
@@ -458,7 +458,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	if err := h.reviewService.CreateRequest(review); err != nil {
 		return &callback.Response{
-			Text:        "❌ 创建请求失败",
+			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err
@@ -467,7 +467,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "✅ 求片请求已提交\n\n等待管理员审核",
+		Text:        "✅ 求片已提交，等待管理员审核",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
@@ -476,7 +476,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 // HandleCancelRequest handles cancel button
 func (h *RequestHandler) HandleCancelRequest(ctx *callback.Context) (*callback.Response, error) {
 	return &callback.Response{
-		Text:        "❌ 已取消",
+		Text:        "✖️ 已取消",
 		CallbackMsg: "已取消",
 		ShowAlert:   false,
 		Edit:        true,

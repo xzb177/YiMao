@@ -61,12 +61,12 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
+	msg.Bold("👋 欢迎使用云海影视助手").Newline()
 	msg.Newline()
-	msg.Text("🔍 智能搜索 — 快速查找心仪影片").Newline()
-	msg.Text("🤖 AI 推荐 — 发现热门好片").Newline()
-	msg.Text("📋 请求管理 — 跟踪您的求片进度").Newline()
-	msg.Text("🔗 账号绑定 — 同步您的观影记录").Newline()
+	msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
+	msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+	msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+	msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
 	msg.Newline()
 	msg.Italic("💡 点击下方按钮开始探索").Newline()
 
@@ -89,9 +89,9 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜索影片").Newline()
 	msg.Newline()
-	msg.Text("请输入影片名称进行搜索").Newline()
+	msg.Text("请输入影片名称，支持中文/英文").Newline()
 	msg.Newline()
-	msg.Italic("💡 提示：直接输入影片名称即可开始搜索")
+	msg.Italic("💡 输入影片名称后自动搜索")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -103,7 +103,7 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, error) {
 	if !h.cfg.EnableAI {
 		return &callback.Response{
-			Text:        "❌ AI 推荐功能未启用",
+			Text:        "⚠️ AI 推荐暂未开放",
 			CallbackMsg: "功能未启用",
 			ShowAlert:   true,
 		}, nil
@@ -112,7 +112,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 智能推荐").Newline()
 	msg.Newline()
-	msg.Italic("💡 基于大数据分析，为您精选优质内容").Newline()
+	msg.Italic("✨ 为您精选优质内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 热门电影", "ai:trending")
@@ -134,7 +134,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 
 func (h *StartHandler) HandleHot(ctx *callback.Context) (*callback.Response, error) {
 	return &callback.Response{
-		Text:        "📺 正在加载热门剧集...",
+		Text:        "📺 加载中...",
 		CallbackMsg: "加载中",
 		ShowAlert:   true,
 	}, nil
@@ -142,7 +142,7 @@ func (h *StartHandler) HandleHot(ctx *callback.Context) (*callback.Response, err
 
 func (h *StartHandler) HandleNew(ctx *callback.Context) (*callback.Response, error) {
 	return &callback.Response{
-		Text:        "🆕 正在加载新片...",
+		Text:        "🆕 加载中...",
 		CallbackMsg: "加载中",
 		ShowAlert:   true,
 	}, nil
@@ -259,7 +259,7 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 
 	// AI Reason
 	if item.Reason != "" {
-		msg.Bold("💭 AI推荐理由").Newline()
+		msg.Bold("💭 推荐理由").Newline()
 		msg.Text(item.Reason).Newline()
 		msg.Newline()
 	}
@@ -577,7 +577,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	msg.Newline()
 
 	// Note
-	msg.Italic("💡 完整信息暂时无法获取，但您仍然可以发起请求").Newline().Newline()
+	msg.Italic("💡 信息暂不可用，但仍可发起请求").Newline().Newline()
 
 	// Request button label
 	buttonLabel := "✅ 立即求片"
@@ -604,7 +604,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	mediaID, hasID := ctx.Callback.Params["id"]
 	if !hasID {
 		return &callback.Response{
-			Text:        "无效的请求",
+			Text:        "❌ 请求无效",
 			CallbackMsg: "参数错误",
 			ShowAlert:   true,
 		}, nil
@@ -616,7 +616,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	items, _, _, hasSearch := sess.GetSearchResults()
 	if !hasSearch {
 		return &callback.Response{
-			Text:        "搜索结果已过期，请重新搜索",
+			Text:        "⏰ 搜索结果已过期，请重新搜索",
 			CallbackMsg: "结果已过期",
 			ShowAlert:   true,
 		}, nil
@@ -632,7 +632,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 
 	if targetItem == nil {
 		return &callback.Response{
-			Text:        "未找到该媒体信息",
+			Text:        "⏰ 未找到该媒体信息",
 			CallbackMsg: "未找到",
 			ShowAlert:   true,
 		}, nil
@@ -641,7 +641,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	// Check if it's a TV show with seasons
 	if targetItem.Type != "tv" || len(targetItem.Seasons) == 0 {
 		return &callback.Response{
-			Text:        "该媒体没有季信息",
+			Text:        "⏰ 该媒体没有季信息",
 			CallbackMsg: "无季信息",
 			ShowAlert:   true,
 		}, nil
@@ -737,19 +737,19 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	switch entry.Source {
 	case "ai_trending", "trending":
 		return &callback.Response{
-			Text:        "🔥 正在重新加载...",
+			Text:        "🔄 加载中...",
 			CallbackMsg: "加载中",
 			ShowAlert:   true,
 		}, nil
 	case "ai_hot", "hot":
 		return &callback.Response{
-			Text:        "📺 正在重新加载...",
+			Text:        "🔄 加载中...",
 			CallbackMsg: "加载中",
 			ShowAlert:   true,
 		}, nil
 	case "ai_new", "new":
 		return &callback.Response{
-			Text:        "🆕 正在重新加载...",
+			Text:        "🔄 加载中...",
 			CallbackMsg: "加载中",
 			ShowAlert:   true,
 		}, nil
@@ -793,7 +793,7 @@ func NewCancelHandler() *CancelHandler {
 
 func (h *CancelHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	return &callback.Response{
-		Text:     "❌ 已取消",
+		Text:     "✖️ 已取消",
 		Edit:     true,
 		Keyboard: &callback.Keyboard{},
 	}, nil
