@@ -461,11 +461,13 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 
 // getRequestBody reads and returns request body
 func getRequestBody(req *http.Request) ([]byte, error) {
-	body, err := req.GetBody()
-	if err != nil {
-		return nil, err
+	// Try GetBody first for re-readability
+	body := req.Body
+	if body == nil {
+		return nil, fmt.Errorf("request body is nil")
 	}
-	defer body.Close()
 
-	return io.ReadAll(body)
+	data, err := io.ReadAll(body)
+	body.Close()
+	return data, err
 }

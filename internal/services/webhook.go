@@ -119,7 +119,7 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	case "item.updated", "itemupdated":
 		// Skip update events to reduce noise
 		return nil
-	case "system.notificationtest", "system.test":
+	case "system.notificationtest", "system.test", "test":
 		return s.handleTestNotification(payload)
 	default:
 		return nil
@@ -490,8 +490,11 @@ func (s *WebhookService) handleTestNotification(payload EmbyWebhookPayload) erro
 	message := "🔔 测试通知\n\nEmby 连接正常！"
 
 	if s.chatID != 0 {
-		_, err := s.telegram.SendMessage(s.chatID, message, "", nil)
-		return err
+		// Use cache to avoid spamming test notifications
+		if !s.sendWithCache(s.chatID, message) {
+			return nil
+		}
+		return nil
 	}
 
 	return fmt.Errorf("no chat ID configured")
