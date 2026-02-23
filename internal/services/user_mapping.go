@@ -68,28 +68,45 @@ func (s *UserMappingService) load() error {
 		return err
 	}
 
-	if err := json.Unmarshal(data, &s.mappings); err != nil {
-		return err
+	// Try new format first
+	var fileData struct {
+		UserMappings     map[string]int64  `json:"user_mappings"`
+		Usernames        map[string]string `json:"usernames"`
+		ReverseMappings map[int64]string  `json:"reverse_mappings"`
 	}
-	if err := json.Unmarshal(data, &s.usernames); err != nil {
-		return err
-	}
-	if err := json.Unmarshal(data, &s.reverseMap); err != nil {
-		return err
+	if err := json.Unmarshal(data, &fileData); err == nil {
+		s.mappings = fileData.UserMappings
+		s.usernames = fileData.Usernames
+		s.reverseMap = fileData.ReverseMappings
+		log.Printf("[UserMapping] Loaded %d user mappings", len(s.mappings))
+		return nil
 	}
 
-	log.Printf("[UserMapping] Loaded %d user mappings", len(s.mappings))
+	// Try legacy format (direct mappings)
+	var legacyData map[string]int64
+	if err := json.Unmarshal(data, &legacyData); err == nil {
+		s.mappings = legacyData
+		log.Printf("[UserMapping] Loaded %d user mappings (legacy format)", len(s.mappings))
+		return nil
+	}
+
+	log.Printf("[UserMapping] Failed to load user mappings: %v", err)
 	return nil
 }
 
 // save saves user mappings to file
 func (s *UserMappingService) save() error {
-	data, err := json.MarshalIndent(s.mappings, "", "  ")
+	data := map[string]interface{}{
+		"user_mappings":  s.mappings,
+		"usernames":      s.usernames,
+		"reverse_mappings": s.reverseMap,
+	}
+	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(s.mappingsFile, data, 0644)
+	return os.WriteFile(s.mappingsFile, jsonData, 0644)
 }
 
 // GetJellyseerrUserID gets Jellyseerr user ID for a Telegram user

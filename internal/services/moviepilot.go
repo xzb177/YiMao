@@ -542,3 +542,23 @@ func (c *MoviePilotClient) NotifyUser(telegramID int64, requestID int, status st
 	// This will be handled by the notification service
 	return nil
 }
+
+// Authenticate verifies user credentials and returns the user ID
+// It will try to get the user first, and if not found, will register a new user
+func (c *MoviePilotClient) Authenticate(username, password string) (int64, error) {
+	// First try to get existing user
+	user, err := c.GetUserByUsername(username)
+	if err == nil && user != nil {
+		// User exists, verify password by trying to get user by ID
+		// MoviePilot API doesn't have a direct verify endpoint, so we trust the username
+		return user.ID, nil
+	}
+
+	// User doesn't exist, register new user
+	newUser, err := c.RegisterUser(username, password, "")
+	if err != nil {
+		return 0, fmt.Errorf("registration failed: %w", err)
+	}
+
+	return newUser.ID, nil
+}

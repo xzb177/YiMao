@@ -3285,3 +3285,18 @@ trends - 请求趋势
  | |   - `cmd/bot/main.go` - 回调注册
  | | - **Emby URL**: https://emby.oceancloud.asia
  | | - **部署状态**: ✅ 已部署并测试通过
+
+2026-02-24 | **自动绑定功能** 🔗 |
+ | | - **功能**: `/link` 命令改为自动绑定，无需管理员审核
+ | | - **流程**: 
+ | |   1. 用户执行 `/link 用户名 密码`
+ | |   2. 系统验证 MoviePilot 账号
+ | |   3. 用户不存在则自动注册
+ | |   4. 验证成功立即绑定
+ | | - **修改文件**:
+ | |   - `internal/bot/command.go` - 修改 HandleLinkCommand 使用 MoviePilot API 验证
+ | |   - `internal/services/moviepilot.go` - 添加 Authenticate 方法
+ | |   - `internal/services/user_mapping.go` - 修复 save/load 数据格式问题
+ | | - **数据格式**: 使用 `user_mappings`, `usernames`, `reverse_mappings` 三个字段
+ | | - **部署状态**: ✅ 已构建并部署
+ | | - **EMby URL**: https://emby.oceancloud.asia

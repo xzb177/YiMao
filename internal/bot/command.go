@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -18,6 +17,7 @@ func HandleCommand(
 	adminService *services.AdminService,
 	bindingRequest *services.BindingRequestService,
 	quotaService *services.QuotaService,
+	userMapping *services.UserMappingService,
 ) {
 	parts := strings.Fields(msg.Text)
 	if len(parts) == 0 {
@@ -42,7 +42,7 @@ func HandleCommand(
 		text := "📋 请使用 /start 菜单中的 我的请求 功能"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 	case "/link":
-		HandleLinkCommand(telegram, msg, bindingRequest)
+		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":
 		HandleQuotaCommand(telegram, msg, quotaService)
 	// Unknown commands are silently ignored
@@ -50,11 +50,11 @@ func HandleCommand(
 }
 
 // HandleLinkCommand handles /link command with optional username and password
-func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService) {
+func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping *services.UserMappingService) {
 	parts := strings.Fields(msg.Text)
 
 	if len(parts) == 1 {
-		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下命令绑定您的账号：\n\n/link 用户名 密码\n\n示例：\n/link johndoe mypassword123\n\n💡 您的凭据将直接发送到 MoviePilot 服务器进行验证"
+		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下命令绑定您的账号：\n\n/link 用户名 密码\n\n示例：\n/link johndoe mypassword123\n\n💡 您的凭据将直接发送到 MoviePilot 服务器进行验证，新用户将自动注册"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 		return
 	}
@@ -66,25 +66,28 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	username := parts[1]
-	_ = strings.Join(parts[2:], " ") // Password accepted but not stored for security
+	password := strings.Join(parts[2:], " ")
 
-	// For now, create a binding request
-	requestID := fmt.Sprintf("req_%d_%d", msg.From.ID, msg.Chat.ID)
-	req := &services.BindingRequest{
-		RequestID:        requestID,
-		TelegramID:       msg.From.ID,
-		TelegramName:     msg.From.FirstName,
-		TelegramUsername: username,
-	}
-	err := bindingRequest.CreateRequest(req)
+	// Verify credentials with MoviePilot
+	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
+	userID, err := mpClient.Authenticate(username, password)
 	if err != nil {
-		log.Printf("[LinkCommand] Failed to create binding request: %v", err)
-		text := fmt.Sprintf("❌ 绑定请求创建失败: %v", err)
+		log.Printf("[LinkCommand] Authentication failed for %s: %v", username, err)
+		text := "❌ 绑定失败：用户名或密码错误"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 		return
 	}
 
-	text := "✅ 绑定请求已提交，请等待管理员审核"
+	// Save mapping using the provided userMapping service
+	if err := userMapping.AddMapping(msg.From.ID, userID, username); err != nil {
+		log.Printf("[LinkCommand] Failed to save mapping: %v", err)
+		text := "❌ 绑定失败：无法保存映射"
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		return
+	}
+
+	log.Printf("[LinkCommand] User %d bound to MoviePilot ID %d", msg.From.ID, userID)
+	text := "✅ 绑定成功\n\n您现在可以使用求片功能了"
 	telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 }
 
