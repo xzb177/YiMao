@@ -56,20 +56,34 @@ func main() {
 	log.Printf("✅ Security service initialized: rate_limit=%v, ip_blocking=%v",
 		cfg.EnableRateLimit, cfg.EnableIPBlocking)
 
-	// Initialize callback registry
-	registry := initRegistry(deps)
+	// Initialize callback registry (creates handlers including FeedbackHandler)
+	registry, depsWithHandlers := initRegistry(deps)
 
 	// Setup bot command menu
-	setupBotCommands(deps.Telegram)
+	setupBotCommands(depsWithHandlers.Telegram)
 
 	// Setup webhook (if configured)
-	setupWebhook(deps.Telegram, cfg)
+	setupWebhook(depsWithHandlers.Telegram, cfg)
 
 	// Start polling for updates if no webhook is configured
-	go bot.StartPolling(toBotDeps(deps), cfg, registry)
+	go bot.StartPolling(toBotDeps(depsWithHandlers), cfg, registry)
 
 	// Create HTTP server
-	srv := createServer(cfg, registry, deps, securityService)
+	srv := server.New(cfg, registry, &server.Dependencies{
+		Telegram:          depsWithHandlers.Telegram,
+		MoviePilot:        depsWithHandlers.MoviePilot,
+		SessionMgr:        depsWithHandlers.SessionMgr,
+		UserMapping:       depsWithHandlers.UserMapping,
+		Preferences:       depsWithHandlers.Preferences,
+		IssueService:      depsWithHandlers.IssueService,
+		AdminService:      depsWithHandlers.AdminService,
+		QuotaService:      depsWithHandlers.QuotaService,
+		ChatService:       depsWithHandlers.ChatService,
+		WebhookService:    depsWithHandlers.WebhookService,
+		BindingRequest:    depsWithHandlers.BindingRequest,
+		MediaNotification: depsWithHandlers.MediaNotification,
+		FeedbackHandler:   depsWithHandlers.FeedbackHandler,
+	}, securityService)
 
 	// Start server in background
 	go func() {
@@ -119,6 +133,7 @@ type Dependencies struct {
 	Notification      *services.NotificationService
 	Scheduler         *services.Scheduler
 	SearchHistory     *services.SearchHistoryService
+	FeedbackHandler   *handlers.FeedbackHandler
 }
 
 // initServices initializes all services
@@ -215,7 +230,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 }
 
 // initRegistry initializes the callback registry and handlers
-func initRegistry(deps *Dependencies) *callback.Registry {
+func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry := callback.NewRegistry()
 
 	// Apply middleware
@@ -224,26 +239,28 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	registry.Use(middleware.Validator)
 
 	// Create handlers
-	startHandler := handlers.NewStartHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot)
-	detailHandler := handlers.NewDetailHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
-	backHandler := handlers.NewBackHandler(deps.SessionMgr)
+	startHandler := handlers.NewStartHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot)
+	detailHandler := handlers.NewDetailHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
+	backHandler := handlers.NewBackHandler(services.SessionMgr)
 	cancelHandler := handlers.NewCancelHandler()
-	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
-	searchHandler := handlers.NewSearchHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
-	myRequestsHandler := handlers.NewMyRequestsHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot)
-	linkHandler := handlers.NewLinkHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
+	requestHandler := handlers.NewRequestHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.WebhookService, services.UserMapping, services.QuotaService, services.ReviewService)
+	searchHandler := handlers.NewSearchHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
+	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
+	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
-	aiHandler := handlers.NewAIHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot)
-	adminHandler := handlers.NewAdminHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
-	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService)
+	aiHandler := handlers.NewAIHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot)
+	adminHandler := handlers.NewAdminHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
+	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService)
+	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
 
 	// Inject dependencies
-	startHandler.SetAdminService(deps.AdminService)
-	backHandler.SetAdminService(deps.AdminService)
-	adminHandler.SetMediaNotificationService(deps.MediaNotification)
-	myRequestsHandler.SetUserMapping(deps.UserMapping)
-	aiHandler.SetTMDBClient(deps.TMDBClient)
-	searchHandler.SetSearchHistory(deps.SearchHistory)
+	startHandler.SetAdminService(services.AdminService)
+	backHandler.SetAdminService(services.AdminService)
+	adminHandler.SetMediaNotificationService(services.MediaNotification)
+	myRequestsHandler.SetUserMapping(services.UserMapping)
+	aiHandler.SetTMDBClient(services.TMDBClient)
+	searchHandler.SetSearchHistory(services.SearchHistory)
+	feedbackHandler.SetIssueService(services.IssueService)
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
@@ -261,6 +278,7 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
+	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
@@ -290,7 +308,29 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 
 	log.Println("✅ Callback handlers registered")
 
-	return registry
+	// Build full dependencies
+	deps := &Dependencies{
+		Telegram:          services.Telegram,
+		MoviePilot:        services.MoviePilot,
+		SessionMgr:        services.SessionMgr,
+		UserMapping:       services.UserMapping,
+		BindingRequest:    services.BindingRequest,
+		Preferences:       services.Preferences,
+		IssueService:      services.IssueService,
+		AdminService:      services.AdminService,
+		QuotaService:      services.QuotaService,
+		ReviewService:     services.ReviewService,
+		MediaNotification: services.MediaNotification,
+		ChatService:       services.ChatService,
+		WebhookService:    services.WebhookService,
+		TMDBClient:        services.TMDBClient,
+		Notification:      services.Notification,
+		Scheduler:         services.Scheduler,
+		SearchHistory:     services.SearchHistory,
+		FeedbackHandler:   feedbackHandler,
+	}
+
+	return registry, deps
 }
 
 // setupBotCommands sets up the bot command menu

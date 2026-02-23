@@ -283,6 +283,7 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", item.TmdbID, item.MediaType, item.Title))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
 
@@ -364,6 +365,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, media.MediaType))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, media.MediaType, media.Title))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
 
@@ -435,6 +437,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, mediaTypeStr, media.Title))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
 
@@ -544,6 +547,7 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			buttonLabel = "✅ 订阅剧集"
 		}
 		kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()
 	}
 
@@ -588,6 +592,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s", tmdbID, mediaType))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

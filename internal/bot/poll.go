@@ -8,6 +8,7 @@ import (
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
+	"emby-telegram-bot/internal/handlers"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/types"
@@ -25,6 +26,8 @@ type Dependencies struct {
 	ChatService       *services.ChatService
 	SearchHistory     *services.SearchHistoryService
 	TMDB              *services.TMDBClient
+	IssueService      *services.IssueService
+	FeedbackHandler   *handlers.FeedbackHandler
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -39,6 +42,8 @@ type PollDeps struct {
 	ChatService    *services.ChatService
 	SearchHistory  *services.SearchHistoryService
 	TMDB           *services.TMDBClient
+	IssueService   *services.IssueService
+	FeedbackHandler *handlers.FeedbackHandler
 }
 
 // StartPolling starts the Telegram update polling
@@ -54,16 +59,18 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		QuotaService:   deps.QuotaService,
-		ChatService:    deps.ChatService,
-		SearchHistory:  deps.SearchHistory,
-		TMDB:           deps.TMDB,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		QuotaService:    deps.QuotaService,
+		ChatService:     deps.ChatService,
+		SearchHistory:   deps.SearchHistory,
+		TMDB:            deps.TMDB,
+		IssueService:    deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
 	}
 
 	for {
@@ -113,6 +120,14 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Group chat: Only AI chat is allowed
 	if msg.Chat.Type != "private" {
 		HandleGroupChatMessage(msg, deps.ChatService, deps.Telegram)
+		return
+	}
+
+	// Check if user is in feedback process
+	if deps.FeedbackHandler != nil && deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID) {
+		if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
+			log.Printf("[Poll] Failed to handle feedback: %v", err)
+		}
 		return
 	}
 

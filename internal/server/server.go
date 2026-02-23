@@ -9,6 +9,7 @@ import (
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	botHandlers "emby-telegram-bot/internal/bot"
+	"emby-telegram-bot/internal/handlers"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 )
@@ -27,6 +28,7 @@ type Dependencies struct {
 	WebhookService    *services.WebhookService
 	BindingRequest    *services.BindingRequestService
 	MediaNotification *services.MediaNotificationService
+	FeedbackHandler   *handlers.FeedbackHandler
 }
 
 // New creates a new HTTP server
@@ -110,13 +112,15 @@ func New(
 // toBotDeps converts server Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *botHandlers.Dependencies {
 	return &botHandlers.Dependencies{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		QuotaService:   deps.QuotaService,
-		ChatService:    deps.ChatService,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		QuotaService:    deps.QuotaService,
+		ChatService:     deps.ChatService,
+		IssueService:    deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
 	}
 }
