@@ -145,23 +145,40 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	msg := services.NewMessageBuilder()
 	msg.Bold("❓ 帮助中心").Newline()
 	msg.Newline()
-	msg.Bold("✨ 功能介绍").Newline()
+	msg.Bold("🌟 功能介绍").Newline()
 	msg.Newline()
 
 	msg.Bold("🔍 智能搜索").Newline()
-	msg.Text("  支持片名、演员、导演等多种搜索方式").Newline()
+	msg.Text("  直接输入影片名称即可搜索，支持中文/英文").Newline()
+	msg.Text("  可搜索电影、电视剧、演员、导演等").Newline()
+	msg.Text("  💡 示例：输入「沙丘」或「Dune」").Newline()
 	msg.Newline()
 
-	msg.Bold("🤖 AI 推荐").Newline()
-	msg.Text("  大数据分析为您推荐热门好片").Newline()
+	msg.Bold("🤖 AI 智能推荐").Newline()
+	msg.Text("  基于大数据分析，为您精选优质内容").Newline()
+	msg.Text("  🔥 热门电影 — 当前热播的高分影片").Newline()
+	msg.Text("  📺 热播剧集 — 追剧必备持续更新").Newline()
+	msg.Text("  ⭐ 高分佳作 — 经典高分电影必看").Newline()
+	msg.Text("  🆕 最新上线 — 最新上映抢先看").Newline()
+	msg.Text("  🎲 随机发现 — 为您随机挑选佳作").Newline()
 	msg.Newline()
 
 	msg.Bold("📋 请求管理").Newline()
-	msg.Text("  一键求片，实时跟踪处理进度").Newline()
+	msg.Text("  一键求片，系统自动处理并入库").Newline()
+	msg.Text("  实时跟踪请求状态：等待→处理中→已入库").Newline()
+	msg.Text("  支持电影和电视剧订阅，单季全集都能下").Newline()
 	msg.Newline()
 
 	msg.Bold("🔗 账号绑定").Newline()
-	msg.Text("  绑定 MoviePilot 同步观影记录").Newline()
+	msg.Text("  绑定 MoviePilot 账号后可：").Newline()
+	msg.Text("  • 查看「我的请求」订阅列表").Newline()
+	msg.Text("  • 获取更准确的推荐和搜索结果").Newline()
+	msg.Text("  💡 绑定格式：/link 用户名 密码").Newline()
+	msg.Newline()
+
+	msg.Bold("💎 配额系统").Newline()
+	msg.Text("  每日有请求次数限制，管理员无限制").Newline()
+	msg.Text("  /quota 查看剩余配额").Newline()
 	msg.Newline()
 
 	msg.Bold("⌨️ 快捷命令").Newline()
@@ -170,14 +187,18 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	msg.Text("  /ai — AI 推荐菜单").Newline()
 	msg.Text("  /requests — 我的请求").Newline()
 	msg.Text("  /link — 绑定账号").Newline()
+	msg.Text("  /quota — 查看配额").Newline()
 	msg.Text("  /help — 显示此帮助").Newline()
+	msg.Newline()
+
+	msg.Italic("💬 遇到问题？联系管理员获取帮助").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
-		Edit:     true,
+			Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }

@@ -296,3 +296,273 @@ func NewTMDBClientWithDefaultKey(apiKey string) *TMDBClient {
 	log.Printf("[TMDB] Client initialized with API key")
 	return NewTMDBClient(key)
 }
+
+// TMDBTrendingResult represents trending movies/TV shows
+type TMDBTrendingResult struct {
+	Page    int                      `json:"page"`
+	Results []TMDBTrendingMediaInfo `json:"results"`
+	TotalPages int                  `json:"total_pages"`
+	TotalResults int                 `json:"total_results"`
+}
+
+// TMDBTrendingMediaInfo represents a media item in trending results
+type TMDBTrendingMediaInfo struct {
+	ID             int     `json:"id"`
+	Title          string  `json:"title"`
+	Name           string  `json:"name"`
+	OriginalTitle  string  `json:"original_title"`
+	OriginalName   string  `json:"original_name"`
+	PosterPath     string  `json:"poster_path"`
+	BackdropPath   string  `json:"backdrop_path"`
+	VoteAverage    float64 `json:"vote_average"`
+	VoteCount      int     `json:"vote_count"`
+	ReleaseDate    string  `json:"release_date"`
+	FirstAirDate   string  `json:"first_air_date"`
+	Genres         []TMDBGenre `json:"genres"`
+	Overview       string  `json:"overview"`
+	MediaType      string  `json:"media_type"`
+	Popularity     float64 `json:"popularity"`
+}
+
+// TMDBPopularResult represents popular movies/TV shows
+type TMDBPopularResult struct {
+	Page         int                  `json:"page"`
+	Results     []TMDBTrendingMediaInfo `json:"results"`
+	TotalPages   int                  `json:"total_pages"`
+	TotalResults int                  `json:"total_results"`
+}
+
+// GetTrendingMovies gets trending movies from TMDB
+// timeWindow can be "day" or "week"
+func (c *TMDBClient) GetTrendingMovies(timeWindow string) (*TMDBTrendingResult, error) {
+	url := fmt.Sprintf("%s/trending/movie/%s?api_key=%s&language=zh-CN", c.baseURL, timeWindow, c.apiKey)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB trending request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB trending error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBTrendingResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode trending results: %w", err)
+	}
+
+	// Mark all as movies
+	for i := range result.Results {
+		result.Results[i].MediaType = "movie"
+	}
+
+	return &result, nil
+}
+
+// GetTrendingTV gets trending TV shows from TMDB
+func (c *TMDBClient) GetTrendingTV(timeWindow string) (*TMDBTrendingResult, error) {
+	url := fmt.Sprintf("%s/trending/tv/%s?api_key=%s&language=zh-CN", c.baseURL, timeWindow, c.apiKey)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB trending TV request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB trending TV error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBTrendingResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode trending TV results: %w", err)
+	}
+
+	// Mark all as TV
+	for i := range result.Results {
+		result.Results[i].MediaType = "tv"
+	}
+
+	return &result, nil
+}
+
+// GetPopularMovies gets popular movies from TMDB
+func (c *TMDBClient) GetPopularMovies(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/movie/popular?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB popular movies request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB popular movies error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode popular results: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetPopularTV gets popular TV shows from TMDB
+func (c *TMDBClient) GetPopularTV(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/tv/popular?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB popular TV request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB popular TV error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode popular TV results: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetNowPlayingMovies gets movies currently in theaters
+func (c *TMDBClient) GetNowPlayingMovies(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/movie/now_playing?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB now playing request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB now playing error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode now playing results: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetTopRatedMovies gets top rated movies from TMDB
+func (c *TMDBClient) GetTopRatedMovies(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/movie/top_rated?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB top rated request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB top rated error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode top rated results: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetTopRatedTV gets top rated TV shows from TMDB
+func (c *TMDBClient) GetTopRatedTV(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/tv/top_rated?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB top rated TV request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB top rated TV error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode top rated TV results: %w", err)
+	}
+
+	return &result, nil
+}
+
+// GetUpcomingMovies gets upcoming movies from TMDB
+func (c *TMDBClient) GetUpcomingMovies(page int) (*TMDBPopularResult, error) {
+	url := fmt.Sprintf("%s/movie/upcoming?api_key=%s&language=zh-CN&page=%d", c.baseURL, c.apiKey, page)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB upcoming request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB upcoming error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result TMDBPopularResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("failed to decode upcoming results: %w", err)
+	}
+
+	return &result, nil
+}

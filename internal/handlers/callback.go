@@ -50,8 +50,6 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleSearch(ctx)
 	case callback.ActionAI:
 		return h.HandleAI(ctx)
-	case callback.ActionTrending:
-		return h.HandleTrending(ctx)
 	case callback.ActionHot:
 		return h.HandleHot(ctx)
 	case callback.ActionNew:
@@ -120,7 +118,9 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	kb.AddButton("🔥 热门电影", "ai:trending")
 	kb.AddButton("📺 热播剧集", "ai:hot")
 	kb.NewRow()
+	kb.AddButton("⭐ 高分佳作", "ai:toprated")
 	kb.AddButton("🆕 最新上线", "ai:new")
+	kb.NewRow()
 	kb.AddButton("🎲 随机发现", "ai:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
@@ -129,14 +129,6 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-func (h *StartHandler) HandleTrending(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "🔥 正在加载热门榜单...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
 	}, nil
 }
 

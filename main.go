@@ -123,11 +123,11 @@ func main() {
 	backHandler.SetAdminService(adminService)
 	adminHandler.SetMediaNotificationService(mediaNotificationSvc)
 	myRequestsHandler.SetUserMapping(userMappingService)
+	aiHandler.SetTMDBClient(tmdbClient)
 
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionAI, aiHandler.Handle)
-	registry.RegisterFunc(callback.ActionTrending, aiHandler.HandleTrending)
 	registry.RegisterFunc(callback.ActionHot, aiHandler.HandleHot)
 	registry.RegisterFunc(callback.ActionNew, aiHandler.HandleNew)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
@@ -167,7 +167,6 @@ func main() {
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索影片"},
 		{Command: "ai", Description: "🤖 AI 推荐菜单"},
-		{Command: "trending", Description: "🔥 热门榜单"},
 		{Command: "requests", Description: "📋 我的请求"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},

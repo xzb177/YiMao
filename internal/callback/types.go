@@ -23,7 +23,6 @@ const (
 	ActionFeedback  Action = "feedback"
 	ActionStart     Action = "start"
 	ActionAI        Action = "ai"
-	ActionTrending  Action = "trending"
 	ActionHot       Action = "hot"
 	ActionNew       Action = "new"
 	ActionRandom    Action = "random"

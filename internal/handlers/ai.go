@@ -36,6 +36,11 @@ func NewAIHandler(
 	}
 }
 
+// SetTMDBClient sets the TMDB client
+func (h *AIHandler) SetTMDBClient(tmdb *services.TMDBClient) {
+	h.aiService.SetTMDBClient(tmdb)
+}
+
 func (h *AIHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	if !h.cfg.EnableAI {
 		return &callback.Response{
@@ -62,6 +67,8 @@ func (h *AIHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 		return h.HandleNew(ctx)
 	case "random":
 		return h.HandleRandom(ctx)
+	case "toprated":
+		return h.HandleTopRated(ctx)
 	default:
 		return &callback.Response{
 			Text:        "❌ 未知的 AI 推荐类型",
@@ -91,7 +98,9 @@ func (h *AIHandler) ShowAIMenu() (*callback.Response, error) {
 	kb.AddButton("🔥 热门电影", "ai:type:trending")
 	kb.AddButton("📺 热播剧集", "ai:type:hot")
 	kb.NewRow()
+	kb.AddButton("⭐ 高分佳作", "ai:type:toprated")
 	kb.AddButton("🆕 最新上线", "ai:type:new")
+	kb.NewRow()
 	kb.AddButton("🎲 随机发现", "ai:type:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
@@ -128,6 +137,15 @@ func (h *AIHandler) HandleNew(ctx *callback.Context) (*callback.Response, error)
 	}
 
 	return h.buildResultsMessage(ctx.UserID, result, "🆕 新片上线")
+}
+
+func (h *AIHandler) HandleTopRated(ctx *callback.Context) (*callback.Response, error) {
+	result, err := h.aiService.GetTopRated(ctx.UserID, 1)
+	if err != nil {
+		return nil, errors.AIErr("获取高分佳作失败", err)
+	}
+
+	return h.buildResultsMessage(ctx.UserID, result, "⭐ 高分佳作")
 }
 
 func (h *AIHandler) HandleRandom(ctx *callback.Context) (*callback.Response, error) {

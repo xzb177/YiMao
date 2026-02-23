@@ -565,8 +565,10 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 	kb.AddButton("🤖 AI 推荐", "start_ai")
 
 	kb.NewRow()
-	kb.AddButton("🔥 热门榜单", "start_trending")
 	kb.AddButton("📋 我的请求", "start_requests")
+	kb.AddButton("🔗 绑定账号", "start_link")
+	kb.NewRow()
+	kb.AddButton("❓ 帮助", "start_help")
 
 	kb.NewRow()
 	kb.AddButton("🔗 绑定账号", "start_link")
