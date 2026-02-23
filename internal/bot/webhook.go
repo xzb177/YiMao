@@ -160,7 +160,7 @@ func HandleWebhookMessage(
 
 	// Handle commands
 	if strings.HasPrefix(msg.Text, "/") {
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 		return

@@ -104,6 +104,27 @@ func (s *QuotaService) save() error {
 	return os.WriteFile(s.quotasFile, data, 0644)
 }
 
+// getOrCreateQuotaUnsafe gets or creates a quota without locking (caller must hold lock)
+func (s *QuotaService) getOrCreateQuotaUnsafe(telegramID int64) *UserQuota {
+	if quota, exists := s.quotas[telegramID]; exists {
+		return quota
+	}
+
+	quota := &UserQuota{
+		TelegramID:    telegramID,
+		MovieUsed:     0,
+		MovieLimit:    2, // Default limit
+		TVUsed:        0,
+		TVLimit:       2, // Default limit
+		LastResetDate: getCurrentDate(),
+	}
+
+	s.quotas[telegramID] = quota
+	s.save()
+
+	return quota
+}
+
 // GetOrCreateQuota gets or creates a quota for a user
 func (s *QuotaService) GetOrCreateQuota(telegramID int64) *UserQuota {
 	s.mu.Lock()
@@ -259,8 +280,15 @@ func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
 
 // GetQuotaText returns formatted quota text for a user
 func (s *QuotaService) GetQuotaText(telegramID int64) string {
-	quota := s.GetOrCreateQuota(telegramID)
-	s.checkAndReset(telegramID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	quota := s.quotas[telegramID]
+	if quota == nil {
+		quota = s.getOrCreateQuotaUnsafe(telegramID)
+	}
+	s.checkAndResetUnsafe(telegramID)
+	quota = s.quotas[telegramID]
 
 	movieRemaining := quota.MovieLimit - quota.MovieUsed
 	tvRemaining := quota.TVLimit - quota.TVUsed
@@ -295,7 +323,7 @@ func (s *QuotaService) GetQuotaInfo(telegramID int64) *UserQuota {
 	defer s.mu.Unlock()
 
 	s.checkAndResetUnsafe(telegramID)
-	return s.GetOrCreateQuota(telegramID)
+	return s.quotas[telegramID]
 }
 
 // checkAndReset checks if we need to reset daily usage
@@ -307,7 +335,10 @@ func (s *QuotaService) checkAndReset(telegramID int64) {
 
 // checkAndResetUnsafe checks and resets without locking (caller must hold lock)
 func (s *QuotaService) checkAndResetUnsafe(telegramID int64) {
-	quota := s.GetOrCreateQuota(telegramID)
+	quota := s.quotas[telegramID]
+	if quota == nil {
+		quota = s.getOrCreateQuotaUnsafe(telegramID)
+	}
 	currentDate := getCurrentDate()
 
 	if quota.LastResetDate != currentDate {

@@ -17,6 +17,7 @@ func HandleCommand(
 	cfg *config.Config,
 	adminService *services.AdminService,
 	bindingRequest *services.BindingRequestService,
+	quotaService *services.QuotaService,
 ) {
 	parts := strings.Fields(msg.Text)
 	if len(parts) == 0 {
@@ -43,8 +44,7 @@ func HandleCommand(
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest)
 	case "/quota":
-		text := "📊 配额功能开发中...\n\n💡 请使用 /start 菜单查看请求状态"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		HandleQuotaCommand(telegram, msg, quotaService)
 	// Unknown commands are silently ignored
 	}
 }
@@ -137,4 +137,20 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Italic("💬 遇到问题？联系管理员获取帮助").Newline()
 
 	telegram.SendMessage(chatID, msg.Build(), "Markdown", nil)
+}
+
+// HandleQuotaCommand handles /quota command
+func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, quotaService *services.QuotaService) {
+	log.Printf("[QuotaCommand] Handling /quota for user %d, quotaService=%v", msg.From.ID, quotaService != nil)
+
+	if quotaService == nil {
+		log.Printf("[QuotaCommand] QuotaService is nil!")
+		telegram.SendMessage(msg.Chat.ID, "❌ 配额服务未启用", "", nil)
+		return
+	}
+
+	userID := msg.From.ID
+	quotaText := quotaService.GetQuotaText(userID)
+	log.Printf("[QuotaCommand] Sending quota text to user %d", userID)
+	telegram.SendMessage(msg.Chat.ID, quotaText, "Markdown", nil)
 }

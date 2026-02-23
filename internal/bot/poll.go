@@ -92,7 +92,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *Dependencies, cfg *conf
 
 	// Private chat: Handle commands and search query
 	if strings.HasPrefix(msg.Text, "/") {
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService)
 		return
 	}
 
