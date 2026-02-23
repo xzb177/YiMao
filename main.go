@@ -542,9 +542,14 @@ func handleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 }
 
 func buildStartMenu() string {
-	return `*🌟 欢迎使用 Emby Telegram Bot*
+	return `*🌟 欢迎使用云海影视助手*
 
-请选择操作：`
+🔍 智能搜索 — 快速查找心仪影片
+🤖 AI 推荐 — 发现热门好片
+📋 请求管理 — 跟踪您的求片进度
+🔗 账号绑定 — 同步您的观影记录
+
+_💡 点击下方按钮开始探索_`
 }
 
 func buildHelpMessage() string {

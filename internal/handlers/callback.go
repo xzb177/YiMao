@@ -65,8 +65,6 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	msg := services.NewMessageBuilder()
 	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
 	msg.Newline()
-	msg.Text("企业级智能影视机器人，为您提供：").Newline()
-	msg.Newline()
 	msg.Text("🔍 智能搜索 — 快速查找心仪影片").Newline()
 	msg.Text("🤖 AI 推荐 — 发现热门好片").Newline()
 	msg.Text("📋 请求管理 — 跟踪您的求片进度").Newline()
@@ -116,7 +114,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 智能推荐").Newline()
 	msg.Newline()
-	msg.Text("请选择推荐类型：").Newline()
+	msg.Italic("💡 基于大数据分析，为您精选优质内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 热门电影", "ai:trending")

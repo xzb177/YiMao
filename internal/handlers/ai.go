@@ -84,12 +84,7 @@ func (h *AIHandler) ShowAIMenu() (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 智能推荐").Newline()
 	msg.Newline()
-	msg.Text("基于大数据分析，为您精选优质内容").Newline()
-	msg.Newline()
-	msg.Text("🔥 热门电影 — 口碑佳作不容错过").Newline()
-	msg.Text("📺 热播剧集 — 追剧必备持续更新").Newline()
-	msg.Text("🆕 最新上线 — 抢先看首发新片").Newline()
-	msg.Text("🎲 随机发现 — 意外惊喜随心探索").Newline()
+	msg.Italic("💡 基于大数据分析，为您精选优质内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 热门电影", "ai:type:trending")
@@ -155,6 +150,35 @@ func (h *AIHandler) buildResultsMessage(result *services.TrendingResult, title s
 	} else {
 		msg.Textf("为您找到 %d 个推荐", len(result.Items)).Newline()
 		msg.Newline()
+
+		displayCount := len(result.Items)
+		if displayCount > 10 {
+			displayCount = 10
+		}
+
+		for i, item := range result.Items {
+			if i >= displayCount {
+				break
+			}
+
+			yearStr := ""
+			if item.Year > 0 {
+				yearStr = fmt.Sprintf("%d", item.Year)
+			}
+			ratingStr := ""
+			if item.Rating > 0 {
+				ratingStr = fmt.Sprintf(" ⭐%.1f", item.Rating)
+			}
+
+			msg.Textf("%d. %s", i+1, item.Title)
+			if yearStr != "" {
+				msg.Textf(" (%s)", yearStr)
+			}
+			if ratingStr != "" {
+				msg.Text(ratingStr)
+			}
+			msg.Newline()
+		}
 	}
 
 	kb := services.NewKeyboardBuilder()
@@ -169,16 +193,7 @@ func (h *AIHandler) buildResultsMessage(result *services.TrendingResult, title s
 			break
 		}
 
-		yearStr := ""
-		if item.Year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", item.Year)
-		}
-		ratingStr := ""
-		if item.Rating > 0 {
-			ratingStr = fmt.Sprintf(" ⭐%.1f", item.Rating)
-		}
-
-		buttonText := fmt.Sprintf("%d. %s%s%s", i+1, item.Title, yearStr, ratingStr)
+		buttonText := fmt.Sprintf("📖 %d", i+1)
 		callbackData := fmt.Sprintf("detail:id:%s:type:%s", item.ID, item.Type)
 
 		kb.AddButton(buttonText, callbackData)
@@ -226,8 +241,7 @@ func (h *AIHandler) handleAIQuery(userID int64, chatID int64, query string) erro
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 推荐").Newline()
 	msg.Newline()
-
-	kb := services.NewKeyboardBuilder()
+	msg.Textf("为您找到 %d 个推荐\n\n", len(result.Items))
 
 	for i, item := range result.Items {
 		if i >= 5 {
@@ -236,10 +250,31 @@ func (h *AIHandler) handleAIQuery(userID int64, chatID int64, query string) erro
 
 		yearStr := ""
 		if item.Year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", item.Year)
+			yearStr = fmt.Sprintf("%d", item.Year)
+		}
+		ratingStr := ""
+		if item.Rating > 0 {
+			ratingStr = fmt.Sprintf(" ⭐%.1f", item.Rating)
 		}
 
-		buttonText := fmt.Sprintf("%d. %s%s", i+1, item.Title, yearStr)
+		msg.Textf("%d. %s", i+1, item.Title)
+		if yearStr != "" {
+			msg.Textf(" (%s)", yearStr)
+		}
+		if ratingStr != "" {
+			msg.Text(ratingStr)
+		}
+		msg.Newline()
+	}
+
+	kb := services.NewKeyboardBuilder()
+
+	for i, item := range result.Items {
+		if i >= 5 {
+			break
+		}
+
+		buttonText := fmt.Sprintf("📖 %d", i+1)
 		callbackData := fmt.Sprintf("detail:id:%s:type:%s", item.ID, item.Type)
 
 		kb.AddButton(buttonText, callbackData)
