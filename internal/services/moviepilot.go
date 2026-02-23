@@ -331,6 +331,24 @@ func (c *MoviePilotClient) GetUserByID(userID int64) (*User, error) {
 	return &user, nil
 }
 
+// GetAllUsers retrieves all users from MoviePilot
+func (c *MoviePilotClient) GetAllUsers() ([]User, error) {
+	endpoint := "/api/v1/user/?page=1&count=100"
+
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// MoviePilot returns an array directly
+	var users []User
+	if err := json.Unmarshal(body, &users); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return users, nil
+}
+
 // GetUserByUsername retrieves a user by username
 func (c *MoviePilotClient) GetUserByUsername(username string) (*User, error) {
 	// MoviePilot uses pagination for user list
@@ -415,8 +433,32 @@ func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
 
 // GetUserRequests retrieves all subscription requests for a user
 func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error) {
+	// First get the user's username from MoviePilot
+	user, err := c.GetUserByID(userID)
+	if err != nil {
+		// If GetUserByID fails, try GetUserByUsername as fallback
+		// First we need to get the username from the user list
+		users, err := c.GetAllUsers()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get users: %w", err)
+		}
+
+		// Find user by ID
+		for _, u := range users {
+			if u.ID == userID {
+				user = &u
+				break
+			}
+		}
+
+		if user == nil {
+			return nil, fmt.Errorf("user not found: %d", userID)
+		}
+	}
+
 	// MoviePilot uses /api/v1/subscribe/ endpoint
-	endpoint := fmt.Sprintf("/api/v1/subscribe/?page=1&count=100")
+	// Try to filter by username
+	endpoint := fmt.Sprintf("/api/v1/subscribe/?page=1&count=100&username=%s", user.Username)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
@@ -429,7 +471,25 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return items, nil
+	// If API doesn't support filtering, filter client-side
+	var filtered []SubscribeItem
+	for _, item := range items {
+		if item.Username == user.Username {
+			filtered = append(filtered, item)
+		}
+	}
+
+	log.Printf("[MoviePilot] GetUserRequests: user=%s, total_items=%d, filtered=%d", user.Username, len(items), len(filtered))
+
+	// Log state values of first few items
+	for i, item := range filtered {
+		if i >= 5 {
+			break
+		}
+		log.Printf("[MoviePilot] Item %d: name=%s, state=%q", item.ID, item.Name, item.State)
+	}
+
+	return filtered, nil
 }
 
 // GetRequest retrieves a request by ID
@@ -492,6 +552,7 @@ func stringToInt64(s string) (int64, error) {
 // Subscription state constants
 const (
 	StatePending    = "P" // Pending
+	StateRecycled   = "R" // Recycled
 	StateSearching  = "S" // Searching
 	StateDownloading = "D" // Downloading
 	StateCompleted  = "C" // Completed/Available
@@ -504,6 +565,8 @@ func GetStateText(state string) string {
 	switch state {
 	case StatePending:
 		return "⏳ 排队中"
+	case StateRecycled:
+		return "🔄 重新搜索"
 	case StateSearching:
 		return "🔍 搜索中"
 	case StateDownloading:
