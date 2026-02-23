@@ -1,6 +1,7 @@
 package services
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -928,7 +929,14 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	// Skip TLS verification for self-signed/origin certificates
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: tr,
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
