@@ -281,6 +281,10 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	registry.RegisterFunc("my_reviews", reviewHandler.Handle)
 	registry.RegisterFunc("review_list", reviewHandler.Handle)
 
+	// Emby library check callbacks
+	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
+	registry.RegisterFunc("cancel_request", requestHandler.HandleCancelRequest)
+
 	log.Println("✅ Callback handlers registered")
 
 	return registry

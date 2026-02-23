@@ -910,6 +910,134 @@ func (s *WebhookService) GetEmbyMediaInfo(itemID string) (map[string]interface{}
 	return result, nil
 }
 
+// SearchEmbyMedia searches for media in Emby library
+func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType MediaType) (*EmbySearchResult, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby URL or API key not configured")
+	}
+
+	// Build search URL
+	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10", title)
+	url := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyAPIKey, searchParams)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+
+	var results []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+		return nil, err
+	}
+
+	// Find best match
+	for _, item := range results {
+		itemTitle := ""
+		if name, ok := item["Name"].(string); ok {
+			itemTitle = name
+		}
+		itemYear := 0
+		if y, ok := item["ProductionYear"].(float64); ok {
+			itemYear = int(y)
+		}
+
+		// Match by title and year
+		if strings.Contains(strings.ToLower(itemTitle), strings.ToLower(title)) || strings.Contains(strings.ToLower(title), strings.ToLower(itemTitle)) {
+			// Check year if provided
+			if year > 0 && itemYear > 0 {
+				if itemYear-year >= -1 && itemYear-year <= 1 { // Allow 1 year difference
+					result, err := s.convertToSearchResult(item)
+					if err != nil {
+						return nil, err
+					}
+					return result, nil
+				}
+			} else {
+				result, err := s.convertToSearchResult(item)
+				if err != nil {
+					return nil, err
+				}
+				return result, nil
+			}
+		}
+	}
+
+	return nil, nil // No match found
+}
+
+// EmbySearchResult represents a search result from Emby
+type EmbySearchResult struct {
+	ID       string
+	Title    string
+	Year     int
+	Type     string
+	PosterURL string
+	Overview string
+	RunTime  int64 // in ticks
+}
+
+// convertToSearchResult converts Emby item to search result
+func (s *WebhookService) convertToSearchResult(item map[string]interface{}) (*EmbySearchResult, error) {
+	result := &EmbySearchResult{}
+
+	// Extract ID
+	if id, ok := item["Id"].(string); ok {
+		result.ID = id
+	} else {
+		return nil, fmt.Errorf("missing Id field")
+	}
+
+	// Extract Title
+	if name, ok := item["Name"].(string); ok {
+		result.Title = name
+	}
+
+	// Extract Year
+	if year, ok := item["ProductionYear"].(float64); ok {
+		result.Year = int(year)
+	}
+
+	// Extract Type
+	if itemType, ok := item["Type"].(string); ok {
+		result.Type = itemType
+	}
+
+	// Extract Overview
+	if overview, ok := item["Overview"].(string); ok {
+		result.Overview = overview
+	}
+
+	// Extract Runtime
+	if runtime, ok := item["RunTimeTicks"].(float64); ok {
+		result.RunTime = int64(runtime)
+	}
+
+	// Extract Poster/Image
+	if itemID, ok := item["Id"].(string); ok {
+		if tags, ok := item["ImageTags"].([]interface{}); ok && len(tags) > 0 {
+			if tag, ok := tags[0].(string); ok {
+				result.PosterURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?fillWidth=400&quality=90", s.embyURL, itemID, tag)
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // SendJellyseerrIssueComment sends a comment to Jellyseerr issue
 // Deprecated: Use MoviePilot API instead
 func (s *WebhookService) SendJellyseerrIssueComment(issueID int64, comment string) error {

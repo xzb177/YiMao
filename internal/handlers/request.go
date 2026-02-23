@@ -159,6 +159,59 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
 	}
 
+	// Check if media already exists in Emby library
+	embyType := services.MediaTypeMovie
+	if mediaType == "tv" {
+		embyType = services.MediaTypeTV
+	}
+
+	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
+	if err != nil {
+		log.Printf("[RequestHandler] Emby search failed: %v", err)
+		// Continue with request creation even if search fails
+	} else if existingMedia != nil {
+		// Media exists in library, show confirmation dialog
+		log.Printf("[RequestHandler] Media found in Emby: %s (ID: %s)", existingMedia.Title, existingMedia.ID)
+
+		// Build message showing media already exists
+		message := fmt.Sprintf("⚠️ 该内容已在媒体库中\n\n📺 %s", existingMedia.Title)
+		if existingMedia.Year > 0 {
+			message += fmt.Sprintf(" (%d)", existingMedia.Year)
+		}
+
+		// Add runtime info
+		if existingMedia.RunTime > 0 {
+			minutes := existingMedia.RunTime / 600000000
+			hours := minutes / 60
+			mins := minutes % 60
+			if hours > 0 {
+				message += fmt.Sprintf("\n⏱️ 时长: %d小时%d分", hours, mins)
+			} else {
+				message += fmt.Sprintf("\n⏱️ 时长: %d分钟", mins)
+			}
+		}
+
+		message += "\n\n是否仍要订阅？"
+
+		// Add buttons
+		keyboard := &types.TelegramInlineKeyboard{
+			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+				{
+					{Text: "❌ 取消", CallbackData: "cancel_request"},
+					{Text: "💪 仍要订阅", CallbackData: fmt.Sprintf("force_subscribe:tmdb:%d:type:%s", tmdbID, mediaType)},
+				},
+			},
+		}
+
+		return &callback.Response{
+			Text:        message,
+			CallbackMsg: "媒体已存在",
+			ShowAlert:   false,
+			Keyboard:    convertKeyboard(keyboard),
+			Edit:        false,
+		}, nil
+	}
+
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 
@@ -291,4 +344,140 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 			log.Printf("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
 		}
 	}
+}
+
+// HandleForceSubscribe handles user choosing to subscribe despite existing media
+func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.Response, error) {
+	tmdbIDStr, hasID := ctx.Callback.Params["tmdb"]
+	mediaType, hasType := ctx.Callback.Params["type"]
+
+	if !hasID || !hasType {
+		return &callback.Response{
+			Text:        "❌ 参数无效",
+			CallbackMsg: "错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	tmdbID := 0
+	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
+
+	if tmdbID == 0 {
+		return &callback.Response{
+			Text:        "❌ 无效的 TMDB ID",
+			CallbackMsg: "错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get MoviePilot user ID
+	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	if !exists || moviepilotID == 0 {
+		return &callback.Response{
+			Text:        "❌ 请先使用 /link 命令绑定 MoviePilot 账号",
+			CallbackMsg: "需要绑定账号",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Check quota
+	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
+		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
+		return &callback.Response{
+			Text:        fmt.Sprintf("❌ 今日配额已用完\n\n%s", quotaText),
+			CallbackMsg: "配额已用完",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get session info
+	sess := h.sessMgr.Get(ctx.UserID)
+	if sess == nil {
+		return &callback.Response{
+			Text:        "❌ 会话已过期，请重新搜索",
+			CallbackMsg: "会话过期",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get media info from session
+	var mediaTitle string
+	var mediaYear int
+	searchResults, _, _, found := sess.GetSearchResults()
+	if found && len(searchResults) > 0 {
+		for _, item := range searchResults {
+			itemID := item.ID
+			if strings.HasPrefix(itemID, "id:") {
+				itemID = strings.TrimPrefix(itemID, "id:")
+			}
+			itemTmdbID := 0
+			fmt.Sscanf(itemID, "%d", &itemTmdbID)
+			if itemTmdbID == tmdbID {
+				mediaTitle = item.Title
+				mediaYear = item.Year
+				break
+			}
+		}
+	}
+
+	if mediaTitle == "" {
+		if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
+			mediaTitle = cachedItem.Title
+			mediaYear = cachedItem.Year
+		}
+	}
+
+	if mediaTitle == "" {
+		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
+	}
+
+	// Get user name from session
+	userName := "用户"
+	if name, ok := sess.GetString("user_name"); ok {
+		userName = name
+	}
+
+	// Create review request
+	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
+
+	review := &services.ReviewRequest{
+		RequestID:    reviewID,
+		TelegramID:   ctx.UserID,
+		TelegramName: userName,
+		MoviePilotID: moviepilotID,
+		TmdbID:       tmdbID,
+		MediaTitle:   mediaTitle,
+		MediaYear:    mediaYear,
+		MediaType:    services.MediaTypeMovie,
+	}
+
+	if mediaType == "tv" {
+		review.MediaType = services.MediaTypeTV
+	}
+
+	if err := h.reviewService.CreateRequest(review); err != nil {
+		return &callback.Response{
+			Text:        "❌ 创建请求失败",
+			CallbackMsg: "失败",
+			ShowAlert:   true,
+		}, err
+	}
+
+	go h.notifyAdminsForReview(review)
+
+	return &callback.Response{
+		Text:        "✅ 求片请求已提交\n\n等待管理员审核",
+		CallbackMsg: "请求已提交",
+		ShowAlert:   true,
+	}, nil
+}
+
+// HandleCancelRequest handles cancel button
+func (h *RequestHandler) HandleCancelRequest(ctx *callback.Context) (*callback.Response, error) {
+	return &callback.Response{
+		Text:        "❌ 已取消",
+		CallbackMsg: "已取消",
+		ShowAlert:   false,
+		Edit:        true,
+	}, nil
 }

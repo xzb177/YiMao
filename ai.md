@@ -3228,3 +3228,30 @@ trends - 请求趋势
  | |
  | |   💡 您的凭据直接发送至 MoviePilot 服务器验证，机器人不做存储
  | |   ```
+
+2026-02-24 | **Emby 媒体库检查功能** 📚 |
+ | | - **功能描述**: 用户请求媒体时，先检查 Emby 媒体库是否已存在
+ | | - **如果已存在**: 显示确认对话框，提供三个选项
+ | |   - `▶️ 去观看` - 跳转到 Emby 播放页面
+ | |   - `❌ 取消` - 取消请求
+ | |   - `💪 仍要订阅` - 强制订阅（如需要更高画质）
+ | | - **新增函数** (`internal/services/webhook.go`):
+ | |   - `SearchEmbyMedia(mediaTitle string, mediaYear int, mediaType string)` - 搜索 Emby 媒体库
+ | |   - `EmbySearchResult` 结构体 - 存储搜索结果
+ | |   - `convertToSearchResult` - 转换 API 响应
+ | | - **新增回调处理器** (`internal/handlers/request.go`):
+ | |   - `HandleEmbyPlay` - 处理"去观看"按钮
+ | |   - `HandleForceSubscribe` - 处理"仍要订阅"按钮
+ | |   - `HandleCancelRequest` - 处理"取消"按钮
+ | | - **注册回调** (`cmd/bot/main.go`):
+ | |   - `emby_play`, `force_subscribe`, `cancel_request`
+ | | - **匹配规则**: 年份允许 ±1 年误差
+ | | - **部署状态**: ✅ 已构建并部署
+
+2026-02-24 | **移除"去观看"按钮** 🗑️ |
+ | | - 从媒体库检查确认对话框中移除"▶️ 去观看"按钮
+ | | - 现在只保留两个选项：`❌ 取消` 和 `💪 仍要订阅`
+ | | - 删除了 `HandleEmbyPlay` 函数
+ | | - 移除了 `emby_play` 回调注册
+ | | - 移除了不再使用的 `os` 包导入
+ | | - **部署状态**: ✅ 已构建并部署
