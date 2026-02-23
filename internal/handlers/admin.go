@@ -67,10 +67,10 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleAdminMenu(ctx)
 	case "admin_notif_settings":
 		return h.handleNotifSettings(ctx)
-	case "admin_notif_mode_instant":
-		return h.handleNotifModeInstant(ctx)
-	case "admin_notif_mode_daily":
-		return h.handleNotifModeDaily(ctx)
+	case "admin_notif_toggle_instant":
+		return h.handleNotifToggleInstant(ctx)
+	case "admin_notif_toggle_daily":
+		return h.handleNotifToggleDaily(ctx)
 	case "admin_notif_toggle":
 		return h.handleNotifToggle(ctx)
 	case "admin_notif_settime":
@@ -396,25 +396,38 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	// Media notification settings
 	log.Printf("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
 	if h.mediaNotificationSvc != nil {
+		log.Printf("[AdminHandler] Getting settings for user %d", ctx.UserID)
 		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-		modeIcon := "⚡"
-		if settings.Mode == services.ModeDaily {
-			modeIcon = "📅"
-		}
+		log.Printf("[AdminHandler] Got settings: instant=%v, daily=%v, enabled=%v",
+			settings.InstantEnabled, settings.DailySummaryEnabled, settings.Enabled)
+
+		// Overall status
 		statusIcon := "✅"
 		if !settings.Enabled {
 			statusIcon = "❌"
 		}
 
 		msg.Bold(fmt.Sprintf("%s 媒体库通知", statusIcon)).Newline()
-		msg.Textf("   模式: %s %s", modeIcon, h.getModeText(settings.Mode)).Newline()
-		if settings.Mode == services.ModeDaily {
-			msg.Textf("   汇总时间: %s", settings.DailyTime).Newline()
+
+		// Instant notification status
+		instantIcon := "🔔"
+		if settings.InstantEnabled {
+			instantIcon = "📨"
 		}
+		msg.Textf("   %s 单集推送: %s", instantIcon, h.getBoolText(settings.InstantEnabled)).Newline()
+
+		// Daily summary status
+		dailyIcon := "📅"
+		if !settings.DailySummaryEnabled {
+			dailyIcon = "📅"
+		}
+		msg.Textf("   %s 每日汇总: %s", dailyIcon, h.getBoolText(settings.DailySummaryEnabled)).Newline()
+		msg.Textf("   ⏰ 汇总时间: %s", settings.DailyTime).Newline()
 		msg.Newline()
 
 		kb.AddButton("🔔 通知设置", "admin_notif_settings")
 		kb.NewRow()
+		log.Printf("[AdminHandler] Added notification settings button")
 	}
 
 	// Return button
@@ -453,12 +466,29 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	msg.Bold("🔔 媒体库通知设置").Newline()
 	msg.Newline()
 
-	// Current mode
-	modeIcon := "⚡"
-	if settings.Mode == services.ModeDaily {
-		modeIcon = "📅"
+	// Overall status
+	statusIcon := "✅"
+	statusText := "已启用"
+	if !settings.Enabled {
+		statusIcon = "❌"
+		statusText = "已禁用"
 	}
-	msg.Text(fmt.Sprintf("📱 当前模式: %s %s", modeIcon, h.getModeText(settings.Mode))).Newline()
+	msg.Text(fmt.Sprintf("%s 总体状态: %s", statusIcon, statusText)).Newline()
+
+	// Instant notification status
+	instantIcon := "⚪"
+	if settings.InstantEnabled {
+		instantIcon = "🔵"
+	}
+	msg.Text(fmt.Sprintf("%s 单集推送: %s", instantIcon, h.getBoolText(settings.InstantEnabled))).Newline()
+
+	// Daily summary status
+	dailyIcon := "⚪"
+	if settings.DailySummaryEnabled {
+		dailyIcon = "🔵"
+	}
+	msg.Text(fmt.Sprintf("%s 每日汇总: %s", dailyIcon, h.getBoolText(settings.DailySummaryEnabled))).Newline()
+	msg.Text(fmt.Sprintf("⏰ 汇总时间: %s", settings.DailyTime)).Newline()
 
 	// Current format
 	formatIcon := "📝"
@@ -469,22 +499,8 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	}
 	msg.Text(fmt.Sprintf("%s 通知格式: %s", formatIcon, formatText)).Newline()
 
-	// Status
-	statusIcon := "✅"
-	statusText := "已启用"
-	if !settings.Enabled {
-		statusIcon = "❌"
-		statusText = "已禁用"
-	}
-	msg.Text(fmt.Sprintf("%s 状态: %s", statusIcon, statusText)).Newline()
-
-	// Daily time (if applicable)
-	if settings.Mode == services.ModeDaily {
-		msg.Text(fmt.Sprintf("⏰ 汇总时间: %s", settings.DailyTime)).Newline()
-	}
-
-	// Pending items
-	if settings.Mode == services.ModeDaily && pendingCount > 0 {
+	// Pending items for daily summary
+	if pendingCount > 0 {
 		msg.Text(fmt.Sprintf("📦 今日待汇总: %d 项", pendingCount)).Newline()
 	}
 
@@ -492,9 +508,19 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 
-	// Mode selection
-	kb.AddButton("⚡ 单集推送", "admin_notif_mode_instant")
-	kb.AddButton("📅 每日汇总", "admin_notif_mode_daily")
+	// Instant notification toggle
+	instantBtnText := "✅ 启用单集推送"
+	if settings.InstantEnabled {
+		instantBtnText = "❌ 关闭单集推送"
+	}
+	kb.AddButton(instantBtnText, "admin_notif_toggle_instant")
+
+	// Daily summary toggle
+	dailyBtnText := "✅ 启用每日汇总"
+	if settings.DailySummaryEnabled {
+		dailyBtnText = "❌ 关闭每日汇总"
+	}
+	kb.AddButton(dailyBtnText, "admin_notif_toggle_daily")
 	kb.NewRow()
 
 	// Format selection
@@ -509,13 +535,11 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	kb.AddButton(fmt.Sprintf("%s 详细格式", formatDetailedIcon), "admin_notif_format_detailed")
 	kb.NewRow()
 
-	// Time selection (for daily mode)
-	if settings.Mode == services.ModeDaily {
-		kb.AddButton("⏰ 设置时间", "admin_notif_settime")
-		kb.NewRow()
-	}
+	// Time selection
+	kb.AddButton("⏰ 设置汇总时间", "admin_notif_settime")
+	kb.NewRow()
 
-	// Toggle enable/disable
+	// Toggle overall enable/disable
 	toggleText := "❌ 禁用通知"
 	if !settings.Enabled {
 		toggleText = "✅ 启用通知"
@@ -533,8 +557,8 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	}, nil
 }
 
-// handleNotifModeInstant handles switching to instant notification mode
-func (h *AdminHandler) handleNotifModeInstant(ctx *callback.Context) (*callback.Response, error) {
+// handleNotifToggleInstant handles toggling instant notifications
+func (h *AdminHandler) handleNotifToggleInstant(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
 			CallbackMsg: "你不是管理员",
@@ -549,17 +573,24 @@ func (h *AdminHandler) handleNotifModeInstant(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
-	h.mediaNotificationSvc.SetMode(ctx.UserID, services.ModeInstant)
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	newState := !settings.InstantEnabled
+	h.mediaNotificationSvc.SetInstantEnabled(ctx.UserID, newState)
+
+	statusText := "已启用"
+	if !newState {
+		statusText = "已关闭"
+	}
 
 	return &callback.Response{
-		Text:        "✅ 已切换到单集推送模式",
-		CallbackMsg: "模式已切换",
+		Text:        fmt.Sprintf("✅ 单集推送%s", statusText),
+		CallbackMsg: statusText,
 		Edit:        true,
 	}, nil
 }
 
-// handleNotifModeDaily handles switching to daily summary mode
-func (h *AdminHandler) handleNotifModeDaily(ctx *callback.Context) (*callback.Response, error) {
+// handleNotifToggleDaily handles toggling daily summary
+func (h *AdminHandler) handleNotifToggleDaily(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
 			CallbackMsg: "你不是管理员",
@@ -574,16 +605,23 @@ func (h *AdminHandler) handleNotifModeDaily(ctx *callback.Context) (*callback.Re
 		}, nil
 	}
 
-	h.mediaNotificationSvc.SetMode(ctx.UserID, services.ModeDaily)
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	newState := !settings.DailySummaryEnabled
+	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, newState)
+
+	statusText := "已启用"
+	if !newState {
+		statusText = "已关闭"
+	}
 
 	return &callback.Response{
-		Text:        "✅ 已切换到每日汇总模式",
-		CallbackMsg: "模式已切换",
+		Text:        fmt.Sprintf("✅ 每日汇总%s", statusText),
+		CallbackMsg: statusText,
 		Edit:        true,
 	}, nil
 }
 
-// handleNotifToggle handles toggling notifications on/off
+// handleNotifToggle handles toggling notifications on/off (overall)
 func (h *AdminHandler) handleNotifToggle(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
@@ -719,14 +757,10 @@ func (h *AdminHandler) handleNotifFormatDetailed(ctx *callback.Context) (*callba
 	}, nil
 }
 
-// getModeText returns the display text for a notification mode
-func (h *AdminHandler) getModeText(mode services.NotificationMode) string {
-	switch mode {
-	case services.ModeInstant:
-		return "单集推送"
-	case services.ModeDaily:
-		return "每日汇总"
-	default:
-		return "未知"
+// getBoolText returns the display text for a boolean
+func (h *AdminHandler) getBoolText(v bool) string {
+	if v {
+		return "开启"
 	}
+	return "关闭"
 }

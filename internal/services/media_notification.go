@@ -12,16 +12,6 @@ import (
 	"time"
 )
 
-// NotificationMode represents the notification mode
-type NotificationMode string
-
-const (
-	// ModeInstant sends notifications immediately when items are added
-	ModeInstant NotificationMode = "instant"
-	// ModeDaily sends a daily summary at a specified time
-	ModeDaily NotificationMode = "daily"
-)
-
 // NotificationFormat represents the notification format style
 type NotificationFormat string
 
@@ -68,12 +58,13 @@ type MediaItem struct {
 
 // AdminNotificationSettings stores notification preferences for an admin
 type AdminNotificationSettings struct {
-	AdminID     int64             `json:"admin_id"`
-	Mode        NotificationMode `json:"mode"`
-	DailyTime   string           `json:"daily_time"` // Format: "HH:MM"
-	Enabled     bool             `json:"enabled"`
-	Libraries   []string         `json:"libraries"`   // Specific libraries to monitor, empty = all
-	Format      NotificationFormat `json:"format"`     // Notification format: simple or detailed
+	AdminID           int64             `json:"admin_id"`
+	DailyTime         string           `json:"daily_time"`         // Format: "HH:MM", default "12:59"
+	Enabled           bool             `json:"enabled"`             // Overall notification toggle
+	InstantEnabled    bool             `json:"instant_enabled"`    // Enable instant notifications
+	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification
+	Libraries         []string         `json:"libraries"`           // Specific libraries to monitor, empty = all
+	Format           NotificationFormat `json:"format"`             // Notification format: simple or detailed
 }
 
 // MediaNotificationService handles media library notifications
@@ -175,12 +166,13 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 
 	// Return default settings
 	return &AdminNotificationSettings{
-		AdminID:   adminID,
-		Mode:      ModeInstant,
-		DailyTime: "20:00",
-		Enabled:   true,
-		Libraries: []string{},
-		Format:    FormatDetailed, // Default to detailed format
+		AdminID:           adminID,
+		DailyTime:         "12:59",
+		Enabled:           true,
+		InstantEnabled:    true,  // Default to instant notifications
+		DailySummaryEnabled: false, // Default to disabled
+		Libraries:         []string{},
+		Format:           FormatDetailed,
 	}
 }
 
@@ -193,10 +185,17 @@ func (s *MediaNotificationService) SetSettings(settings *AdminNotificationSettin
 	return s.save()
 }
 
-// SetMode sets the notification mode for an admin
-func (s *MediaNotificationService) SetMode(adminID int64, mode NotificationMode) error {
+// SetInstantEnabled sets whether instant notifications are enabled
+func (s *MediaNotificationService) SetInstantEnabled(adminID int64, enabled bool) error {
 	settings := s.GetSettings(adminID)
-	settings.Mode = mode
+	settings.InstantEnabled = enabled
+	return s.SetSettings(settings)
+}
+
+// SetDailySummaryEnabled sets whether daily summary is enabled
+func (s *MediaNotificationService) SetDailySummaryEnabled(adminID int64, enabled bool) error {
+	settings := s.GetSettings(adminID)
+	settings.DailySummaryEnabled = enabled
 	return s.SetSettings(settings)
 }
 
@@ -241,15 +240,27 @@ func (s *MediaNotificationService) processItems() {
 
 // handleItem handles a single media item
 func (s *MediaNotificationService) handleItem(item *MediaItem) {
-	s.mu.Lock()
-
 	adminIDs := s.adminService.GetAdminIDs()
 	today := time.Now().Format("2006-01-02")
 
+	// Get all settings first (before acquiring lock) to avoid deadlock
+	adminSettings := make(map[int64]*AdminNotificationSettings)
+	s.mu.RLock()
 	for _, adminID := range adminIDs {
-		settings := s.GetSettings(adminID)
+		adminSettings[adminID] = s.GetSettings(adminID)
+	}
+	s.mu.RUnlock()
 
-		// Skip if disabled
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, adminID := range adminIDs {
+		settings := adminSettings[adminID]
+		if settings == nil {
+			continue
+		}
+
+		// Skip if completely disabled
 		if !settings.Enabled {
 			continue
 		}
@@ -268,24 +279,20 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			}
 		}
 
-		switch settings.Mode {
-		case ModeInstant:
-			// Send immediately (unlock before sending to avoid deadlock)
+		// Always add to pending items for daily summary
+		adminKey := strconv.FormatInt(adminID, 10)
+		if s.pendingItems[adminKey] == nil {
+			s.pendingItems[adminKey] = make(map[string][]*MediaItem)
+		}
+		s.pendingItems[adminKey][today] = append(s.pendingItems[adminKey][today], item)
+
+		// Send instant notification if enabled (unlock before sending to avoid deadlock)
+		if settings.InstantEnabled {
 			s.mu.Unlock()
 			s.sendInstantNotification(adminID, item)
 			s.mu.Lock()
-
-		case ModeDaily:
-			// Add to pending items
-			adminKey := strconv.FormatInt(adminID, 10)
-			if s.pendingItems[adminKey] == nil {
-				s.pendingItems[adminKey] = make(map[string][]*MediaItem)
-			}
-			s.pendingItems[adminKey][today] = append(s.pendingItems[adminKey][today], item)
 		}
 	}
-
-	s.mu.Unlock()
 }
 
 // sendInstantNotification sends an instant notification for a single item
@@ -576,8 +583,8 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 	for _, adminID := range adminIDs {
 		settings := s.GetSettings(adminID)
 
-		// Only process admins with daily mode
-		if settings.Mode != ModeDaily || !settings.Enabled {
+		// Only process admins with daily summary enabled and overall enabled
+		if !settings.DailySummaryEnabled || !settings.Enabled {
 			continue
 		}
 
@@ -587,8 +594,10 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 
 			// Get pending items for today
 			if items, exists := s.pendingItems[adminKey][today]; exists && len(items) > 0 {
-				// Send summary
+				// Send summary (unlock before sending to avoid deadlock)
+				s.mu.Unlock()
 				s.sendDailySummary(adminID, items)
+				s.mu.Lock()
 
 				// Clear sent items
 				delete(s.pendingItems[adminKey], today)
