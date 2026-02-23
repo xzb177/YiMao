@@ -269,37 +269,7 @@ func handlePollMessage(msg *types.TelegramMessage,
 ) {
 	log.Printf("[Poll] Message from %d: %s", msg.From.ID, msg.Text)
 
-	// Handle commands
-	if strings.HasPrefix(msg.Text, "/") {
-		parts := strings.Fields(msg.Text)
-		if len(parts) > 0 {
-			switch parts[0] {
-			case "/start":
-				// Check if user is admin
-				isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
-				telegram.SendMessage(msg.Chat.ID, buildStartMenu(), "Markdown", services.BuildStartKeyboard(isAdmin))
-			case "/help":
-				telegram.SendMessage(msg.Chat.ID, buildHelpMessage(), "Markdown", nil)
-			case "/link":
-				if len(parts) >= 3 {
-					username := parts[1]
-					password := strings.Join(parts[2:], " ")
-					if err := linkHandler.HandleWithCredentials(msg.From.ID, username, password); err != nil {
-						telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 绑定失败: %v", err), "Markdown", nil)
-					} else {
-						telegram.SendMessage(msg.Chat.ID, "✅ 账号绑定成功！", "Markdown", nil)
-					}
-				} else {
-					telegram.SendMessage(msg.Chat.ID, "🔗 绑定账号\n\n格式: /link 用户名 密码", "Markdown", nil)
-				}
-			default:
-				telegram.SendMessage(msg.Chat.ID, "❓ 未知命令，使用 /help 查看帮助", "Markdown", nil)
-			}
-		}
-		return
-	}
-
-	// Group chat: Only AI chat is allowed
+	// Group chat: Only AI chat is allowed (when mentioned or replied)
 	if msg.Chat.Type != "private" {
 		query := msg.Text
 		isReplyToBot := msg.ReplyToMessage != nil && msg.ReplyToMessage.From.IsBot
@@ -342,7 +312,37 @@ func handlePollMessage(msg *types.TelegramMessage,
 		return
 	}
 
-	// Private chat: Handle search query
+	// Private chat: Handle commands and search query
+	// Handle commands first
+	if strings.HasPrefix(msg.Text, "/") {
+		parts := strings.Fields(msg.Text)
+		if len(parts) > 0 {
+			switch parts[0] {
+			case "/start":
+				// Check if user is admin
+				isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
+				telegram.SendMessage(msg.Chat.ID, buildStartMenu(), "Markdown", services.BuildStartKeyboard(isAdmin))
+			case "/help":
+				telegram.SendMessage(msg.Chat.ID, buildHelpMessage(), "Markdown", nil)
+			case "/link":
+				if len(parts) >= 3 {
+					username := parts[1]
+					password := strings.Join(parts[2:], " ")
+					if err := linkHandler.HandleWithCredentials(msg.From.ID, username, password); err != nil {
+						telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 绑定失败: %v", err), "Markdown", nil)
+					} else {
+						telegram.SendMessage(msg.Chat.ID, "✅ 账号绑定成功！", "Markdown", nil)
+					}
+				} else {
+					telegram.SendMessage(msg.Chat.ID, "🔗 绑定账号\n\n格式: /link 用户名 密码", "Markdown", nil)
+				}
+			}
+			// Silently ignore unknown commands in private chat
+		}
+		return
+	}
+
+	// Handle search query (non-command text)
 	if msg.Text != "" && len(msg.Text) > 1 {
 		handlePollSearchQuery(msg, telegram, moviepilot, sessMgr)
 	}
@@ -876,9 +876,7 @@ func handleCommand(telegram *services.TelegramClient, msg *types.TelegramMessage
 		_, _ = telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 	case "/help":
 		sendHelpMessage(telegram, msg.Chat.ID)
-	default:
-		text := "❓ 未知命令，请使用 /help 查看帮助"
-		_, _ = telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+	// Unknown commands are silently ignored
 	}
 }
 
