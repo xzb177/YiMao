@@ -11,6 +11,10 @@
 
 # Binaries
 emby-telegram-bot
+emby-telegram-bot-*
+bot
+/bot
+*.exe
 
 # Claude Code
 .claude/
