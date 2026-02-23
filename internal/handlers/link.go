@@ -40,12 +40,19 @@ func NewLinkHandler(
 
 func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	// Check if already linked
-	if _, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
+	if moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
+		log.Printf("[LinkHandler] User %d already linked to moviepilot_id=%d", ctx.UserID, moviepilotID)
+		// Update session with the MoviePilot ID
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		sess.Set("moviepilot_id", int(moviepilotID))
+
 		return &callback.Response{
 			Text:   "✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号",
 			Edit:   true,
 		}, nil
 	}
+
+	log.Printf("[LinkHandler] User %d not linked yet", ctx.UserID)
 
 	// Show link instructions
 	return &callback.Response{

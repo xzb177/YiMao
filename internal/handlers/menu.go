@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"log"
+
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -43,8 +45,13 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 			moviepilotID = id
 			// Update session for future requests
 			sess.Set("moviepilot_id", int(id))
+			log.Printf("[MyRequestsHandler] Loaded moviepilot_id=%d from userMapping for user %d", id, ctx.UserID)
+		} else {
+			log.Printf("[MyRequestsHandler] No moviepilot_id found in userMapping for user %d", ctx.UserID)
 		}
 	}
+
+	log.Printf("[MyRequestsHandler] User %d: moviepilotID=%d", ctx.UserID, moviepilotID)
 
 	if moviepilotID == 0 {
 		return &callback.Response{

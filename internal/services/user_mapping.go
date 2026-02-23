@@ -293,8 +293,18 @@ func (s *BindingRequestService) ApproveRequest(requestID string, userMappingServ
 		return fmt.Errorf("request not found: %s", requestID)
 	}
 
+	// Use MoviePilotID preferentially, fallback to JellyseerrID for compatibility
+	moviepilotID := req.MoviePilotID
+	if moviepilotID == 0 {
+		moviepilotID = req.JellyseerrID
+	}
+	moviepilotUsername := req.MoviePilotUsername
+	if moviepilotUsername == "" {
+		moviepilotUsername = req.JellyseerrUsername
+	}
+
 	// Add user mapping
-	if err := userMappingService.AddMapping(req.TelegramID, req.JellyseerrID, req.JellyseerrUsername); err != nil {
+	if err := userMappingService.AddMapping(req.TelegramID, moviepilotID, moviepilotUsername); err != nil {
 		return err
 	}
 
