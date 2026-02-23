@@ -568,11 +568,8 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 	kb.NewRow()
 	kb.AddButton("📋 我的请求", "start_requests")
 	kb.AddButton("🔗 绑定账号", "start_link")
-	kb.NewRow()
-	kb.AddButton("❓ 帮助", "start_help")
 
 	kb.NewRow()
-	kb.AddButton("🔗 绑定账号", "start_link")
 	kb.AddButton("❓ 帮助", "start_help")
 
 	// Add admin button for admin users
