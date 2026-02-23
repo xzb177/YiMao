@@ -466,7 +466,73 @@ func stringToInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
-// Helper function to convert int64 to int
-func int64ToInt(i int64) int {
-	return int(i)
+// Subscription state constants
+const (
+	StatePending    = "P" // Pending
+	StateSearching  = "S" // Searching
+	StateDownloading = "D" // Downloading
+	StateCompleted  = "C" // Completed/Available
+	StateFailed     = "F" // Failed
+	StateCancelled = "X" // Cancelled
+)
+
+// GetStateText returns user-friendly state text
+func GetStateText(state string) string {
+	switch state {
+	case StatePending:
+		return "⏳ 排队中"
+	case StateSearching:
+		return "🔍 搜索中"
+	case StateDownloading:
+		return "📥 下载中"
+	case StateCompleted:
+		return "✅ 已完成"
+	case StateFailed:
+		return "❌ 失败"
+	case StateCancelled:
+		return "🚫 已取消"
+	default:
+		return "❓ 未知状态"
+	}
+}
+
+// GetSubscriptionStatus gets the status of a subscription request
+func (c *MoviePilotClient) GetSubscriptionStatus(requestID int) (*SubscribeStatus, error) {
+	endpoint := fmt.Sprintf("/api/v1/subscription/%d", requestID)
+
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var status SubscribeStatus
+	if err := json.Unmarshal(body, &status); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return &status, nil
+}
+
+// SubscribeStatus represents the detailed status of a subscription
+type SubscribeStatus struct {
+	ID             int    `json:"id"`
+	Name           string `json:"name"`
+	Year           string `json:"year"`
+	Type           string `json:"type"`
+	State          string `json:"state"`
+	StatusText     string `json:"status_text,omitempty"`
+	MediaID        int    `json:"media_id"`
+	SavePath       string `json:"save_path"`
+	Username       string `json:"username"`
+	Downloader      string `json:"downloader"`
+	TotalEpisode   int    `json:"total_episode"`
+	CurrentEpisode int    `json:"current_episode"`
+	Percent        int    `json:"percent"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+}
+
+// NotifyUser sends a notification to a user about their request status update
+func (c *MoviePilotClient) NotifyUser(telegramID int64, requestID int, status string) error {
+	// This will be handled by the notification service
+	return nil
 }

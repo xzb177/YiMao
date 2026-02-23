@@ -65,17 +65,25 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		log.Printf("[Poll] Received %d updates", len(updates))
 
 		for _, update := range updates {
-			// Update offset
+			// Update offset immediately to avoid reprocessing
 			if update.UpdateID > 0 {
 				offset = int(update.UpdateID + 1)
 			}
 
-			// Process update
-			if update.Message != nil {
-				HandlePollMessage(update.Message, deps, cfg)
-			} else if update.CallbackQuery != nil {
-				HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
-			}
+			// Process update in goroutine to avoid blocking
+			update := update // Capture loop variable
+			go func() {
+				// Debug: log update type
+				if update.Message != nil {
+					log.Printf("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
+					HandlePollMessage(update.Message, deps, cfg)
+				} else if update.CallbackQuery != nil {
+					log.Printf("[Poll] Update %d: Callback from %d: %s", update.UpdateID, update.CallbackQuery.From.ID, update.CallbackQuery.Data)
+					HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
+				} else {
+					log.Printf("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
+				}
+			}()
 		}
 	}
 }
