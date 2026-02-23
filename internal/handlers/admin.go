@@ -375,8 +375,11 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 
 // handleAdminMenu handles admin menu callback
 func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Response, error) {
+	log.Printf("[AdminHandler] handleAdminMenu called by user %d", ctx.UserID)
+
 	// Check if user is admin
 	if !h.adminService.IsAdmin(ctx.UserID) {
+		log.Printf("[AdminHandler] User %d is not admin", ctx.UserID)
 		return &callback.Response{
 			CallbackMsg: "你不是管理员",
 			ShowAlert:   true,
@@ -391,6 +394,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	kb := services.NewKeyboardBuilder()
 
 	// Media notification settings
+	log.Printf("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
 	if h.mediaNotificationSvc != nil {
 		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
 		modeIcon := "⚡"
@@ -416,8 +420,11 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	// Return button
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
+	resultText := msg.Build()
+	log.Printf("[AdminHandler] Returning admin menu with %d chars text", len(resultText))
+
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:     resultText,
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil

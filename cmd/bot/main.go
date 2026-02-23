@@ -273,6 +273,8 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	registry.RegisterFunc("admin_notif_mode_daily", adminHandler.Handle)
 	registry.RegisterFunc("admin_notif_toggle", adminHandler.Handle)
 	registry.RegisterFunc("admin_notif_settime", adminHandler.Handle)
+	registry.RegisterFunc("admin_notif_format_simple", adminHandler.Handle)
+	registry.RegisterFunc("admin_notif_format_detailed", adminHandler.Handle)
 
 	// Review system callbacks
 	registry.RegisterFunc("review_approve", reviewHandler.Handle)
