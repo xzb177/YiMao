@@ -3378,3 +3378,37 @@ trends - 请求趋势
  | | - **新增**: 测试 API (`/api/test-add-item`, `/api/test-summary`) 用于通知测试
  | | - **部署状态**: ✅ 已构建并部署
  | | - **提交**: `6c8a50c`
+
+2026-02-24 | **删除测试 API** 🗑️ |
+ | | - 移除测试 API 端点 `/api/test-summary` 和 `/api/test-add-item`
+ | | - 清理不需要的导入 (`encoding/json`, `time`)
+ | | - **部署状态**: ✅ 已构建并部署
+ | | - **提交**: `5837f3c`
+
+2026-02-24 | **订阅状态跟踪功能** 📊 |
+ | | - **问题**: 用户求片批准后，不知道 MoviePilot 订阅进度（搜索中/下载中/已完成）
+ | | - **解决方案**:
+ | |   - 在 `ReviewRequest` 添加 `SubscriptionID` 和 `SubscriptionState` 字段
+ | |   - 管理员批准后保存订阅 ID
+ | |   - "我的求片"显示订阅状态
+ | |   - 每 5 分钟自动刷新状态
+ | | - **新增方法**:
+ | |   - `MoviePilotClient.GetAllSubscriptions()` - 获取所有订阅
+ | |   - `ReviewService.SetMoviePilotClient()` - 设置 MP 客户端
+ | |   - `ReviewService.UpdateSubscriptionInfo()` - 更新订阅信息
+ | |   - `GetSubscriptionStateText()` - 状态文本转换
+ | | - **状态图标**:
+ | |   | 状态 | 图标 | 说明 |
+ | |   |------|------|------|
+ | |   | N | ⏳ | 等待搜索 |
+ | |   | R | 🔄 | 重新搜索 |
+ | |   | S | 🔍 | 搜索中 |
+ | |   | D | 📥 | 下载中 |
+ | |   | C | ✅ | 已完成 |
+ | |   | F | ❌ | 失败 |
+ | |   | X | 🚫 | 已取消 |
+ | | - **两个功能保留**:
+ | |   - MediaNotificationService - 全局媒体库动态通知（即时/汇总）
+ | |   - ReviewService - 个人求片进度跟踪
+ | | - **部署状态**: ✅ 已构建并部署
+ | | - **提交**: `890fa53`
