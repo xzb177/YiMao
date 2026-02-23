@@ -139,6 +139,11 @@ func HandleWebhookMessage(
 	registry *callback.Registry,
 ) {
 	msg := update.Message
+	if msg == nil {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+		return
+	}
 	log.Printf("[Webhook] Message from user %d (chat: %s, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
 
 	// 群聊中只处理 AI 聊天
