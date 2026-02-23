@@ -1,6 +1,35 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
+| 2026-02-24 | **问题反馈功能完整实现** 🐛💬 |
+| | - **功能**: 用户可在详情页点击"🐛 反馈"按钮报告问题 |
+| | - **流程**:
+| |   1. 点击反馈按钮 → 选择问题类型（画质/音频/字幕/搜索不到/播放/其他）
+| |   2. 选择类型 → 输入问题描述
+| |   3. 提交后创建 Issue 并通知管理员
+| |   4. 管理员操作（已解决/处理中/关闭）→ 用户收到状态更新通知
+| | - **技术实现**:
+| |   - 新增 `internal/handlers/feedback.go` - FeedbackHandler
+| |   - 详情页添加"🐛 反馈"按钮
+| |   - 使用 session 存储反馈上下文（tmdb_id, media_type, issue_type）
+| |   - 问题类型按钮使用 `issue_type` 参数避免与媒体 `type` 冲突
+| |   - AdminHandler 添加 IssueService 集成，操作状态时通知用户
+| | - **修复问题**:
+| |   - 修复 `toBotDeps` 未传递 FeedbackHandler 和 IssueService
+| |   - 修复 callback 参数冲突（type:media vs type:issue_type）
+| | - **修改文件**:
+| |   - `internal/handlers/feedback.go` (新建)
+| |   - `internal/handlers/admin.go` (添加 IssueService 和用户通知)
+| |   - `internal/handlers/callback.go` (添加反馈按钮)
+| |   - `internal/bot/poll.go` (添加反馈流程检查)
+| |   - `cmd/bot/main.go` (依赖注入)
+| | - **用户通知格式**:
+| |   - ✅ 已解决: "您的问题已解决"
+| |   - 🔧 处理中: "您的问题正在处理中"
+| |   - 🚫 关闭: "您的问题已关闭"
+| | | - **部署状态**: ✅ 已构建并部署
+| | | - **提交**: `a4849f4` (初始), `826e731` (完整通知)
+
 | 2026-02-24 | **我的请求功能修复** 📋 |
 | | - **问题**: "我的请求"显示 "❓ 未知状态" 和错误的请求数量（349条而非用户专属）|
 | | - **根因**:
