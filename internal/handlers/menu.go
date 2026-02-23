@@ -91,10 +91,10 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 				break
 			}
 
-			// Status icon
+			// Status icon (SubscribeItem uses "state" field)
 			statusIcon := "⏳"
 			statusText := "等待处理"
-			switch req.Status {
+			switch req.State {
 			case "pending":
 				statusIcon = "⏳"
 				statusText = "等待处理"
@@ -109,11 +109,12 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 				statusText = "已拒绝"
 			}
 
-			// Media title
-			title := req.Media.Title
+			// Media title (SubscribeItem uses "name" field)
+			title := req.Name
 
 			msg.Textf("%s %s — %s", statusIcon, title, statusText)
-			if req.Media.Type == services.MediaTypeTV {
+			// SubscribeItem uses "type" field (电影/电视剧)
+			if req.Type == "电视剧" || req.Type == "tv" {
 				msg.Text(" (剧集)")
 			}
 			msg.Newline()

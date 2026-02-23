@@ -161,6 +161,23 @@ func main() {
 
 	log.Println("✅ Callback handlers registered")
 
+	// Setup bot command menu
+	commands := []services.BotCommand{
+		{Command: "start", Description: "🌟 打开主菜单"},
+		{Command: "search", Description: "🔍 搜索影片"},
+		{Command: "ai", Description: "🤖 AI 推荐菜单"},
+		{Command: "trending", Description: "🔥 热门榜单"},
+		{Command: "requests", Description: "📋 我的请求"},
+		{Command: "link", Description: "🔗 绑定账号"},
+		{Command: "quota", Description: "💎 查看配额"},
+		{Command: "help", Description: "❓ 帮助中心"},
+	}
+	if err := telegramClient.SetMyCommands(commands, ""); err != nil {
+		log.Printf("⚠️  Failed to set bot commands: %v", err)
+	} else {
+		log.Println("✅ Bot command menu set")
+	}
+
 	// Setup webhook (if configured)
 	if cfg.WebhookURL != "" {
 		if err := telegramClient.SetWebhook(cfg.WebhookURL); err != nil {

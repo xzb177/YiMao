@@ -276,6 +276,64 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	return nil
 }
 
+// BotCommand represents a bot command in the menu
+type BotCommand struct {
+	Command     string `json:"command"`
+	Description string `json:"description"`
+}
+
+// SetMyCommands sets the bot's command menu
+func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode string) error {
+	apiURL := fmt.Sprintf("%s/setMyCommands", c.baseURL)
+
+	payload := map[string]interface{}{
+		"commands": commands,
+	}
+
+	if languageCode != "" {
+		payload["language_code"] = languageCode
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("[Telegram] Setting bot commands: %s", string(jsonData))
+
+	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	log.Printf("[Telegram] Response: %s", string(body))
+
+	var result struct {
+		OK     bool                 `json:"ok"`
+		Result bool                 `json:"result"`
+		Error  *types.TelegramError `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.OK {
+		if result.Error != nil {
+			return result.Error
+		}
+		return fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	return nil
+}
+
 // KeyboardBuilder helps build inline keyboards
 type KeyboardBuilder struct {
 	buttons [][]types.TelegramInlineKeyboardButton
@@ -462,7 +520,7 @@ func BuildDetailKeyboard(mediaID, mediaType string, hasQuota bool) *types.Telegr
 	kb.AddButton("📋 我的请求", "requests:list")
 
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
+	kb.AddButton("⬅️ 返回列表", "back")
 
 	return kb.Build()
 }

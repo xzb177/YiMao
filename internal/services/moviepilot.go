@@ -121,6 +121,20 @@ type SearchResponse struct {
 	Results []SearchResult `json:"results"`
 }
 
+// SubscribeItem represents a subscription item from MoviePilot API
+type SubscribeItem struct {
+	ID           int     `json:"id"`
+	Name         string  `json:"name"`
+	Year         string  `json:"year"`
+	Type         string  `json:"type"`
+	Poster       string  `json:"poster"`
+	State        string  `json:"state"`
+	Username     string  `json:"username"`
+	Date         string  `json:"date"`
+	Season       int     `json:"season"`
+	TotalEpisode int     `json:"total_episode"`
+}
+
 // Request represents a media request
 type Request struct {
 	ID          int        `json:"id"`
@@ -372,24 +386,23 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 	return &response.Data, nil
 }
 
-// GetUserRequests retrieves all requests for a user
-func (c *MoviePilotClient) GetUserRequests(userID int64) ([]Request, error) {
-	endpoint := fmt.Sprintf("/api/v1/subscription/?page=1&count=100")
+// GetUserRequests retrieves all subscription requests for a user
+func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error) {
+	// MoviePilot uses /api/v1/subscribe/ endpoint
+	endpoint := fmt.Sprintf("/api/v1/subscribe/?page=1&count=100")
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var response struct {
-		Data []Request `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &response); err != nil {
+	// MoviePilot returns an array directly
+	var items []SubscribeItem
+	if err := json.Unmarshal(body, &items); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	return response.Data, nil
+	return items, nil
 }
 
 // GetRequest retrieves a request by ID

@@ -233,7 +233,7 @@ func (rm *RecommendationManager) BuildRecommendationItemMessage(userID int64, re
 			})},
 		},
 		{
-			{"text": "⬅️ 返回推荐", "callback_data": "rec:back"},
+			{"text": "⬅️ 返回主菜单", "callback_data": "start"},
 			{"text": "❌ 关闭", "callback_data": "cancel"},
 		},
 	}

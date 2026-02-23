@@ -1126,7 +1126,7 @@ func (h *Handler) handleFeedbackCallback(session *session.UserSession, cb *callb
 			{"text": "📦 其他问题", "callback_data": "feedback_type:other"},
 		},
 		{
-			{"text": "⬅️ 返回", "callback_data": "back_to_detail"},
+			{"text": "⬅️ 返回详情", "callback_data": "back_to_detail"},
 		},
 	}
 
