@@ -3264,3 +3264,24 @@ trends - 请求趋势
  | |   - 添加 `crypto/tls` 导入
  | |   - 配置自定义 HTTP Transport 跳过证书验证
  | | - **部署状态**: ✅ 已构建并部署
+
+2026-02-24 | **Emby 媒体库检查功能完成** ✅ |
+ | | - **功能**: 用户请求媒体时自动检查 Emby 媒体库是否已存在
+ | | - **已存在时显示**:
+ | |   - ⚠️ 该内容已在媒体库中
+ | |   - 📺 媒体名称
+ | |   - ⏱️ 时长信息
+ | |   - 两个按钮：❌ 取消 / 💪 仍要订阅
+ | | - **技术实现**:
+ | |   - URL 编码修复 (url.QueryEscape)
+ | |   - JSON 响应结构修复 (Items 数组)
+ | |   - TLS 证书跳过 (InsecureSkipVerify)
+ | |   - Response.Edit=false 时发送新消息
+ | | - **修改文件**:
+ | |   - `internal/services/webhook.go` - Emby 搜索 API
+ | |   - `internal/handlers/request.go` - 请求处理逻辑
+ | |   - `internal/bot/poll.go` - 新消息发送支持
+ | |   - `internal/bot/webhook.go` - 新消息发送支持
+ | |   - `cmd/bot/main.go` - 回调注册
+ | | - **Emby URL**: https://emby.oceancloud.asia
+ | | - **部署状态**: ✅ 已部署并测试通过

@@ -160,6 +160,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 
 	// Check if media already exists in Emby library
+	log.Printf("[RequestHandler] Checking Emby library for: %s (%d)", mediaTitle, mediaYear)
 	embyType := services.MediaTypeMovie
 	if mediaType == "tv" {
 		embyType = services.MediaTypeTV

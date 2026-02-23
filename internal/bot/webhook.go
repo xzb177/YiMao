@@ -120,10 +120,16 @@ func HandleWebhookCallback(
 		log.Printf("[Callback] AnswerCallback error: %v", err)
 	}
 
-	// Edit message if needed
-	if resp != nil && resp.Edit && resp.Text != "" {
+	// Send or edit message
+	if resp != nil && resp.Text != "" {
 		keyboard := ConvertKeyboard(resp.Keyboard)
-		telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
+		if resp.Edit {
+			// Edit existing message
+			telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
+		} else {
+			// Send new message
+			telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+		}
 	}
 
 	w.WriteHeader(http.StatusOK)

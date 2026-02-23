@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -917,11 +918,11 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 		return nil, fmt.Errorf("Emby URL or API key not configured")
 	}
 
-	// Build search URL
-	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10", title)
-	url := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyAPIKey, searchParams)
+	// Build search URL with proper URL encoding
+	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10", url.QueryEscape(title))
+	fullURL := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyAPIKey, searchParams)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -947,13 +948,16 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
 	}
 
-	var results []map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&results); err != nil {
+	// Emby API returns an object with Items array
+	var response struct {
+		Items []map[string]interface{} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}
 
 	// Find best match
-	for _, item := range results {
+	for _, item := range response.Items {
 		itemTitle := ""
 		if name, ok := item["Name"].(string); ok {
 			itemTitle = name
