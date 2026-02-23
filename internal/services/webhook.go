@@ -239,6 +239,8 @@ type EmbyEnhancedInfo struct {
 	Quality      string
 	FileSize     int64
 	FileCount    int
+	IsWEBDL      bool   // Whether the source is WEB-DL
+	Container    string // Container format (mkv, mp4, etc.)
 }
 
 // getEmbyEnhancedInfo fetches enhanced information from Emby API
@@ -335,6 +337,16 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 					info.FileSize = int64(size)
 				}
 
+				// Get container format
+				if container, ok := source["Container"].(string); ok {
+					info.Container = container
+				}
+
+				// Detect WEB-DL from path or name
+				if path, ok := source["Path"].(string); ok {
+					info.IsWEBDL = s.detectWEBDL(path)
+				}
+
 				// Count media streams (video files)
 				if streams, ok := source["MediaStreams"].([]interface{}); ok {
 					videoCount := 0
@@ -355,6 +367,19 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	return info, nil
 }
 
+// detectWEBDL detects if the source is a WEB-DL from the path
+func (s *WebhookService) detectWEBDL(path string) bool {
+	pathLower := strings.ToLower(path)
+	// Common WEB-DL indicators in file/folder names
+	webdlIndicators := []string{"webdl", "web-dl", "webdl.", "web.", "webrip", "nf."}
+	for _, indicator := range webdlIndicators {
+		if strings.Contains(pathLower, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
 // detectQuality detects video quality from width
 func (s *WebhookService) detectQuality(width int) string {
 	switch {
@@ -369,12 +394,28 @@ func (s *WebhookService) detectQuality(width int) string {
 	}
 }
 
-// formatEmbyNotificationEnhanced formats an enhanced Emby notification
+// getFullQuality returns full quality string including WEB-DL info
+func (s *WebhookService) getFullQuality(info *EmbyEnhancedInfo) string {
+	if info == nil {
+		return ""
+	}
+
+	quality := info.Quality
+	if quality == "" {
+		return ""
+	}
+
+	// Add WEB-DL prefix if applicable
+	if info.IsWEBDL {
+		return fmt.Sprintf("WEB-DL %s", quality)
+	}
+
+	return quality
+}
+
+// formatEmbyNotificationEnhanced formats an enhanced Emby notification (new detailed format)
 func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
 	var builder strings.Builder
-
-	// Header
-	builder.WriteString("✅ 入库成功")
 
 	// Get title from various sources
 	title := payload.ItemName
@@ -406,114 +447,177 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	// Get series name
 	seriesName := payload.SeriesName
 
+	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
+	builder.WriteString("✅ 入库成功：")
+
 	if itemType == "Episode" && seriesName != "" {
 		season := payload.Season
 		episode := payload.Episode
-		builder.WriteString(fmt.Sprintf("：%s S%02dE%02d", seriesName, season, episode))
-	} else {
-		builder.WriteString(fmt.Sprintf("：%s", title))
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", year))
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+		}
+	} else if itemType == "Season" && seriesName != "" {
+		season := payload.Season
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+		}
+	} else if itemType == "Series" {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
+		}
+	} else {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
 		}
 	}
 
 	builder.WriteString("\n")
-	builder.WriteString(strings.Repeat("─", 30))
-	builder.WriteString("\n")
+	builder.WriteString("───────────────────\n")
 
-	// Media info line
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s", title))
-	if seriesName != "" {
-		builder.WriteString(fmt.Sprintf(" (%s)", seriesName))
+	// Name line
+	builder.WriteString("🎬 名称：")
+	if itemType == "Episode" && seriesName != "" {
+		season := payload.Season
+		episode := payload.Episode
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+		}
+	} else if itemType == "Season" && seriesName != "" {
+		season := payload.Season
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+		}
+	} else if itemType == "Series" {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
+		}
+	} else {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
+		}
 	}
 	builder.WriteString("\n")
 
-	// Type and quality
-	typeLabel := "电影/剧集"
-	switch itemType {
-	case "Movie":
-		typeLabel = "电影"
-	case "Episode", "Series":
-		typeLabel = "剧集"
-	case "Season":
-		typeLabel = "剧集（整季）"
-	}
-
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s", typeLabel))
-
-	// Add quality if available
-	if enhanced != nil && enhanced.Quality != "" {
-		builder.WriteString(fmt.Sprintf(" · 💎 质量：%s", enhanced.Quality))
-	}
+	// Category line - detailed category
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
 	builder.WriteString("\n")
 
-	// Rating
-	if enhanced != nil && enhanced.Rating > 0 {
-		// Convert to 10-point scale and show stars
-		rating := enhanced.Rating
-		if rating > 10 {
-			rating = rating / 2 // Convert from 20-point to 10-point scale
-		}
-		stars := "★"
-		if rating >= 2 {
-			stars = "★★"
-		}
-		if rating >= 4 {
-			stars = "★★★"
-		}
-		if rating >= 6 {
-			stars = "★★★★"
-		}
-		if rating >= 8 {
-			stars = "★★★★★"
-		}
-		builder.WriteString(fmt.Sprintf("⭐ 评分：%.1f %s", rating, stars))
+	// Quality line - with WEB-DL info
+	quality := ""
+	if enhanced != nil {
+		quality = s.getFullQuality(enhanced)
+	}
+	if quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
 		builder.WriteString("\n")
 	}
 
-	// Runtime
-	if enhanced != nil && enhanced.RunTimeTicks > 0 {
-		minutes := enhanced.RunTimeTicks / 600000000
-		if minutes > 0 {
-			hours := minutes / 60
-			mins := minutes % 60
-			if hours > 0 {
-				builder.WriteString(fmt.Sprintf("⏳ 时长：%d时%d分\n", hours, mins))
-			} else {
-				builder.WriteString(fmt.Sprintf("⏳ 时长：%d分钟\n", mins))
-			}
-		}
-	}
+	builder.WriteString("\n")
 
-	// Genres (max 3)
-	if enhanced != nil && len(enhanced.Genres) > 0 {
-		genreCount := len(enhanced.Genres)
-		if genreCount > 3 {
-			genreCount = 3
-		}
-		builder.WriteString("🎭 类型：")
-		for i := 0; i < genreCount; i++ {
-			if i > 0 {
-				builder.WriteString("、")
-			}
-			builder.WriteString(enhanced.Genres[i])
-		}
-		if len(enhanced.Genres) > 3 {
-			builder.WriteString("...")
-		}
-		builder.WriteString("\n")
-	}
-
-	// File info
+	// File size (using decimal GB for consistency with examples)
 	if enhanced != nil && enhanced.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 大小：%s", s.formatFileSize(enhanced.FileSize)))
-		if enhanced.FileCount > 0 {
-			builder.WriteString(fmt.Sprintf(" · 📁 文件：%d个", enhanced.FileCount))
-		}
-		builder.WriteString("\n")
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+	}
+
+	// File count
+	if enhanced != nil && enhanced.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", enhanced.FileCount))
 	}
 
 	return builder.String()
+}
+
+// getDetailedCategory returns detailed category name based on genres and item type
+func (s *WebhookService) getDetailedCategory(itemType string, enhanced *EmbyEnhancedInfo) string {
+	if enhanced == nil {
+		return s.getBasicCategory(itemType)
+	}
+
+	// Check genres for region/category info
+	for _, genre := range enhanced.Genres {
+		switch strings.ToLower(genre) {
+		case "韩剧", "韩国", "korean", "korea":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "韩剧"
+			}
+			return "韩国电影"
+		case "日剧", "日本", "japanese", "japan":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "日剧"
+			}
+			return "日本电影"
+		case "华语", "台湾", "香港", "中国", "chinese", "taiwanese", "hong kong":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "华语剧集"
+			}
+			return "华语电影"
+		case "动漫", "动画", "anime", "animation", "cartoon":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "日本动漫"
+			}
+			return "动画电影"
+		case "欧美", "美国", " british", "american", "western", "us", "uk":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "美剧"
+			}
+			return "欧美电影"
+		case "泰国", "thai", "thailand":
+			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+				return "泰剧"
+			}
+			return "泰国电影"
+		}
+	}
+
+	// Fallback to basic category
+	return s.getBasicCategory(itemType)
+}
+
+// getBasicCategory returns basic category name based on item type
+func (s *WebhookService) getBasicCategory(itemType string) string {
+	switch itemType {
+	case "Movie":
+		return "电影"
+	case "Episode", "Series", "Season":
+		return "剧集"
+	default:
+		return "电影/剧集"
+	}
+}
+
+// formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
+func (s *WebhookService) formatFileSizeDecimal(bytes int64) string {
+	const unit = 1000 // Use decimal for GB display
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
+	// Convert to decimal GB for display
+	gb := float64(bytes) / (1000 * 1000 * 1000)
+	if gb >= 1 {
+		return fmt.Sprintf("%.2fG", gb)
+	}
+
+	// For smaller sizes, use MB
+	mb := float64(bytes) / (1000 * 1000)
+	return fmt.Sprintf("%.2fM", mb)
 }
 
 // formatFileSize formats file size in human readable format
@@ -1136,6 +1240,9 @@ func (s *WebhookService) convertToMediaItem(payload EmbyWebhookPayload, enhanced
 		item.Quality = enhanced.Quality
 		item.ImageURL = enhanced.ImageURL
 		item.Genres = enhanced.Genres
+		item.FileSize = enhanced.FileSize
+		item.FileCount = enhanced.FileCount
+		item.IsWEBDL = enhanced.IsWEBDL
 	}
 
 	return item

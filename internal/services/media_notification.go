@@ -22,6 +22,16 @@ const (
 	ModeDaily NotificationMode = "daily"
 )
 
+// NotificationFormat represents the notification format style
+type NotificationFormat string
+
+const (
+	// FormatSimple uses simple, concise format
+	FormatSimple NotificationFormat = "simple"
+	// FormatDetailed uses detailed format with file info
+	FormatDetailed NotificationFormat = "detailed"
+)
+
 // MediaType categories for notification (extending the base MediaType from moviepilot.go)
 const (
 	MediaTypeSeries MediaType = "series"
@@ -48,6 +58,10 @@ type MediaItem struct {
 	Genres       []string `json:"genres,omitempty"`
 	Overview     string  `json:"overview,omitempty"`
 	ImageURL     string  `json:"image_url,omitempty"`
+	// File info
+	FileSize     int64  `json:"file_size,omitempty"`
+	FileCount    int    `json:"file_count,omitempty"`
+	IsWEBDL      bool   `json:"is_webdl,omitempty"`
 	// Timestamp
 	AddedAt time.Time `json:"added_at"`
 }
@@ -59,6 +73,7 @@ type AdminNotificationSettings struct {
 	DailyTime   string           `json:"daily_time"` // Format: "HH:MM"
 	Enabled     bool             `json:"enabled"`
 	Libraries   []string         `json:"libraries"`   // Specific libraries to monitor, empty = all
+	Format      NotificationFormat `json:"format"`     // Notification format: simple or detailed
 }
 
 // MediaNotificationService handles media library notifications
@@ -165,6 +180,7 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 		DailyTime: "20:00",
 		Enabled:   true,
 		Libraries: []string{},
+		Format:    FormatDetailed, // Default to detailed format
 	}
 }
 
@@ -197,6 +213,13 @@ func (s *MediaNotificationService) ToggleEnabled(adminID int64) bool {
 	settings.Enabled = !settings.Enabled
 	s.SetSettings(settings)
 	return settings.Enabled
+}
+
+// SetFormat sets the notification format for an admin
+func (s *MediaNotificationService) SetFormat(adminID int64, format NotificationFormat) error {
+	settings := s.GetSettings(adminID)
+	settings.Format = format
+	return s.SetSettings(settings)
 }
 
 // AddItem adds a media item for notification processing
@@ -267,7 +290,15 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 // sendInstantNotification sends an instant notification for a single item
 func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *MediaItem) {
-	message := s.formatInstantMessage(item)
+	settings := s.GetSettings(adminID)
+	var message string
+
+	// Choose format based on settings
+	if settings.Format == FormatDetailed {
+		message = s.formatDetailedMessage(item)
+	} else {
+		message = s.formatSimpleMessage(item)
+	}
 
 	// Send with photo if available
 	if item.ImageURL != "" {
@@ -280,8 +311,8 @@ func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *
 	}
 }
 
-// formatInstantMessage formats an instant notification message
-func (s *MediaNotificationService) formatInstantMessage(item *MediaItem) string {
+// formatSimpleMessage formats a simple instant notification message
+func (s *MediaNotificationService) formatSimpleMessage(item *MediaItem) string {
 	var builder strings.Builder
 
 	// Library emoji based on type
@@ -359,6 +390,161 @@ func (s *MediaNotificationService) formatInstantMessage(item *MediaItem) string 
 	builder.WriteString(fmt.Sprintf("🕒 %s", item.AddedAt.Format("15:04")))
 
 	return builder.String()
+}
+
+// formatDetailedMessage formats a detailed notification message (new format)
+func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string {
+	var builder strings.Builder
+
+	// Header with title
+	builder.WriteString("✅ 入库成功：")
+
+	// Title with year and episode info
+	if item.SeriesName != "" {
+		builder.WriteString(item.SeriesName)
+		if item.Year > 1900 && item.Year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+		if item.SeasonNumber > 0 {
+			builder.WriteString(fmt.Sprintf(" S%02d", item.SeasonNumber))
+		}
+		if item.EpisodeCount > 0 {
+			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
+				builder.WriteString(fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd))
+			} else if item.EpisodeCount == 1 {
+				builder.WriteString(fmt.Sprintf(" E%02d", item.EpisodeStart))
+			}
+		}
+	} else {
+		builder.WriteString(item.Title)
+		if item.Year > 1900 && item.Year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+	}
+
+	builder.WriteString("\n")
+	builder.WriteString("───────────────────\n")
+
+	// Name line
+	builder.WriteString("🎬 名称：")
+	if item.SeriesName != "" {
+		builder.WriteString(item.SeriesName)
+		if item.Year > 1900 && item.Year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+		if item.SeasonNumber > 0 {
+			builder.WriteString(fmt.Sprintf(" S%02d", item.SeasonNumber))
+		}
+		if item.EpisodeCount > 0 {
+			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
+				builder.WriteString(fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd))
+			} else if item.EpisodeCount == 1 {
+				builder.WriteString(fmt.Sprintf(" E%02d", item.EpisodeStart))
+			}
+		}
+	} else {
+		builder.WriteString(item.Title)
+		if item.Year > 1900 && item.Year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+		}
+	}
+	builder.WriteString("\n")
+
+	// Category with detailed type
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(s.getDetailedCategory(item))
+	builder.WriteString("\n")
+
+	// Quality (with WEB-DL info if available)
+	if item.Quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s", item.Quality))
+		builder.WriteString("\n")
+	}
+
+	// File size (using GB format)
+	// Quality (with WEB-DL info if available)
+	quality := item.Quality
+	if item.IsWEBDL && quality != "" {
+		quality = fmt.Sprintf("WEB-DL %s", quality)
+	}
+	if quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
+		builder.WriteString("\n")
+	}
+
+	builder.WriteString("\n")
+
+	// File size (using decimal GB for consistency)
+	if item.FileSize > 0 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(item.FileSize)))
+	}
+
+	// File count
+	if item.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", item.FileCount))
+	}
+
+	return builder.String()
+}
+
+// formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
+func (s *MediaNotificationService) formatFileSizeDecimal(bytes int64) string {
+	const unit = 1000 // Use decimal for GB display
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+
+	// Convert to decimal GB for display
+	gb := float64(bytes) / (1000 * 1000 * 1000)
+	if gb >= 1 {
+		return fmt.Sprintf("%.2fG", gb)
+	}
+
+	// For smaller sizes, use MB
+	mb := float64(bytes) / (1000 * 1000)
+	return fmt.Sprintf("%.2fM", mb)
+}
+
+// getDetailedCategory returns detailed category name based on genres and media type
+func (s *MediaNotificationService) getDetailedCategory(item *MediaItem) string {
+	// Check genres for region/category info
+	if len(item.Genres) > 0 {
+		for _, genre := range item.Genres {
+			switch strings.ToLower(genre) {
+			case "韩剧", "韩国", "korean":
+				return "韩剧"
+			case "日剧", "日本", "japanese":
+				return "日剧"
+			case "华语", "台湾", "香港", "中国", "chinese", "taiwanese", "hong kong":
+				if item.MediaType == MediaTypeSeries {
+					return "华语剧集"
+				}
+				return "华语电影"
+			case "动漫", "动画", "anime", "animation":
+				if item.MediaType == MediaTypeSeries {
+					return "日本动漫"
+				}
+				return "动画电影"
+			case "欧美", "美国", " british", "american", "western":
+				if item.MediaType == MediaTypeSeries {
+					return "美剧"
+				}
+				return "欧美电影"
+			}
+		}
+	}
+
+	// Fallback to media type
+	switch item.MediaType {
+	case MediaTypeSeries:
+		return "剧集"
+	case MediaTypeAnime:
+		return "动画"
+	case MediaTypeMovie:
+		return "电影"
+	default:
+		return "电影/剧集"
+	}
 }
 
 // scheduleDailySummaries schedules daily summary notifications

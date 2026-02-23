@@ -75,6 +75,10 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleNotifToggle(ctx)
 	case "admin_notif_settime":
 		return h.handleNotifSetTime(ctx)
+	case "admin_notif_format_simple":
+		return h.handleNotifFormatSimple(ctx)
+	case "admin_notif_format_detailed":
+		return h.handleNotifFormatDetailed(ctx)
 	default:
 		return nil, nil
 	}
@@ -449,6 +453,15 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	}
 	msg.Text(fmt.Sprintf("📱 当前模式: %s %s", modeIcon, h.getModeText(settings.Mode))).Newline()
 
+	// Current format
+	formatIcon := "📝"
+	formatText := "简洁"
+	if settings.Format == services.FormatDetailed {
+		formatIcon = "📋"
+		formatText = "详细"
+	}
+	msg.Text(fmt.Sprintf("%s 通知格式: %s", formatIcon, formatText)).Newline()
+
 	// Status
 	statusIcon := "✅"
 	statusText := "已启用"
@@ -475,6 +488,18 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	// Mode selection
 	kb.AddButton("⚡ 单集推送", "admin_notif_mode_instant")
 	kb.AddButton("📅 每日汇总", "admin_notif_mode_daily")
+	kb.NewRow()
+
+	// Format selection
+	formatSimpleIcon := "⚪"
+	formatDetailedIcon := "⚪"
+	if settings.Format == services.FormatSimple {
+		formatSimpleIcon = "🔵"
+	} else {
+		formatDetailedIcon = "🔵"
+	}
+	kb.AddButton(fmt.Sprintf("%s 简洁格式", formatSimpleIcon), "admin_notif_format_simple")
+	kb.AddButton(fmt.Sprintf("%s 详细格式", formatDetailedIcon), "admin_notif_format_detailed")
 	kb.NewRow()
 
 	// Time selection (for daily mode)
@@ -634,6 +659,56 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleNotifFormatSimple handles switching to simple notification format
+func (h *AdminHandler) handleNotifFormatSimple(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	h.mediaNotificationSvc.SetFormat(ctx.UserID, services.FormatSimple)
+
+	return &callback.Response{
+		Text:        "✅ 已切换到简洁格式",
+		CallbackMsg: "格式已切换",
+		Edit:        true,
+	}, nil
+}
+
+// handleNotifFormatDetailed handles switching to detailed notification format
+func (h *AdminHandler) handleNotifFormatDetailed(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	h.mediaNotificationSvc.SetFormat(ctx.UserID, services.FormatDetailed)
+
+	return &callback.Response{
+		Text:        "✅ 已切换到详细格式",
+		CallbackMsg: "格式已切换",
+		Edit:        true,
 	}, nil
 }
 
