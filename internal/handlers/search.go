@@ -52,7 +52,7 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Otherwise, show search prompt
 	return &callback.Response{
-		Text:     "🔍 请输入影片名称进行搜索",
+		Text:     "🔍 智能搜索\n\n💡 直接输入影片名称即可搜索，支持中英文片名、演员名、导演名等",
 		Edit:     true,
 		Keyboard: &callback.Keyboard{},
 	}, nil
@@ -215,7 +215,7 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	}
 	kb.NewRow()
 
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

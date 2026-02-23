@@ -63,9 +63,16 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🌟 欢迎使用 Emby Telegram Bot").Newline()
+	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
 	msg.Newline()
-	msg.Text("请选择操作：").Newline()
+	msg.Text("企业级智能影视机器人，为您提供：").Newline()
+	msg.Newline()
+	msg.Text("🔍 智能搜索 — 快速查找心仪影片").Newline()
+	msg.Text("🤖 AI 推荐 — 发现热门好片").Newline()
+	msg.Text("📋 请求管理 — 跟踪您的求片进度").Newline()
+	msg.Text("🔗 账号绑定 — 同步您的观影记录").Newline()
+	msg.Newline()
+	msg.Italic("💡 点击下方按钮开始探索").Newline()
 
 	// Check if user is admin to add admin menu button
 	isAdmin := false
@@ -112,13 +119,13 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	msg.Text("请选择推荐类型：").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门推荐", "ai:trending")
-	kb.AddButton("📺 热门剧集", "ai:hot")
+	kb.AddButton("🔥 热门电影", "ai:trending")
+	kb.AddButton("📺 热播剧集", "ai:hot")
 	kb.NewRow()
-	kb.AddButton("🆕 新片上线", "ai:new")
-	kb.AddButton("🎲 随机推荐", "ai:random")
+	kb.AddButton("🆕 最新上线", "ai:new")
+	kb.AddButton("🎲 随机发现", "ai:random")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -500,7 +507,7 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回搜索", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -542,7 +549,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回菜单", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

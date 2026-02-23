@@ -57,14 +57,15 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 func (h *LinkHandler) getLinkInstructions() string {
 	return `🔗 绑定 MoviePilot 账号
 
-请使用以下命令绑定您的账号：
+绑定后即可使用求片功能并同步观影记录
 
+📝 绑定格式：
 /link 用户名 密码
 
-示例：
+📌 示例：
 /link johndoe mypassword123
 
-💡 您的凭据将直接发送到 MoviePilot 服务器进行验证`
+💡 您的凭据直接发送至 MoviePilot 服务器验证，机器人不做存储`
 }
 
 // HandleWithCredentials handles linking with username and password

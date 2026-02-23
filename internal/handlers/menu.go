@@ -37,7 +37,7 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 			Keyboard: &callback.Keyboard{
 				InlineKeyboard: [][]callback.Button{
 					{{Text: "🔗 绑定账号", CallbackData: "link"}},
-					{{Text: "⬅️ 返回", CallbackData: "start"}},
+					{{Text: "⬅️ 返回主菜单", CallbackData: "start"}},
 				},
 			},
 		}, nil
@@ -55,9 +55,11 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 	msg.Newline()
 
 	if len(requests) == 0 {
-		msg.Text("暂无请求记录")
+		msg.Text("暂无请求记录").Newline()
+		msg.Newline()
+		msg.Italic("💡 搜索影片后点击「请求」即可添加求片")
 	} else {
-		msg.Textf("共有 %d 条请求", len(requests)).Newline()
+		msg.Textf("共有 %d 条请求记录", len(requests)).Newline()
 		msg.Newline()
 
 		for i, req := range requests {
@@ -68,21 +70,26 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 
 			// Status icon
 			statusIcon := "⏳"
+			statusText := "等待处理"
 			switch req.Status {
 			case "pending":
 				statusIcon = "⏳"
+				statusText = "等待处理"
 			case "approved":
 				statusIcon = "✅"
+				statusText = "已批准"
 			case "available":
 				statusIcon = "🎉"
+				statusText = "已就绪"
 			case "declined":
 				statusIcon = "❌"
+				statusText = "已拒绝"
 			}
 
 			// Media title
 			title := req.Media.Title
 
-			msg.Textf("%s %s", statusIcon, title)
+			msg.Textf("%s %s — %s", statusIcon, title, statusText)
 			if req.Media.Type == services.MediaTypeTV {
 				msg.Text(" (剧集)")
 			}
@@ -92,9 +99,9 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔄 刷新", "requests:refresh")
+	kb.AddButton("🔄 刷新状态", "requests:refresh")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -114,34 +121,35 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	msg := services.NewMessageBuilder()
 	msg.Bold("❓ 帮助中心").Newline()
 	msg.Newline()
+	msg.Bold("✨ 功能介绍").Newline()
+	msg.Newline()
 
-	msg.Bold("🔍 搜索影片").Newline()
-	msg.Text("  直接输入影片名称或使用 /search 命令").Newline()
+	msg.Bold("🔍 智能搜索").Newline()
+	msg.Text("  支持片名、演员、导演等多种搜索方式").Newline()
 	msg.Newline()
 
 	msg.Bold("🤖 AI 推荐").Newline()
-	msg.Text("  使用智能推荐发现好片").Newline()
+	msg.Text("  大数据分析为您推荐热门好片").Newline()
 	msg.Newline()
 
-	msg.Bold("📋 我的请求").Newline()
-	msg.Text("  查看您的媒体请求状态").Newline()
+	msg.Bold("📋 请求管理").Newline()
+	msg.Text("  一键求片，实时跟踪处理进度").Newline()
 	msg.Newline()
 
-	msg.Bold("🔗 绑定账号").Newline()
-	msg.Text("  绑定您的 MoviePilot 账号以使用请求功能").Newline()
+	msg.Bold("🔗 账号绑定").Newline()
+	msg.Text("  绑定 MoviePilot 同步观影记录").Newline()
 	msg.Newline()
 
-	msg.Bold("⌨️ 命令列表").Newline()
-	msg.Text("  /start - 开始使用").Newline()
-	msg.Text("  /search - 搜索影片").Newline()
-	msg.Text("  /ai - AI 推荐").Newline()
-	msg.Text("  /trending - 热门榜单").Newline()
-	msg.Text("  /requests - 我的请求").Newline()
-	msg.Text("  /link - 绑定账号").Newline()
-	msg.Text("  /help - 帮助信息").Newline()
+	msg.Bold("⌨️ 快捷命令").Newline()
+	msg.Text("  /start — 打开主菜单").Newline()
+	msg.Text("  /search — 搜索影片").Newline()
+	msg.Text("  /ai — AI 推荐菜单").Newline()
+	msg.Text("  /requests — 我的请求").Newline()
+	msg.Text("  /link — 绑定账号").Newline()
+	msg.Text("  /help — 显示此帮助").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

@@ -84,16 +84,21 @@ func (h *AIHandler) ShowAIMenu() (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 智能推荐").Newline()
 	msg.Newline()
-	msg.Text("请选择推荐类型：").Newline()
+	msg.Text("基于大数据分析，为您精选优质内容").Newline()
+	msg.Newline()
+	msg.Text("🔥 热门电影 — 口碑佳作不容错过").Newline()
+	msg.Text("📺 热播剧集 — 追剧必备持续更新").Newline()
+	msg.Text("🆕 最新上线 — 抢先看首发新片").Newline()
+	msg.Text("🎲 随机发现 — 意外惊喜随心探索").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门推荐", "ai:type:trending")
-	kb.AddButton("📺 热门剧集", "ai:type:hot")
+	kb.AddButton("🔥 热门电影", "ai:type:trending")
+	kb.AddButton("📺 热播剧集", "ai:type:hot")
 	kb.NewRow()
-	kb.AddButton("🆕 新片上线", "ai:type:new")
-	kb.AddButton("🎲 随机推荐", "ai:type:random")
+	kb.AddButton("🆕 最新上线", "ai:type:new")
+	kb.AddButton("🎲 随机发现", "ai:type:random")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -182,7 +187,7 @@ func (h *AIHandler) buildResultsMessage(result *services.TrendingResult, title s
 
 	kb.AddButton("🔄 换一批", fmt.Sprintf("ai:type:%s", result.Source))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -241,7 +246,7 @@ func (h *AIHandler) handleAIQuery(userID int64, chatID int64, query string) erro
 		kb.NewRow()
 	}
 
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	h.telegram.SendMessage(chatID, msg.Build(), "Markdown", kb.Build())
 
