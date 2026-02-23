@@ -87,6 +87,7 @@ type WebhookService struct {
 	embyURL              string
 	embyAPIKey           string
 	mediaNotificationSvc *MediaNotificationService
+	messageCache         *MessageCache
 }
 
 // NewWebhookService creates a new webhook service
@@ -101,6 +102,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		embyURL:              embyURL,
 		embyAPIKey:           embyAPIKey,
 		mediaNotificationSvc: mediaNotificationSvc,
+		messageCache:         NewMessageCache(5 * time.Minute), // Cache for 5 minutes
 	}
 }
 
@@ -153,11 +155,10 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 	if enhancedPayload != nil && enhancedPayload.ImageURL != "" {
 		s.sendNotificationWithPhoto(message, enhancedPayload.ImageURL)
 	} else {
-		// Send to main chat
+		// Send to main chat with cache check
 		if s.chatID != 0 {
-			if _, err := s.telegram.SendMessage(s.chatID, message, "", nil); err != nil {
-				log.Printf("[Webhook] Failed to send message: %v", err)
-				return err
+			if !s.sendWithCache(s.chatID, message) {
+				log.Printf("[Webhook] Duplicate notification skipped for chat %d", s.chatID)
 			}
 		}
 	}
@@ -464,11 +465,23 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 		return
 	}
 
+	// Check cache using message content as key
+	if s.messageCache != nil && s.messageCache.Check(s.chatID, message) {
+		log.Printf("[Webhook] Duplicate notification skipped (photo) for chat %d", s.chatID)
+		return
+	}
+
 	// Send photo with caption
 	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, message); err != nil {
 		log.Printf("[Webhook] Failed to send photo, falling back to text message: %v", err)
 		// Fallback to text message
-		s.telegram.SendMessage(s.chatID, message, "", nil)
+		s.sendWithCache(s.chatID, message)
+		return
+	}
+
+	// Add to cache
+	if s.messageCache != nil {
+		s.messageCache.Add(s.chatID, message)
 	}
 }
 
@@ -915,3 +928,38 @@ func (s *WebhookService) convertToMediaItem(payload EmbyWebhookPayload, enhanced
 
 	return item
 }
+
+// sendWithCache sends a message with duplicate detection
+// Returns true if message was sent, false if it was a duplicate
+func (s *WebhookService) sendWithCache(chatID int64, message string) bool {
+	if s.messageCache == nil {
+		s.telegram.SendMessage(chatID, message, "", nil)
+		return true
+	}
+
+	// Check if this message was recently sent
+	if s.messageCache.Check(chatID, message) {
+		return false
+	}
+
+	// Send the message
+	s.telegram.SendMessage(chatID, message, "", nil)
+
+	// Add to cache
+	s.messageCache.Add(chatID, message)
+	return true
+}
+
+// sendWithCacheAndKeyboard sends a message with keyboard and duplicate detection
+func (s *WebhookService) sendWithCacheAndKeyboard(chatID int64, message string, keyboard *types.TelegramInlineKeyboard) {
+	if s.messageCache != nil && s.messageCache.Check(chatID, message) {
+		return
+	}
+
+	s.telegram.SendMessage(chatID, message, "", keyboard)
+
+	if s.messageCache != nil {
+		s.messageCache.Add(chatID, message)
+	}
+}
+
