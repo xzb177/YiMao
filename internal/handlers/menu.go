@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log"
 
 	"emby-telegram-bot/internal/callback"
@@ -85,39 +86,40 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 		msg.Textf("共有 %d 条请求记录", len(requests)).Newline()
 		msg.Newline()
 
-		for i, req := range requests {
+			for i, req := range requests {
 			if i >= 10 {
 				msg.Textf("... 还有 %d 条请求", len(requests)-10)
 				break
 			}
 
-			// Status icon (SubscribeItem uses "state" field)
-			statusIcon := "⏳"
-			statusText := "等待处理"
-			switch req.State {
-			case "pending":
-				statusIcon = "⏳"
-				statusText = "等待处理"
-			case "approved":
-				statusIcon = "✅"
-				statusText = "已批准"
-			case "available":
-				statusIcon = "🎉"
-				statusText = "已就绪"
-			case "declined":
-				statusIcon = "❌"
-				statusText = "已拒绝"
-			}
+			// Use state text helper from MoviePilot service
+			statusText := services.GetStateText(req.State)
 
-			// Media title (SubscribeItem uses "name" field)
+			// Media title and year
 			title := req.Name
-
-			msg.Textf("%s %s — %s", statusIcon, title, statusText)
-			// SubscribeItem uses "type" field (电影/电视剧)
-			if req.Type == "电视剧" || req.Type == "tv" {
-				msg.Text(" (剧集)")
+			if req.Year != "" && req.Year != "0" {
+				title = fmt.Sprintf("%s (%s)", title, req.Year)
 			}
+
+			// Type emoji
+			typeEmoji := "🎬"
+			if req.Type == "电视剧" || req.Type == "tv" {
+				typeEmoji = "📺"
+			}
+
+			// Add season info for TV shows
+			if req.Season > 0 {
+				title = fmt.Sprintf("%s S%d", title, req.Season)
+			}
+
+			msg.Textf("%d. %s %s", i+1, typeEmoji, title)
 			msg.Newline()
+			msg.Text("   ").Italic(statusText).Newline()
+
+			// Show episode count for TV shows
+			if req.TotalEpisode > 0 {
+				msg.Textf("   📺 共 %d 集", req.TotalEpisode).Newline()
+			}
 		}
 	}
 

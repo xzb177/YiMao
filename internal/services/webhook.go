@@ -17,6 +17,7 @@ import (
 // Emby uses camelCase starting with lowercase
 type EmbyWebhookPayload struct {
 	Event      string `json:"NotificationType"` // Emby uses NotificationType
+	EventField string `json:"Event"`             // Alternative event field
 	ItemID     string `json:"ItemId"`
 	ItemName   string `json:"ItemName"`
 	ItemType   string `json:"ItemType"`
@@ -28,7 +29,19 @@ type EmbyWebhookPayload struct {
 	Timestamp  string `json:"Timestamp"`
 	UserID     string `json:"UserId"`
 	UserName   string `json:"UserName"`
-	Year       *int   `json:"Year"`        // ProductionYear
+	Year       *int   `json:"Year"` // ProductionYear
+	// Nested Item object (some Emby versions use this)
+	Item     *EmbyItem `json:"Item"`
+}
+
+// EmbyItem represents a nested item in Emby webhook
+type EmbyItem struct {
+	Name        string `json:"Name"`
+	Type        string `json:"Type"`
+	Year        *int   `json:"Year"`
+	Overview    string `json:"Overview"`
+	Genres      []string `json:"Genres"`
+	CommunityRating float64 `json:"CommunityRating"`
 }
 
 // JellyseerrWebhookPayload represents a Jellyseerr webhook payload
@@ -76,6 +89,25 @@ type JellyseerrUserWebhook struct {
 	Email    string `json:"email"`
 }
 
+// MoviePilotWebhookPayload represents a MoviePilot webhook payload
+type MoviePilotWebhookPayload struct {
+	Event string `json:"event"` // subscribe, download, complete
+	Data  struct {
+		ID             int    `json:"id"`
+		Name           string `json:"name"`
+		Year           string `json:"year"`
+		Type           string `json:"type"` // 电影, 电视剧
+		Season         int    `json:"season"`
+		TotalEpisode   int    `json:"total_episode"`
+		State          string `json:"state"` // P, S, D, C, F, X
+		StatusText     string `json:"status_text"`
+		Username       string `json:"username"`
+		MediaID        int    `json:"media_id"`
+		Poster         string `json:"poster"`
+		Overview       string `json:"overview"`
+	} `json:"data"`
+}
+
 // WebhookService handles webhook processing
 type WebhookService struct {
 	telegram             *TelegramClient
@@ -108,10 +140,22 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 
 // HandleEmbyWebhook handles an incoming Emby webhook
 func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
-	log.Printf("[Webhook] Emby event: %s, item: %s", payload.Event, payload.ItemName)
+	// Use Event field if NotificationType is empty
+	eventType := payload.Event
+	if eventType == "" && payload.EventField != "" {
+		eventType = payload.EventField
+	}
+
+	// Extract item name from nested Item if not set at top level
+	itemName := payload.ItemName
+	if itemName == "" && payload.Item != nil {
+		itemName = payload.Item.Name
+	}
+
+	log.Printf("[Webhook] Emby event: %s, item: %s", eventType, itemName)
 
 	// Normalize event name (Emby sends ItemAdded)
-	event := strings.ToLower(payload.Event)
+	event := strings.ToLower(eventType)
 
 	switch event {
 	case "item.added", "itemadded":
@@ -119,7 +163,14 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	case "item.updated", "itemupdated":
 		// Skip update events to reduce noise
 		return nil
-	case "system.notificationtest", "system.test", "test":
+	case "system.notificationtest", "system.test", "test", "playback.start", "playback.stop", "playback.pause", "playback.resume":
+		// For test/playback events, send a simple notification
+		if itemName != "" {
+			message := fmt.Sprintf("🎬 Emby 通知\n\n事件: %s\n内容: %s", eventType, itemName)
+			if s.chatID != 0 {
+				s.telegram.SendMessage(s.chatID, message, "", nil)
+			}
+		}
 		return s.handleTestNotification(payload)
 	default:
 		return nil
@@ -128,9 +179,15 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 
 // handleItemAdded handles new item added event
 func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
+	// Get item type from various sources
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+
 	// Skip single episode additions to reduce noise
 	// But track episode count for season completion notification
-	if payload.ItemType == "Episode" {
+	if itemType == "Episode" {
 		// Could track episode count here for later "Season complete" notification
 		return nil
 	}
@@ -321,9 +378,19 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	// Header
 	builder.WriteString("✅ 入库成功")
 
+	// Get title from various sources
 	title := payload.ItemName
+	if title == "" && payload.Item != nil {
+		title = payload.Item.Name
+	}
 	if enhanced != nil && enhanced.Title != "" {
 		title = enhanced.Title
+	}
+
+	// Get item type
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
 	}
 
 	// Add year if available
@@ -331,14 +398,20 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	if payload.Year != nil {
 		year = *payload.Year
 	}
+	if year == 0 && payload.Item != nil && payload.Item.Year != nil {
+		year = *payload.Item.Year
+	}
 	if year == 0 && enhanced != nil {
 		year = enhanced.Year
 	}
 
-	if payload.ItemType == "Episode" && payload.SeriesName != "" {
+	// Get series name
+	seriesName := payload.SeriesName
+
+	if itemType == "Episode" && seriesName != "" {
 		season := payload.Season
 		episode := payload.Episode
-		builder.WriteString(fmt.Sprintf("：%s S%02dE%02d", payload.SeriesName, season, episode))
+		builder.WriteString(fmt.Sprintf("：%s S%02dE%02d", seriesName, season, episode))
 	} else {
 		builder.WriteString(fmt.Sprintf("：%s", title))
 		if year > 1900 && year < 2100 {
@@ -352,14 +425,14 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 
 	// Media info line
 	builder.WriteString(fmt.Sprintf("🎬 名称：%s", title))
-	if payload.SeriesName != "" {
-		builder.WriteString(fmt.Sprintf(" (%s)", payload.SeriesName))
+	if seriesName != "" {
+		builder.WriteString(fmt.Sprintf(" (%s)", seriesName))
 	}
 	builder.WriteString("\n")
 
 	// Type and quality
 	typeLabel := "电影/剧集"
-	switch payload.ItemType {
+	switch itemType {
 	case "Movie":
 		typeLabel = "电影"
 	case "Episode", "Series":
@@ -964,5 +1037,155 @@ func (s *WebhookService) sendWithCacheAndKeyboard(chatID int64, message string, 
 	if s.messageCache != nil {
 		s.messageCache.Add(chatID, message)
 	}
+}
+
+// HandleMoviePilotWebhook handles a MoviePilot webhook
+func (s *WebhookService) HandleMoviePilotWebhook(payload MoviePilotWebhookPayload) error {
+	log.Printf("[Webhook] MoviePilot event: %s, item: %s (user: %s)", payload.Event, payload.Data.Name, payload.Data.Username)
+
+	switch payload.Event {
+	case "subscribe":
+		return s.handleMoviePilotSubscribe(payload)
+	case "download":
+		return s.handleMoviePilotDownload(payload)
+	case "complete":
+		return s.handleMoviePilotComplete(payload)
+	default:
+		log.Printf("[Webhook] Unknown MoviePilot event: %s", payload.Event)
+		return nil
+	}
+}
+
+// handleMoviePilotSubscribe handles new subscription event
+func (s *WebhookService) handleMoviePilotSubscribe(payload MoviePilotWebhookPayload) error {
+	// Format media type
+	mediaType := "电影"
+	if payload.Data.Type == "电视剧" {
+		mediaType = "剧集"
+	}
+
+	// Build message
+	message := fmt.Sprintf("🎬 新求片请求\n\n%s", payload.Data.Name)
+
+	// Add year if available
+	if payload.Data.Year != "" && payload.Data.Year != "0" {
+		message += fmt.Sprintf(" (%s)", payload.Data.Year)
+	}
+
+	// Add season for TV shows
+	if payload.Data.Type == "电视剧" && payload.Data.Season > 0 {
+		message += fmt.Sprintf("\n📺 季数: 第%d季", payload.Data.Season)
+	}
+
+	// Add status
+	statusText := GetStateText(payload.Data.State)
+	message += fmt.Sprintf("\n\n%s\n%s", mediaType, statusText)
+
+	// Try to find user's Telegram ID by MoviePilot username
+	var userTelegramID int64
+	if payload.Data.Username != "" && s.userMapping != nil {
+		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
+	}
+
+	// Send confirmation to the requesting user
+	if userTelegramID != 0 {
+		userMessage := message
+		userMessage += fmt.Sprintf("\n\n✅ 您的请求已提交，等待管理员处理")
+		s.telegram.SendMessage(userTelegramID, userMessage, "", nil)
+	}
+
+	// Notify admins (without the username since they know who requested)
+	adminIDs := s.adminService.GetAdminIDs()
+	if len(adminIDs) == 0 {
+		return nil
+	}
+
+	adminMessage := message
+	if payload.Data.Username != "" {
+		adminMessage += fmt.Sprintf("\n👤 用户: %s", payload.Data.Username)
+	}
+
+	for _, adminID := range adminIDs {
+		// Add action buttons for subscription management
+		keyboard := [][]map[string]string{
+			{
+				{"text": "✅ 已处理", "callback_data": fmt.Sprintf("mp_done_%d", payload.Data.ID)},
+			},
+		}
+		s.sendWithCacheAndKeyboard(adminID, adminMessage, convertToInlineKeyboard(keyboard))
+	}
+
+	return nil
+}
+
+// handleMoviePilotDownload handles download started event
+func (s *WebhookService) handleMoviePilotDownload(payload MoviePilotWebhookPayload) error {
+	mediaType := "电影"
+	if payload.Data.Type == "电视剧" {
+		mediaType = "剧集"
+	}
+
+	message := fmt.Sprintf("📥 开始下载\n\n%s", payload.Data.Name)
+
+	if payload.Data.Year != "" && payload.Data.Year != "0" {
+		message += fmt.Sprintf(" (%s)", payload.Data.Year)
+	}
+
+	if payload.Data.Type == "电视剧" && payload.Data.Season > 0 {
+		message += fmt.Sprintf("\n📺 第%d季", payload.Data.Season)
+	}
+
+	message += fmt.Sprintf("\n\n%s", mediaType)
+
+	// Try to find user's Telegram ID by MoviePilot username
+	var userTelegramID int64
+	if payload.Data.Username != "" && s.userMapping != nil {
+		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
+	}
+
+	// Send to the requesting user
+	if userTelegramID != 0 {
+		s.sendWithCache(userTelegramID, message)
+	}
+
+	return nil
+}
+
+// handleMoviePilotComplete handles download complete event
+func (s *WebhookService) handleMoviePilotComplete(payload MoviePilotWebhookPayload) error {
+	mediaType := "电影"
+	if payload.Data.Type == "电视剧" {
+		mediaType = "剧集"
+	}
+
+	message := fmt.Sprintf("✅ 下载完成\n\n%s", payload.Data.Name)
+
+	if payload.Data.Year != "" && payload.Data.Year != "0" {
+		message += fmt.Sprintf(" (%s)", payload.Data.Year)
+	}
+
+	if payload.Data.Type == "电视剧" {
+		if payload.Data.TotalEpisode > 0 {
+			message += fmt.Sprintf("\n📺 共 %d 集", payload.Data.TotalEpisode)
+		}
+		if payload.Data.Season > 0 {
+			message += fmt.Sprintf(" (第%d季)", payload.Data.Season)
+		}
+	}
+
+	message += fmt.Sprintf("\n\n%s", mediaType)
+
+	// Try to find user's Telegram ID by MoviePilot username
+	var userTelegramID int64
+	if payload.Data.Username != "" && s.userMapping != nil {
+		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
+	}
+
+	// Send to the requesting user
+	if userTelegramID != 0 {
+		s.sendWithCache(userTelegramID, message)
+	}
+
+	return nil
 }
 

@@ -116,6 +116,9 @@ type Dependencies struct {
 	ChatService       *services.ChatService
 	WebhookService    *services.WebhookService
 	TMDBClient        *services.TMDBClient
+	Notification      *services.NotificationService
+	Scheduler         *services.Scheduler
+	SearchHistory     *services.SearchHistoryService
 }
 
 // initServices initializes all services
@@ -165,6 +168,20 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
 
+	// Initialize Notification Service
+	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
+	log.Println("✅ Notification service initialized")
+
+	// Initialize Scheduler for daily recommendations
+	scheduler := services.NewScheduler(notificationService, moviepilotClient, adminService, userMappingService)
+	scheduler.SetDailyTime(9, 0) // 9 AM daily
+	scheduler.Start()
+	log.Println("✅ Scheduler started")
+
+	// Initialize Search History Service
+	searchHistory := services.NewSearchHistoryService(cfg.DataDir)
+	log.Println("✅ Search history service initialized")
+
 	// Start cleanup routines
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -190,6 +207,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		ChatService:       chatService,
 		WebhookService:    webhookService,
 		TMDBClient:        tmdbClient,
+		Notification:      notificationService,
+		Scheduler:         scheduler,
+		SearchHistory:     searchHistory,
 	}
 }
 
@@ -222,6 +242,7 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
 	aiHandler.SetTMDBClient(deps.TMDBClient)
+	searchHandler.SetSearchHistory(deps.SearchHistory)
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
@@ -230,6 +251,7 @@ func initRegistry(deps *Dependencies) *callback.Registry {
 	registry.RegisterFunc(callback.ActionHot, aiHandler.HandleHot)
 	registry.RegisterFunc(callback.ActionNew, aiHandler.HandleNew)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
+	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequest, requestHandler.Handle)
 	registry.RegisterFunc(callback.ActionPage, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionSelect, searchHandler.Handle)
@@ -307,6 +329,8 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		AdminService:   deps.AdminService,
 		QuotaService:   deps.QuotaService,
 		ChatService:    deps.ChatService,
+		SearchHistory:  deps.SearchHistory,
+		TMDB:           deps.TMDBClient,
 	}
 }
 

@@ -73,12 +73,18 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		mpMediaType = services.MediaTypeTV
 	}
 
+	// Use the season from review (0 means all seasons)
+	season := review.Season
+	if season == 0 && review.MediaType == services.MediaTypeTV {
+		season = 1 // Default to season 1 if not specified
+	}
+
 	req, err := h.moviepilot.RequestMedia(
 		review.MediaTitle,
 		review.MediaYear,
 		review.TmdbID,
 		mpMediaType,
-		1, // Default season
+		season,
 	)
 	if err != nil {
 		log.Printf("[ReviewHandler] Failed to submit to MoviePilot: %v", err)

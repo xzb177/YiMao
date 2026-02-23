@@ -177,6 +177,22 @@ func (s *UserMappingService) GetTelegramIDByJellyseerrID(jellyseerrID int64) (in
 	return telegramID, true
 }
 
+// GetTelegramIDByMoviePilotUsername gets Telegram ID by MoviePilot username
+func (s *UserMappingService) GetTelegramIDByMoviePilotUsername(username string) (int64, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Search through usernames map to find matching MoviePilot username
+	for telegramKey, mpUsername := range s.usernames {
+		if mpUsername == username {
+			var telegramID int64
+			fmt.Sscanf(telegramKey, "%d", &telegramID)
+			return telegramID, true
+		}
+	}
+	return 0, false
+}
+
 // BindingRequestService handles binding requests
 type BindingRequestService struct {
 	requestsFile string

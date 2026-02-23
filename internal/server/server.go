@@ -78,10 +78,12 @@ func New(
 		deps.WebhookService,
 	)
 
-	// Register webhook endpoint for external services (Emby, Jellyseerr)
+	// Register webhook endpoint for external services (Emby, Jellyseerr, MoviePilot)
 	mux.HandleFunc("/api/summary", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/emby", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+	mux.HandleFunc("/webhook/mp", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 
 	// Register additional API routes (protected with API auth if enabled)
 	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook

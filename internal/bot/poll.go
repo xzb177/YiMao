@@ -23,6 +23,8 @@ type Dependencies struct {
 	AdminService      *services.AdminService
 	QuotaService      *services.QuotaService
 	ChatService       *services.ChatService
+	SearchHistory     *services.SearchHistoryService
+	TMDB              *services.TMDBClient
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -35,6 +37,8 @@ type PollDeps struct {
 	AdminService   *services.AdminService
 	QuotaService   *services.QuotaService
 	ChatService    *services.ChatService
+	SearchHistory  *services.SearchHistoryService
+	TMDB           *services.TMDBClient
 }
 
 // StartPolling starts the Telegram update polling
@@ -47,6 +51,20 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	offset := 0
 	pollInterval := 1 * time.Second
+
+	// Convert to PollDeps
+	pollDeps := &PollDeps{
+		Telegram:       deps.Telegram,
+		MoviePilot:     deps.MoviePilot,
+		SessionMgr:     deps.SessionMgr,
+		UserMapping:    deps.UserMapping,
+		BindingRequest: deps.BindingRequest,
+		AdminService:   deps.AdminService,
+		QuotaService:   deps.QuotaService,
+		ChatService:    deps.ChatService,
+		SearchHistory:  deps.SearchHistory,
+		TMDB:           deps.TMDB,
+	}
 
 	for {
 		time.Sleep(pollInterval)
@@ -76,7 +94,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 				// Debug: log update type
 				if update.Message != nil {
 					log.Printf("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
-					HandlePollMessage(update.Message, deps, cfg)
+					HandlePollMessage(update.Message, pollDeps, cfg)
 				} else if update.CallbackQuery != nil {
 					log.Printf("[Poll] Update %d: Callback from %d: %s", update.UpdateID, update.CallbackQuery.From.ID, update.CallbackQuery.Data)
 					HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
@@ -89,7 +107,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 }
 
 // HandlePollMessage processes a message update (for polling)
-func HandlePollMessage(msg *types.TelegramMessage, deps *Dependencies, cfg *config.Config) {
+func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.Config) {
 	log.Printf("[Poll] Message from %d: %s", msg.From.ID, msg.Text)
 
 	// Group chat: Only AI chat is allowed
@@ -106,7 +124,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *Dependencies, cfg *conf
 
 	// Handle search query (non-command text)
 	if msg.Text != "" && len(msg.Text) > 1 {
-		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr)
+		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 	}
 }
 
@@ -153,8 +171,13 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.Ch
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
-func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager) {
+func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
 	query := msg.Text
+
+	// Add to search history
+	if searchHistory != nil && query != "" {
+		searchHistory.AddSearch(msg.From.ID, query)
+	}
 
 	// Search in MoviePilot
 	results, err := moviepilot.SearchMedia(query, 1)
@@ -171,12 +194,14 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	// Store search results in session
 	sess := sessMgr.GetOrCreate(msg.From.ID)
 	searchItems := make([]session.SearchItem, len(results.Results))
+
 	for i, item := range results.Results {
 		mediaType := "movie"
 		if item.Type == "tv" || item.Type == "电视剧" {
 			mediaType = "tv"
 		}
-		searchItems[i] = session.SearchItem{
+
+		searchItem := session.SearchItem{
 			ID:       fmt.Sprintf("%d", item.ID),
 			Title:    item.Title,
 			Year:     item.Year.Int(),
@@ -185,7 +210,49 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 			Rating:   item.Rating,
 			Overview: item.Overview,
 		}
+
+		// For TV shows, try to fetch season info from TMDB (with timeout)
+		if mediaType == "tv" && item.ID > 0 && tmdb != nil {
+			// Fetch seasons with timeout
+			type seasonResult struct {
+				seasons []session.Season
+				err     error
+			}
+			resultChan := make(chan seasonResult, 1)
+
+			go func(tmdbID int) {
+				tvDetails, err := tmdb.GetTVDetailsWithSeasons(tmdbID)
+				if err != nil {
+					log.Printf("[PollSearch] Failed to fetch seasons from TMDB for %s: %v", item.Title, err)
+					resultChan <- seasonResult{err: err}
+					return
+				}
+				seasons := make([]session.Season, 0, len(tvDetails.Seasons))
+				for _, s := range tvDetails.Seasons {
+					// Skip season 0 (specials) if desired, or include it
+					seasons = append(seasons, session.Season{
+						SeasonNumber: s.SeasonNumber,
+						EpisodeCount: s.EpisodeCount,
+						Name:         s.Name,
+					})
+				}
+				resultChan <- seasonResult{seasons: seasons}
+			}(item.ID)
+
+			select {
+			case result := <-resultChan:
+				if result.err == nil && len(result.seasons) > 0 {
+					searchItem.Seasons = result.seasons
+					log.Printf("[PollSearch] Fetched %d seasons for %s from TMDB", len(result.seasons), item.Title)
+				}
+			case <-time.After(3 * time.Second):
+				log.Printf("[PollSearch] Timeout fetching seasons for %s from TMDB", item.Title)
+			}
+		}
+
+		searchItems[i] = searchItem
 	}
+
 	sess.SetSearchResults(searchItems, 1, query)
 	log.Printf("[PollSearch] Stored %d search results in session for user %d", len(searchItems), msg.From.ID)
 

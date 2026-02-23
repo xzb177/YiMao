@@ -385,6 +385,8 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 		r.handleEmbyWebhook(w, req)
 	case "jellyseerr":
 		r.handleJellyseerrWebhook(w, req)
+	case "moviepilot", "mp":
+		r.handleMoviePilotWebhook(w, req)
 	default:
 		// Auto-detect based on request body
 		r.handleAutoDetectWebhook(w, req)
@@ -421,6 +423,25 @@ func (r *Router) handleJellyseerrWebhook(w http.ResponseWriter, req *http.Reques
 
 	if err := r.webhookService.HandleJellyseerrWebhook(payload); err != nil {
 		log.Printf("[API] Failed to handle Jellyseerr webhook: %v", err)
+		http.Error(w, "Failed to process", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+// handleMoviePilotWebhook handles MoviePilot webhook
+func (r *Router) handleMoviePilotWebhook(w http.ResponseWriter, req *http.Request) {
+	var payload services.MoviePilotWebhookPayload
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		log.Printf("[API] Failed to decode MoviePilot webhook: %v", err)
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+
+	if err := r.webhookService.HandleMoviePilotWebhook(payload); err != nil {
+		log.Printf("[API] Failed to handle MoviePilot webhook: %v", err)
 		http.Error(w, "Failed to process", http.StatusInternalServerError)
 		return
 	}

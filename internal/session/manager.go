@@ -35,13 +35,21 @@ type NavEntry struct {
 
 // SearchItem represents a search result item
 type SearchItem struct {
-	ID       string  `json:"id"`
-	Title    string  `json:"title"`
-	Year     int     `json:"year"`
-	Type     string  `json:"type"`
-	Poster   string  `json:"poster,omitempty"`
-	Rating   float64 `json:"rating,omitempty"`
-	Overview string  `json:"overview,omitempty"`
+	ID       string    `json:"id"`
+	Title    string    `json:"title"`
+	Year     int       `json:"year"`
+	Type     string    `json:"type"`
+	Poster   string    `json:"poster,omitempty"`
+	Rating   float64   `json:"rating,omitempty"`
+	Overview string    `json:"overview,omitempty"`
+	Seasons  []Season  `json:"seasons,omitempty"`
+}
+
+// Season represents a TV season
+type Season struct {
+	SeasonNumber int    `json:"season_number"`
+	EpisodeCount int    `json:"episode_count"`
+	Name         string `json:"name,omitempty"`
 }
 
 // AIRecommendationItem represents a cached AI recommendation

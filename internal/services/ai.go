@@ -44,7 +44,7 @@ func (s *AIService) GetTrendingMovies(userID int64, page int) (*TrendingResult, 
 	if s.tmdb != nil {
 		result, err := s.tmdb.GetTrendingMovies("week")
 		if err == nil && len(result.Results) > 0 {
-			items := s.convertTMDBResults(result.Results)
+			items := s.convertTMDBResults(result.Results, "movie")
 			s.cacheResults(userID, items, "ai_trending")
 			return &TrendingResult{
 				MediaType: "movie",
@@ -78,11 +78,12 @@ func (s *AIService) GetTrendingMovies(userID int64, page int) (*TrendingResult, 
 func (s *AIService) GetHotTV(userID int64, page int) (*TrendingResult, error) {
 	log.Printf("[AIService] Getting hot TV shows from TMDB, page=%d", page)
 
-	// Try TMDB first
+	// Try TMDB first - use popular TV for more reliable results
 	if s.tmdb != nil {
-		result, err := s.tmdb.GetTrendingTV("week")
+		// Try popular TV shows first
+		result, err := s.tmdb.GetPopularTV(page)
 		if err == nil && len(result.Results) > 0 {
-			items := s.convertTMDBResults(result.Results)
+			items := s.convertTMDBPopularResults(result.Results, "tv")
 			s.cacheResults(userID, items, "ai_hot")
 			return &TrendingResult{
 				MediaType: "tv",
@@ -90,11 +91,24 @@ func (s *AIService) GetHotTV(userID int64, page int) (*TrendingResult, error) {
 				Source:    "hot",
 			}, nil
 		}
-		log.Printf("[AIService] TMDB trending TV failed: %v, using fallback", err)
+		log.Printf("[AIService] TMDB popular TV failed: %v, trying trending TV", err)
+
+		// Fallback to trending TV
+		trendingResult, trendingErr := s.tmdb.GetTrendingTV("week")
+		if trendingErr == nil && len(trendingResult.Results) > 0 {
+			items := s.convertTMDBResults(trendingResult.Results, "tv")
+			s.cacheResults(userID, items, "ai_hot")
+			return &TrendingResult{
+				MediaType: "tv",
+				Items:     items,
+				Source:    "hot",
+			}, nil
+		}
+		log.Printf("[AIService] TMDB trending TV failed: %v, using fallback", trendingErr)
 	}
 
 	// Fallback to MoviePilot search
-	result, err := s.moviepilot.SearchMedia("tv", page)
+	result, err := s.moviepilot.SearchMedia("电视剧", page)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get hot TV: %w", err)
 	}
@@ -124,7 +138,7 @@ func (s *AIService) GetNewMovies(userID int64, page int) (*TrendingResult, error
 	if s.tmdb != nil {
 		result, err := s.tmdb.GetNowPlayingMovies(page)
 		if err == nil && len(result.Results) > 0 {
-			items := s.convertTMDBPopularResults(result.Results)
+			items := s.convertTMDBPopularResults(result.Results, "movie")
 			s.cacheResults(userID, items, "ai_new")
 			return &TrendingResult{
 				MediaType: "movie",
@@ -137,7 +151,7 @@ func (s *AIService) GetNewMovies(userID int64, page int) (*TrendingResult, error
 		// Try upcoming as fallback
 		upcomingResult, upcomingErr := s.tmdb.GetUpcomingMovies(page)
 		if upcomingErr == nil && len(upcomingResult.Results) > 0 {
-			items := s.convertTMDBPopularResults(upcomingResult.Results)
+			items := s.convertTMDBPopularResults(upcomingResult.Results, "movie")
 			s.cacheResults(userID, items, "ai_new")
 			return &TrendingResult{
 				MediaType: "movie",
@@ -181,7 +195,7 @@ func (s *AIService) GetTopRated(userID int64, page int) (*TrendingResult, error)
 	if s.tmdb != nil {
 		result, err := s.tmdb.GetTopRatedMovies(page)
 		if err == nil && len(result.Results) > 0 {
-			items := s.convertTMDBPopularResults(result.Results)
+			items := s.convertTMDBPopularResults(result.Results, "movie")
 			s.cacheResults(userID, items, "ai_toprated")
 			return &TrendingResult{
 				MediaType: "movie",
@@ -205,7 +219,7 @@ func (s *AIService) GetRandom(userID int64, count int) (*TrendingResult, error) 
 		result, err := s.tmdb.GetTopRatedMovies(1)
 		if err == nil && len(result.Results) > 0 {
 			// Shuffle results for randomness
-			items := s.convertTMDBPopularResults(result.Results)
+			items := s.convertTMDBPopularResults(result.Results, "movie")
 			// Simple shuffle
 			for i := len(items) - 1; i > 0; i-- {
 				j := int(time.Now().UnixNano()) % (i + 1)
@@ -225,7 +239,7 @@ func (s *AIService) GetRandom(userID int64, count int) (*TrendingResult, error) 
 	}
 
 	// Fallback
-	result, err := s.moviepilot.SearchMedia("movie", 1)
+	result, err := s.moviepilot.SearchMedia("电影", 1)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get random: %w", err)
 	}
@@ -255,11 +269,17 @@ func (s *AIService) convertSearchResults(mediaList []SearchResult) []session.Sea
 
 // convertSearchResultToSearchItem converts a single MoviePilot search result to session.SearchItem
 func (s *AIService) convertSearchResultToSearchItem(media SearchResult) session.SearchItem {
+	// Normalize type to English
+	mediaType := "movie"
+	if media.Type == "电视剧" || media.Type == "tv" {
+		mediaType = "tv"
+	}
+
 	return session.SearchItem{
 		ID:     fmt.Sprintf("%d", media.ID),
 		Title:  media.Title,
 		Year:   media.Year.Int(),
-		Type:   string(media.Type),
+		Type:   mediaType,
 		Poster: media.Poster,
 		Rating: media.Rating,
 	}
@@ -309,19 +329,29 @@ func (s *AIService) generateReason(source string) string {
 }
 
 // convertTMDBResults converts TMDB trending results to session.SearchItem
-func (s *AIService) convertTMDBResults(results []TMDBTrendingMediaInfo) []session.SearchItem {
-	items := make([]session.SearchItem, len(results))
-	for i, media := range results {
-		items[i] = s.convertTMDBToSearchItem(media)
+func (s *AIService) convertTMDBResults(results []TMDBTrendingMediaInfo, forceType string) []session.SearchItem {
+	items := make([]session.SearchItem, 0, len(results))
+	for _, media := range results {
+		item := s.convertTMDBToSearchItem(media)
+		// Override type if forceType is specified
+		if forceType != "" {
+			item.Type = forceType
+		}
+		items = append(items, item)
 	}
 	return items
 }
 
 // convertTMDBPopularResults converts TMDB popular results to session.SearchItem
-func (s *AIService) convertTMDBPopularResults(results []TMDBTrendingMediaInfo) []session.SearchItem {
-	items := make([]session.SearchItem, len(results))
-	for i, media := range results {
-		items[i] = s.convertTMDBToSearchItem(media)
+func (s *AIService) convertTMDBPopularResults(results []TMDBTrendingMediaInfo, forceType string) []session.SearchItem {
+	items := make([]session.SearchItem, 0, len(results))
+	for _, media := range results {
+		item := s.convertTMDBToSearchItem(media)
+		// Override type if forceType is specified
+		if forceType != "" {
+			item.Type = forceType
+		}
+		items = append(items, item)
 	}
 	return items
 }
@@ -348,10 +378,10 @@ func (s *AIService) convertTMDBToSearchItem(media TMDBTrendingMediaInfo) session
 		fmt.Sscanf(media.FirstAirDate[:4], "%d", &year)
 	}
 
-	// Get media type
-	mediaType := "电影"
+	// Get media type - use English "movie" or "tv"
+	mediaType := "movie"
 	if media.MediaType == "tv" {
-		mediaType = "电视剧"
+		mediaType = "tv"
 	}
 
 	// Get poster

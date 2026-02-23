@@ -171,6 +171,11 @@ func NewDetailHandler(
 }
 
 func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	// Check if this is a detail_seasons action
+	if ctx.Callback.Action == callback.ActionDetailSeasons {
+		return h.HandleSeasons(ctx)
+	}
+
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
 	mediaType, hasType := ctx.Callback.Params["type"]
@@ -447,7 +452,8 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	// Type icon and label
 	typeIcon := "🎬"
 	typeLabel := "电影"
-	if mediaType == "tv" || item.Type == "tv" {
+	isTV := mediaType == "tv" || item.Type == "tv"
+	if isTV {
 		typeIcon = "📺"
 		typeLabel = "剧集"
 	}
@@ -474,6 +480,24 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	msg.Text(fmt.Sprintf("🏷️ %s", typeLabel)).Newline()
 	msg.Newline()
 
+	// TV show specific info
+	if isTV && len(item.Seasons) > 0 {
+		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(item.Seasons))).Newline()
+		// Show season info
+		for i, s := range item.Seasons {
+			if i >= 3 {
+				msg.Textf("   ... 还有 %d 季", len(item.Seasons)-3)
+				break
+			}
+			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
+			if s.Name != "" {
+				seasonName = s.Name
+			}
+			msg.Text(fmt.Sprintf("   • %s (%d集)", seasonName, s.EpisodeCount)).Newline()
+		}
+		msg.Newline()
+	}
+
 	// Overview (truncate if too long)
 	if item.Overview != "" {
 		overview := item.Overview
@@ -487,16 +511,42 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	// TMDB info
 	msg.Text(fmt.Sprintf("🆔 TMDB ID: %s", item.ID)).Newline()
 
-	// Request button label
-	buttonLabel := "✅ 立即求片"
-	if mediaType == "tv" || item.Type == "tv" {
-		buttonLabel = "✅ 求剧集"
+	// Build keyboard
+	kb := services.NewKeyboardBuilder()
+
+	if isTV && len(item.Seasons) > 0 {
+		// TV show with seasons - show season selection
+		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
+		kb.NewRow()
+
+		// Show first few seasons as individual buttons
+		for i, s := range item.Seasons {
+			if i >= 4 {
+				break // Show max 4 seasons
+			}
+			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+			if s.SeasonNumber == 0 {
+				seasonName = "特别篇"
+			}
+			kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%s:type:tv:season:%d", item.ID, s.SeasonNumber))
+			if (i+1)%2 == 0 {
+				kb.NewRow()
+			}
+		}
+		if len(item.Seasons) > 4 {
+			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
+		}
+		kb.NewRow()
+	} else {
+		// Movie or TV show without season info
+		buttonLabel := "✅ 立即求片"
+		if isTV {
+			buttonLabel = "✅ 订阅剧集"
+		}
+		kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+		kb.NewRow()
 	}
 
-	// Keyboard
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
-	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
@@ -546,6 +596,109 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}
+}
+
+// HandleSeasons handles the detail_seasons action - shows all seasons for a TV show
+func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response, error) {
+	// Get media ID from params
+	mediaID, hasID := ctx.Callback.Params["id"]
+	if !hasID {
+		return &callback.Response{
+			Text:        "无效的请求",
+			CallbackMsg: "参数错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+
+	// Try to find the item in search results
+	items, _, _, hasSearch := sess.GetSearchResults()
+	if !hasSearch {
+		return &callback.Response{
+			Text:        "搜索结果已过期，请重新搜索",
+			CallbackMsg: "结果已过期",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	var targetItem *session.SearchItem
+	for i := range items {
+		if items[i].ID == mediaID {
+			targetItem = &items[i]
+			break
+		}
+	}
+
+	if targetItem == nil {
+		return &callback.Response{
+			Text:        "未找到该媒体信息",
+			CallbackMsg: "未找到",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Check if it's a TV show with seasons
+	if targetItem.Type != "tv" || len(targetItem.Seasons) == 0 {
+		return &callback.Response{
+			Text:        "该媒体没有季信息",
+			CallbackMsg: "无季信息",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Build seasons list page
+	msg := services.NewMessageBuilder()
+	msg.Bold(fmt.Sprintf("📺 %s - 全部季", targetItem.Title)).Newline()
+	msg.Newline()
+	msg.Text(fmt.Sprintf("共 %d 季", len(targetItem.Seasons))).Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// List all seasons with buttons
+	for i, season := range targetItem.Seasons {
+		seasonName := fmt.Sprintf("第%d季", season.SeasonNumber)
+		if season.SeasonNumber == 0 {
+			seasonName = "特别篇"
+		}
+		if season.Name != "" && season.Name != seasonName {
+			seasonName = fmt.Sprintf("%s - %s", seasonName, season.Name)
+		}
+
+		msg.Text(fmt.Sprintf("%d. %s (%d集)", i+1, seasonName, season.EpisodeCount)).Newline()
+
+		// Add button for each season
+		buttonLabel := fmt.Sprintf("📺 S%d", season.SeasonNumber)
+		if season.SeasonNumber == 0 {
+			buttonLabel = "📺 特别篇"
+		}
+		kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
+
+		// Two buttons per row
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+
+	if len(targetItem.Seasons)%2 != 0 {
+		kb.NewRow()
+	}
+
+	// Add "Subscribe All" button
+	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
+	kb.NewRow()
+
+	// Back to detail button
+	kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv", targetItem.ID))
+	kb.NewRow()
+	kb.AddButton("🏠 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
 
 // BackHandler handles back navigation

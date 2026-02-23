@@ -49,7 +49,7 @@ func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedS
 			mediaType = "tv"
 		}
 
-		items[i] = session.SearchItem{
+		item := session.SearchItem{
 			ID:       strconv.Itoa(media.ID),
 			Title:    media.Title,
 			Year:     media.Year.Int(),
@@ -58,6 +58,15 @@ func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedS
 			Rating:   media.Rating,
 			Overview: media.Overview,
 		}
+
+		// For TV shows, fetch season info asynchronously
+		if mediaType == "tv" && media.ID > 0 {
+			if seasons := s.fetchSeasons(media.ID); len(seasons) > 0 {
+				item.Seasons = seasons
+			}
+		}
+
+		items[i] = item
 	}
 
 	// Store results in session for pagination
@@ -76,6 +85,28 @@ func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedS
 		Total:   total,
 		Results: items,
 	}, nil
+}
+
+// fetchSeasons fetches season information for a TV show
+func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
+	// Get media info from MoviePilot
+	mediaInfo, err := s.moviepilot.GetMediaInfo(tmdbID, MediaTypeTV)
+	if err != nil {
+		log.Printf("[SearchService] Failed to get media info for seasons: %v", err)
+		return nil
+	}
+
+	// Convert seasons
+	seasons := make([]session.Season, len(mediaInfo.Seasons))
+	for i, s := range mediaInfo.Seasons {
+		seasons[i] = session.Season{
+			SeasonNumber: s.SeasonNumber,
+			EpisodeCount: s.EpisodeCount,
+			Name:         s.Name,
+		}
+	}
+
+	return seasons
 }
 
 // GetCachedResults retrieves cached search results from session

@@ -19,6 +19,7 @@ type ReviewRequest struct {
 	MediaTitle     string    `json:"media_title"`
 	MediaYear      int       `json:"media_year"`
 	MediaType      MediaType `json:"media_type"`
+	Season         int       `json:"season,omitempty"` // Season number for TV shows (0 = all seasons)
 	PosterPath     string    `json:"poster_path,omitempty"`
 	Overview       string    `json:"overview,omitempty"`
 	Status         string    `json:"status"`         // pending, approved, rejected

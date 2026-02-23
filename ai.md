@@ -3175,3 +3175,35 @@ trends - 请求趋势
 | | - **部署状态**: ✅ Docker 容器已重启
 | | - **测试**: 请测试求片审核流程
 | | - **功能**: 用户使用 `/link 用户名 密码` 绑定时，如果用户不存在会自动注册
+ 2026-02-23 | **MoviePilot Webhook 支持** 🎬🔔 |
+ | | - **需求**: MoviePilot 事件（订阅、下载、完成）通知给用户
+ | | - **新增功能**:
+ | |   - 支持三种 MoviePilot 事件：subscribe, download, complete
+ | |   - 根据用户绑定关系，通知发给请求的用户
+ | |   - subscribe 事件同时通知管理员
+ | | - **Webhook URL**:
+ | |   - HTTPS: `https://emby.135505.autos/webhook/mp?type=mp`
+ | |   - HTTP: `http://emby.135505.autos/webhook/mp?type=mp`
+ | | - **事件通知格式**:
+ | |   - **subscribe (新求片)**:
+ | |     - 用户收到：`🎬 新求片请求\n\n影片名 (年份)\n\n类型\n状态\n\n✅ 您的请求已提交，等待管理员处理`
+ | |     - 管理员收到：`🎬 新求片请求\n\n影片名 (年份)\n\n类型\n状态\n👤 用户: xxx` + `✅ 已处理` 按钮
+ | |   - **download (开始下载)**:
+ | |     - 用户收到：`📥 开始下载\n\n影片名 (年份)\n\n类型`
+ | |   - **complete (下载完成)**:
+ | |     - 用户收到：`✅ 下载完成\n\n影片名 (年份)\n\n剧集信息 (如果是电视剧)\n\n类型`
+ | | - **用户绑定**: 需要通过 `/link 用户名 密码` 绑定 MoviePilot 账号才能收到个人通知
+ | | - **新增文件**:
+ | |   - `internal/services/search_history.go` - 搜索历史服务
+ | |   - `internal/services/scheduler.go` - 定时任务服务
+ | | - **修改文件**:
+ | |   - `internal/services/webhook.go` - 添加 MoviePilot webhook 处理
+ | |   - `internal/services/user_mapping.go` - 添加 GetTelegramIDByMoviePilotUsername 方法
+ | |   - `internal/api/router.go` - 添加 /webhook/mp 和 /webhook/moviepilot 路由
+ | |   - `internal/server/server.go` - 注册新的 webhook 路由
+ | | - **部署状态**: ✅ Docker 容器已重启
+ | | - **Emby Webhook URL**:
+ | |   - HTTPS: `https://emby.135505.autos/webhook/emby?type=emby`
+ | |   - HTTP: `http://emby.135505.autos/webhook/emby?type=emby`
+ | | - **SSL 证书**: Cloudflare Origin Certificate (emby.135505.autos)
+ | | - **端口配置**: HTTP 80, HTTPS 443 (标准端口)

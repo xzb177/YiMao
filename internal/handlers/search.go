@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
@@ -11,11 +12,12 @@ import (
 
 // SearchHandler handles search callbacks and queries
 type SearchHandler struct {
-	sessMgr        *session.Manager
-	telegram       *services.TelegramClient
-	moviepilot     *services.MoviePilotClient
-	tmdb           *services.TMDBClient
-	searchService  *services.SearchService
+	sessMgr         *session.Manager
+	telegram        *services.TelegramClient
+	moviepilot      *services.MoviePilotClient
+	tmdb            *services.TMDBClient
+	searchService   *services.SearchService
+	searchHistory   *services.SearchHistoryService
 }
 
 func NewSearchHandler(
@@ -34,6 +36,11 @@ func NewSearchHandler(
 	}
 }
 
+// SetSearchHistory sets the search history service
+func (h *SearchHandler) SetSearchHistory(sh *services.SearchHistoryService) {
+	h.searchHistory = sh
+}
+
 func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	// Check if this is a search result selection
 	if tmdbIDStr, hasID := ctx.Callback.Params["id"]; hasID {
@@ -50,17 +57,47 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		return h.handleTrending(ctx, tType)
 	}
 
-	// Otherwise, show search prompt
-	return &callback.Response{
-		Text:     "🔍 智能搜索\n\n💡 直接输入影片名称即可搜索，支持中英文片名、演员名、导演名等",
-		Edit:     true,
-		Keyboard: &callback.Keyboard{},
-	}, nil
+	// Check if this is a search history query
+	if query, hasQuery := ctx.Callback.Params["query"]; hasQuery {
+		// Execute search from history
+		h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
+		return &callback.Response{
+			CallbackMsg: "搜索中...",
+			ShowAlert:   false,
+		}, nil
+	}
+
+	// Check if clearing history
+	if _, hasClear := ctx.Callback.Params["clear_history"]; hasClear {
+		if h.searchHistory != nil {
+			h.searchHistory.ClearHistory(ctx.UserID)
+		}
+		return &callback.Response{
+			Text:     "🗑️ 搜索历史已清空",
+			Edit:     true,
+			Keyboard: &callback.Keyboard{},
+		}, nil
+	}
+
+	// Show search history or prompt
+	return h.showSearchHistoryOrPrompt(ctx)
 }
 
 // handleSearchQuery handles a text search query
 func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query string) error {
 	log.Printf("[SearchHandler] Search query: %s", query)
+
+	// Trim whitespace
+	query = strings.TrimSpace(query)
+	if query == "" {
+		// Show search history
+		return h.showSearchHistory(userID, chatID)
+	}
+
+	// Add to search history
+	if h.searchHistory != nil {
+		h.searchHistory.AddSearch(userID, query)
+	}
 
 	// Perform search
 	result, err := h.searchService.Search(userID, query, 1)
@@ -115,6 +152,106 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		kb.NewRow()
 	}
 
+	kb.AddButton("❌ 取消", "cancel")
+
+	h.telegram.SendMessage(chatID, msg.Build(), "Markdown", kb.Build())
+
+	return nil
+}
+
+// showSearchHistoryOrPrompt shows search history or prompt
+func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
+	if h.searchHistory == nil {
+		return &callback.Response{
+			Text:     "🔍 智能搜索\n\n💡 直接输入影片名称即可搜索，支持中英文片名、演员名、导演名等",
+			Edit:     true,
+			Keyboard: &callback.Keyboard{},
+		}, nil
+	}
+
+	history := h.searchHistory.GetHistory(ctx.UserID)
+	if len(history) == 0 {
+		return &callback.Response{
+			Text:     "🔍 智能搜索\n\n💡 直接输入影片名称即可搜索，支持中英文片名、演员名、导演名等",
+			Edit:     true,
+			Keyboard: &callback.Keyboard{},
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🔍 最近搜索").Newline()
+	msg.Newline()
+	msg.Italic("💬 点击快速搜索，或输入新关键词").Newline()
+	msg.Newline()
+
+	// Show recent searches
+	count := len(history)
+	if count > 8 {
+		count = 8
+	}
+
+	kb := services.NewKeyboardBuilder()
+	for i := 0; i < count; i++ {
+		entry := history[i]
+		kb.AddButton(fmt.Sprintf("🔎 %s", entry.Query), fmt.Sprintf("search:query:%s", entry.Query))
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+	if count%2 != 0 {
+		kb.NewRow()
+	}
+
+	kb.AddButton("🗑️ 清空历史", "search:clear_history")
+	kb.NewRow()
+	kb.AddButton("❌ 取消", "cancel")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// showSearchHistory shows recent searches (sends message directly)
+func (h *SearchHandler) showSearchHistory(userID int64, chatID int64) error {
+	if h.searchHistory == nil {
+		h.telegram.SendMessage(chatID, "🔍 搜索影片\n\n请输入影片名称进行搜索", "Markdown", nil)
+		return nil
+	}
+
+	history := h.searchHistory.GetHistory(userID)
+	if len(history) == 0 {
+		h.telegram.SendMessage(chatID, "🔍 搜索影片\n\n请输入影片名称进行搜索", "Markdown", nil)
+		return nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🔍 最近搜索").Newline()
+	msg.Newline()
+	msg.Italic("💬 点击快速搜索，或输入新关键词").Newline()
+	msg.Newline()
+
+	// Show recent searches
+	count := len(history)
+	if count > 8 {
+		count = 8
+	}
+
+	kb := services.NewKeyboardBuilder()
+	for i := 0; i < count; i++ {
+		entry := history[i]
+		kb.AddButton(fmt.Sprintf("🔎 %s", entry.Query), fmt.Sprintf("search:query:%s", entry.Query))
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+	if count%2 != 0 {
+		kb.NewRow()
+	}
+
+	kb.AddButton("🗑️ 清空历史", "search:clear_history")
+	kb.NewRow()
 	kb.AddButton("❌ 取消", "cancel")
 
 	h.telegram.SendMessage(chatID, msg.Build(), "Markdown", kb.Build())

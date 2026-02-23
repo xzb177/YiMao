@@ -566,3 +566,58 @@ func (c *TMDBClient) GetUpcomingMovies(page int) (*TMDBPopularResult, error) {
 
 	return &result, nil
 }
+
+// TVSeason represents a TV season from TMDB
+type TVSeason struct {
+	SeasonNumber int    `json:"season_number"`
+	EpisodeCount int    `json:"episode_count"`
+	Name         string `json:"name"`
+	Overview     string `json:"overview"`
+	PosterPath   string `json:"poster_path"`
+	AirDate      string `json:"air_date"`
+}
+
+// TVDetailsWithSeasons represents TV show details with seasons
+type TVDetailsWithSeasons struct {
+	ID             int        `json:"id"`
+	Name           string     `json:"name"`
+	OriginalName   string     `json:"original_name"`
+	Overview       string     `json:"overview"`
+	FirstAirDate   string     `json:"first_air_date"`
+	PosterPath     string     `json:"poster_path"`
+	BackdropPath   string     `json:"backdrop_path"`
+	VoteAverage    float64    `json:"vote_average"`
+	VoteCount      int        `json:"vote_count"`
+	Genres         []TMDBGenre `json:"genres"`
+	NumberOfSeasons int        `json:"number_of_seasons"`
+	NumberOfEpisodes int       `json:"number_of_episodes"`
+	Seasons        []TVSeason `json:"seasons"`
+}
+
+// GetTVDetailsWithSeasons retrieves TV show details with season information from TMDB
+func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons, error) {
+	url := fmt.Sprintf("%s/tv/%d?api_key=%s&language=zh-CN", c.baseURL, tmdbID, c.apiKey)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var details TVDetailsWithSeasons
+	if err := json.NewDecoder(resp.Body).Decode(&details); err != nil {
+		return nil, fmt.Errorf("failed to decode TV details: %w", err)
+	}
+
+	return &details, nil
+}

@@ -223,7 +223,13 @@ func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse,
 
 // GetMediaInfo retrieves detailed information about media
 func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*MediaInfo, error) {
-	endpoint := fmt.Sprintf("/api/v1/media/%s?tmdbid=%d", mediaType, mediaID)
+	// Map MediaType to MoviePilot's Chinese type names
+	typeStr := "电影"
+	if mediaType == MediaTypeTV {
+		typeStr = "电视剧"
+	}
+	// MoviePilot API requires type_name parameter for TV shows
+	endpoint := fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s", typeStr, mediaID, typeStr)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {

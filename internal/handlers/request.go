@@ -68,6 +68,13 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 	log.Printf("[RequestHandler] Parsed TMDB ID: %d", tmdbID)
 
+	// Parse season parameter (for TV shows)
+	season := 0
+	if seasonStr, hasSeason := ctx.Callback.Params["season"]; hasSeason {
+		fmt.Sscanf(seasonStr, "%d", &season)
+		log.Printf("[RequestHandler] Season: %d", season)
+	}
+
 	// Get MoviePilot user ID from user mapping
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	if !exists || moviepilotID == 0 {
@@ -164,6 +171,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		MediaTitle:   mediaTitle,
 		MediaYear:    mediaYear,
 		MediaType:    services.MediaTypeMovie,
+		Season:       season,
 		PosterPath:   posterPath,
 		Overview:     overview,
 	}
@@ -212,6 +220,13 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		message += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
 	message += fmt.Sprintf("\n\n🏷️ 类型: %s", mediaTypeLabel)
+
+	// Add season info for TV shows
+	if review.MediaType == services.MediaTypeTV && review.Season > 0 {
+		message += fmt.Sprintf("\n📺 第 %d 季", review.Season)
+	} else if review.MediaType == services.MediaTypeTV {
+		message += "\n📺 全季"
+	}
 
 	if review.Overview != "" && len(review.Overview) > 0 {
 		// Truncate overview to 100 chars
