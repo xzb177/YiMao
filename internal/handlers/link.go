@@ -64,13 +64,15 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 func (h *LinkHandler) getLinkInstructions() string {
 	return `🔗 绑定 MoviePilot 账号
 
-绑定后即可使用求片功能并同步观影记录
+绑定后即可使用求片功能并接收订阅通知
 
 📝 绑定格式：
 /link 用户名 密码
 
 📌 示例：
 /link johndoe mypassword123
+
+✨ 新用户自动注册，无需手动添加账号
 
 💡 您的凭据直接发送至 MoviePilot 服务器验证，机器人不做存储`
 }
@@ -80,19 +82,21 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 	// First, try to get user by username from MoviePilot
 	user, err := h.moviepilot.GetUserByUsername(username)
 
-	// If user doesn't exist, try to register automatically
+	// If user doesn't exist, register automatically
 	if err != nil {
-		log.Printf("[LinkHandler] User not found, attempting to register: %s", username)
+		log.Printf("[LinkHandler] User not found, registering new user: %s", username)
 
-		// Use username as email if email is provided separately
+		// Auto-register user in MoviePilot
 		email := username + "@local" // Placeholder email
 
 		user, err = h.moviepilot.RegisterUser(username, password, email)
 		if err != nil {
-			return fmt.Errorf("用户不存在且注册失败: %w", err)
+			return fmt.Errorf("注册失败: %w", err)
 		}
 
 		log.Printf("[LinkHandler] Successfully registered new user: %s (ID: %d)", username, user.ID)
+	} else {
+		log.Printf("[LinkHandler] Found existing user %s (ID: %d)", username, user.ID)
 	}
 
 	// Create binding request
@@ -102,7 +106,7 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 		RequestID:        requestID,
 		TelegramID:       telegramID,
 		MoviePilotID:     user.ID,
-		MoviePilotName:   user.Email,
+		MoviePilotName:   user.Username,
 		MoviePilotUsername: user.Username,
 		Status:           "approved", // Auto-approve for direct login
 	}
@@ -120,7 +124,7 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 	sess := h.sessMgr.GetOrCreate(telegramID)
 	sess.Set("moviepilot_id", int(user.ID))
 
-	log.Printf("[LinkHandler] User %d linked to MoviePilot user %s (%s)", telegramID, username, user.Email)
+	log.Printf("[LinkHandler] User %d linked to MoviePilot user %s (ID: %d)", telegramID, username, user.ID)
 
 	return nil
 }
