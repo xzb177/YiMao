@@ -291,6 +291,21 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		message += fmt.Sprintf("\n\n📝 %s", overview)
 	}
 
+	// Add Emby exists warning
+	if review.EmbyExists && review.EmbyInfo != nil {
+		message += fmt.Sprintf("\n\n⚠️ 媒体库中已存在")
+		if review.EmbyInfo.RunTime > 0 {
+			minutes := review.EmbyInfo.RunTime / 600000000
+			hours := minutes / 60
+			mins := minutes % 60
+			if hours > 0 {
+				message += fmt.Sprintf("\n⏱️ 时长: %d小时%d分", hours, mins)
+			} else {
+				message += fmt.Sprintf("\n⏱️ 时长: %d分钟", mins)
+			}
+		}
+	}
+
 	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
 
 	// Add action buttons
@@ -438,6 +453,19 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		userName = name
 	}
 
+	// Check Emby library for existing media
+	var embyInfo *services.EmbySearchResult
+	embyType := services.MediaTypeMovie
+	if mediaType == "tv" {
+		embyType = services.MediaTypeTV
+	}
+
+	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
+	if err == nil && existingMedia != nil {
+		embyInfo = existingMedia
+		log.Printf("[RequestHandler] Media found in Emby for force subscribe: %s", existingMedia.Title)
+	}
+
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 
@@ -450,6 +478,8 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		MediaTitle:   mediaTitle,
 		MediaYear:    mediaYear,
 		MediaType:    services.MediaTypeMovie,
+		EmbyExists:   embyInfo != nil,
+		EmbyInfo:     embyInfo,
 	}
 
 	if mediaType == "tv" {

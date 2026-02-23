@@ -27,6 +27,8 @@ type ReviewRequest struct {
 	ReviewedAt     time.Time `json:"reviewed_at,omitempty"`
 	ReviewedBy     int64     `json:"reviewed_by,omitempty"`
 	RejectionReason string   `json:"rejection_reason,omitempty"`
+	EmbyExists     bool      `json:"emby_exists,omitempty"` // Media already exists in Emby
+	EmbyInfo       *EmbySearchResult `json:"emby_info,omitempty"`   // Emby media info if exists
 }
 
 // ReviewService manages review requests

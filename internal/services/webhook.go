@@ -187,12 +187,8 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 		itemType = payload.Item.Type
 	}
 
-	// Skip single episode additions to reduce noise
-	// But track episode count for season completion notification
-	if itemType == "Episode" {
-		// Could track episode count here for later "Season complete" notification
-		return nil
-	}
+	// Note: We now send Episode notifications for immediate feedback
+	// Previously skipped to reduce noise, but users want real-time updates
 
 	// Try to get enhanced info from Emby API (with retry)
 	var enhancedPayload *EmbyEnhancedInfo
