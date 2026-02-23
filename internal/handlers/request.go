@@ -107,20 +107,15 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		userName = name
 	}
 
-	// Find media from recent search results
+	// Find media from recent search results or AI cache
 	var mediaTitle string
 	var mediaYear int
 	var posterPath string
 	var overview string
 
-	searchResults, searchPage, searchQuery, found := sess.GetSearchResults()
-	log.Printf("[RequestHandler] Search results: found=%v, count=%d, query=%s, page=%d", found, len(searchResults), searchQuery, searchPage)
+	// First try search results
+	searchResults, _, _, found := sess.GetSearchResults()
 	if found && len(searchResults) > 0 {
-		for i, item := range searchResults {
-			log.Printf("[RequestHandler]   Result[%d]: ID=%s, Title=%s, Year=%d", i, item.ID, item.Title, item.Year)
-		}
-	}
-	if found {
 		for _, item := range searchResults {
 			// Parse TMDB ID from SearchItem.ID (format: "id:123" or just "123")
 			itemID := item.ID
@@ -130,21 +125,30 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			itemTmdbID := 0
 			fmt.Sscanf(itemID, "%d", &itemTmdbID)
 
-			log.Printf("[RequestHandler] Checking item: ID=%s, parsedTmdbID=%d, targetTmdbID=%d, Title=%s", item.ID, itemTmdbID, tmdbID, item.Title)
-
 			if itemTmdbID == tmdbID {
 				mediaTitle = item.Title
 				mediaYear = item.Year
 				posterPath = item.Poster
 				overview = item.Overview
-				log.Printf("[RequestHandler] Found matching media: %s (%d)", mediaTitle, mediaYear)
+				log.Printf("[RequestHandler] Found in search results: %s (%d)", mediaTitle, mediaYear)
 				break
 			}
 		}
 	}
 
+	// If not found in search results, try AI cache
 	if mediaTitle == "" {
-		log.Printf("[RequestHandler] No matching media found in search results, using fallback")
+		if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
+			mediaTitle = cachedItem.Title
+			mediaYear = cachedItem.Year
+			overview = cachedItem.Overview
+			log.Printf("[RequestHandler] Found in AI cache: %s (%d)", mediaTitle, mediaYear)
+		}
+	}
+
+	// Final fallback
+	if mediaTitle == "" {
+		log.Printf("[RequestHandler] No matching media found, using fallback TMDB:%d", tmdbID)
 		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
 	}
 

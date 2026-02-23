@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
@@ -108,7 +109,7 @@ func (h *AIHandler) HandleTrending(ctx *callback.Context) (*callback.Response, e
 		return nil, errors.AIErr("获取热门推荐失败", err)
 	}
 
-	return h.buildResultsMessage(result, "🔥 热门电影推荐")
+	return h.buildResultsMessage(ctx.UserID, result, "🔥 热门电影推荐")
 }
 
 func (h *AIHandler) HandleHot(ctx *callback.Context) (*callback.Response, error) {
@@ -117,7 +118,7 @@ func (h *AIHandler) HandleHot(ctx *callback.Context) (*callback.Response, error)
 		return nil, errors.AIErr("获取热门剧集失败", err)
 	}
 
-	return h.buildResultsMessage(result, "📺 热门剧集推荐")
+	return h.buildResultsMessage(ctx.UserID, result, "📺 热门剧集推荐")
 }
 
 func (h *AIHandler) HandleNew(ctx *callback.Context) (*callback.Response, error) {
@@ -126,7 +127,7 @@ func (h *AIHandler) HandleNew(ctx *callback.Context) (*callback.Response, error)
 		return nil, errors.AIErr("获取新片失败", err)
 	}
 
-	return h.buildResultsMessage(result, "🆕 新片上线")
+	return h.buildResultsMessage(ctx.UserID, result, "🆕 新片上线")
 }
 
 func (h *AIHandler) HandleRandom(ctx *callback.Context) (*callback.Response, error) {
@@ -135,12 +136,12 @@ func (h *AIHandler) HandleRandom(ctx *callback.Context) (*callback.Response, err
 		return nil, errors.AIErr("随机推荐失败", err)
 	}
 
-	return h.buildResultsMessage(result, "🎲 随机推荐")
+	return h.buildResultsMessage(ctx.UserID, result, "🎲 随机推荐")
 }
 
 // Internal methods
 
-func (h *AIHandler) buildResultsMessage(result *services.TrendingResult, title string) (*callback.Response, error) {
+func (h *AIHandler) buildResultsMessage(userID int64, result *services.TrendingResult, title string) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
 	msg.Bold(title).Newline()
 	msg.Newline()
@@ -188,27 +189,69 @@ func (h *AIHandler) buildResultsMessage(result *services.TrendingResult, title s
 		displayCount = 10
 	}
 
+	// Build buttons in 2 columns
 	for i, item := range result.Items {
 		if i >= displayCount {
 			break
 		}
 
-		buttonText := fmt.Sprintf("📖 %d", i+1)
+		buttonText := fmt.Sprintf("%d", i+1)
 		callbackData := fmt.Sprintf("detail:id:%s:type:%s", item.ID, item.Type)
 
 		kb.AddButton(buttonText, callbackData)
-		kb.NewRow()
+		// Add new row after every 2 buttons (except the last one)
+		if i%2 == 1 || i == displayCount-1 {
+			kb.NewRow()
+		}
 	}
 
 	kb.AddButton("🔄 换一批", fmt.Sprintf("ai:type:%s", result.Source))
-	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	// Cache all AI recommendation items for later use in request handler
+	sess := h.sessMgr.GetOrCreate(userID)
+	if sess != nil && len(result.Items) > 0 {
+		cacheItems := make([]*session.AIRecommendationItem, 0, len(result.Items))
+		for _, item := range result.Items {
+			tmdbID := 0
+			fmt.Sscanf(item.ID, "%d", &tmdbID)
+			if tmdbID > 0 {
+				cacheItems = append(cacheItems, &session.AIRecommendationItem{
+					TmdbID:    tmdbID,
+					Title:     item.Title,
+					Year:      item.Year,
+					Rating:    item.Rating,
+					MediaType: item.Type,
+					Overview:  item.Overview,
+					Reason:    h.generateReason(result.Source),
+				})
+			}
+		}
+		sess.CacheAIResults(cacheItems)
+		log.Printf("[AIHandler] Cached %d AI recommendation items", len(cacheItems))
+	}
 
 	return &callback.Response{
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// generateReason generates an AI recommendation reason
+func (h *AIHandler) generateReason(source string) string {
+	switch source {
+	case "trending":
+		return "🔥 当前热门影片，观众评分很高"
+	case "hot":
+		return "📺 热播剧集，追剧达人推荐"
+	case "new":
+		return "🆕 最新上映，值得一看"
+	case "random":
+		return "🎲 为你随机挑选的佳作"
+	default:
+		return "💡 精选推荐"
+	}
 }
 
 func (h *AIHandler) handleAIQuery(userID int64, chatID int64, query string) error {
