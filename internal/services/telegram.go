@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/pkg/types"
 )
 
@@ -199,7 +200,7 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		return nil, err
 	}
 
-	log.Printf("[Telegram] Request: %s, payload: %s", apiURL, string(jsonData))
+	log.Printf("[Telegram] Request: %s, payload: %s", logger.Sanitize(apiURL), logger.SanitizePayload(jsonData))
 
 	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -212,7 +213,7 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[Telegram] Response: %s", string(body))
+	log.Printf("[Telegram] Response: %s", logger.Sanitize(string(body)))
 
 	var result struct {
 		OK      bool                  `json:"ok"`
@@ -241,7 +242,7 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 		return err
 	}
 
-	log.Printf("[Telegram] Request: %s, payload: %s", apiURL, string(jsonData))
+	log.Printf("[Telegram] Request: %s, payload: %s", logger.Sanitize(apiURL), logger.SanitizePayload(jsonData))
 
 	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -254,7 +255,7 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[Telegram] Response: %s", string(body))
+	log.Printf("[Telegram] Response: %s", logger.Sanitize(string(body)))
 
 	var result struct {
 		OK     bool                 `json:"ok"`
@@ -299,7 +300,7 @@ func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode strin
 		return err
 	}
 
-	log.Printf("[Telegram] Setting bot commands: %s", string(jsonData))
+	log.Printf("[Telegram] Setting bot commands")
 
 	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -312,7 +313,7 @@ func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode strin
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[Telegram] Response: %s", string(body))
+	log.Printf("[Telegram] Response: %s", logger.Sanitize(string(body)))
 
 	var result struct {
 		OK     bool                 `json:"ok"`

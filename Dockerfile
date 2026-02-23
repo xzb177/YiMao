@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the new binary
-RUN CGO_ENABLED=0 GOOS=linux go build -o emby-telegram-bot .
+RUN CGO_ENABLED=0 GOOS=linux go build -o emby-telegram-bot ./cmd/bot
 
 # Final stage
 FROM alpine:latest

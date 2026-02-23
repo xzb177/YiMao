@@ -54,7 +54,13 @@ type Config struct {
 	MaxSessions     int
 
 	// Admins
-	Admins          map[int64]string // admin ID -> name
+	Admins map[int64]string // admin ID -> name
+
+	// Security
+	EnableAPIAuth    bool
+	APIKeys          map[string]string // key -> description
+	EnableRateLimit  bool
+	EnableIPBlocking bool
 }
 
 // Load loads configuration from environment variables and files
@@ -82,6 +88,10 @@ func Load() (*Config, error) {
 		EnableNewMovies:     getEnvBool("ENABLE_NEW_MOVIES", true),
 		EnableRandom:        getEnvBool("ENABLE_RANDOM", true),
 		Admins:              make(map[int64]string),
+		EnableAPIAuth:       getEnvBool("ENABLE_API_AUTH", false),
+		APIKeys:             make(map[string]string),
+		EnableRateLimit:     getEnvBool("ENABLE_RATE_LIMIT", true),
+		EnableIPBlocking:    getEnvBool("ENABLE_IP_BLOCKING", true),
 	}
 
 	// Set file paths

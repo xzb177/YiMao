@@ -96,6 +96,16 @@ func main() {
 
 	log.Println("✅ Services initialized")
 
+	// Initialize Security Service
+	securityService := services.NewSecurityService()
+	if cfg.EnableAPIAuth && len(cfg.APIKeys) > 0 {
+		securityService.SetAPIKeys(cfg.APIKeys)
+		securityService.EnableAPIAuth(true)
+	}
+	securityService.Start()
+	log.Printf("✅ Security service initialized: rate_limit=%v, ip_blocking=%v",
+		cfg.EnableRateLimit, cfg.EnableIPBlocking)
+
 	// Initialize callback registry
 	registry := callback.NewRegistry()
 
@@ -195,7 +205,7 @@ func main() {
 	go pollForUpdates(telegramClient, sessMgr, cfg, registry, moviepilotClient, linkHandler, chatService, adminService)
 
 	// Create HTTP server
-	server := createServer(cfg, registry, telegramClient, sessMgr, adminService, quotaService, userMappingService, preferencesService, issueService, webhookService, moviepilotClient, chatService, linkHandler)
+	server := createServer(cfg, registry, telegramClient, sessMgr, adminService, quotaService, userMappingService, preferencesService, issueService, webhookService, moviepilotClient, chatService, linkHandler, securityService)
 
 	// Start server in background
 	go func() {
@@ -211,6 +221,9 @@ func main() {
 	<-quit
 
 	log.Println("🛑 Shutting down server...")
+
+	// Stop security service
+	securityService.Stop()
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -659,32 +672,38 @@ func createServer(
 	moviepilot *services.MoviePilotClient,
 	chatService *services.ChatService,
 	linkHandler *handlers.LinkHandler,
+	securityService *services.SecurityService,
 ) *http.Server {
 	mux := http.NewServeMux()
 
-	// Health check
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Health check (public, no auth required)
+	mux.HandleFunc("/health", securityService.PublicMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
-	})
+	}))
 
-	// Debug endpoint
-	mux.HandleFunc("/debug", func(w http.ResponseWriter, r *http.Request) {
+	// Debug endpoint (protected with API auth if enabled)
+	var debugHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		stats := sessMgr.Stats()
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"sessions": %d, "total_size": %d}`,
 			stats["total_sessions"], stats["total_size"])
-	})
+	}
+	if cfg.EnableAPIAuth {
+		mux.HandleFunc("/debug", securityService.Middleware(debugHandler))
+	} else {
+		mux.HandleFunc("/debug", securityService.PublicMiddleware(debugHandler))
+	}
 
-	// Webhook endpoint (for Telegram bot updates)
-	mux.HandleFunc("/webhook", func(w http.ResponseWriter, r *http.Request) {
+	// Webhook endpoint (for Telegram bot updates) - public with rate limiting
+	mux.HandleFunc("/webhook", securityService.PublicMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handleWebhook(w, r, registry, telegram, sessMgr, cfg, moviepilot, userMapping, quotaService, chatService, linkHandler, adminService)
-	})
+	}))
 
-	// Telegram webhook endpoint (for compatibility)
-	mux.HandleFunc("/telegram-webhook", func(w http.ResponseWriter, r *http.Request) {
+	// Telegram webhook endpoint (for compatibility) - public with rate limiting
+	mux.HandleFunc("/telegram-webhook", securityService.PublicMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		handleWebhook(w, r, registry, telegram, sessMgr, cfg, moviepilot, userMapping, quotaService, chatService, linkHandler, adminService)
-	})
+	}))
 
 	// Initialize API router for Emby/Jellyseerr webhooks
 	apiRouter := api.NewRouter(
@@ -701,15 +720,23 @@ func createServer(
 		webhookService,
 	)
 
-	// Register webhook endpoint for external services (Emby, Jellyseerr)
-	mux.HandleFunc("/api/summary", apiRouter.HandleWebhook)
-	mux.HandleFunc("/webhook/emby", apiRouter.HandleWebhook)
-	mux.HandleFunc("/webhook/jellyseerr", apiRouter.HandleWebhook)
+	// Register webhook endpoint for external services (Emby, Jellyseerr) - public with rate limiting
+	// These endpoints are called by media servers, use shared secret if configured
+	mux.HandleFunc("/api/summary", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+	mux.HandleFunc("/webhook/emby", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 
-	// Register additional API routes (excluding health which is already registered)
-	mux.HandleFunc("/api/stats", apiRouter.HandleWebhook)
-	mux.HandleFunc("/api/admins", apiRouter.HandleWebhook)
-	mux.HandleFunc("/api/admins/", apiRouter.HandleWebhook)
+	// Register additional API routes (protected with API auth if enabled)
+	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook
+	if cfg.EnableAPIAuth {
+		mux.HandleFunc("/api/stats", securityService.Middleware(apiHandler))
+		mux.HandleFunc("/api/admins", securityService.Middleware(apiHandler))
+		mux.HandleFunc("/api/admins/", securityService.Middleware(apiHandler))
+	} else {
+		mux.HandleFunc("/api/stats", securityService.PublicMiddleware(apiHandler))
+		mux.HandleFunc("/api/admins", securityService.PublicMiddleware(apiHandler))
+		mux.HandleFunc("/api/admins/", securityService.PublicMiddleware(apiHandler))
+	}
 
 	return &http.Server{
 		Addr:         cfg.ServerHost + ":" + cfg.ServerPort,
