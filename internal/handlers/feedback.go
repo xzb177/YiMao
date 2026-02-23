@@ -37,14 +37,25 @@ func (h *FeedbackHandler) SetIssueService(issueSvc *services.IssueService) {
 
 // Handle handles feedback callbacks
 func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	switch ctx.Callback.Action {
-	case "feedback_start":
-		return h.handleStart(ctx)
-	case "feedback_type":
-		return h.handleTypeSelect(ctx)
-	default:
-		return nil, nil
+	log.Printf("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
+		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
+
+	// Check if this is a type selection
+	// When user clicks an issue type button, callback is like: feedback:issue_type:quality:id:xxx
+	issueTypeParam, hasIssueType := ctx.Callback.Params["issue_type"]
+
+	// Check if there's also an "id" param - this indicates type selection
+	_, hasID := ctx.Callback.Params["id"]
+
+	if hasIssueType && hasID {
+		switch issueTypeParam {
+		case "quality", "audio", "subtitle", "not_found", "playback", "other":
+			return h.handleTypeSelect(ctx)
+		}
 	}
+
+	// Otherwise, this is the initial feedback button click
+	return h.handleStart(ctx)
 }
 
 // handleStart starts the feedback process
@@ -93,7 +104,8 @@ func (h *FeedbackHandler) handleStart(ctx *callback.Context) (*callback.Response
 	}
 
 	for i, t := range types {
-		callbackData := fmt.Sprintf("feedback:type:%s:id:%s:type:%s", t.value, tmdbID, mediaType)
+		// Use "issue_type" parameter to avoid conflict with media "type" parameter
+		callbackData := fmt.Sprintf("feedback:issue_type:%s:id:%s:media_type:%s", t.value, tmdbID, mediaType)
 		kb.AddButton(t.label, callbackData)
 		if i%2 == 1 {
 			kb.NewRow()
@@ -114,9 +126,11 @@ func (h *FeedbackHandler) handleStart(ctx *callback.Context) (*callback.Response
 
 // handleTypeSelect handles issue type selection
 func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Response, error) {
-	issueType := ctx.Callback.Params["value"]
+	issueType := ctx.Callback.Params["issue_type"]
 	tmdbID := ctx.Callback.Params["id"]
-	_ = ctx.Callback.Params["type"] // Not used here but available
+	mediaType := ctx.Callback.Params["media_type"]
+
+	log.Printf("[FeedbackHandler] handleTypeSelect: issueType=%s, tmdbID=%s, mediaType=%s", issueType, tmdbID, mediaType)
 
 	if issueType == "" || tmdbID == "" {
 		return &callback.Response{
@@ -129,6 +143,8 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	sess.Set("feedback_issue_type", issueType)
 	sess.Set("feedback_step", "description")
+	sess.Set("feedback_tmdb_id", tmdbID)
+	sess.Set("feedback_media_type", mediaType)  // Store media type too
 
 	// Get type label
 	typeLabels := map[string]string{
@@ -322,5 +338,6 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 func (h *FeedbackHandler) IsInFeedbackProcess(userID int64) bool {
 	sess := h.sessMgr.GetOrCreate(userID)
 	step, ok := sess.Get("feedback_step")
+	log.Printf("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
 	return ok && step == "description"
 }

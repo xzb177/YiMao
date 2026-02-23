@@ -257,6 +257,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	startHandler.SetAdminService(services.AdminService)
 	backHandler.SetAdminService(services.AdminService)
 	adminHandler.SetMediaNotificationService(services.MediaNotification)
+	adminHandler.SetIssueService(services.IssueService)
 	myRequestsHandler.SetUserMapping(services.UserMapping)
 	aiHandler.SetTMDBClient(services.TMDBClient)
 	searchHandler.SetSearchHistory(services.SearchHistory)
@@ -278,6 +279,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
+	log.Printf("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
@@ -368,16 +370,18 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		QuotaService:   deps.QuotaService,
-		ChatService:    deps.ChatService,
-		SearchHistory:  deps.SearchHistory,
-		TMDB:           deps.TMDBClient,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		QuotaService:    deps.QuotaService,
+		ChatService:     deps.ChatService,
+		SearchHistory:   deps.SearchHistory,
+		TMDB:            deps.TMDBClient,
+		IssueService:    deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
 	}
 }
 

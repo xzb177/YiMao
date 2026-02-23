@@ -20,6 +20,7 @@ type AdminHandler struct {
 	adminService         *services.AdminService
 	quotaService         *services.QuotaService
 	mediaNotificationSvc *services.MediaNotificationService
+	issueService         *services.IssueService
 }
 
 // NewAdminHandler creates a new admin handler
@@ -44,6 +45,11 @@ func NewAdminHandler(
 // SetMediaNotificationService sets the media notification service
 func (h *AdminHandler) SetMediaNotificationService(svc *services.MediaNotificationService) {
 	h.mediaNotificationSvc = svc
+}
+
+// SetIssueService sets the issue service
+func (h *AdminHandler) SetIssueService(svc *services.IssueService) {
+	h.issueService = svc
 }
 
 // Handle handles admin callbacks
@@ -292,8 +298,32 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 		}, nil
 	}
 
-	// Send "fixed" comment via webhook service
-	// This would be handled by the WebhookService
+	// Update issue status
+	if h.issueService != nil {
+		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusFixed); err != nil {
+			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+		}
+		// Get issue and notify user
+		if issue, exists := h.issueService.GetIssue(issueID); exists {
+			// Notify the user who created the issue
+			msg := services.NewMessageBuilder()
+			msg.Bold("✅ 您的问题已解决").Newline()
+			msg.Newline()
+			msg.Textf("问题编号: #%d", issue.ID).Newline()
+			msg.Textf("问题类型: %s", issue.Title).Newline()
+			if issue.MediaTitle != "" {
+				msg.Textf("相关媒体: %s", issue.MediaTitle).Newline()
+			}
+			msg.Newline()
+			msg.Italic("💡 感谢您的反馈，帮助我们改进服务").Newline()
+
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("⬅️ 返回主菜单", "start")
+
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			log.Printf("[AdminHandler] Notified user %d about issue #%d being fixed", issue.UserID, issue.ID)
+		}
+	}
 
 	message := fmt.Sprintf("✅ 问题已标记为修复\n\n问题ID: %d", issueID)
 
@@ -330,6 +360,33 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 		}, nil
 	}
 
+	// Update issue status
+	if h.issueService != nil {
+		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusProcessing); err != nil {
+			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+		}
+		// Get issue and notify user
+		if issue, exists := h.issueService.GetIssue(issueID); exists {
+			// Notify the user who created the issue
+			msg := services.NewMessageBuilder()
+			msg.Bold("🔧 您的问题正在处理中").Newline()
+			msg.Newline()
+			msg.Textf("问题编号: #%d", issue.ID).Newline()
+			msg.Textf("问题类型: %s", issue.Title).Newline()
+			if issue.MediaTitle != "" {
+				msg.Textf("相关媒体: %s", issue.MediaTitle).Newline()
+			}
+			msg.Newline()
+			msg.Italic("💡 管理员正在处理您的问题，请耐心等待").Newline()
+
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("⬅️ 返回主菜单", "start")
+
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			log.Printf("[AdminHandler] Notified user %d about issue #%d being processed", issue.UserID, issue.ID)
+		}
+	}
+
 	message := fmt.Sprintf("ℹ️ 问题已标记为处理中\n\n问题ID: %d", issueID)
 
 	return &callback.Response{
@@ -363,6 +420,33 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 			CallbackMsg: "无效的问题ID",
 			ShowAlert:   true,
 		}, nil
+	}
+
+	// Update issue status
+	if h.issueService != nil {
+		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusClosed); err != nil {
+			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+		}
+		// Get issue and notify user
+		if issue, exists := h.issueService.GetIssue(issueID); exists {
+			// Notify the user who created the issue
+			msg := services.NewMessageBuilder()
+			msg.Bold("🚫 您的问题已关闭").Newline()
+			msg.Newline()
+			msg.Textf("问题编号: #%d", issue.ID).Newline()
+			msg.Textf("问题类型: %s", issue.Title).Newline()
+			if issue.MediaTitle != "" {
+				msg.Textf("相关媒体: %s", issue.MediaTitle).Newline()
+			}
+			msg.Newline()
+			msg.Italic("💡 如仍有问题，请重新提交反馈").Newline()
+
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("⬅️ 返回主菜单", "start")
+
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			log.Printf("[AdminHandler] Notified user %d about issue #%d being closed", issue.UserID, issue.ID)
+		}
 	}
 
 	message := fmt.Sprintf("❌ 问题已关闭\n\n问题ID: %d", issueID)

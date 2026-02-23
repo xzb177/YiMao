@@ -124,11 +124,16 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	}
 
 	// Check if user is in feedback process
-	if deps.FeedbackHandler != nil && deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID) {
-		if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
-			log.Printf("[Poll] Failed to handle feedback: %v", err)
+	log.Printf("[Poll] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
+	if deps.FeedbackHandler != nil {
+		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
+		log.Printf("[Poll] User %d in feedback process: %v", msg.From.ID, inFeedback)
+		if inFeedback {
+			if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
+				log.Printf("[Poll] Failed to handle feedback: %v", err)
+			}
+			return
 		}
-		return
 	}
 
 	// Private chat: Handle commands and search query
