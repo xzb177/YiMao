@@ -343,17 +343,18 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 // toServerDeps converts main Dependencies to server Dependencies
 func toServerDeps(deps *Dependencies) *server.Dependencies {
 	return &server.Dependencies{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		Preferences:    deps.Preferences,
-		IssueService:   deps.IssueService,
-		AdminService:   deps.AdminService,
-		QuotaService:   deps.QuotaService,
-		ChatService:    deps.ChatService,
-		WebhookService: deps.WebhookService,
-		BindingRequest: deps.BindingRequest,
+		Telegram:          deps.Telegram,
+		MoviePilot:        deps.MoviePilot,
+		SessionMgr:        deps.SessionMgr,
+		UserMapping:       deps.UserMapping,
+		Preferences:       deps.Preferences,
+		IssueService:      deps.IssueService,
+		AdminService:      deps.AdminService,
+		QuotaService:      deps.QuotaService,
+		ChatService:       deps.ChatService,
+		WebhookService:    deps.WebhookService,
+		BindingRequest:    deps.BindingRequest,
+		MediaNotification: deps.MediaNotification,
 	}
 }
 

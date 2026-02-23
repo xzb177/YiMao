@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -26,6 +27,7 @@ type Dependencies struct {
 	ChatService       *services.ChatService
 	WebhookService    *services.WebhookService
 	BindingRequest    *services.BindingRequestService
+	MediaNotification *services.MediaNotificationService
 }
 
 // New creates a new HTTP server
@@ -84,6 +86,78 @@ func New(
 	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/mp", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+
+	// Test summary handler
+	testSummaryHandler := func(d *Dependencies) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Get admin ID from query param
+			adminIDStr := r.URL.Query().Get("admin_id")
+			if adminIDStr == "" {
+				// Use first admin if not specified
+				adminIDs := d.AdminService.GetAdminIDs()
+				if len(adminIDs) == 0 {
+					http.Error(w, "No admins configured", http.StatusBadRequest)
+					return
+				}
+				adminIDStr = fmt.Sprintf("%d", adminIDs[0])
+			}
+
+			var adminID int64
+			_, err := fmt.Sscanf(adminIDStr, "%d", &adminID)
+			if err != nil || adminID == 0 {
+				http.Error(w, "Invalid admin_id", http.StatusBadRequest)
+				return
+			}
+
+			// Trigger manual summary
+			err = d.MediaNotification.SendManualSummary(adminID, time.Now())
+			if err != nil {
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprintf(w, `{"status": "error", "message": "%s"}`, err.Error())
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"status": "success", "admin_id": %d}`, adminID)
+		}
+	}
+
+	// Test add item handler (for testing only)
+	testAddItemHandler := func(d *Dependencies) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodPost {
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+				return
+			}
+
+			// Parse MediaItem from request body
+			var item services.MediaItem
+			if err := json.NewDecoder(r.Body).Decode(&item); err != nil {
+				http.Error(w, "Invalid request body", http.StatusBadRequest)
+				return
+			}
+
+			// Add to notification service
+			d.MediaNotification.AddItem(&item)
+
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprintf(w, `{"status": "success", "title": "%s"}`, item.Title)
+		}
+	}
+
+	// Register test routes
+	if cfg.EnableAPIAuth {
+		mux.HandleFunc("/api/test-summary", securityService.Middleware(testSummaryHandler(deps)))
+		mux.HandleFunc("/api/test-add-item", securityService.Middleware(testAddItemHandler(deps)))
+	} else {
+		mux.HandleFunc("/api/test-summary", securityService.PublicMiddleware(testSummaryHandler(deps)))
+		mux.HandleFunc("/api/test-add-item", securityService.PublicMiddleware(testAddItemHandler(deps)))
+	}
 
 	// Register additional API routes (protected with API auth if enabled)
 	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook

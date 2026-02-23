@@ -417,97 +417,57 @@ func (s *MediaNotificationService) formatSimpleMessage(item *MediaItem) string {
 
 // formatDetailedMessage formats a detailed notification message (new format)
 func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string {
-	var builder strings.Builder
-
-	// Header with title
-	builder.WriteString("✅ 入库成功：")
-
-	// Title with year and episode info
+	// Build title
+	var title string
 	if item.SeriesName != "" {
-		builder.WriteString(item.SeriesName)
+		title = item.SeriesName
 		if item.Year > 1900 && item.Year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+			title += fmt.Sprintf(" (%d)", item.Year)
 		}
 		if item.SeasonNumber > 0 {
-			builder.WriteString(fmt.Sprintf(" S%02d", item.SeasonNumber))
+			title += fmt.Sprintf(" S%02d", item.SeasonNumber)
 		}
 		if item.EpisodeCount > 0 {
 			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
-				builder.WriteString(fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd))
+				title += fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd)
 			} else if item.EpisodeCount == 1 {
-				builder.WriteString(fmt.Sprintf(" E%02d", item.EpisodeStart))
+				title += fmt.Sprintf(" E%02d", item.EpisodeStart)
 			}
 		}
 	} else {
-		builder.WriteString(item.Title)
+		title = item.Title
 		if item.Year > 1900 && item.Year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
+			title += fmt.Sprintf(" (%d)", item.Year)
 		}
 	}
 
-	builder.WriteString("\n")
-	builder.WriteString("───────────────────\n")
-
-	// Name line
-	builder.WriteString("🎬 名称：")
-	if item.SeriesName != "" {
-		builder.WriteString(item.SeriesName)
-		if item.Year > 1900 && item.Year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
-		}
-		if item.SeasonNumber > 0 {
-			builder.WriteString(fmt.Sprintf(" S%02d", item.SeasonNumber))
-		}
-		if item.EpisodeCount > 0 {
-			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
-				builder.WriteString(fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd))
-			} else if item.EpisodeCount == 1 {
-				builder.WriteString(fmt.Sprintf(" E%02d", item.EpisodeStart))
-			}
-		}
-	} else {
-		builder.WriteString(item.Title)
-		if item.Year > 1900 && item.Year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
-		}
-	}
-	builder.WriteString("\n")
-
-	// Category with detailed type
-	builder.WriteString("🏷️ 类别：")
-	builder.WriteString(s.getDetailedCategory(item))
-	builder.WriteString("\n")
-
-	// Quality (with WEB-DL info if available)
+	// Build quality string
+	quality := ""
 	if item.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s", item.Quality))
-		builder.WriteString("\n")
+		quality = item.Quality
+		if item.IsWEBDL && !strings.Contains(strings.ToLower(quality), "web-dl") {
+			quality = fmt.Sprintf("WEB-DL %s", quality)
+		}
 	}
 
-	// File size (using GB format)
-	// Quality (with WEB-DL info if available)
-	quality := item.Quality
-	if item.IsWEBDL && quality != "" {
-		quality = fmt.Sprintf("WEB-DL %s", quality)
-	}
-	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
-		builder.WriteString("\n")
-	}
-
-	builder.WriteString("\n")
-
-	// File size (using decimal GB for consistency)
+	// Build file info
+	fileInfo := ""
 	if item.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(item.FileSize)))
+		fileInfo += fmt.Sprintf("\n📦 总大小：%s", s.formatFileSizeDecimal(item.FileSize))
 	}
-
-	// File count
 	if item.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", item.FileCount))
+		fileInfo += fmt.Sprintf("\n📁 文件数量：%d 个", item.FileCount)
 	}
 
-	return builder.String()
+	// Build complete message - separator on same line as title
+	message := fmt.Sprintf("✅ 入库成功：%s ───────────\n🎬 名称：%s\n🏷️ 类别：%s\n💎 质量： %s%s",
+		title,
+		title,
+		s.getDetailedCategory(item),
+		quality,
+		fileInfo)
+
+	return message
 }
 
 // formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
