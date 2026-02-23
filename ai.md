@@ -3255,3 +3255,12 @@ trends - 请求趋势
  | | - 移除了 `emby_play` 回调注册
  | | - 移除了不再使用的 `os` 包导入
  | | - **部署状态**: ✅ 已构建并部署
+
+2026-02-24 | **修复 SSL 证书验证问题** 🔒 |
+ | | - **问题**: Emby API 搜索失败，错误 `tls: failed to verify certificate: x509: certificate signed by unknown authority`
+ | | - **原因**: 使用 Cloudflare Origin Certificate，Go HTTP 客户端无法验证
+ | | - **修复**: 在 `SearchEmbyMedia` 函数中添加 `InsecureSkipVerify: true` 跳过 TLS 验证
+ | | - **修改文件**: `internal/services/webhook.go`
+ | |   - 添加 `crypto/tls` 导入
+ | |   - 配置自定义 HTTP Transport 跳过证书验证
+ | | - **部署状态**: ✅ 已构建并部署
