@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"emby-telegram-bot/internal/api"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/handlers"
@@ -685,6 +686,31 @@ func createServer(
 	mux.HandleFunc("/telegram-webhook", func(w http.ResponseWriter, r *http.Request) {
 		handleWebhook(w, r, registry, telegram, sessMgr, cfg, moviepilot, userMapping, quotaService, chatService, linkHandler, adminService)
 	})
+
+	// Initialize API router for Emby/Jellyseerr webhooks
+	apiRouter := api.NewRouter(
+		cfg,
+		telegram,
+		nil, // jellyseerr - not needed for current setup
+		adminService,
+		quotaService,
+		userMapping,
+		preferences,
+		issueService,
+		sessMgr,
+		registry,
+		webhookService,
+	)
+
+	// Register webhook endpoint for external services (Emby, Jellyseerr)
+	mux.HandleFunc("/api/summary", apiRouter.HandleWebhook)
+	mux.HandleFunc("/webhook/emby", apiRouter.HandleWebhook)
+	mux.HandleFunc("/webhook/jellyseerr", apiRouter.HandleWebhook)
+
+	// Register additional API routes (excluding health which is already registered)
+	mux.HandleFunc("/api/stats", apiRouter.HandleWebhook)
+	mux.HandleFunc("/api/admins", apiRouter.HandleWebhook)
+	mux.HandleFunc("/api/admins/", apiRouter.HandleWebhook)
 
 	return &http.Server{
 		Addr:         cfg.ServerHost + ":" + cfg.ServerPort,

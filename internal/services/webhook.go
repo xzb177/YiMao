@@ -14,19 +14,21 @@ import (
 )
 
 // EmbyWebhookPayload represents an Emby webhook payload
+// Emby uses camelCase starting with lowercase
 type EmbyWebhookPayload struct {
-	Event      string      `json:"Event"`
-	ItemID     string      `json:"ItemId"`
-	ItemName   string      `json:"ItemName"`
-	ItemType   string      `json:"ItemType"`
-	Library    string      `json:"LibraryName"`
-	SeriesName string      `json:"SeriesName"`
-	Season     int         `json:"SeasonNumber"`
-	Episode    int         `json:"IndexNumber"`
-	Overview   string      `json:"Overview"`
-	Timestamp  string      `json:"Timestamp"`
-	UserID     string      `json:"UserId"`
-	UserName   string      `json:"UserName"`
+	Event      string `json:"NotificationType"` // Emby uses NotificationType
+	ItemID     string `json:"ItemId"`
+	ItemName   string `json:"ItemName"`
+	ItemType   string `json:"ItemType"`
+	Library    string `json:"LibraryName"`
+	SeriesName string `json:"SeriesName"`
+	Season     int    `json:"SeasonNumber"`
+	Episode    int    `json:"IndexNumber"`
+	Overview   string `json:"Overview"`
+	Timestamp  string `json:"Timestamp"`
+	UserID     string `json:"UserId"`
+	UserName   string `json:"UserName"`
+	Year       *int   `json:"Year"`        // ProductionYear
 }
 
 // JellyseerrWebhookPayload represents a Jellyseerr webhook payload
@@ -106,13 +108,16 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	log.Printf("[Webhook] Emby event: %s, item: %s", payload.Event, payload.ItemName)
 
-	switch payload.Event {
-	case "item.added":
+	// Normalize event name (Emby sends ItemAdded)
+	event := strings.ToLower(payload.Event)
+
+	switch event {
+	case "item.added", "itemadded":
 		return s.handleItemAdded(payload)
-	case "item.updated":
+	case "item.updated", "itemupdated":
 		// Skip update events to reduce noise
 		return nil
-	case "system.notificationtest":
+	case "system.notificationtest", "system.test":
 		return s.handleTestNotification(payload)
 	default:
 		return nil
@@ -322,7 +327,10 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 
 	// Add year if available
 	year := 0
-	if enhanced != nil {
+	if payload.Year != nil {
+		year = *payload.Year
+	}
+	if year == 0 && enhanced != nil {
 		year = enhanced.Year
 	}
 

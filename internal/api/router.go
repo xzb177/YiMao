@@ -19,7 +19,6 @@ import (
 type Router struct {
 	cfg            *config.Config
 	telegram       *services.TelegramClient
-	jellyseerr     *services.JellyseerrClient
 	adminService   *services.AdminService
 	quotaService   *services.QuotaService
 	userMapping    *services.UserMappingService
@@ -34,7 +33,7 @@ type Router struct {
 func NewRouter(
 	cfg *config.Config,
 	telegram *services.TelegramClient,
-	jellyseerr *services.JellyseerrClient,
+	_ interface{}, // jellyseerr - deprecated, kept for compatibility
 	adminService *services.AdminService,
 	quotaService *services.QuotaService,
 	userMapping *services.UserMappingService,
@@ -47,7 +46,6 @@ func NewRouter(
 	return &Router{
 		cfg:            cfg,
 		telegram:       telegram,
-		jellyseerr:     jellyseerr,
 		adminService:   adminService,
 		quotaService:   quotaService,
 		userMapping:    userMapping,
@@ -310,13 +308,8 @@ func (r *Router) handleSummary(w http.ResponseWriter, req *http.Request) {
 
 // generateSummary generates a daily summary message
 func (r *Router) generateSummary() string {
-	// Get pending requests from Jellyseerr
+	// Get pending requests from review service
 	pendingCount := 0
-	if r.jellyseerr != nil {
-		// Would need to implement GetPendingRequests in JellyseerrClient
-		// For now, use placeholder
-		pendingCount = 0
-	}
 
 	// Get session stats
 	sessionStats := r.sessMgr.Stats()
@@ -343,10 +336,9 @@ func (r *Router) handleDebug(w http.ResponseWriter, req *http.Request) {
 	debugInfo := map[string]interface{}{
 		"sessions": stats,
 		"config": map[string]interface{}{
-			"jellyseerr_url":    r.cfg.JellyseerrURL,
+			"moviepilot_url":    r.cfg.MoviePilotURL,
+			"emby_url":          r.cfg.EmbyURL,
 			"data_dir":          r.cfg.DataDir,
-			"max_sessions":      r.cfg.MaxSessions,
-			"max_session_age":   r.cfg.MaxSessionAge,
 			"webhook_url":       r.cfg.WebhookURL,
 			"has_admins":        r.adminService.HasAdmins(),
 			"admin_count":       r.adminService.GetAdminCount(),
