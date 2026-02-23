@@ -9,9 +9,10 @@ import (
 
 // MyRequestsHandler handles "my requests" callbacks
 type MyRequestsHandler struct {
-	sessMgr    *session.Manager
-	telegram   *services.TelegramClient
-	moviepilot *services.MoviePilotClient
+	sessMgr     *session.Manager
+	telegram    *services.TelegramClient
+	moviepilot  *services.MoviePilotClient
+	userMapping *services.UserMappingService
 }
 
 func NewMyRequestsHandler(
@@ -26,10 +27,25 @@ func NewMyRequestsHandler(
 	}
 }
 
+// SetUserMapping sets the user mapping service
+func (h *MyRequestsHandler) SetUserMapping(um *services.UserMappingService) {
+	h.userMapping = um
+}
+
 func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	// Get MoviePilot user ID from session
+	// Try to get MoviePilot user ID from session first
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	moviepilotID := sess.GetMoviePilotUserID()
+
+	// If not in session, try to get from user mapping (persistent storage)
+	if moviepilotID == 0 && h.userMapping != nil {
+		if id, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
+			moviepilotID = id
+			// Update session for future requests
+			sess.Set("moviepilot_id", int(id))
+		}
+	}
+
 	if moviepilotID == 0 {
 		return &callback.Response{
 			Text: "❌ 请先使用 /link 命令绑定 MoviePilot 账号",

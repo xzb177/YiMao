@@ -121,6 +121,7 @@ func main() {
 	startHandler.SetAdminService(adminService)
 	backHandler.SetAdminService(adminService)
 	adminHandler.SetMediaNotificationService(mediaNotificationSvc)
+	myRequestsHandler.SetUserMapping(userMappingService)
 
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)

@@ -109,6 +109,10 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 		return err
 	}
 
+	// Update session with MoviePilot user ID
+	sess := h.sessMgr.GetOrCreate(telegramID)
+	sess.Set("moviepilot_id", int(user.ID))
+
 	log.Printf("[LinkHandler] User %d linked to MoviePilot user %s (%s)", telegramID, username, user.Email)
 
 	return nil
