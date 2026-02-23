@@ -80,6 +80,16 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 		return sess
 	}
 
+	// Check if we've hit the session limit
+	if len(m.sessions) >= m.maxSize {
+		// Try to clean up expired sessions first
+		m.cleanupLocked()
+		// If still at limit, evict the oldest inactive session
+		if len(m.sessions) >= m.maxSize {
+			m.evictOldestSession()
+		}
+	}
+
 	sess := &Session{
 		UserID:       userID,
 		CreatedAt:    time.Now(),
@@ -89,7 +99,7 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	}
 
 	m.sessions[userID] = sess
-	log.Printf("[Session] Created new session for user %d", userID)
+	log.Printf("[Session] Created new session for user %d (total: %d/%d)", userID, len(m.sessions), m.maxSize)
 
 	return sess
 }
@@ -136,7 +146,11 @@ func (m *Manager) IsValid(userID int64) bool {
 func (m *Manager) Cleanup() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	return m.cleanupLocked()
+}
 
+// cleanupLocked removes expired sessions (must be called with lock held)
+func (m *Manager) cleanupLocked() int {
 	cutoff := time.Now().Add(-m.maxAge)
 	removed := 0
 
@@ -152,6 +166,30 @@ func (m *Manager) Cleanup() int {
 	}
 
 	return removed
+}
+
+// evictOldestSession removes the least recently used session (must be called with lock held)
+func (m *Manager) evictOldestSession() {
+	if len(m.sessions) == 0 {
+		return
+	}
+
+	var oldestID int64
+	var oldestTime time.Time
+	first := true
+
+	for userID, sess := range m.sessions {
+		if first || sess.LastActivity.Before(oldestTime) {
+			oldestID = userID
+			oldestTime = sess.LastActivity
+			first = false
+		}
+	}
+
+	if oldestID != 0 {
+		delete(m.sessions, oldestID)
+		log.Printf("[Session] Evicted oldest session for user %d (inactive since %v)", oldestID, oldestTime.Format("15:04:05"))
+	}
 }
 
 // cleanupLoop runs periodic cleanup

@@ -9,16 +9,13 @@ import (
 	"time"
 )
 
-// Security Config
+// Default Security Config
 const (
-	// Rate limiting
-	rateLimitRequests = 60              // requests per minute
-	rateLimitWindow   = time.Minute     // sliding window
-	rateLimitCleanup  = 5 * time.Minute // cleanup interval
-
-	// IP-based blocking
-	maxFailedAttempts = 5                // failed attempts before block
-	blockDuration     = 30 * time.Minute // how long to block
+	defaultRateLimitRequests = 60              // requests per minute
+	defaultRateLimitWindow   = time.Minute     // sliding window
+	defaultRateLimitCleanup  = 5 * time.Minute // cleanup interval
+	defaultMaxFailedAttempts = 5               // failed attempts before block
+	defaultBlockDuration     = 30 * time.Minute // how long to block
 )
 
 // APIKeyConfig holds API key configuration
@@ -43,6 +40,12 @@ type SecurityContext struct {
 	blockedIPs     map[string]time.Time       // IP -> unblock time
 	mu             sync.RWMutex
 	cleanupDone    chan bool
+
+	// Configurable limits
+	rateLimitRequests int
+	rateLimitWindow   time.Duration
+	maxFailedAttempts int
+	blockDuration     time.Duration
 }
 
 // SecurityService manages API security
@@ -58,12 +61,32 @@ func NewSecurityService() *SecurityService {
 				Keys:    make(map[string]string),
 				Enabled: false,
 			},
-			rateLimits:     make(map[string]*RateLimitEntry),
-			failedAttempts: make(map[string]int),
-			blockedIPs:     make(map[string]time.Time),
-			cleanupDone:    make(chan bool),
+			rateLimits:       make(map[string]*RateLimitEntry),
+			failedAttempts:   make(map[string]int),
+			blockedIPs:       make(map[string]time.Time),
+			cleanupDone:      make(chan bool),
+			rateLimitRequests: defaultRateLimitRequests,
+			rateLimitWindow:   defaultRateLimitWindow,
+			maxFailedAttempts: defaultMaxFailedAttempts,
+			blockDuration:     defaultBlockDuration,
 		},
 	}
+}
+
+// SetConfig sets configurable security limits
+func (s *SecurityService) SetConfig(requests int, windowSecs int, maxAttempts int, blockMins int) {
+	s.ctx.mu.Lock()
+	defer s.ctx.mu.Unlock()
+
+	s.ctx.rateLimitRequests = requests
+	if requests > 0 {
+		s.ctx.rateLimitWindow = time.Duration(windowSecs) * time.Second
+	}
+	s.ctx.maxFailedAttempts = maxAttempts
+	s.ctx.blockDuration = time.Duration(blockMins) * time.Minute
+
+	log.Printf("[Security] Config updated: requests=%d/%ds, maxAttempts=%d, block=%dm",
+		requests, windowSecs, maxAttempts, blockMins)
 }
 
 // Start initializes the security service
@@ -159,9 +182,9 @@ func (s *SecurityService) RecordFailedAttempt(ip string) {
 	defer s.ctx.mu.Unlock()
 
 	s.ctx.failedAttempts[ip]++
-	if s.ctx.failedAttempts[ip] >= maxFailedAttempts {
+	if s.ctx.failedAttempts[ip] >= s.ctx.maxFailedAttempts {
 		// Block this IP
-		s.ctx.blockedIPs[ip] = time.Now().Add(blockDuration)
+		s.ctx.blockedIPs[ip] = time.Now().Add(s.ctx.blockDuration)
 		log.Printf("[Security] IP %s blocked after %d failed attempts", ip, s.ctx.failedAttempts[ip])
 		// Reset counter
 		delete(s.ctx.failedAttempts, ip)
@@ -193,7 +216,7 @@ func (s *SecurityService) CheckRateLimit(ip string) bool {
 	}
 
 	// Reset if window expired
-	if now.Sub(entry.FirstSeen) >= rateLimitWindow {
+	if now.Sub(entry.FirstSeen) >= s.ctx.rateLimitWindow {
 		entry.Count = 1
 		entry.FirstSeen = now
 		entry.LastSeen = now
@@ -201,7 +224,7 @@ func (s *SecurityService) CheckRateLimit(ip string) bool {
 	}
 
 	// Check limit
-	if entry.Count >= rateLimitRequests {
+	if entry.Count >= s.ctx.rateLimitRequests {
 		entry.LastSeen = now
 		return true
 	}
@@ -213,7 +236,7 @@ func (s *SecurityService) CheckRateLimit(ip string) bool {
 
 // cleanupLoop periodically cleans up old rate limit entries
 func (s *SecurityContext) cleanupLoop() {
-	ticker := time.NewTicker(rateLimitCleanup)
+	ticker := time.NewTicker(defaultRateLimitCleanup)
 	defer ticker.Stop()
 
 	for {
@@ -239,8 +262,12 @@ func (s *SecurityContext) cleanup() {
 	defer s.mu.Unlock()
 
 	now := time.Now()
+	window := s.rateLimitWindow
+	if window == 0 {
+		window = defaultRateLimitWindow
+	}
 	for ip, entry := range s.rateLimits {
-		if now.Sub(entry.LastSeen) > rateLimitWindow*2 {
+		if now.Sub(entry.LastSeen) > window*2 {
 			delete(s.rateLimits, ip)
 		}
 	}

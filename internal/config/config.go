@@ -61,6 +61,12 @@ type Config struct {
 	APIKeys          map[string]string // key -> description
 	EnableRateLimit  bool
 	EnableIPBlocking bool
+
+	// Security Limits
+	RateLimitRequests int  // requests per window
+	RateLimitWindow   int  // window duration in seconds
+	MaxFailedAttempts int  // failed attempts before IP block
+	BlockDuration     int  // block duration in minutes
 }
 
 // Load loads configuration from environment variables and files
@@ -92,6 +98,10 @@ func Load() (*Config, error) {
 		APIKeys:             make(map[string]string),
 		EnableRateLimit:     getEnvBool("ENABLE_RATE_LIMIT", true),
 		EnableIPBlocking:    getEnvBool("ENABLE_IP_BLOCKING", true),
+		RateLimitRequests:   getEnvInt("RATE_LIMIT_REQUESTS", 60),
+		RateLimitWindow:     getEnvInt("RATE_LIMIT_WINDOW", 60),    // seconds
+		MaxFailedAttempts:   getEnvInt("MAX_FAILED_ATTEMPTS", 5),
+		BlockDuration:       getEnvInt("BLOCK_DURATION", 30),       // minutes
 	}
 
 	// Set file paths
@@ -117,15 +127,39 @@ func Load() (*Config, error) {
 
 // validate validates the configuration
 func (c *Config) validate() error {
+	// Required sensitive fields - no default allowed
 	if c.TelegramBotToken == "" {
 		return fmt.Errorf("TELEGRAM_BOT_TOKEN is required")
 	}
+	// Validate token format (basic check)
+	if len(c.TelegramBotToken) < 30 {
+		return fmt.Errorf("TELEGRAM_BOT_TOKEN appears invalid (too short)")
+	}
+
 	if c.MoviePilotURL == "" {
 		return fmt.Errorf("MOVIEPILOT_URL is required")
 	}
 	if c.MoviePilotAPIKey == "" {
 		return fmt.Errorf("MOVIEPILOT_API_KEY is required")
 	}
+	// Validate API key format
+	if len(c.MoviePilotAPIKey) < 10 {
+		return fmt.Errorf("MOVIEPILOT_API_KEY appears invalid (too short)")
+	}
+
+	// If Emby is configured, validate both URL and key
+	if c.EmbyURL != "" && c.EmbyAPIKey == "" {
+		return fmt.Errorf("EMBY_API_KEY is required when EMBY_URL is set")
+	}
+
+	// Validate limits
+	if c.MaxSessions < 1 || c.MaxSessions > 10000 {
+		return fmt.Errorf("MAX_SESSIONS must be between 1 and 10000")
+	}
+	if c.MaxSessionAge < 1 || c.MaxSessionAge > 168 { // max 1 week
+		return fmt.Errorf("MAX_SESSION_AGE must be between 1 and 168 hours")
+	}
+
 	return nil
 }
 
@@ -166,7 +200,7 @@ func (c *Config) saveAdmins(admins map[string]int64) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.AdminFile, data, 0644)
+	return os.WriteFile(c.AdminFile, data, 0600)
 }
 
 // IsAdmin checks if a user is an admin

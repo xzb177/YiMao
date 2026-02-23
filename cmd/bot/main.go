@@ -41,6 +41,13 @@ func main() {
 
 	// Initialize Security Service
 	securityService := services.NewSecurityService()
+	// Configure security limits from config
+	securityService.SetConfig(
+		cfg.RateLimitRequests,
+		cfg.RateLimitWindow,
+		cfg.MaxFailedAttempts,
+		cfg.BlockDuration,
+	)
 	if cfg.EnableAPIAuth && len(cfg.APIKeys) > 0 {
 		securityService.SetAPIKeys(cfg.APIKeys)
 		securityService.EnableAPIAuth(true)
