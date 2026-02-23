@@ -80,7 +80,7 @@ func (s *AdminService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.adminsFile, data, 0644)
+	return os.WriteFile(s.adminsFile, data, 0600)
 }
 
 // IsAdmin checks if a user is an admin

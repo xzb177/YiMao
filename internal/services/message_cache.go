@@ -103,7 +103,14 @@ func (mc *MessageCache) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			mc.cleanup()
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[MessageCache] Panic in cleanup: %v", r)
+					}
+				}()
+				mc.cleanup()
+			}()
 		case <-mc.stopChan:
 			return
 		}

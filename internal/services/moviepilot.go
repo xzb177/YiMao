@@ -198,6 +198,10 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 
 // SearchMedia searches for media by query
 func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse, error) {
+	// Limit query length to prevent abuse
+	if len(query) > 100 {
+		query = query[:100]
+	}
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=20", encodedQuery, page)

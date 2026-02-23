@@ -126,10 +126,12 @@ func (s *SecurityService) getClientIP(r *http.Request) string {
 }
 
 // isTrustedProxy checks if an IP is a trusted proxy
+// Uses strict allowlist to prevent IP spoofing
 func (s *SecurityService) isTrustedProxy(ip string) bool {
+	// Only trust localhost and exact local loopback
 	trusted := []string{"127.0.0.1", "::1", "localhost"}
 	for _, t := range trusted {
-		if ip == t || strings.HasPrefix(ip, "127.") || strings.HasPrefix(ip, "::1") || strings.HasPrefix(ip, "10.") || strings.HasPrefix(ip, "192.168.") || strings.HasPrefix(ip, "172.16.") {
+		if ip == t {
 			return true
 		}
 	}
@@ -217,7 +219,14 @@ func (s *SecurityContext) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			s.cleanup()
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[Security] Panic in cleanup: %v", r)
+					}
+				}()
+				s.cleanup()
+			}()
 		case <-s.cleanupDone:
 			return
 		}

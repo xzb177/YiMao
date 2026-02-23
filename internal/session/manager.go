@@ -160,7 +160,14 @@ func (m *Manager) cleanupLoop() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		m.Cleanup()
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[Session] Panic in cleanup: %v", r)
+				}
+			}()
+			m.Cleanup()
+		}()
 	}
 }
 
