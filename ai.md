@@ -3300,3 +3300,60 @@ trends - 请求趋势
  | | - **数据格式**: 使用 `user_mappings`, `usernames`, `reverse_mappings` 三个字段
  | | - **部署状态**: ✅ 已构建并部署
  | | - **EMby URL**: https://emby.oceancloud.asia
+
+2026-02-24 | **媒体通知系统重构 - 即时通知与每日汇总共存** 📢 |
+ | | - **问题**: 原有 Mode 字段只能二选一（即时/每日），无法同时启用
+ | | - **解决方案**: 拆分为两个独立开关
+ | | - **AdminNotificationSettings 结构变更**:
+ | |   ```go
+ | |   // 旧版本
+ | |   Mode NotificationMode  // "instant" 或 "daily"
+ | |
+ | |   // 新版本
+ | |   InstantEnabled bool      // 即时通知开关
+ | |   DailySummaryEnabled bool // 每日汇总开关
+ | |   ```
+ | | - **默认设置**: 即时通知开启，每日汇总关闭，汇总时间 12:59
+ | | - **管理员 UI 更新**:
+ | |   - 显示独立状态指示器（⚪/🔵）
+ | |   - 单集推送按钮：✅ 启用 / ❌ 关闭
+ | |   - 每日汇总按钮：✅ 启用 / ❌ 关闭
+ | |   - 汇总时间设置按钮
+ | |   - 格式切换（简洁/详细）
+ | | - **回调变更**:
+ | |   - 移除: `admin_notif_mode_instant`, `admin_notif_mode_daily`
+ | |   - 新增: `admin_notif_toggle_instant`, `admin_notif_toggle_daily`
+ | | - **新增方法**:
+ | |   - `SetInstantEnabled(adminID, enabled)`
+ | |   - `SetDailySummaryEnabled(adminID, enabled)`
+ | | - **部署状态**: ✅ 已构建并部署
+ | | - **提交**: `ecd4864`
+
+2026-02-24 | **修复管理菜单回调死锁问题** 🔒 |
+ | | - **问题**: 点击管理菜单按钮无响应，日志显示卡在 `GetSettings`
+ | | - **根本原因**: `handleItem` 和 `checkAndSendDailySummaries` 持有写锁时调用 `GetSettings`（需要读锁）
+ | | - **死锁场景**:
+ | |   1. 媒体入库触发 `handleItem` → 获取写锁
+ | |   2. 管理员点击菜单 → 调用 `GetSettings` → 等待读锁
+ | |   3. `handleItem` 中调用 `GetSettings` → 递归获取读锁 → 死锁
+ | | - **修复方案**:
+ | |   - 直接访问 `s.settings` 而非调用 `GetSettings`
+ | |   - 复制设置数据避免持有锁引用
+ | |   - `sendInstantNotification` 接收 `format` 参数
+ | | - **代码变更** (`internal/services/media_notification.go`):
+ | |   ```go
+ | |   // handleItem - 直接访问 map
+ | |   s.mu.RLock()
+ | |   for _, adminID := range adminIDs {
+ | |       if settings, exists := s.settings[adminID]; exists {
+ | |           settingsCopy := *settings
+ | |           adminSettings[adminID] = &settingsCopy
+ | |       }
+ | |   }
+ | |   s.mu.RUnlock()
+ | |
+ | |   // sendInstantNotification - 接收格式参数
+ | |   func sendInstantNotification(adminID int64, item *MediaItem, format NotificationFormat)
+ | |   ```
+ | | - **部署状态**: ✅ 已构建并部署
+ | | - **提交**: `87d9467`
