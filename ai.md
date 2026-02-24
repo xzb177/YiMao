@@ -1,6 +1,17 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
+| 2026-02-24 | **代码审查与错误处理改进** 🔍🛡️ |
+| | - **审查范围**: 全面审查代码，查找潜在bug和错误 |
+| | - **已修复问题**:
+| |   1. `cmd/bot/main.go` - 添加 Telegram Chat ID 解析错误处理
+| |   2. `internal/handlers/feedback.go` - 修复类型断言，添加ok检查防止panic
+| |   3. `session/manager.go` - 修复 `ai_cached_items` 类型断言，添加未知类型警告
+| | - **确认正确**: HTTP响应关闭、超时设置、Context初始化、goroutine安全
+| | - **修改文件**: `cmd/bot/main.go`, `internal/handlers/feedback.go`, `session/manager.go`
+| | - **部署状态**: ✅ 已构建并部署
+| | - **提交**: `7818ab2`
+
 | 2026-02-24 | **未绑定用户求片体验优化** 🔗✨ |
 | | - **问题**: 未绑定用户点击求片后只收到简单文字提示，缺少引导 |
 | | - **分析**: 用户 924126547 直接搜索求片，从未尝试绑定账号
