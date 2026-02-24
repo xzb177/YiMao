@@ -93,7 +93,7 @@ detail:id:{id}:type:{type}  # 查看详情
   - 输入长度限制
 - **会话管理**: 改进日志记录，便于调试
 
-### 2024-02-24 - Webhook 通知增强
+### 2024-02-24 - Webhook通知增强
 - **通知开关验证**: 全面测试并验证通知开关功能
   - 总体开关 (`Enabled`): 控制所有通知
   - 单集推送开关 (`InstantEnabled`): 控制立即入库通知
@@ -103,3 +103,14 @@ detail:id:{id}:type:{type}  # 查看详情
   - 开关切换操作日志
   - 通知发送决策日志 (发送/跳过)
 - **Webhook 测试**: 验证 Emby 入库通知正常工作
+
+### 2024-02-25 - Webhook 配置完成
+- **Nginx 反向代理**: 配置 Nginx 处理外部 webhook 请求
+- **HTTP Webhook**: 配置 `http://154.40.33.156:8080/webhook/emby` 端点
+- **Emby 集成**: 成功配置 Emby webhook 通知
+- **自动检测**: 改进 webhook 类型自动检测逻辑
+  - 支持 `NotificationType` 和 `Event` 字段
+  - 添加请求体日志便于调试
+- **可用 URL**:
+  - HTTP: `http://154.40.33.156:8080/webhook/emby`
+  - HTTPS: `https://emby.135505.auts/webhook/emby` (需 DNS 生效)
