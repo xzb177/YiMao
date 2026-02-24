@@ -114,3 +114,27 @@ detail:id:{id}:type:{type}  # 查看详情
 - **可用 URL**:
   - HTTP: `http://154.40.33.156:8080/webhook/emby`
   - HTTPS: `https://emby.135505.auts/webhook/emby` (需 DNS 生效)
+
+### 2024-02-25 - 搜索历史修复
+- **问题**: 点击搜索按钮时没有显示历史搜索记录
+- **原因**: `showSearchHistoryOrPrompt` 函数只显示提示信息，没有调用历史记录显示
+- **修复**:
+  - 修改 `internal/handlers/search.go:139-152`
+  - 现在点击搜索按钮会显示最近 5 条搜索历史
+  - 每条历史记录都有快捷搜索按钮
+  - 添加"清空历史"按钮
+  - 无历史记录时显示输入提示
+
+### 2024-02-25 - 反馈历史整合
+- **新功能**: 在主菜单添加「🐛 我的反馈」入口
+- **修改文件**:
+  - `internal/services/telegram.go` - 主菜单键盘添加按钮
+  - `internal/handlers/callback.go` - 更新主菜单说明文字
+  - `internal/handlers/feedback.go` - 添加反馈列表和详情查看
+  - `cmd/bot/main.go` - 注册 `my_feedback` 回调
+- **功能**:
+  - 主菜单新增「🐛 我的反馈」按钮
+  - 点击查看用户所有反馈历史
+  - 显示反馈状态：🔵待处理、💬已回复、🔧处理中、✅已解决、🚫已关闭
+  - 支持查看反馈详情和管理员回复
+  - 布局调整为 2x3 网格（搜索/AI、请求/反馈、绑定/帮助）

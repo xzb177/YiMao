@@ -74,6 +74,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	}
 
 	msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+	msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
 	msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
 	msg.Newline()
 	msg.Italic("💡 点击下方按钮开始探索").Newline()

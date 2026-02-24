@@ -140,15 +140,78 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜索影片").Newline()
 	msg.Newline()
+
+	// Show search history if available
+	if h.searchHistory != nil {
+		history := h.searchHistory.GetHistory(ctx.UserID)
+		if len(history) > 0 {
+			msg.Text("📜 最近搜索：").Newline()
+			msg.Newline()
+
+			// Show up to 5 recent searches
+			displayCount := 5
+			if len(history) < displayCount {
+				displayCount = len(history)
+			}
+
+			kb := services.NewKeyboardBuilder()
+
+			for i := 0; i < displayCount; i++ {
+				entry := history[i]
+				msg.Textf("%d. %s", i+1, entry.Query).Newline()
+				// Add button for quick search
+				kb.AddButton(fmt.Sprintf("🔎 %s", truncateString(entry.Query, 15)), fmt.Sprintf("search:query:%s", entry.Query))
+				// 2 buttons per row
+				if (i+1)%2 == 0 {
+					kb.NewRow()
+				}
+			}
+
+			// Add clear history button
+			if len(history) > 0 {
+				kb.NewRow()
+				kb.AddButton("🗑️ 清空历史", "search:clear_history")
+			}
+			kb.NewRow()
+			kb.AddButton("⬅️ 返回主菜单", "start")
+
+			msg.Newline()
+			msg.Italic("💡 点击按钮快速搜索，或输入新影片名称")
+
+			return &callback.Response{
+				Text:     msg.Build(),
+				Edit:     true,
+				Keyboard: convertKeyboard(kb.Build()),
+			}, nil
+		}
+	}
+
+	// No history, show prompt
 	msg.Text("请输入影片名称，支持中文/英文").Newline()
 	msg.Newline()
 	msg.Italic("💡 输入影片名称后自动搜索")
 
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
 	return &callback.Response{
 		Text:     msg.Build(),
 		Edit:     true,
-		Keyboard: &callback.Keyboard{},
+		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// truncateString truncates a string to max length
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	// Simple truncation (for proper Chinese handling, use rune count)
+	runes := []rune(s)
+	if len(runes) <= maxLen {
+		return s
+	}
+	return string(runes[:maxLen]) + "..."
 }
 
 func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*callback.Response, error) {

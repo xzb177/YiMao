@@ -40,6 +40,16 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 	log.Printf("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
 
+	// Check if viewing feedback list
+	if _, hasView := ctx.Callback.Params["view"]; hasView {
+		return h.handleViewList(ctx)
+	}
+
+	// Check if viewing feedback detail
+	if issueIDStr, hasDetailID := ctx.Callback.Params["detail_id"]; hasDetailID {
+		return h.handleViewDetail(ctx, issueIDStr)
+	}
+
 	// Check if this is a type selection
 	// When user clicks an issue type button, callback is like: feedback:issue_type:quality:id:xxx
 	issueTypeParam, hasIssueType := ctx.Callback.Params["issue_type"]
@@ -344,4 +354,193 @@ func (h *FeedbackHandler) IsInFeedbackProcess(userID int64) bool {
 	step, ok := sess.Get("feedback_step")
 	log.Printf("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
 	return ok && step == "description"
+}
+
+// handleViewList handles viewing user's feedback list
+func (h *FeedbackHandler) handleViewList(ctx *callback.Context) (*callback.Response, error) {
+	if h.issueService == nil {
+		return &callback.Response{
+			CallbackMsg: "功能暂不可用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issues := h.issueService.GetUserIssues(ctx.UserID)
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🐛 我的反馈").Newline()
+	msg.Newline()
+
+	if len(issues) == 0 {
+		msg.Text("暂无反馈记录").Newline()
+		msg.Newline()
+		msg.Italic("💡 在影片详情页点击「🐛 反馈」按钮提交问题")
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回主菜单", "start")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Sort by created date (newest first)
+	// Use simple sort
+	for i := 0; i < len(issues); i++ {
+		for j := i + 1; j < len(issues); j++ {
+			if issues[i].CreatedAt.Before(issues[j].CreatedAt) {
+				issues[i], issues[j] = issues[j], issues[i]
+			}
+		}
+	}
+
+	msg.Textf("共 %d 条反馈记录", len(issues)).Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// Show up to 10 recent issues
+	displayCount := 10
+	if len(issues) < displayCount {
+		displayCount = len(issues)
+	}
+
+	for i := 0; i < displayCount; i++ {
+		issue := issues[i]
+		statusIcon := getStatusIcon(issue.Status)
+		mediaText := ""
+		if issue.MediaTitle != "" {
+			mediaType := "电影"
+			if issue.MediaType == "tv" {
+				mediaType = "剧集"
+			}
+			mediaText = fmt.Sprintf(" - %s(%s)", issue.MediaTitle, mediaType)
+		}
+		msg.Textf("%d. %s #%d%s", i+1, statusIcon, issue.ID, mediaText).Newline()
+		msg.Textf("   %s", issue.Title).Newline()
+		msg.Newline()
+
+		// Add button for detail view
+		buttonText := fmt.Sprintf("#%d %s", issue.ID, getStatusText(issue.Status))
+		kb.AddButton(buttonText, fmt.Sprintf("feedback:detail_id:%d", issue.ID))
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+
+	if len(issues) > displayCount {
+		kb.NewRow()
+		msg.Textf("... 还有 %d 条记录", len(issues)-displayCount).Newline()
+	}
+
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleViewDetail handles viewing feedback detail
+func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr string) (*callback.Response, error) {
+	if h.issueService == nil {
+		return &callback.Response{
+			CallbackMsg: "功能暂不可用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Parse issue ID
+	var issueID int64
+	fmt.Sscanf(issueIDStr, "%d", &issueID)
+
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists || issue.UserID != ctx.UserID {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🐛 反馈详情").Newline()
+	msg.Newline()
+	msg.Textf("编号: #%d", issue.ID).Newline()
+	msg.Textf("状态: %s %s", getStatusIcon(issue.Status), getStatusText(issue.Status)).Newline()
+	msg.Textf("类型: %s", issue.Title).Newline()
+
+	if issue.MediaTitle != "" {
+		mediaType := "电影"
+		if issue.MediaType == "tv" {
+			mediaType = "剧集"
+		}
+		msg.Textf("媒体: %s (%s)", issue.MediaTitle, mediaType).Newline()
+	}
+
+	msg.Newline()
+	msg.Bold("📝 问题描述:").Newline()
+	msg.Text(issue.Description).Newline()
+	msg.Newline()
+
+	// Show replies if any
+	if len(issue.Replies) > 0 {
+		msg.Bold("💬 管理员回复:").Newline()
+		for _, reply := range issue.Replies {
+			msg.Textf("  %s: %s", reply.AuthorName, reply.Content).Newline()
+		}
+		msg.Newline()
+	}
+
+	msg.Italic(fmt.Sprintf("🕐 提交时间: %s", issue.CreatedAt.Format("2006-01-02 15:04"))).Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回列表", "feedback:view")
+	kb.NewRow()
+	kb.AddButton("🏠 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// getStatusIcon returns status icon
+func getStatusIcon(status services.IssueStatus) string {
+	switch status {
+	case services.IssueStatusOpen:
+		return "🔵"
+	case services.IssueStatusReply:
+		return "💬"
+	case services.IssueStatusProcessing:
+		return "🔧"
+	case services.IssueStatusFixed:
+		return "✅"
+	case services.IssueStatusClosed:
+		return "🚫"
+	default:
+		return "⚪"
+	}
+}
+
+// getStatusText returns status text
+func getStatusText(status services.IssueStatus) string {
+	switch status {
+	case services.IssueStatusOpen:
+		return "待处理"
+	case services.IssueStatusReply:
+		return "已回复"
+	case services.IssueStatusProcessing:
+		return "处理中"
+	case services.IssueStatusFixed:
+		return "已解决"
+	case services.IssueStatusClosed:
+		return "已关闭"
+	default:
+		return "未知"
+	}
 }
