@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +51,12 @@ func NewRequestHandler(
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[RequestHandler] Starting: userID=%d, mediaID=%s, mediaType=%s", ctx.UserID, ctx.Callback.Params["id"], ctx.Callback.Params["type"])
+	log.Printf("[RequestHandler] Starting: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
+
+	// Handle priority selection callback
+	if ctx.Callback.Action == "request_priority" {
+		return h.HandlePrioritySelection(ctx)
+	}
 
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
@@ -230,6 +236,13 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 
+	// First, show priority selection if not in review system
+	if h.enableReview {
+		resp := h.showPrioritySelection(ctx, reviewID, tmdbID, mediaType, mediaTitle, mediaYear, season, posterPath, overview, userName, moviepilotID)
+		return resp, nil
+	}
+
+	// Direct create without review (if disabled)
 	review := &services.ReviewRequest{
 		RequestID:    reviewID,
 		TelegramID:   ctx.UserID,
@@ -242,6 +255,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		Season:       season,
 		PosterPath:   posterPath,
 		Overview:     overview,
+		Priority:     "normal", // Default priority
 	}
 
 	if mediaType == "tv" {
@@ -262,6 +276,142 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	return &callback.Response{
 		Text:        "✅ 求片已提交，等待管理员审核",
+		CallbackMsg: "请求已提交",
+		ShowAlert:   true,
+	}, nil
+}
+
+// showPrioritySelection shows priority selection for media request
+func (h *RequestHandler) showPrioritySelection(
+	ctx *callback.Context,
+	reviewID string,
+	tmdbID int,
+	mediaType, mediaTitle string,
+	mediaYear int,
+	season int,
+	posterPath, overview string,
+	userName string,
+	moviepilotID int64,
+) *callback.Response {
+	// Build media info display
+	msg := services.NewMessageBuilder()
+	msg.Bold("🎬 选择请求优先级").Newline()
+	msg.Newline()
+
+	// Show media info
+	msg.Textf("📺 %s", mediaTitle)
+	if mediaYear > 0 {
+		msg.Textf(" (%d)", mediaYear)
+	}
+	msg.Newline()
+
+	if overview != "" && len(overview) > 0 {
+		shortOverview := overview
+		if len(shortOverview) > 150 {
+			shortOverview = shortOverview[:150] + "..."
+		}
+		msg.Italic(shortOverview).Newline()
+		msg.Newline()
+	}
+
+	msg.Text("请选择请求优先级：").Newline()
+
+	// Build priority selection keyboard
+	kb := services.NewKeyboardBuilder()
+	// Format: request_priority:reviewID:tmdbID:priority:mediaType:mediaTitle:mediaYear:season
+	dataPrefix := fmt.Sprintf("request_priority:%s:%d", reviewID, tmdbID)
+	kb.AddButton("🟡 普通", fmt.Sprintf("%s:normal:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.AddButton("🟠 较高", fmt.Sprintf("%s:high:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.NewRow()
+	kb.AddButton("🟢 较低", fmt.Sprintf("%s:low:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.AddButton("🔴 紧急", fmt.Sprintf("%s:urgent:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.NewRow()
+	kb.AddButton("❌ 取消", "cancel_request")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Keyboard: convertKeyboard(kb.Build()),
+		Edit:     false,
+	}
+}
+
+// HandlePrioritySelection handles priority selection and creates the request
+func (h *RequestHandler) HandlePrioritySelection(ctx *callback.Context) (*callback.Response, error) {
+	// Parse the callback data
+	// Format: request_priority:reviewID:tmdbID:priority:mediaType:mediaTitle:mediaYear:season
+	parts := strings.Split(ctx.Callback.Raw, ":")
+	if len(parts) < 8 {
+		return &callback.Response{
+			Text:        "❌ 参数错误",
+			CallbackMsg: "参数错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	reviewID := parts[1]
+	tmdbID, _ := strconv.Atoi(parts[2])
+	priority := parts[3]
+	mediaType := parts[4]
+	mediaTitle := parts[5]
+	mediaYear, _ := strconv.Atoi(parts[6])
+	season, _ := strconv.Atoi(parts[7])
+
+	// Get user mapping for MoviePilot ID
+	moviepilotID, _ := h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	userName := fmt.Sprintf("User_%d", ctx.UserID)
+
+	// Get poster and overview from session
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	posterPath := ""
+	overview := ""
+	if v, ok := sess.Get("poster_path"); ok {
+		posterPath = fmt.Sprintf("%v", v)
+	}
+	if v, ok := sess.Get("overview"); ok {
+		overview = fmt.Sprintf("%v", v)
+	}
+
+	// Create the review request
+	review := &services.ReviewRequest{
+		RequestID:    reviewID,
+		TelegramID:   ctx.UserID,
+		TelegramName: userName,
+		MoviePilotID: moviepilotID,
+		TmdbID:       tmdbID,
+		MediaTitle:   mediaTitle,
+		MediaYear:    mediaYear,
+		MediaType:    services.MediaTypeMovie,
+		Season:       season,
+		PosterPath:   posterPath,
+		Overview:     overview,
+		Priority:     priority,
+	}
+
+	if mediaType == "tv" {
+		review.MediaType = services.MediaTypeTV
+	}
+
+	if err := h.reviewService.CreateRequest(review); err != nil {
+		log.Printf("[RequestHandler] Failed to create review request: %v", err)
+		return &callback.Response{
+			Text:        "❌ 提交失败",
+			CallbackMsg: "失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Notify admins about the review request
+	go h.notifyAdminsForReview(review)
+
+	priorityEmoji := map[string]string{
+		"low":    "🟢",
+		"normal": "🟡",
+		"high":   "🟠",
+		"urgent": "🔴",
+	}
+
+	return &callback.Response{
+		Text:        fmt.Sprintf("%s 求片已提交（%s优先级）\n\n📺 %s", priorityEmoji[priority], priority, mediaTitle),
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil

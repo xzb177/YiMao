@@ -599,6 +599,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	} else {
 		// Movie - single subscribe button
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
+		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
+		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
 		kb.NewRow()
 	}
@@ -730,6 +732,8 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		kb.NewRow()
 	} else {
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
+		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()
 	}

@@ -23,6 +23,7 @@ type ReviewRequest struct {
 	PosterPath     string    `json:"poster_path,omitempty"`
 	Overview       string    `json:"overview,omitempty"`
 	Status         string    `json:"status"`         // pending, approved, rejected
+	Priority       string    `json:"priority"`       // low, normal, high, urgent (default: normal)
 	CreatedAt      time.Time `json:"created_at"`
 	ReviewedAt     time.Time `json:"reviewed_at,omitempty"`
 	ReviewedBy     int64     `json:"reviewed_by,omitempty"`
@@ -116,9 +117,14 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	review.CreatedAt = time.Now()
 	review.Status = "pending"
 
+	// Set default priority if not specified
+	if review.Priority == "" {
+		review.Priority = "normal"
+	}
+
 	s.reviews[review.RequestID] = review
 
-	log.Printf("[ReviewService] Created review request: %s for user %d", review.RequestID, review.TelegramID)
+	log.Printf("[ReviewService] Created review request: %s for user %d (priority: %s)", review.RequestID, review.TelegramID, review.Priority)
 	log.Printf("[ReviewService] About to save %d reviews to %s", len(s.reviews), s.reviewsFile)
 
 	err := s.saveLocked()
@@ -140,7 +146,7 @@ func (s *ReviewService) GetRequest(requestID string) (*ReviewRequest, bool) {
 	return review, exists
 }
 
-// GetPendingRequests returns all pending review requests
+// GetPendingRequests returns all pending review requests sorted by priority
 func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -149,6 +155,33 @@ func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	for _, review := range s.reviews {
 		if review.Status == "pending" {
 			pending = append(pending, review)
+		}
+	}
+
+	// Sort by priority (urgent > high > normal > low), then by created time
+	priorityOrder := map[string]int{
+		"urgent": 4,
+		"high":   3,
+		"normal": 2,
+		"low":    1,
+	}
+
+	for i := 0; i < len(pending); i++ {
+		for j := i + 1; j < len(pending); j++ {
+			iPriority := priorityOrder[pending[i].Priority]
+			jPriority := priorityOrder[pending[j].Priority]
+
+			if iPriority != jPriority {
+				// Higher priority comes first
+				if iPriority > jPriority {
+					pending[i], pending[j] = pending[j], pending[i]
+				}
+			} else {
+				// Same priority, sort by time (newer first)
+				if pending[i].CreatedAt.After(pending[j].CreatedAt) {
+					pending[i], pending[j] = pending[j], pending[i]
+				}
+			}
 		}
 	}
 
@@ -256,6 +289,35 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 	log.Printf("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
 
 	return review, s.saveLocked()
+}
+
+// SetPriority sets the priority of a review request
+func (s *ReviewService) SetPriority(requestID, priority string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+
+	// Validate priority
+	validPriorities := map[string]bool{
+		"low":    true,
+		"normal": true,
+		"high":   true,
+		"urgent": true,
+	}
+
+	if !validPriorities[priority] {
+		return fmt.Errorf("invalid priority: %s", priority)
+	}
+
+	review.Priority = priority
+
+	log.Printf("[ReviewService] Set priority for request %s to %s", requestID, priority)
+
+	return s.saveLocked()
 }
 
 // DeleteRequest deletes a review request

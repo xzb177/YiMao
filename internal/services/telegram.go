@@ -591,15 +591,18 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 
 	kb.AddButton("🔍 搜索影片", "start_search")
 	if showAI {
-			kb.AddButton("🎬 精选推荐", "start_ai")
+		kb.AddButton("🎬 精选推荐", "start_ai")
 	}
 
 	kb.NewRow()
 	kb.AddButton("📋 我的请求", "start_requests")
-	kb.AddButton("🐛 我的反馈", "my_feedback")
+	kb.AddButton("📎 我的片单", "watchlist")
 
 	kb.NewRow()
+	kb.AddButton("🐛 我的反馈", "my_feedback")
 	kb.AddButton("🔗 绑定账号", "start_link")
+
+	kb.NewRow()
 	kb.AddButton("❓ 帮助", "start_help")
 
 	// Add admin button for admin users
