@@ -96,10 +96,12 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		if h.searchHistory != nil {
 			h.searchHistory.ClearHistory(ctx.UserID)
 		}
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回主菜单", "start")
 		return &callback.Response{
 			Text:     "🗑️ 搜索历史已清空",
 			Edit:     true,
-			Keyboard: &callback.Keyboard{},
+			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
 
