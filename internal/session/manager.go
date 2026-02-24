@@ -89,12 +89,17 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	}
 
 	// Check if we've hit the session limit
+	// All operations on m.sessions are atomic within the lock
 	if len(m.sessions) >= m.maxSize {
 		// Try to clean up expired sessions first
-		m.cleanupLocked()
-		// If still at limit, evict the oldest inactive session
+		removed := m.cleanupLocked()
+		// If still at limit after cleanup, evict the oldest inactive session
 		if len(m.sessions) >= m.maxSize {
 			m.evictOldestSession()
+		}
+		if removed > 0 || len(m.sessions) >= m.maxSize {
+			log.Printf("[Session] Session limit reached (%d/%d), cleaned %d, evicted oldest",
+				len(m.sessions), m.maxSize, removed)
 		}
 	}
 

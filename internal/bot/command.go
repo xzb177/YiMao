@@ -7,6 +7,7 @@ import (
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/pkg/types"
+	"emby-telegram-bot/pkg/validation"
 )
 
 // HandleCommand handles bot commands
@@ -67,11 +68,28 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	username := parts[1]
 	password := strings.Join(parts[2:], " ")
 
+	// Validate and sanitize inputs
+	sanitizedUsername, err := validation.SanitizeUsername(username)
+	if err != nil {
+		log.Printf("[LinkCommand] Invalid username: %v", err)
+		text := "❌ 用户名格式无效"
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		return
+	}
+
+	sanitizedPassword, err := validation.SanitizePassword(password)
+	if err != nil {
+		log.Printf("[LinkCommand] Invalid password: %v", err)
+		text := "❌ 密码格式无效"
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		return
+	}
+
 	// Verify credentials with MoviePilot
 	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
-	userID, err := mpClient.Authenticate(username, password)
+	userID, err := mpClient.Authenticate(sanitizedUsername, sanitizedPassword)
 	if err != nil {
-		log.Printf("[LinkCommand] Authentication failed for %s: %v", username, err)
+		log.Printf("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
 		text := "❌ 绑定失败：用户名或密码错误"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 		return
@@ -79,14 +97,14 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 	// Check if userID is valid (not 0)
 	if userID == 0 {
-		log.Printf("[LinkCommand] Authentication returned invalid userID 0 for %s", username)
+		log.Printf("[LinkCommand] Authentication returned invalid userID 0 for %s", sanitizedUsername)
 		text := "❌ 绑定失败：无法获取用户ID，请稍后重试"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 		return
 	}
 
 	// Save mapping using the provided userMapping service
-	if err := userMapping.AddMapping(msg.From.ID, userID, username); err != nil {
+	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
 		log.Printf("[LinkCommand] Failed to save mapping: %v", err)
 		text := "❌ 绑定失败：无法保存映射"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)

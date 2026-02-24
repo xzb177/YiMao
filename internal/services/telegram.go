@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,6 +31,20 @@ func NewTelegramClient(botToken string) *TelegramClient {
 		baseURL:  fmt.Sprintf("https://api.telegram.org/bot%s", botToken),
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+				// Set connection timeouts
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				// Force HTTP/2
+				ForceAttemptHTTP2: true,
+				// TLS handshake timeout
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
 		},
 	}
 }

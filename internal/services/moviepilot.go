@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
+
+	"emby-telegram-bot/pkg/validation"
 )
 
 // FlexibleYear handles year fields that can be string, int, or null
@@ -73,6 +76,20 @@ func NewMoviePilotClient(baseURL, apiKey string) *MoviePilotClient {
 		apiKey:  apiKey,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 10,
+				IdleConnTimeout:     90 * time.Second,
+				// Set connection timeouts
+				DialContext: (&net.Dialer{
+					Timeout:   10 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				// Force HTTP/2
+				ForceAttemptHTTP2: true,
+				// TLS handshake timeout
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
 		},
 	}
 }
@@ -198,10 +215,12 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 
 // SearchMedia searches for media by query
 func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse, error) {
-	// Limit query length to prevent abuse
-	if len(query) > 100 {
-		query = query[:100]
+	// Sanitize query to prevent injection attacks
+	query = validation.SanitizeSearchQuery(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
 	}
+
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=20", encodedQuery, page)
