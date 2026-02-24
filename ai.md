@@ -45,23 +45,25 @@
 
 ### 5. 数据源
 
-#### TMDB API
-- `GET /trending/movie/{time_window}` - 获取热门电影
-- `GET /trending/tv/{time_window}` - 获取热门剧集
+#### TMDB API（主要数据源）
 - `GET /movie/popular` - 获取流行电影
+- `GET /tv/popular` - 获取流行剧集
+- `GET /movie/top_rated` - 获取高分电影
+- `GET /movie/now_playing` - 获取正在上映的电影
 - 语言参数: `zh-CN` 中文支持
-
-#### MoviePilot API
-- `GET /api/v1/media/{type}?tmdbid={id}&type_name={type}` - 获取媒体详情
-- 用于验证资源可用性和获取详细信息
+- 获取多页数据并随机打乱，确保每次"换一批"都有不同结果
 
 ## 技术实现
 
-### 混合推荐策略
-- 使用 TMDB API 获取推荐数据
-- 通过 MoviePilot API 验证资源可用性
-- 只推荐站点实际有资源的内容
-- 降级策略：API 失败时使用关键词搜索
+### 推荐策略
+- 直接使用 TMDB API 获取推荐数据
+- 获取多页数据（page 1-3）并随机打乱
+- 每次点击"换一批"都会返回不同的推荐结果
+- 不再验证 MoviePilot 资源可用性，扩大推荐范围
+
+### 导航修复
+- 详情页返回列表按钮处理：检测到从详情页返回时，删除图片消息并重新发送推荐列表
+- 因为图片消息无法用 editMessageText 编辑，必须删除重发
 
 ### 回调格式
 ```
@@ -77,6 +79,19 @@ detail:id:{id}:type:{type}  # 查看详情
 - `random` - 随机探索
 
 ## 更新日志
+
+### 2024-02-25 - 推荐算法优化与导航修复
+- **问题1**: 推荐结果每次都一样，"换一批"按钮没有效果
+- **原因**: TMDB API 单页结果固定，没有随机性
+- **修复**: 获取多页数据（1-3页）并随机打乱，确保每次刷新都有不同结果
+- **问题2**: 详情页返回列表按钮无响应
+- **原因**: 详情页使用 sendPhoto 发送图片消息，返回时尝试编辑图片消息会失败
+- **修复**: 添加 DeleteMessage 响应字段，从详情页返回时删除图片消息并重新发送列表
+- **数据源调整**: 改用 TMDB 直接数据，不再验证 MoviePilot 资源可用性
+- **修改文件**:
+  - `internal/handlers/search.go` - 多页获取+随机打乱，导航检测
+  - `internal/bot/poll.go` - 处理 DeleteMessage 响应
+  - `internal/callback/types.go` - 添加 DeleteMessage 字段
 
 ### 2024-02-25 - 推荐去重修复
 - **问题**: 精选推荐中出现同一媒体多个版本（如 4K、1080P）的重复情况
