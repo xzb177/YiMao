@@ -590,7 +590,7 @@ func (h *SearchHandler) getNewMediaFromAPI() ([]services.SearchResult, error) {
 	years := []int{currentYear, currentYear - 1, currentYear - 2}
 
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool)
 
 	for _, year := range years {
 		// Search for content from this year
@@ -601,8 +601,8 @@ func (h *SearchHandler) getNewMediaFromAPI() ([]services.SearchResult, error) {
 		}
 
 		for _, item := range results.Results {
-			if !seen[item.Title] && item.Year.Int() >= year {
-				seen[item.Title] = true
+			if !seen[item.ID] && item.Year.Int() >= year {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -632,7 +632,7 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 	selected := shuffleStrings(allKeywords, 10)
 
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool)
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -642,8 +642,8 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] && item.Rating >= 7.5 {
-				seen[item.Title] = true
+			if !seen[item.ID] && item.Rating >= 7.5 {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -662,8 +662,8 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 
 			items := results.Results
 			for _, item := range items {
-				if !seen[item.Title] && item.Rating >= 6.5 {
-					seen[item.Title] = true
+				if !seen[item.ID] && item.Rating >= 6.5 {
+					seen[item.ID] = true
 					allResults = append(allResults, item)
 					if len(allResults) >= 8 {
 						return allResults, nil
@@ -692,7 +692,7 @@ func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
 	selected := shuffleStrings(allKeywords, 8)
 
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool)
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -702,8 +702,8 @@ func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] && item.Year.Int() >= currentYear-2 {
-				seen[item.Title] = true
+			if !seen[item.ID] && item.Year.Int() >= currentYear-2 {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -739,7 +739,7 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 	selectedKeywords := shuffleStrings(selectedCategories, 6)
 
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool) // Use TMDB ID for deduplication
 
 	for _, kw := range selectedKeywords {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -749,8 +749,8 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] && item.Rating >= 5.0 {
-				seen[item.Title] = true
+			if !seen[item.ID] && item.Rating >= 5.0 {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -777,7 +777,7 @@ func (h *SearchHandler) getFallbackMedia() ([]services.SearchResult, error) {
 
 	selected := shuffleStrings(fallbackKeywords, 6)
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool) // Use TMDB ID for deduplication
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -787,8 +787,12 @@ func (h *SearchHandler) getFallbackMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] {
-				seen[item.Title] = true
+			// Skip non-movie items
+			if item.Type != "电影" && item.Type != "MOV" && item.Type != "电影" {
+				continue
+			}
+			if !seen[item.ID] {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -809,7 +813,7 @@ func (h *SearchHandler) getFallbackTVMedia() ([]services.SearchResult, error) {
 
 	selected := shuffleStrings(fallbackKeywords, 6)
 	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	seen := make(map[int]bool) // Use TMDB ID for deduplication
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -819,8 +823,12 @@ func (h *SearchHandler) getFallbackTVMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] {
-				seen[item.Title] = true
+			// Skip non-TV items
+			if item.Type != "电视剧" && item.Type != "TV" && item.Type != "剧集" {
+				continue
+			}
+			if !seen[item.ID] {
+				seen[item.ID] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
