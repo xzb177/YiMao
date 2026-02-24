@@ -34,7 +34,10 @@ func main() {
 	log.Printf("   Data directory: %s", cfg.DataDir)
 
 	// Parse chat ID
-	chatID, _ := strconv.ParseInt(cfg.TelegramChatID, 10, 64)
+	chatID, err := strconv.ParseInt(cfg.TelegramChatID, 10, 64)
+	if err != nil {
+		log.Fatalf("❌ Invalid Telegram Chat ID '%s': %v", cfg.TelegramChatID, err)
+	}
 
 	// Initialize services
 	deps := initServices(cfg, chatID)

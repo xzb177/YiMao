@@ -345,7 +345,10 @@ func (s *UserSession) CacheAIItem(item *AIRecommendationItem) {
 	s.Context[cacheKey] = item
 
 	// Also maintain a list of recently cached items for cleanup
-	cachedList, _ := s.Context["ai_cached_items"].([]int)
+	var cachedList []int
+	if val, ok := s.Context["ai_cached_items"].([]int); ok {
+		cachedList = val
+	}
 	cachedList = append(cachedList, item.TmdbID)
 
 	// Keep only last 20 items
@@ -391,5 +394,7 @@ func (s *UserSession) CacheAIResults(results interface{}) {
 			s.Context[cacheKey] = item
 		}
 		log.Printf("[Session] Cached %d AI items", len(items))
+	default:
+		log.Printf("[Session] Warning: unknown results type %T in StoreAIRecommendations", results)
 	}
 }

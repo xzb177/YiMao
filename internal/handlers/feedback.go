@@ -201,19 +201,23 @@ func (h *FeedbackHandler) HandleFeedbackText(userID int64, chatID int64, text st
 	}
 
 	// Get feedback context with type assertions
-	tmdbIDVal, _ := sess.Get("feedback_tmdb_id")
-	mediaTypeVal, _ := sess.Get("feedback_media_type")
-	mediaTitleVal, _ := sess.Get("feedback_media_title")
-	issueTypeVal, _ := sess.Get("feedback_issue_type")
-
-	tmdbID, _ := tmdbIDVal.(string)
-	mediaType, _ := mediaTypeVal.(string)
-	mediaTitle, _ := mediaTitleVal.(string)
-	issueType, _ := issueTypeVal.(string)
-
-	if tmdbID == "" {
-		return fmt.Errorf("missing feedback context")
+	tmdbIDVal, ok := sess.Get("feedback_tmdb_id")
+	if !ok {
+		return fmt.Errorf("missing feedback context: tmdb_id")
 	}
+	tmdbID, ok := tmdbIDVal.(string)
+	if !ok || tmdbID == "" {
+		return fmt.Errorf("invalid feedback context: tmdb_id")
+	}
+
+	mediaTypeVal, _ := sess.Get("feedback_media_type")
+	mediaType, _ := mediaTypeVal.(string)
+
+	mediaTitleVal, _ := sess.Get("feedback_media_title")
+	mediaTitle, _ := mediaTitleVal.(string)
+
+	issueTypeVal, _ := sess.Get("feedback_issue_type")
+	issueType, _ := issueTypeVal.(string)
 
 	// Clear feedback session
 	sess.Delete("feedback_step")
