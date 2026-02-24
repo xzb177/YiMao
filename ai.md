@@ -1,6 +1,20 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
+| 2026-02-24 | **入库通知推送修复** 🔔🔧 |
+| | - **问题**: 媒体库入库通知不推送到Telegram |
+| | - **根因分析**:
+| |   1. Docker容器使用 `bridge` 网络而非 `host` 网络，端口8080未映射到主机
+| |   2. 代码只处理 `item.added` 事件，Emby实际发送 `library.new` 事件
+| |   3. `convertToMediaItem` 未从嵌套 `Item` 对象获取标题和类型
+| | - **解决方案**:
+| |   1. 修复 `docker-compose.yml` 配置确保 `network_mode: "host"` 生效
+| |   2. 添加 `library.new`/`librarynew` 到事件类型匹配
+| |   3. 修复 `convertToMediaItem` 从嵌套对象获取媒体信息
+| | - **修改文件**: `internal/services/webhook.go`
+| | - **部署状态**: ✅ 已构建并部署
+| | - **提交**: 待提交
+
 | 2026-02-24 | **问题反馈功能完整实现** 🐛💬 |
 | | - **功能**: 用户可在详情页点击"🐛 反馈"按钮报告问题 |
 | | - **流程**:

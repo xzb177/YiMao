@@ -160,9 +160,10 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	event := strings.ToLower(eventType)
 
 	switch event {
-	case "item.added", "itemadded":
+	case "item.added", "itemadded", "library.new", "librarynew":
+		// Handle both legacy item.added and Emby's library.new events
 		return s.handleItemAdded(payload)
-	case "item.updated", "itemupdated":
+	case "item.updated", "itemupdated", "library.updated", "libraryupdated":
 		// Skip update events to reduce noise
 		return nil
 	case "system.notificationtest", "system.test", "test", "playback.start", "playback.stop", "playback.pause", "playback.resume":
@@ -1199,15 +1200,26 @@ func convertToInlineKeyboard(keyboard [][]map[string]string) *types.TelegramInli
 
 // convertToMediaItem converts Emby webhook payload to MediaItem for notification service
 func (s *WebhookService) convertToMediaItem(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) *MediaItem {
+	// Extract title from various sources
+	title := payload.ItemName
+	if title == "" && payload.Item != nil {
+		title = payload.Item.Name
+	}
+
 	item := &MediaItem{
 		ID:          payload.ItemID,
-		Title:       payload.ItemName,
+		Title:       title,
 		LibraryName: payload.Library,
 		AddedAt:     time.Now(),
 	}
 
 	// Determine media type
-	switch payload.ItemType {
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+
+	switch itemType {
 	case "Movie":
 		item.MediaType = MediaTypeMovie
 	case "Episode":
