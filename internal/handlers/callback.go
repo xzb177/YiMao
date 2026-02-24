@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
@@ -64,7 +66,13 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	msg.Bold("👋 欢迎使用云海影视助手").Newline()
 	msg.Newline()
 	msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
-	msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+
+	// Only show AI recommendation in private chats
+	isPrivateChat := ctx.ChatType == "private"
+	if isPrivateChat {
+		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+	}
+
 	msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
 	msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
 	msg.Newline()
@@ -76,7 +84,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		isAdmin = h.adminService.IsAdmin(ctx.UserID)
 	}
 
-	keyboard := services.BuildStartKeyboard(isAdmin)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -101,10 +109,11 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 }
 
 func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, error) {
-	if !h.cfg.EnableAI {
+	// AI recommendation is only available in private chats
+	if ctx.ChatType != "private" {
 		return &callback.Response{
-			Text:        "⚠️ AI 推荐暂未开放",
-			CallbackMsg: "功能未启用",
+			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -115,13 +124,13 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	msg.Italic("✨ 为您精选优质内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门电影", "ai:trending")
-	kb.AddButton("📺 热播剧集", "ai:hot")
+	kb.AddButton("🔥 热门电影", "search:type:trending")
+	kb.AddButton("📺 热播剧集", "search:type:hot")
 	kb.NewRow()
-	kb.AddButton("⭐ 高分佳作", "ai:toprated")
-	kb.AddButton("🆕 最新上线", "ai:new")
+	kb.AddButton("⭐ 高分佳作", "search:type:toprated")
+	kb.AddButton("🆕 最新上线", "search:type:new")
 	kb.NewRow()
-	kb.AddButton("🎲 随机发现", "ai:random")
+	kb.AddButton("🎲 随机发现", "search:type:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
@@ -450,6 +459,157 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 
 // buildDetailFromSearch builds detail page from search result item
 func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType string, sess *session.Session) *callback.Response {
+	// Try to get full media info from MoviePilot first
+	mediaID, _ := strconv.Atoi(item.ID)
+	if mediaID > 0 && h.moviepilot != nil {
+		// Determine media type
+		mpType := services.MediaTypeMovie
+		if mediaType == "tv" || item.Type == "tv" || item.Type == "电视剧" {
+			mpType = services.MediaTypeTV
+		}
+
+		mediaInfo, err := h.moviepilot.GetMediaInfo(mediaID, mpType)
+		if err == nil && mediaInfo != nil {
+			return h.buildDetailFromMediaInfo(mediaInfo, sess)
+		}
+		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
+	}
+
+	// Fallback to basic detail view from session data
+	return h.buildBasicDetailFromSearch(item, mediaType)
+}
+
+// buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
+func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session) *callback.Response {
+	msg := services.NewMessageBuilder()
+
+	// Determine media type
+	isTV := info.Type == services.MediaTypeTV
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	if isTV {
+		typeIcon = "📺"
+		typeLabel = "剧集"
+	}
+
+	// Title header
+	msg.Bold(fmt.Sprintf("%s %s", typeIcon, info.Title)).Newline()
+	msg.Newline()
+
+	// Info section - Year, Rating, Type
+	if info.Year > 0 {
+		msg.Textf("📅 %d年  ", info.Year.Int())
+	}
+	if info.Rating > 0 {
+		msg.Textf("⭐ %.1f分  ", info.Rating)
+	}
+	msg.Textf("🏷️ %s", typeLabel).Newline()
+	msg.Newline()
+
+	// TV show seasons info
+	if isTV && len(info.Seasons) > 0 {
+		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(info.Seasons))).Newline()
+		for i, s := range info.Seasons {
+			if i >= 3 {
+				msg.Textf("   ... 还有 %d 季", len(info.Seasons)-3).Newline()
+				break
+			}
+			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
+			if s.Name != "" {
+				seasonName = s.Name
+			}
+			msg.Text(fmt.Sprintf("   • %s (%d集)", seasonName, s.EpisodeCount)).Newline()
+		}
+		msg.Newline()
+	}
+
+	// Overview
+	if info.Overview != "" {
+		overview := info.Overview
+		if len(overview) > 300 {
+			overview = overview[:300] + "..."
+		}
+		msg.Italic("📖 剧情简介").Newline()
+		msg.Text(overview).Newline()
+		msg.Newline()
+	}
+
+	// TMDB ID at bottom
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", info.ID)).Newline()
+
+	// Build keyboard
+	kb := services.NewKeyboardBuilder()
+
+	if isTV && len(info.Seasons) > 0 {
+		// TV show - show season options
+		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
+		kb.NewRow()
+
+		// Show first few seasons
+		for i, s := range info.Seasons {
+			if i >= 4 {
+				break
+			}
+			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+			if s.SeasonNumber == 0 {
+				seasonName = "特别篇"
+			}
+			kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
+			if (i+1)%2 == 0 {
+				kb.NewRow()
+			}
+		}
+		if len(info.Seasons) > 4 {
+			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(info.Seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
+		}
+		kb.NewRow()
+	} else {
+		// Movie - single subscribe button
+		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
+		kb.NewRow()
+	}
+
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	// Check for poster image first
+	photoURL := ""
+	if info.Poster != "" {
+		if strings.HasPrefix(info.Poster, "http") {
+			photoURL = info.Poster
+		} else {
+			photoURL = "https://image.tmdb.org/t/p/w500" + info.Poster
+		}
+	}
+
+	// Check for backdrop (higher quality image)
+	if info.Backdrop != "" {
+		if strings.HasPrefix(info.Backdrop, "http") {
+			photoURL = info.Backdrop
+		} else {
+			photoURL = "https://image.tmdb.org/t/p/original" + info.Backdrop
+		}
+	}
+
+	// If we have a photo, send it
+	if photoURL != "" {
+		return &callback.Response{
+			Photo:        photoURL,
+			PhotoCaption: msg.Build(),
+			Edit:         false,
+			Keyboard:     convertKeyboard(kb.Build()),
+		}
+	}
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
+// buildBasicDetailFromSearch builds basic detail page when MoviePilot API fails
+func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string) *callback.Response {
 	msg := services.NewMessageBuilder()
 
 	// Type icon and label
@@ -463,33 +623,24 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 
 	// Header with title
 	msg.Bold(fmt.Sprintf("%s %s", typeIcon, item.Title)).Newline()
-
-	// Year and rating on same line
-	infoLine := ""
-	if item.Year > 0 {
-		infoLine = fmt.Sprintf("📅 %d年", item.Year)
-	}
-	if item.Rating > 0 {
-		if infoLine != "" {
-			infoLine += "  •  "
-		}
-		infoLine += fmt.Sprintf("⭐ %.1f分", item.Rating)
-	}
-	if infoLine != "" {
-		msg.Text(infoLine).Newline()
-	}
-
-	// Media type badge
-	msg.Text(fmt.Sprintf("🏷️ %s", typeLabel)).Newline()
 	msg.Newline()
 
-	// TV show specific info
+	// Info section
+	if item.Year > 0 {
+		msg.Textf("📅 %d年  ", item.Year)
+	}
+	if item.Rating > 0 {
+		msg.Textf("⭐ %.1f分  ", item.Rating)
+	}
+	msg.Textf("🏷️ %s", typeLabel).Newline()
+	msg.Newline()
+
+	// TV show seasons
 	if isTV && len(item.Seasons) > 0 {
 		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(item.Seasons))).Newline()
-		// Show season info
 		for i, s := range item.Seasons {
 			if i >= 3 {
-				msg.Textf("   ... 还有 %d 季", len(item.Seasons)-3)
+				msg.Textf("   ... 还有 %d 季", len(item.Seasons)-3).Newline()
 				break
 			}
 			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
@@ -501,31 +652,28 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 		msg.Newline()
 	}
 
-	// Overview (truncate if too long)
+	// Overview
 	if item.Overview != "" {
 		overview := item.Overview
-		if len(overview) > 200 {
-			overview = overview[:200] + "..."
+		if len(overview) > 300 {
+			overview = overview[:300] + "..."
 		}
+		msg.Italic("📖 剧情简介").Newline()
 		msg.Text(overview).Newline()
 		msg.Newline()
 	}
 
-	// TMDB info
 	msg.Text(fmt.Sprintf("🆔 TMDB ID: %s", item.ID)).Newline()
 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
 
 	if isTV && len(item.Seasons) > 0 {
-		// TV show with seasons - show season selection
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
 		kb.NewRow()
-
-		// Show first few seasons as individual buttons
 		for i, s := range item.Seasons {
 			if i >= 4 {
-				break // Show max 4 seasons
+				break
 			}
 			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
 			if s.SeasonNumber == 0 {
@@ -541,17 +689,33 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 		}
 		kb.NewRow()
 	} else {
-		// Movie or TV show without season info
-		buttonLabel := "✅ 立即求片"
-		if isTV {
-			buttonLabel = "✅ 订阅剧集"
-		}
-		kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()
 	}
 
 	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	// Check for poster
+	photoURL := ""
+	if item.Poster != "" {
+		if strings.HasPrefix(item.Poster, "http") {
+			photoURL = item.Poster
+		} else if strings.HasPrefix(item.Poster, "/") {
+			photoURL = "https://image.tmdb.org/t/p/w500" + item.Poster
+		} else {
+			photoURL = "https://image.tmdb.org/t/p/w500/" + item.Poster
+		}
+	}
+
+	if photoURL != "" {
+		return &callback.Response{
+			Photo:        photoURL,
+			PhotoCaption: msg.Build(),
+			Edit:         false,
+			Keyboard:     convertKeyboard(kb.Build()),
+		}
+	}
 
 	return &callback.Response{
 		Text:     msg.Build(),

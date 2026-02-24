@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"emby-telegram-bot/ai"
 	"emby-telegram-bot/internal/bot"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
@@ -82,11 +81,9 @@ func main() {
 		IssueService:      depsWithHandlers.IssueService,
 		AdminService:      depsWithHandlers.AdminService,
 		QuotaService:      depsWithHandlers.QuotaService,
-		ChatService:       depsWithHandlers.ChatService,
 		WebhookService:    depsWithHandlers.WebhookService,
 		BindingRequest:    depsWithHandlers.BindingRequest,
 		MediaNotification: depsWithHandlers.MediaNotification,
-		FeedbackHandler:   depsWithHandlers.FeedbackHandler,
 	}, securityService)
 
 	// Start server in background
@@ -120,25 +117,23 @@ func main() {
 
 // Dependencies holds all service dependencies
 type Dependencies struct {
-	Telegram             *services.TelegramClient
-	MoviePilot           *services.MoviePilotClient
-	SessionMgr           *session.Manager
-	UserMapping          *services.UserMappingService
-	BindingRequest       *services.BindingRequestService
-	Preferences          *services.PreferencesService
-	IssueService         *services.IssueService
-	AdminService         *services.AdminService
-	QuotaService         *services.QuotaService
-	ReviewService        *services.ReviewService
-	MediaNotification    *services.MediaNotificationService
-	ChatService          *services.ChatService
-	StreamingChatHandler *services.StreamingChatHandler
-	WebhookService       *services.WebhookService
-	TMDBClient           *services.TMDBClient
-	Notification         *services.NotificationService
-	Scheduler            *services.Scheduler
-	SearchHistory        *services.SearchHistoryService
-	FeedbackHandler      *handlers.FeedbackHandler
+	Telegram          *services.TelegramClient
+	MoviePilot        *services.MoviePilotClient
+	SessionMgr        *session.Manager
+	UserMapping       *services.UserMappingService
+	BindingRequest    *services.BindingRequestService
+	Preferences       *services.PreferencesService
+	IssueService      *services.IssueService
+	AdminService      *services.AdminService
+	QuotaService      *services.QuotaService
+	ReviewService     *services.ReviewService
+	MediaNotification *services.MediaNotificationService
+	WebhookService    *services.WebhookService
+	TMDBClient        *services.TMDBClient
+	Notification      *services.NotificationService
+	Scheduler         *services.Scheduler
+	SearchHistory     *services.SearchHistoryService
+	FeedbackHandler   *handlers.FeedbackHandler
 }
 
 // initServices initializes all services
@@ -159,7 +154,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService)
 	log.Println("✅ Media notification service initialized")
 
-	// Get admin IDs
+	// Set admin IDs for quota service (admins have unlimited quota)
 	adminsMap := adminService.GetAllAdmins()
 	var adminIDs []int64
 	for idStr := range adminsMap {
@@ -167,34 +162,6 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			adminIDs = append(adminIDs, id)
 		}
 	}
-
-	// Initialize AI Agent and Conversation Store
-	agent := ai.NewAgent(cfg.ZhipuAPIKey)
-
-	// Try to initialize AI store for conversation persistence
-	aiStore, err := ai.NewStore(cfg.DataDir + "/conversations.db")
-	if err != nil {
-		log.Printf("⚠️  Failed to initialize AI store: %v", err)
-		log.Println("📝 AI conversations will be stored in memory only")
-		aiStore = nil
-	} else {
-		log.Println("✅ AI conversation store initialized")
-	}
-
-	// Always set up conversation manager (with or without store)
-	agent.SetStore(aiStore)
-
-	// Initialize AI Chat Service (for private chats)
-	chatService := services.NewChatService(agent, agent.GetConversationManager(), telegramClient)
-	chatService.SetAdminIDs(adminIDs)
-	log.Printf("[ChatService] AI Chat initialized: enabled=%v", chatService.IsAIEnabled())
-
-	// Initialize Streaming Chat Handler (for group chats)
-	streamingChatHandler := services.NewStreamingChatHandler(agent, agent.GetConversationManager(), telegramClient, aiStore)
-	streamingChatHandler.SetAdminIDs(adminIDs)
-	log.Println("✅ Streaming chat handler initialized")
-
-	// Set admin IDs for quota service (admins have unlimited quota)
 	quotaService.SetAdminIDs(adminIDs)
 
 	webhookService := services.NewWebhookService(
@@ -237,24 +204,22 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Println("✅ Services initialized")
 
 	return &Dependencies{
-		Telegram:             telegramClient,
-		MoviePilot:           moviepilotClient,
-		SessionMgr:           sessMgr,
-		UserMapping:          userMappingService,
-		BindingRequest:       bindingRequestService,
-		Preferences:          preferencesService,
-		IssueService:         issueService,
-		AdminService:         adminService,
-		QuotaService:         quotaService,
-		ReviewService:        reviewService,
-		MediaNotification:    mediaNotificationSvc,
-		ChatService:          chatService,
-		StreamingChatHandler: streamingChatHandler,
-		WebhookService:       webhookService,
-		TMDBClient:           tmdbClient,
-		Notification:         notificationService,
-		Scheduler:            scheduler,
-		SearchHistory:        searchHistory,
+		Telegram:          telegramClient,
+		MoviePilot:        moviepilotClient,
+		SessionMgr:        sessMgr,
+		UserMapping:       userMappingService,
+		BindingRequest:    bindingRequestService,
+		Preferences:       preferencesService,
+		IssueService:      issueService,
+		AdminService:      adminService,
+		QuotaService:      quotaService,
+		ReviewService:     reviewService,
+		MediaNotification: mediaNotificationSvc,
+		WebhookService:    webhookService,
+		TMDBClient:        tmdbClient,
+		Notification:      notificationService,
+		Scheduler:         scheduler,
+		SearchHistory:     searchHistory,
 	}
 }
 
@@ -277,7 +242,6 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
-	aiHandler := handlers.NewAIHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot)
 	adminHandler := handlers.NewAdminHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
@@ -288,16 +252,15 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler.SetMediaNotificationService(services.MediaNotification)
 	adminHandler.SetIssueService(services.IssueService)
 	myRequestsHandler.SetUserMapping(services.UserMapping)
-	aiHandler.SetTMDBClient(services.TMDBClient)
 	searchHandler.SetSearchHistory(services.SearchHistory)
 	feedbackHandler.SetIssueService(services.IssueService)
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
-	registry.RegisterFunc(callback.ActionAI, aiHandler.Handle)
-	registry.RegisterFunc(callback.ActionHot, aiHandler.HandleHot)
-	registry.RegisterFunc(callback.ActionNew, aiHandler.HandleNew)
+	registry.RegisterFunc(callback.ActionAI, startHandler.Handle)
+	registry.RegisterFunc(callback.ActionHot, startHandler.Handle)
+	registry.RegisterFunc(callback.ActionNew, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequest, requestHandler.Handle)
@@ -341,25 +304,22 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// Build full dependencies
 	deps := &Dependencies{
-		Telegram:             services.Telegram,
-		MoviePilot:           services.MoviePilot,
-		SessionMgr:           services.SessionMgr,
-		UserMapping:          services.UserMapping,
-		BindingRequest:       services.BindingRequest,
-		Preferences:          services.Preferences,
-		IssueService:         services.IssueService,
-		AdminService:         services.AdminService,
-		QuotaService:         services.QuotaService,
-		ReviewService:        services.ReviewService,
-		MediaNotification:    services.MediaNotification,
-		ChatService:          services.ChatService,
-		StreamingChatHandler: services.StreamingChatHandler,
-		WebhookService:       services.WebhookService,
-		TMDBClient:           services.TMDBClient,
-		Notification:         services.Notification,
-		Scheduler:            services.Scheduler,
-		SearchHistory:        services.SearchHistory,
-		FeedbackHandler:      feedbackHandler,
+		Telegram:          services.Telegram,
+		MoviePilot:        services.MoviePilot,
+		SessionMgr:        services.SessionMgr,
+		UserMapping:       services.UserMapping,
+		BindingRequest:    services.BindingRequest,
+		Preferences:       services.Preferences,
+		IssueService:      services.IssueService,
+		AdminService:      services.AdminService,
+		QuotaService:      services.QuotaService,
+		ReviewService:     services.ReviewService,
+		MediaNotification: services.MediaNotification,
+		WebhookService:    services.WebhookService,
+		TMDBClient:        services.TMDBClient,
+		Notification:      services.Notification,
+		Scheduler:         services.Scheduler,
+		SearchHistory:     services.SearchHistory,
 	}
 
 	return registry, deps
@@ -370,7 +330,7 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	commands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索影片"},
-		{Command: "ai", Description: "🤖 AI 推荐菜单"},
+		{Command: "ai", Description: "🤖 AI 推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
@@ -400,41 +360,15 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:             deps.Telegram,
-		MoviePilot:           deps.MoviePilot,
-		SessionMgr:           deps.SessionMgr,
-		UserMapping:          deps.UserMapping,
-		BindingRequest:       deps.BindingRequest,
-		AdminService:         deps.AdminService,
-		QuotaService:         deps.QuotaService,
-		ChatService:          deps.ChatService,
-		StreamingChatHandler: deps.StreamingChatHandler,
-		SearchHistory:        deps.SearchHistory,
-		TMDB:                 deps.TMDBClient,
-		IssueService:         deps.IssueService,
-		FeedbackHandler:      deps.FeedbackHandler,
+		Telegram:       deps.Telegram,
+		MoviePilot:     deps.MoviePilot,
+		SessionMgr:     deps.SessionMgr,
+		UserMapping:    deps.UserMapping,
+		BindingRequest: deps.BindingRequest,
+		AdminService:   deps.AdminService,
+		QuotaService:   deps.QuotaService,
+		SearchHistory:  deps.SearchHistory,
+		TMDB:           deps.TMDBClient,
+		IssueService:   deps.IssueService,
 	}
-}
-
-// toServerDeps converts main Dependencies to server Dependencies
-func toServerDeps(deps *Dependencies) *server.Dependencies {
-	return &server.Dependencies{
-		Telegram:          deps.Telegram,
-		MoviePilot:        deps.MoviePilot,
-		SessionMgr:        deps.SessionMgr,
-		UserMapping:       deps.UserMapping,
-		Preferences:       deps.Preferences,
-		IssueService:      deps.IssueService,
-		AdminService:      deps.AdminService,
-		QuotaService:      deps.QuotaService,
-		ChatService:       deps.ChatService,
-		WebhookService:    deps.WebhookService,
-		BindingRequest:    deps.BindingRequest,
-		MediaNotification: deps.MediaNotification,
-	}
-}
-
-// createServer creates the HTTP server
-func createServer(cfg *config.Config, registry *callback.Registry, deps *Dependencies, securityService *services.SecurityService) *http.Server {
-	return server.New(cfg, registry, toServerDeps(deps), securityService)
 }

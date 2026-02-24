@@ -325,7 +325,7 @@ func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *
 
 	// Send with photo if available
 	if item.ImageURL != "" {
-		if _, err := s.telegram.SendPhoto(adminID, item.ImageURL, message); err != nil {
+		if _, err := s.telegram.SendPhoto(adminID, item.ImageURL, message, nil); err != nil {
 			log.Printf("[MediaNotification] Failed to send photo: %v", err)
 			s.telegram.SendMessage(adminID, message, "", nil)
 		}

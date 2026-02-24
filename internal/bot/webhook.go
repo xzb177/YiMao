@@ -1,13 +1,11 @@
 package bot
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
@@ -73,11 +71,11 @@ func HandleWebhookCallback(
 
 	// Build context
 	ctx := &callback.Context{
-		UserID:     cb.From.ID,
-		ChatID:     cb.Message.Chat.ID,
-		MessageID:  cb.Message.MessageID,
+		UserID:    cb.From.ID,
+		ChatID:    cb.Message.Chat.ID,
+		MessageID: cb.Message.MessageID,
 		CallbackID: cb.ID,
-		Callback:   parsed,
+		Callback:  parsed,
 	}
 
 	// Get handler
@@ -122,14 +120,27 @@ func HandleWebhookCallback(
 	}
 
 	// Send or edit message
-	if resp != nil && resp.Text != "" {
+	if resp != nil {
 		keyboard := ConvertKeyboard(resp.Keyboard)
-		if resp.Edit {
-			// Edit existing message
-			telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
-		} else {
-			// Send new message
-			telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+
+		// Check if we need to send a photo
+		if resp.Photo != "" {
+			// Delete the original message first
+			telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
+			// Send photo with caption and keyboard
+			caption := resp.PhotoCaption
+			if caption == "" {
+				caption = resp.Text
+			}
+			telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
+		} else if resp.Text != "" {
+			if resp.Edit {
+				// Edit existing message
+				telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
+			} else {
+				// Send new message
+				telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+			}
 		}
 	}
 
@@ -153,10 +164,10 @@ func HandleWebhookMessage(
 	}
 	log.Printf("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
 
-	// 群聊中只处理 AI 聊天
+	// 群聊处理 @mention 搜索
 	if msg.Chat.Type != "private" {
 		if len(msg.Text) > 1 {
-			HandleWebhookGroupChat(deps.Telegram, msg, deps.ChatService)
+			HandleWebhookGroupChat(deps.Telegram, msg, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -175,7 +186,7 @@ func HandleWebhookMessage(
 
 	// Handle search queries (non-command text)
 	if len(msg.Text) > 1 {
-		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.ChatService)
+		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}
 
 	w.WriteHeader(http.StatusOK)
@@ -183,42 +194,37 @@ func HandleWebhookMessage(
 }
 
 // HandleWebhookGroupChat handles group chat messages from webhook
-func HandleWebhookGroupChat(telegram *services.TelegramClient, msg *types.TelegramMessage, chatService *services.ChatService) {
+func HandleWebhookGroupChat(
+	telegram *services.TelegramClient,
+	msg *types.TelegramMessage,
+	moviepilot *services.MoviePilotClient,
+	sessMgr *session.Manager,
+	searchHistory *services.SearchHistoryService,
+	tmdb *services.TMDBClient,
+) {
 	query := msg.Text
-	isReplyToBot := msg.ReplyToMessage != nil && msg.ReplyToMessage.From.IsBot
 	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
 		strings.Contains(strings.ToLower(query), "@云海看板娘")
 
-	chatType := services.ChatTypeGroup
-	if msg.Chat.Type == "supergroup" {
-		chatType = services.ChatTypeSupergroup
+	log.Printf("[WebhookGroupChat] isMention=%v", isMention)
+
+	// Only respond to mentions
+	if !isMention {
+		return
 	}
 
-	userName := msg.From.FirstName
-	if msg.From.Username != "" {
-		userName = msg.From.Username
+	// Remove mention from query
+	query = strings.ReplaceAll(query, "@oceancloudying_bot", "")
+	query = strings.ReplaceAll(query, "@云海看板娘", "")
+	query = strings.TrimSpace(query)
+
+	if query == "" {
+		telegram.SendMessage(msg.Chat.ID, "你好！请问有什么我可以帮助你的？", "", nil)
+		return
 	}
 
-	chatMsg := &services.ChatMessage{
-		UserID:    msg.From.ID,
-		UserName:  userName,
-		Content:   query,
-		IsReply:   isReplyToBot,
-		IsMention: isMention,
-		ChatType:  chatType,
-		Timestamp: time.Now(),
-	}
-
-	if chatService.ShouldReply(chatMsg) {
-		ctx := context.Background()
-		response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
-		if err != nil {
-			log.Printf("[WebhookGroupChat] Error: %v", err)
-			telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。", "", nil)
-		} else if response != "" {
-			telegram.SendMessage(msg.Chat.ID, response, "", nil)
-		}
-	}
+	// Treat as search query
+	PerformSearch(telegram, msg, sessMgr, moviepilot, tmdb, searchHistory)
 }
 
 // HandleWebhookTextQuery handles text queries from webhook
@@ -229,63 +235,11 @@ func HandleWebhookTextQuery(
 	cfg *config.Config,
 	registry *callback.Registry,
 	moviepilot *services.MoviePilotClient,
-	chatService *services.ChatService,
+	searchHistory *services.SearchHistoryService,
+	tmdb *services.TMDBClient,
 ) {
-	query := msg.Text
-
-	// Check for reply_to_bot or mention
-	isReplyToBot := msg.ReplyToMessage != nil && msg.ReplyToMessage.From.IsBot
-	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
-		strings.Contains(strings.ToLower(query), "@云海看板娘")
-
-	chatType := services.ChatTypePrivate
-
-	userName := msg.From.FirstName
-	if msg.From.Username != "" {
-		userName = msg.From.Username
-	}
-
-	chatMsg := &services.ChatMessage{
-		UserID:    msg.From.ID,
-		UserName:  userName,
-		Content:   query,
-		IsReply:   isReplyToBot,
-		IsMention: isMention,
-		ChatType:  chatType,
-		Timestamp: time.Now(),
-	}
-
-	// Private chat: AI chat check
-	if chatService.ShouldReply(chatMsg) {
-		ctx := context.Background()
-		response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
-		if err != nil {
-			log.Printf("[WebhookPrivateChat] Error: %v", err)
-		} else if response != "" {
-			telegram.SendMessage(msg.Chat.ID, response, "", nil)
-		}
-		return
-	}
-
-	// Check if it's an AI recommendation query
-	if IsAIQuery(query) {
-		SendAIMenu(telegram, msg.Chat.ID)
-		return
-	}
-
-	// Otherwise, treat as search query
-	go PerformSearch(telegram, msg, sessMgr, moviepilot)
-}
-
-// IsAIQuery checks if the query is an AI recommendation request
-func IsAIQuery(query string) bool {
-	aiKeywords := []string{"推荐", "有什么", "好看的", "想看", "来点", "给我", "热门", "trending"}
-	for _, keyword := range aiKeywords {
-		if strings.Contains(query, keyword) {
-			return true
-		}
-	}
-	return false
+	// Treat as search query
+	PerformSearch(telegram, msg, sessMgr, moviepilot, tmdb, searchHistory)
 }
 
 // PerformSearch performs the actual search in background
@@ -294,8 +248,20 @@ func PerformSearch(
 	msg *types.TelegramMessage,
 	sessMgr *session.Manager,
 	moviepilot *services.MoviePilotClient,
+	tmdb *services.TMDBClient,
+	searchHistory *services.SearchHistoryService,
 ) {
 	query := msg.Text
+
+	// Remove mention if present
+	query = strings.ReplaceAll(query, "@oceancloudying_bot", "")
+	query = strings.ReplaceAll(query, "@云海看板娘", "")
+	query = strings.TrimSpace(query)
+
+	// Add to search history
+	if searchHistory != nil && query != "" {
+		searchHistory.AddSearch(msg.From.ID, query)
+	}
 
 	results, err := moviepilot.SearchMedia(query, 1)
 	if err != nil {
@@ -387,27 +353,4 @@ func PerformSearch(
 
 	keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: keyboardRows}
 	telegram.SendMessage(msg.Chat.ID, text, "", keyboard)
-}
-
-// SendAIMenu sends AI recommendation menu
-func SendAIMenu(telegram *services.TelegramClient, chatID int64) {
-	text := "🤖 AI 智能推荐\n\n请选择推荐类型："
-
-	keyboard := &types.TelegramInlineKeyboard{
-		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
-			{
-				{Text: "🔥 热门推荐", CallbackData: "ai:trending"},
-				{Text: "📺 热播剧集", CallbackData: "ai:hot_tv"},
-			},
-			{
-				{Text: "🎬 最新电影", CallbackData: "ai:new_movies"},
-				{Text: "🎲 随机推荐", CallbackData: "ai:random"},
-			},
-			{
-				{Text: "⬅️ 返回主菜单", CallbackData: "start"},
-			},
-		},
-	}
-
-	telegram.SendMessage(chatID, text, "", keyboard)
 }

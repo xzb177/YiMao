@@ -23,13 +23,13 @@ const (
 	ActionRequest      Action = "request"
 	ActionFeedback     Action = "feedback"
 	ActionStart        Action = "start"
-	ActionAI           Action = "ai"
-	ActionHot          Action = "hot"
-	ActionNew          Action = "new"
 	ActionRandom       Action = "random"
 	ActionRequests     Action = "requests"
 	ActionLink         Action = "link"
 	ActionHelp         Action = "help"
+	ActionAI           Action = "ai"
+	ActionHot          Action = "hot"
+	ActionNew          Action = "new"
 )
 
 // Callback represents a standardized callback query
@@ -60,6 +60,7 @@ func (h HandlerFunc) Action() Action {
 type Context struct {
 	UserID      int64
 	ChatID      int64
+	ChatType    string // "private", "group", "supergroup", "channel"
 	MessageID   int64
 	CallbackID  string
 	Callback    *Callback
@@ -73,6 +74,8 @@ type Response struct {
 	ShowAlert   bool
 	Keyboard    *Keyboard
 	CallbackMsg string
+	Photo       string  // Photo URL to send (will send as new message, not edit)
+	PhotoCaption string // Caption for the photo
 }
 
 // Keyboard represents an inline keyboard

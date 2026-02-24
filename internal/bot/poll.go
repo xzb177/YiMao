@@ -1,7 +1,6 @@
 package bot
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -17,36 +16,32 @@ import (
 
 // Dependencies holds bot dependencies
 type Dependencies struct {
-	Telegram             *services.TelegramClient
-	MoviePilot           *services.MoviePilotClient
-	SessionMgr           *session.Manager
-	UserMapping          *services.UserMappingService
-	BindingRequest       *services.BindingRequestService
-	AdminService         *services.AdminService
-	QuotaService         *services.QuotaService
-	ChatService          *services.ChatService
-	StreamingChatHandler *services.StreamingChatHandler
-	SearchHistory        *services.SearchHistoryService
-	TMDB                 *services.TMDBClient
-	IssueService         *services.IssueService
-	FeedbackHandler      *handlers.FeedbackHandler
+	Telegram        *services.TelegramClient
+	MoviePilot      *services.MoviePilotClient
+	SessionMgr      *session.Manager
+	UserMapping     *services.UserMappingService
+	BindingRequest  *services.BindingRequestService
+	AdminService    *services.AdminService
+	QuotaService    *services.QuotaService
+	SearchHistory   *services.SearchHistoryService
+	TMDB            *services.TMDBClient
+	IssueService    *services.IssueService
+	FeedbackHandler *handlers.FeedbackHandler
 }
 
 // PollDeps holds dependencies for polling (reduced set)
 type PollDeps struct {
-	Telegram           *services.TelegramClient
-	MoviePilot         *services.MoviePilotClient
-	SessionMgr         *session.Manager
-	UserMapping        *services.UserMappingService
-	BindingRequest     *services.BindingRequestService
-	AdminService       *services.AdminService
-	QuotaService       *services.QuotaService
-	ChatService        *services.ChatService
-	StreamingChatHandler *services.StreamingChatHandler
-	SearchHistory      *services.SearchHistoryService
-	TMDB               *services.TMDBClient
-	IssueService       *services.IssueService
-	FeedbackHandler    *handlers.FeedbackHandler
+	Telegram        *services.TelegramClient
+	MoviePilot      *services.MoviePilotClient
+	SessionMgr      *session.Manager
+	UserMapping     *services.UserMappingService
+	BindingRequest  *services.BindingRequestService
+	AdminService    *services.AdminService
+	QuotaService    *services.QuotaService
+	SearchHistory   *services.SearchHistoryService
+	TMDB            *services.TMDBClient
+	IssueService    *services.IssueService
+	FeedbackHandler *handlers.FeedbackHandler
 }
 
 // StartPolling starts the Telegram update polling
@@ -62,19 +57,17 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Telegram:             deps.Telegram,
-		MoviePilot:           deps.MoviePilot,
-		SessionMgr:           deps.SessionMgr,
-		UserMapping:          deps.UserMapping,
-		BindingRequest:       deps.BindingRequest,
-		AdminService:         deps.AdminService,
-		QuotaService:         deps.QuotaService,
-		ChatService:          deps.ChatService,
-		StreamingChatHandler: deps.StreamingChatHandler,
-		SearchHistory:        deps.SearchHistory,
-		TMDB:                 deps.TMDB,
-		IssueService:         deps.IssueService,
-		FeedbackHandler:      deps.FeedbackHandler,
+		Telegram:       deps.Telegram,
+		MoviePilot:     deps.MoviePilot,
+		SessionMgr:     deps.SessionMgr,
+		UserMapping:    deps.UserMapping,
+		BindingRequest: deps.BindingRequest,
+		AdminService:   deps.AdminService,
+		QuotaService:   deps.QuotaService,
+		SearchHistory:  deps.SearchHistory,
+		TMDB:           deps.TMDB,
+		IssueService:   deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
 	}
 
 	for {
@@ -121,9 +114,9 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.Config) {
 	log.Printf("[Poll] Message from %d: %s", msg.From.ID, msg.Text)
 
-	// Group chat: Route to streaming chat handler
+	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.ChatService, deps.StreamingChatHandler, deps.Telegram)
+		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 		return
 	}
 
@@ -153,66 +146,59 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 }
 
 // HandleGroupChatMessage handles messages in group chats
-func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.ChatService, streamingHandler *services.StreamingChatHandler, telegram *services.TelegramClient) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
 	query := msg.Text
-	isReplyToBot := msg.ReplyToMessage != nil && msg.ReplyToMessage.From.IsBot
 	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
 		strings.Contains(strings.ToLower(query), "@云海看板娘")
 
-	chatType := services.ChatTypeGroup
-	if msg.Chat.Type == "supergroup" {
-		chatType = services.ChatTypeSupergroup
+	log.Printf("[PollGroupChat] Message from %s: isMention=%v", msg.From.FirstName, isMention)
+
+	// Only respond to mentions
+	if !isMention {
+		return
 	}
 
-	userName := msg.From.FirstName
-	if msg.From.Username != "" {
-		userName = msg.From.Username
+	// Remove mention from query
+	query = strings.ReplaceAll(query, "@oceancloudying_bot", "")
+	query = strings.ReplaceAll(query, "@云海看板娘", "")
+	query = strings.TrimSpace(query)
+
+	if query == "" {
+		telegram.SendMessage(msg.Chat.ID, "你好！请问有什么我可以帮助你的？", "", nil)
+		return
 	}
 
-	chatMsg := &services.ChatMessage{
-		UserID:    msg.From.ID,
-		UserName:  userName,
-		Content:   query,
-		IsReply:   isReplyToBot,
-		IsMention: isMention,
-		ChatType:  chatType,
-		Timestamp: time.Now(),
+	// Handle /ai command - send AI recommendation menu
+	if query == "/ai" {
+		sendAIMenu(telegram, msg.Chat.ID)
+		return
 	}
 
-	log.Printf("[PollGroupChat] Message from %s: isMention=%v, isReply=%v",
-		userName, isMention, isReplyToBot)
+	// Treat as search query
+	HandlePollSearchQuery(msg, telegram, moviepilot, sessMgr, searchHistory, tmdb)
+}
 
-	// Process message for Q&A learning (always, regardless of ShouldReply)
-	if streamingHandler != nil {
-		ctx := context.Background()
-		streamingHandler.ProcessMessageForLearning(ctx, msg.From.ID, msg.Chat.ID, msg.MessageID, userName, query, time.Now())
-	}
+// sendAIMenu sends the AI recommendation menu
+func sendAIMenu(telegram *services.TelegramClient, chatID int64) {
+	msg := services.NewMessageBuilder()
+	msg.Bold("🤖 AI 智能推荐").Newline()
+	msg.Newline()
+	msg.Text("为您精选优质内容").Newline()
+	msg.Newline()
+	msg.Italic("💡 选择推荐类型开始探索")
 
-	// Only respond to mentions or replies
-	if chatService.ShouldReply(chatMsg) {
-		log.Printf("[PollGroupChat] ShouldReply=true, routing to streaming handler...")
-		// Use streaming handler for group chats
-		if streamingHandler != nil {
-			ctx := context.Background()
-			if err := streamingHandler.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, query); err != nil {
-				log.Printf("[PollGroupChat] Streaming handler error: %v", err)
-				// Fallback to simple response
-				telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。请稍后再试。", "", nil)
-			}
-		} else {
-			// Fallback to non-streaming if streaming handler not available
-			log.Printf("[PollGroupChat] Streaming handler not available, using fallback...")
-			// For group chat fallback, just send a simple message
-			ctx := context.Background()
-			response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
-			if err != nil {
-				log.Printf("[PollGroupChat] Error: %v", err)
-				telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。", "", nil)
-			} else if response != "" {
-				telegram.SendMessage(msg.Chat.ID, response, "", nil)
-			}
-		}
-	}
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔥 热门电影", "ai:trending")
+	kb.AddButton("📺 热播剧集", "ai:hot")
+	kb.NewRow()
+	kb.AddButton("⭐ 高分佳作", "ai:toprated")
+	kb.AddButton("🆕 最新上线", "ai:new")
+	kb.NewRow()
+	kb.AddButton("🎲 随机发现", "ai:random")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	telegram.SendMessage(chatID, msg.Build(), "", kb.Build())
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
@@ -379,6 +365,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	ctx := &callback.Context{
 		UserID:     cb.From.ID,
 		ChatID:     cb.Message.Chat.ID,
+		ChatType:   cb.Message.Chat.Type,
 		MessageID:  cb.Message.MessageID,
 		CallbackID: cb.ID,
 		Callback:   parsed,
@@ -424,14 +411,27 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	}
 
 	// Send or edit message
-	if resp != nil && resp.Text != "" {
+	if resp != nil {
 		keyboard := ConvertKeyboard(resp.Keyboard)
-		if resp.Edit {
-			// Edit existing message
-			telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
-		} else {
-			// Send new message
-			telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+
+		// Check if we need to send a photo
+		if resp.Photo != "" {
+			// Delete the original message first
+			telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
+			// Send photo with caption and keyboard
+			caption := resp.PhotoCaption
+			if caption == "" {
+				caption = resp.Text
+			}
+			telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
+		} else if resp.Text != "" {
+			if resp.Edit {
+				// Edit existing message
+				telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
+			} else {
+				// Send new message
+				telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+			}
 		}
 	}
 }

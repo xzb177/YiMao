@@ -100,13 +100,19 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 }
 
 // SendPhoto sends a photo with caption to a chat
-func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
 	payload := map[string]interface{}{
 		"chat_id":    chatID,
 		"photo":      photoURL,
 		"caption":    caption,
+		"parse_mode": "Markdown",
+	}
+
+	// Add keyboard if provided
+	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
+		payload["reply_markup"] = keyboard
 	}
 
 	return c.makeRequest(apiURL, payload)
@@ -560,10 +566,18 @@ type SearchItemButton struct {
 
 // BuildStartKeyboard builds the start menu keyboard
 func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
+	return BuildStartKeyboardWithOptions(isAdmin, true)
+}
+
+// BuildStartKeyboardWithOptions builds start keyboard with options
+// showAI: whether to show AI recommendation button (only in private chats)
+func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
 	kb.AddButton("🔍 搜索影片", "start_search")
-	kb.AddButton("🤖 AI 推荐", "start_ai")
+	if showAI {
+		kb.AddButton("🤖 AI 推荐", "start_ai")
+	}
 
 	kb.NewRow()
 	kb.AddButton("📋 我的请求", "start_requests")

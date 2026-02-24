@@ -648,7 +648,7 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 	}
 
 	// Send photo with caption
-	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, message); err != nil {
+	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, message, nil); err != nil {
 		log.Printf("[Webhook] Failed to send photo, falling back to text message: %v", err)
 		// Fallback to text message
 		s.sendWithCache(s.chatID, message)
