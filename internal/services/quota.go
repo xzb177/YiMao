@@ -89,13 +89,45 @@ func (s *QuotaService) load() error {
 	return nil
 }
 
-// save saves quotas to file
+// save saves quotas to file (must NOT be called while holding mu lock)
 func (s *QuotaService) save() error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	data, err := json.MarshalIndent(map[string]interface{}{
 		"quotas": s.quotas,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(s.quotasFile, data, 0644)
+}
+
+// saveAsync saves quotas to file asynchronously (without locking)
+func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"quotas": quotasCopy,
+	}, "", "  ")
+	if err != nil {
+		log.Printf("[QuotaService] Failed to marshal quotas: %v", err)
+		return
+	}
+
+	if err := os.WriteFile(s.quotasFile, data, 0644); err != nil {
+		log.Printf("[QuotaService] Failed to save quotas: %v", err)
+	}
+}
+
+// saveLocked saves quotas to file (caller must hold mu lock)
+// Creates a copy of quotas to avoid deadlock
+func (s *QuotaService) saveLocked() error {
+	// Create a copy of quotas map while holding lock
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+
+	// Release lock before saving
+	data, err := json.MarshalIndent(map[string]interface{}{
+		"quotas": quotasCopy,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -144,7 +176,13 @@ func (s *QuotaService) GetOrCreateQuota(telegramID int64) *UserQuota {
 	}
 
 	s.quotas[telegramID] = quota
-	s.save()
+
+	// Save without holding lock - make a copy to avoid race
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	go s.saveAsync(quotasCopy)
 
 	return quota
 }
@@ -174,15 +212,20 @@ func (s *QuotaService) SyncFromMoviePilot(telegramID, moviepilotID int64) error 
 		return fmt.Errorf("moviepilot client not configured")
 	}
 
-	// MoviePilot doesn't have quota API, so we just track locally
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	userQuota := s.GetOrCreateQuota(telegramID)
+	userQuota := s.getOrCreateQuotaUnsafe(telegramID)
 	userQuota.MoviePilotID = moviepilotID
 	userQuota.LastSync = time.Now()
 
-	return s.save()
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+	return nil
 }
 
 // CheckMovieQuota checks if user can make a movie request
@@ -192,17 +235,19 @@ func (s *QuotaService) CheckMovieQuota(telegramID int64) bool {
 		return true
 	}
 
-	quota := s.GetOrCreateQuota(telegramID)
-
-	// Check if we need to reset
-	s.checkAndReset(telegramID)
+	s.mu.Lock()
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
+	s.checkAndResetUnsafe(telegramID)
+	limit := quota.MovieLimit
+	used := quota.MovieUsed
+	s.mu.Unlock()
 
 	// -1 means unlimited
-	if quota.MovieLimit == -1 {
+	if limit == -1 {
 		return true
 	}
 
-	return quota.MovieUsed < quota.MovieLimit
+	return used < limit
 }
 
 // CheckTVQuota checks if user can make a TV request
@@ -212,57 +257,79 @@ func (s *QuotaService) CheckTVQuota(telegramID int64) bool {
 		return true
 	}
 
-	quota := s.GetOrCreateQuota(telegramID)
-
-	// Check if we need to reset
-	s.checkAndReset(telegramID)
+	s.mu.Lock()
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
+	s.checkAndResetUnsafe(telegramID)
+	limit := quota.TVLimit
+	used := quota.TVUsed
+	s.mu.Unlock()
 
 	// -1 means unlimited
-	if quota.TVLimit == -1 {
+	if limit == -1 {
 		return true
 	}
 
-	return quota.TVUsed < quota.TVLimit
+	return used < limit
 }
 
 // UseMovieQuota uses one movie quota
 func (s *QuotaService) UseMovieQuota(telegramID int64) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	quota := s.GetOrCreateQuota(telegramID)
+	// Use unsafe version to avoid recursive locking
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	s.checkAndResetUnsafe(telegramID)
 
 	if quota.MovieLimit != -1 && quota.MovieUsed >= quota.MovieLimit {
+		s.mu.Unlock()
 		return fmt.Errorf("movie quota exceeded")
 	}
 
 	quota.MovieUsed++
-	return s.save()
+
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+	return nil
 }
 
 // UseTVQuota uses one TV quota
 func (s *QuotaService) UseTVQuota(telegramID int64) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	quota := s.GetOrCreateQuota(telegramID)
+	// Use unsafe version to avoid recursive locking
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	s.checkAndResetUnsafe(telegramID)
 
 	if quota.TVLimit != -1 && quota.TVUsed >= quota.TVLimit {
+		s.mu.Unlock()
 		return fmt.Errorf("TV quota exceeded")
 	}
 
 	quota.TVUsed++
-	return s.save()
+
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+	return nil
 }
 
 // RestoreQuota restores quota (e.g., when request is declined)
 func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	quota := s.GetOrCreateQuota(telegramID)
+	// Use unsafe version to avoid recursive locking
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
 
 	switch mediaType {
 	case "movie":
@@ -275,7 +342,15 @@ func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
 		}
 	}
 
-	return s.save()
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+	return nil
 }
 
 // GetQuotaText returns formatted quota text for a user
