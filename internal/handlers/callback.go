@@ -14,6 +14,13 @@ import (
 	"emby-telegram-bot/pkg/types"
 )
 
+// Message formatting constants
+const (
+	MaxOverviewLength = 300
+	MaxDisplayCount  = 8
+	MaxSeasonsDisplay = 4
+)
+
 // StartHandler handles start menu callbacks
 type StartHandler struct {
 	cfg         *config.Config
@@ -552,8 +559,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	// Overview
 	if info.Overview != "" {
 		overview := info.Overview
-		if len(overview) > 300 {
-			overview = overview[:300] + "..."
+		if len(overview) > MaxOverviewLength {
+			overview = overview[:MaxOverviewLength] + "..."
 		}
 		msg.Italic("📖 剧情简介").Newline()
 		msg.Text(overview).Newline()
@@ -688,8 +695,8 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 	// Overview
 	if item.Overview != "" {
 		overview := item.Overview
-		if len(overview) > 300 {
-			overview = overview[:300] + "..."
+		if len(overview) > MaxOverviewLength {
+			overview = overview[:MaxOverviewLength] + "..."
 		}
 		msg.Italic("📖 剧情简介").Newline()
 		msg.Text(overview).Newline()

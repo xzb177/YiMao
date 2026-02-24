@@ -5,6 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"strings"
+	"sync"
 	"time"
 
 	"emby-telegram-bot/internal/callback"
@@ -12,6 +13,54 @@ import (
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/types"
 )
+
+// Recommendation cache entry
+type recommendationCacheEntry struct {
+	results    []services.SearchResult
+	expiredAt  time.Time
+}
+
+// Recommendation cache
+type recommendationCache struct {
+	sync.RWMutex
+	data map[string]*recommendationCacheEntry
+}
+
+var recCache = &recommendationCache{
+	data: make(map[string]*recommendationCacheEntry),
+}
+
+const cacheTTL = 5 * time.Minute
+
+// getFromCache retrieves cached recommendations if available and not expired
+func (c *recommendationCache) get(key string) ([]services.SearchResult, bool) {
+	c.RLock()
+	defer c.RUnlock()
+
+	entry, exists := c.data[key]
+	if !exists {
+		return nil, false
+	}
+
+	if time.Now().After(entry.expiredAt) {
+		// Expired, remove it
+		delete(c.data, key)
+		return nil, false
+	}
+
+	return entry.results, true
+}
+
+// set stores recommendations in cache with expiration
+func (c *recommendationCache) set(key string, results []services.SearchResult) {
+	c.Lock()
+	defer c.Unlock()
+
+	c.data[key] = &recommendationCacheEntry{
+		results:   results,
+		expiredAt: time.Now().Add(cacheTTL),
+	}
+}
 
 // SearchHandler handles search callbacks and queries
 type SearchHandler struct {
@@ -453,6 +502,13 @@ func (h *SearchHandler) getTrendingResults(tType string) ([]services.SearchResul
 
 // getTrendingMoviesHybrid gets trending movies from TMDB
 func (h *SearchHandler) getTrendingMoviesHybrid() ([]services.SearchResult, error) {
+	// Check cache first (but use random key to avoid always returning same results)
+	cacheKey := fmt.Sprintf("popular_movies_%d", time.Now().Unix()/60) // Cache key changes every minute
+	if cached, found := recCache.get(cacheKey); found {
+		log.Printf("[SearchHandler] Using cached popular movies")
+		return cached, nil
+	}
+
 	if h.tmdb == nil {
 		return h.getFallbackMedia()
 	}
@@ -481,11 +537,23 @@ func (h *SearchHandler) getTrendingMoviesHybrid() ([]services.SearchResult, erro
 		allItems[i], allItems[j] = allItems[j], allItems[i]
 	}
 
-	return h.convertTMDBToSearchResults(allItems, "movie"), nil
+	results := h.convertTMDBToSearchResults(allItems, "movie")
+
+	// Cache the results
+	recCache.set(cacheKey, results)
+
+	return results, nil
 }
 
 // getTrendingTVHybrid gets trending TV shows from TMDB
 func (h *SearchHandler) getTrendingTVHybrid() ([]services.SearchResult, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("popular_tv_%d", time.Now().Unix()/60)
+	if cached, found := recCache.get(cacheKey); found {
+		log.Printf("[SearchHandler] Using cached popular TV")
+		return cached, nil
+	}
+
 	if h.tmdb == nil {
 		return h.getFallbackTVMedia()
 	}
@@ -514,11 +582,23 @@ func (h *SearchHandler) getTrendingTVHybrid() ([]services.SearchResult, error) {
 		allItems[i], allItems[j] = allItems[j], allItems[i]
 	}
 
-	return h.convertTMDBToSearchResults(allItems, "tv"), nil
+	results := h.convertTMDBToSearchResults(allItems, "tv")
+
+	// Cache the results
+	recCache.set(cacheKey, results)
+
+	return results, nil
 }
 
-// getTopRatedMediaHybrid gets top-rated media from TMDB and filters by MoviePilot
+// getTopRatedMediaHybrid gets top-rated media from TMDB
 func (h *SearchHandler) getTopRatedMediaHybrid() ([]services.SearchResult, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("toprated_movies_%d", time.Now().Unix()/60)
+	if cached, found := recCache.get(cacheKey); found {
+		log.Printf("[SearchHandler] Using cached top-rated movies")
+		return cached, nil
+	}
+
 	if h.tmdb == nil {
 		return h.getFallbackMedia()
 	}
@@ -547,11 +627,23 @@ func (h *SearchHandler) getTopRatedMediaHybrid() ([]services.SearchResult, error
 		allItems[i], allItems[j] = allItems[j], allItems[i]
 	}
 
-	return h.convertTMDBToSearchResults(allItems, "movie"), nil
+	results := h.convertTMDBToSearchResults(allItems, "movie")
+
+	// Cache the results
+	recCache.set(cacheKey, results)
+
+	return results, nil
 }
 
 // getNewMediaHybrid gets new releases from TMDB
 func (h *SearchHandler) getNewMediaHybrid() ([]services.SearchResult, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("new_movies_%d", time.Now().Unix()/60)
+	if cached, found := recCache.get(cacheKey); found {
+		log.Printf("[SearchHandler] Using cached new movies")
+		return cached, nil
+	}
+
 	if h.tmdb == nil {
 		return h.getNewMedia()
 	}
@@ -569,7 +661,9 @@ func (h *SearchHandler) getNewMediaHybrid() ([]services.SearchResult, error) {
 			j := r.Intn(i + 1)
 			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		}
-		return h.convertTMDBToSearchResults(shuffled, "movie"), nil
+		results := h.convertTMDBToSearchResults(shuffled, "movie")
+		recCache.set(cacheKey, results)
+		return results, nil
 	}
 
 	// Fallback to popular with year filter
@@ -603,7 +697,9 @@ func (h *SearchHandler) getNewMediaHybrid() ([]services.SearchResult, error) {
 			j := r.Intn(i + 1)
 			allRecent[i], allRecent[j] = allRecent[j], allRecent[i]
 		}
-		return h.convertTMDBToSearchResults(allRecent, "movie"), nil
+		results := h.convertTMDBToSearchResults(allRecent, "movie")
+		recCache.set(cacheKey, results)
+		return results, nil
 	}
 
 	// Last resort - use fallback

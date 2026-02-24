@@ -117,6 +117,26 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	return sess
 }
 
+// GetOrCreateWithCleanup creates a session and triggers cleanup if threshold is reached
+func (m *Manager) GetOrCreateWithCleanup(userID int64) *Session {
+	// Check if we should proactively cleanup (at 80% capacity)
+	m.mu.RLock()
+	threshold := m.maxSize * 4 / 5
+	needsCleanup := len(m.sessions) >= threshold
+	m.mu.RUnlock()
+
+	if needsCleanup {
+		go func() {
+			removed := m.Cleanup()
+			if removed > 0 {
+				log.Printf("[Session] Proactive cleanup: removed %d expired sessions", removed)
+			}
+		}()
+	}
+
+	return m.GetOrCreate(userID)
+}
+
 // Get gets a session if it exists
 func (m *Manager) Get(userID int64) *Session {
 	m.mu.RLock()
@@ -207,7 +227,7 @@ func (m *Manager) evictOldestSession() {
 
 // cleanupLoop runs periodic cleanup
 func (m *Manager) cleanupLoop() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute) // Reduced from 10 to 5 minutes
 	defer ticker.Stop()
 
 	for range ticker.C {

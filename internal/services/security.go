@@ -164,14 +164,17 @@ func (s *SecurityService) isTrustedProxy(ip string) bool {
 // isIPBlocked checks if an IP is currently blocked
 func (s *SecurityService) IsIPBlocked(ip string) bool {
 	s.ctx.mu.RLock()
-	defer s.ctx.mu.RUnlock()
+	blocked, exists := s.ctx.blockedIPs[ip]
+	s.ctx.mu.RUnlock()
 
-	if unblockTime, blocked := s.ctx.blockedIPs[ip]; blocked {
-		if time.Now().Before(unblockTime) {
+	if exists {
+		if time.Now().Before(blocked) {
 			return true
 		}
-		// Block expired, remove it
+		// Block expired, remove it (need write lock)
+		s.ctx.mu.Lock()
 		delete(s.ctx.blockedIPs, ip)
+		s.ctx.mu.Unlock()
 	}
 	return false
 }

@@ -17,6 +17,9 @@ type UserMappingService struct {
 	usernames    map[string]string // telegramID -> moviepilotUsername
 	reverseMap   map[int64]string  // moviepilotID -> telegramID
 	mu           sync.RWMutex
+	dirty        bool              // Track if data needs saving
+	savePending  bool             // Prevent multiple concurrent saves
+	lastSave     time.Time        // Last save time
 }
 
 // BindingRequest represents a pending binding request
@@ -36,6 +39,8 @@ type BindingRequest struct {
 	ExpiresAt           string    `json:"expires_at"`
 	Status              string    `json:"status"` // pending, approved, rejected
 }
+
+const saveDelay = 5 * time.Second // Delay before saving dirty data
 
 // NewUserMappingService creates a new user mapping service
 func NewUserMappingService(dataDir string) *UserMappingService {
@@ -96,6 +101,13 @@ func (s *UserMappingService) load() error {
 
 // save saves user mappings to file
 func (s *UserMappingService) save() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveLocked()
+}
+
+// saveLocked saves user mappings to file (must be called with lock held)
+func (s *UserMappingService) saveLocked() error {
 	data := map[string]interface{}{
 		"user_mappings":  s.mappings,
 		"usernames":      s.usernames,
@@ -106,7 +118,39 @@ func (s *UserMappingService) save() error {
 		return err
 	}
 
+	s.dirty = false
+	s.lastSave = time.Now()
+
 	return os.WriteFile(s.mappingsFile, jsonData, 0644)
+}
+
+// scheduleSave schedules a delayed save if data is dirty
+func (s *UserMappingService) scheduleSave() {
+	s.mu.Lock()
+	s.dirty = true
+	s.mu.Unlock()
+
+	// Check if we should save immediately or schedule
+	if s.lastSave.IsZero() || time.Since(s.lastSave) > saveDelay {
+		go func() {
+			time.Sleep(saveDelay)
+			s.mu.Lock()
+			if s.dirty && !s.savePending {
+				s.savePending = true
+				s.mu.Unlock()
+				s.save()
+				s.mu.Lock()
+				s.savePending = false
+			} else {
+				s.mu.Unlock()
+			}
+		}()
+	}
+}
+
+// ForceSave immediately saves the data to disk
+func (s *UserMappingService) ForceSave() error {
+	return s.save()
 }
 
 // GetJellyseerrUserID gets Jellyseerr user ID for a Telegram user
@@ -142,7 +186,7 @@ func (s *UserMappingService) SetTelegramUsername(telegramID int64, username stri
 	defer s.mu.Unlock()
 
 	s.usernames[fmt.Sprintf("%d", telegramID)] = username
-	s.save()
+	s.scheduleSave()
 }
 
 // AddMapping adds a user mapping
@@ -160,7 +204,8 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 		s.usernames[telegramKey] = jellyseerrUsername
 	}
 
-	return s.save()
+	s.scheduleSave()
+	return nil
 }
 
 // RemoveMapping removes a user mapping
@@ -180,7 +225,8 @@ func (s *UserMappingService) RemoveMapping(telegramID int64) error {
 	delete(s.mappings, telegramKey)
 	delete(s.usernames, telegramKey)
 
-	return s.save()
+	s.scheduleSave()
+	return nil
 }
 
 // GetTelegramIDByJellyseerrID gets Telegram ID by Jellyseerr ID
