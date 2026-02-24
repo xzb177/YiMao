@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"emby-telegram-bot/ai"
 	"emby-telegram-bot/internal/bot"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
@@ -119,24 +120,25 @@ func main() {
 
 // Dependencies holds all service dependencies
 type Dependencies struct {
-	Telegram          *services.TelegramClient
-	MoviePilot        *services.MoviePilotClient
-	SessionMgr        *session.Manager
-	UserMapping       *services.UserMappingService
-	BindingRequest    *services.BindingRequestService
-	Preferences       *services.PreferencesService
-	IssueService      *services.IssueService
-	AdminService      *services.AdminService
-	QuotaService      *services.QuotaService
-	ReviewService     *services.ReviewService
-	MediaNotification *services.MediaNotificationService
-	ChatService       *services.ChatService
-	WebhookService    *services.WebhookService
-	TMDBClient        *services.TMDBClient
-	Notification      *services.NotificationService
-	Scheduler         *services.Scheduler
-	SearchHistory     *services.SearchHistoryService
-	FeedbackHandler   *handlers.FeedbackHandler
+	Telegram             *services.TelegramClient
+	MoviePilot           *services.MoviePilotClient
+	SessionMgr           *session.Manager
+	UserMapping          *services.UserMappingService
+	BindingRequest       *services.BindingRequestService
+	Preferences          *services.PreferencesService
+	IssueService         *services.IssueService
+	AdminService         *services.AdminService
+	QuotaService         *services.QuotaService
+	ReviewService        *services.ReviewService
+	MediaNotification    *services.MediaNotificationService
+	ChatService          *services.ChatService
+	StreamingChatHandler *services.StreamingChatHandler
+	WebhookService       *services.WebhookService
+	TMDBClient           *services.TMDBClient
+	Notification         *services.NotificationService
+	Scheduler            *services.Scheduler
+	SearchHistory        *services.SearchHistoryService
+	FeedbackHandler      *handlers.FeedbackHandler
 }
 
 // initServices initializes all services
@@ -157,8 +159,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService)
 	log.Println("✅ Media notification service initialized")
 
-	// Initialize AI Chat Service
-	chatService := services.NewChatService(cfg.ZhipuAPIKey)
+	// Get admin IDs
 	adminsMap := adminService.GetAllAdmins()
 	var adminIDs []int64
 	for idStr := range adminsMap {
@@ -166,8 +167,31 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			adminIDs = append(adminIDs, id)
 		}
 	}
+
+	// Initialize AI Agent and Conversation Store
+	agent := ai.NewAgent(cfg.ZhipuAPIKey)
+
+	// Try to initialize AI store for conversation persistence
+	aiStore, err := ai.NewStore(cfg.DataDir + "/conversations.db")
+	if err != nil {
+		log.Printf("⚠️  Failed to initialize AI store: %v", err)
+		log.Println("📝 AI conversations will be stored in memory only")
+		aiStore = nil
+	} else {
+		log.Println("✅ AI conversation store initialized")
+	}
+
+	// Always set up conversation manager (with or without store)
+	agent.SetStore(aiStore)
+
+	// Initialize AI Chat Service (for private chats)
+	chatService := services.NewChatService(agent, agent.GetConversationManager(), telegramClient)
 	chatService.SetAdminIDs(adminIDs)
 	log.Printf("[ChatService] AI Chat initialized: enabled=%v", chatService.IsAIEnabled())
+
+	// Initialize Streaming Chat Handler (for group chats)
+	streamingChatHandler := services.NewStreamingChatHandler(agent, agent.GetConversationManager(), telegramClient)
+	log.Println("✅ Streaming chat handler initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)
 	quotaService.SetAdminIDs(adminIDs)
@@ -212,23 +236,24 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Println("✅ Services initialized")
 
 	return &Dependencies{
-		Telegram:          telegramClient,
-		MoviePilot:        moviepilotClient,
-		SessionMgr:        sessMgr,
-		UserMapping:       userMappingService,
-		BindingRequest:    bindingRequestService,
-		Preferences:       preferencesService,
-		IssueService:      issueService,
-		AdminService:      adminService,
-		QuotaService:      quotaService,
-		ReviewService:     reviewService,
-		MediaNotification: mediaNotificationSvc,
-		ChatService:       chatService,
-		WebhookService:    webhookService,
-		TMDBClient:        tmdbClient,
-		Notification:      notificationService,
-		Scheduler:         scheduler,
-		SearchHistory:     searchHistory,
+		Telegram:             telegramClient,
+		MoviePilot:           moviepilotClient,
+		SessionMgr:           sessMgr,
+		UserMapping:          userMappingService,
+		BindingRequest:       bindingRequestService,
+		Preferences:          preferencesService,
+		IssueService:         issueService,
+		AdminService:         adminService,
+		QuotaService:         quotaService,
+		ReviewService:        reviewService,
+		MediaNotification:    mediaNotificationSvc,
+		ChatService:          chatService,
+		StreamingChatHandler: streamingChatHandler,
+		WebhookService:       webhookService,
+		TMDBClient:           tmdbClient,
+		Notification:         notificationService,
+		Scheduler:            scheduler,
+		SearchHistory:        searchHistory,
 	}
 }
 
@@ -315,24 +340,25 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// Build full dependencies
 	deps := &Dependencies{
-		Telegram:          services.Telegram,
-		MoviePilot:        services.MoviePilot,
-		SessionMgr:        services.SessionMgr,
-		UserMapping:       services.UserMapping,
-		BindingRequest:    services.BindingRequest,
-		Preferences:       services.Preferences,
-		IssueService:      services.IssueService,
-		AdminService:      services.AdminService,
-		QuotaService:      services.QuotaService,
-		ReviewService:     services.ReviewService,
-		MediaNotification: services.MediaNotification,
-		ChatService:       services.ChatService,
-		WebhookService:    services.WebhookService,
-		TMDBClient:        services.TMDBClient,
-		Notification:      services.Notification,
-		Scheduler:         services.Scheduler,
-		SearchHistory:     services.SearchHistory,
-		FeedbackHandler:   feedbackHandler,
+		Telegram:             services.Telegram,
+		MoviePilot:           services.MoviePilot,
+		SessionMgr:           services.SessionMgr,
+		UserMapping:          services.UserMapping,
+		BindingRequest:       services.BindingRequest,
+		Preferences:          services.Preferences,
+		IssueService:         services.IssueService,
+		AdminService:         services.AdminService,
+		QuotaService:         services.QuotaService,
+		ReviewService:        services.ReviewService,
+		MediaNotification:    services.MediaNotification,
+		ChatService:          services.ChatService,
+		StreamingChatHandler: services.StreamingChatHandler,
+		WebhookService:       services.WebhookService,
+		TMDBClient:           services.TMDBClient,
+		Notification:         services.Notification,
+		Scheduler:            services.Scheduler,
+		SearchHistory:        services.SearchHistory,
+		FeedbackHandler:      feedbackHandler,
 	}
 
 	return registry, deps
@@ -373,18 +399,19 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:        deps.Telegram,
-		MoviePilot:      deps.MoviePilot,
-		SessionMgr:      deps.SessionMgr,
-		UserMapping:     deps.UserMapping,
-		BindingRequest:  deps.BindingRequest,
-		AdminService:    deps.AdminService,
-		QuotaService:    deps.QuotaService,
-		ChatService:     deps.ChatService,
-		SearchHistory:   deps.SearchHistory,
-		TMDB:            deps.TMDBClient,
-		IssueService:    deps.IssueService,
-		FeedbackHandler: deps.FeedbackHandler,
+		Telegram:             deps.Telegram,
+		MoviePilot:           deps.MoviePilot,
+		SessionMgr:           deps.SessionMgr,
+		UserMapping:          deps.UserMapping,
+		BindingRequest:       deps.BindingRequest,
+		AdminService:         deps.AdminService,
+		QuotaService:         deps.QuotaService,
+		ChatService:          deps.ChatService,
+		StreamingChatHandler: deps.StreamingChatHandler,
+		SearchHistory:        deps.SearchHistory,
+		TMDB:                 deps.TMDBClient,
+		IssueService:         deps.IssueService,
+		FeedbackHandler:      deps.FeedbackHandler,
 	}
 }
 

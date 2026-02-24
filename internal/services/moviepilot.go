@@ -411,6 +411,11 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 		return nil, fmt.Errorf("registration failed")
 	}
 
+	// Check if user ID is valid
+	if response.Data.ID == 0 {
+		return nil, fmt.Errorf("registration failed: invalid user ID returned")
+	}
+
 	return &response.Data, nil
 }
 

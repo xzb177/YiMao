@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -150,7 +151,7 @@ func HandleWebhookMessage(
 		fmt.Fprint(w, "OK")
 		return
 	}
-	log.Printf("[Webhook] Message from user %d (chat: %s, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
+	log.Printf("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
 
 	// 群聊中只处理 AI 聊天
 	if msg.Chat.Type != "private" {
@@ -209,9 +210,13 @@ func HandleWebhookGroupChat(telegram *services.TelegramClient, msg *types.Telegr
 	}
 
 	if chatService.ShouldReply(chatMsg) {
-		response := chatService.GetResponse(chatMsg)
-		if response.ShouldReply && response.Text != "" {
-			telegram.SendMessage(msg.Chat.ID, response.Text, "", nil)
+		ctx := context.Background()
+		response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
+		if err != nil {
+			log.Printf("[WebhookGroupChat] Error: %v", err)
+			telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。", "", nil)
+		} else if response != "" {
+			telegram.SendMessage(msg.Chat.ID, response, "", nil)
 		}
 	}
 }
@@ -252,9 +257,12 @@ func HandleWebhookTextQuery(
 
 	// Private chat: AI chat check
 	if chatService.ShouldReply(chatMsg) {
-		response := chatService.GetResponse(chatMsg)
-		if response.ShouldReply && response.Text != "" {
-			telegram.SendMessage(msg.Chat.ID, response.Text, "", nil)
+		ctx := context.Background()
+		response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
+		if err != nil {
+			log.Printf("[WebhookPrivateChat] Error: %v", err)
+		} else if response != "" {
+			telegram.SendMessage(msg.Chat.ID, response, "", nil)
 		}
 		return
 	}

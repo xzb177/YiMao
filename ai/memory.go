@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// UserMemory stores information about a user
-type UserMemory struct {
+// PersonalityMemory stores information about a user's personality
+type PersonalityMemory struct {
 	UserID      int64    `json:"user_id"`
 	Nickname    string   `json:"nickname,omitempty"`    // 用户自定义昵称
 	RealName    string   `json:"real_name,omitempty"`   // 真实姓名
@@ -76,7 +76,7 @@ type MoodEntry struct {
 
 // MemorySystem 管理用户记忆
 type MemorySystem struct {
-	memories map[int64]*UserMemory
+	memories map[int64]*PersonalityMemory
 	mu       sync.RWMutex
 	filePath string
 }
@@ -90,7 +90,7 @@ var (
 func GetMemorySystem() *MemorySystem {
 	memoryOnce.Do(func() {
 		globalMemory = &MemorySystem{
-			memories: make(map[int64]*UserMemory),
+			memories: make(map[int64]*PersonalityMemory),
 			filePath: filepath.Join(os.Getenv("HOME"), "emby-telegram-bot", "user_memories.json"),
 		}
 		globalMemory.Load()
@@ -112,7 +112,7 @@ func (m *MemorySystem) Load() error {
 	}
 
 	var stored struct {
-		Memories map[int64]*UserMemory `json:"memories"`
+		Memories map[int64]*PersonalityMemory `json:"memories"`
 	}
 	if err := json.Unmarshal(data, &stored); err != nil {
 		return err
@@ -128,8 +128,8 @@ func (m *MemorySystem) Save() error {
 	defer m.mu.RUnlock()
 
 	data, err := json.MarshalIndent(struct {
-		Memories map[int64]*UserMemory `json:"memories"`
-		UpdatedAt int64                 `json:"updated_at"`
+		Memories map[int64]*PersonalityMemory `json:"memories"`
+		UpdatedAt int64                      `json:"updated_at"`
 	}{
 		Memories:  m.memories,
 		UpdatedAt: time.Now().Unix(),
@@ -142,14 +142,14 @@ func (m *MemorySystem) Save() error {
 }
 
 // GetOrCreateUser 获取或创建用户记忆
-func (m *MemorySystem) GetOrCreateUser(userID int64, username string) *UserMemory {
+func (m *MemorySystem) GetOrCreateUser(userID int64, username string) *PersonalityMemory {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	user, exists := m.memories[userID]
 	if !exists {
 		now := time.Now().Unix()
-		user = &UserMemory{
+		user = &PersonalityMemory{
 			UserID:        userID,
 			Username:      username,
 			FirstSeen:     now,
@@ -293,7 +293,7 @@ func (m *MemorySystem) GetUserContext(userID int64) string {
 }
 
 // getDisplayName 获取显示名称
-func (u *UserMemory) getDisplayName() string {
+func (u *PersonalityMemory) getDisplayName() string {
 	if u.Nickname != "" {
 		return u.Nickname
 	}
@@ -395,7 +395,7 @@ func (m *MemorySystem) FormatMemoryForAI(userID int64) string {
 }
 
 // getEmotionalStateText 获取情感状态文本
-func (u *UserMemory) getEmotionalStateText() string {
+func (u *PersonalityMemory) getEmotionalStateText() string {
 	switch u.EmotionalState {
 	case "happy":
 		return "开心"
@@ -581,7 +581,7 @@ func (m *MemorySystem) ClearEmotionalState(userID int64) {
 	}
 }
 
-func (u *UserMemory) getRelationText() string {
+func (u *PersonalityMemory) getRelationText() string {
 	switch u.RelationLevel {
 	case "close":
 		return "熟人"

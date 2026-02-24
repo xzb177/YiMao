@@ -78,6 +78,14 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		return
 	}
 
+	// Check if userID is valid (not 0)
+	if userID == 0 {
+		log.Printf("[LinkCommand] Authentication returned invalid userID 0 for %s", username)
+		text := "❌ 绑定失败：无法获取用户ID，请稍后重试"
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		return
+	}
+
 	// Save mapping using the provided userMapping service
 	if err := userMapping.AddMapping(msg.From.ID, userID, username); err != nil {
 		log.Printf("[LinkCommand] Failed to save mapping: %v", err)

@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -16,34 +17,36 @@ import (
 
 // Dependencies holds bot dependencies
 type Dependencies struct {
-	Telegram          *services.TelegramClient
-	MoviePilot        *services.MoviePilotClient
-	SessionMgr        *session.Manager
-	UserMapping       *services.UserMappingService
-	BindingRequest    *services.BindingRequestService
-	AdminService      *services.AdminService
-	QuotaService      *services.QuotaService
-	ChatService       *services.ChatService
-	SearchHistory     *services.SearchHistoryService
-	TMDB              *services.TMDBClient
-	IssueService      *services.IssueService
-	FeedbackHandler   *handlers.FeedbackHandler
+	Telegram             *services.TelegramClient
+	MoviePilot           *services.MoviePilotClient
+	SessionMgr           *session.Manager
+	UserMapping          *services.UserMappingService
+	BindingRequest       *services.BindingRequestService
+	AdminService         *services.AdminService
+	QuotaService         *services.QuotaService
+	ChatService          *services.ChatService
+	StreamingChatHandler *services.StreamingChatHandler
+	SearchHistory        *services.SearchHistoryService
+	TMDB                 *services.TMDBClient
+	IssueService         *services.IssueService
+	FeedbackHandler      *handlers.FeedbackHandler
 }
 
 // PollDeps holds dependencies for polling (reduced set)
 type PollDeps struct {
-	Telegram       *services.TelegramClient
-	MoviePilot     *services.MoviePilotClient
-	SessionMgr     *session.Manager
-	UserMapping    *services.UserMappingService
-	BindingRequest *services.BindingRequestService
-	AdminService   *services.AdminService
-	QuotaService   *services.QuotaService
-	ChatService    *services.ChatService
-	SearchHistory  *services.SearchHistoryService
-	TMDB           *services.TMDBClient
-	IssueService   *services.IssueService
-	FeedbackHandler *handlers.FeedbackHandler
+	Telegram           *services.TelegramClient
+	MoviePilot         *services.MoviePilotClient
+	SessionMgr         *session.Manager
+	UserMapping        *services.UserMappingService
+	BindingRequest     *services.BindingRequestService
+	AdminService       *services.AdminService
+	QuotaService       *services.QuotaService
+	ChatService        *services.ChatService
+	StreamingChatHandler *services.StreamingChatHandler
+	SearchHistory      *services.SearchHistoryService
+	TMDB               *services.TMDBClient
+	IssueService       *services.IssueService
+	FeedbackHandler    *handlers.FeedbackHandler
 }
 
 // StartPolling starts the Telegram update polling
@@ -59,18 +62,19 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Telegram:        deps.Telegram,
-		MoviePilot:      deps.MoviePilot,
-		SessionMgr:      deps.SessionMgr,
-		UserMapping:     deps.UserMapping,
-		BindingRequest:  deps.BindingRequest,
-		AdminService:    deps.AdminService,
-		QuotaService:    deps.QuotaService,
-		ChatService:     deps.ChatService,
-		SearchHistory:   deps.SearchHistory,
-		TMDB:            deps.TMDB,
-		IssueService:    deps.IssueService,
-		FeedbackHandler: deps.FeedbackHandler,
+		Telegram:             deps.Telegram,
+		MoviePilot:           deps.MoviePilot,
+		SessionMgr:           deps.SessionMgr,
+		UserMapping:          deps.UserMapping,
+		BindingRequest:       deps.BindingRequest,
+		AdminService:         deps.AdminService,
+		QuotaService:         deps.QuotaService,
+		ChatService:          deps.ChatService,
+		StreamingChatHandler: deps.StreamingChatHandler,
+		SearchHistory:        deps.SearchHistory,
+		TMDB:                 deps.TMDB,
+		IssueService:         deps.IssueService,
+		FeedbackHandler:      deps.FeedbackHandler,
 	}
 
 	for {
@@ -117,9 +121,9 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.Config) {
 	log.Printf("[Poll] Message from %d: %s", msg.From.ID, msg.Text)
 
-	// Group chat: Only AI chat is allowed
+	// Group chat: Route to streaming chat handler
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.ChatService, deps.Telegram)
+		HandleGroupChatMessage(msg, deps.ChatService, deps.StreamingChatHandler, deps.Telegram)
 		return
 	}
 
@@ -149,7 +153,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 }
 
 // HandleGroupChatMessage handles messages in group chats
-func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.ChatService, telegram *services.TelegramClient) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.ChatService, streamingHandler *services.StreamingChatHandler, telegram *services.TelegramClient) {
 	query := msg.Text
 	isReplyToBot := msg.ReplyToMessage != nil && msg.ReplyToMessage.From.IsBot
 	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
@@ -180,12 +184,27 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.Ch
 
 	// Only respond to mentions or replies
 	if chatService.ShouldReply(chatMsg) {
-		log.Printf("[PollGroupChat] ShouldReply=true, getting response...")
-		response := chatService.GetResponse(chatMsg)
-		log.Printf("[PollGroupChat] Got response: ShouldReply=%v, Text=%s",
-			response.ShouldReply, response.Text)
-		if response.ShouldReply && response.Text != "" {
-			telegram.SendMessage(msg.Chat.ID, response.Text, "", nil)
+		log.Printf("[PollGroupChat] ShouldReply=true, routing to streaming handler...")
+		// Use streaming handler for group chats
+		if streamingHandler != nil {
+			ctx := context.Background()
+			if err := streamingHandler.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, query); err != nil {
+				log.Printf("[PollGroupChat] Streaming handler error: %v", err)
+				// Fallback to simple response
+				telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。请稍后再试。", "", nil)
+			}
+		} else {
+			// Fallback to non-streaming if streaming handler not available
+			log.Printf("[PollGroupChat] Streaming handler not available, using fallback...")
+			// For group chat fallback, just send a simple message
+			ctx := context.Background()
+			response, err := chatService.HandleMessage(ctx, msg.From.ID, msg.Chat.ID, userName, query, chatType)
+			if err != nil {
+				log.Printf("[PollGroupChat] Error: %v", err)
+				telegram.SendMessage(msg.Chat.ID, "抱歉，我遇到了一些问题。", "", nil)
+			} else if response != "" {
+				telegram.SendMessage(msg.Chat.ID, response, "", nil)
+			}
 		}
 	}
 }

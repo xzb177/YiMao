@@ -2,6 +2,7 @@
 package services
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -16,14 +17,17 @@ import (
 type ConversationStyle string
 
 const (
-	StyleFriendly   ConversationStyle = "friendly"   // 友好热情
+	StyleFriendly    ConversationStyle = "friendly"    // 友好热情
 	StyleProfessional ConversationStyle = "professional" // 专业助手
-	StylePlayful    ConversationStyle = "playful"    // 调皮可爱
+	StylePlayful     ConversationStyle = "playful"     // 调皮可爱
 )
 
-// ChatService provides intelligent chat capabilities
+// ChatService provides intelligent chat capabilities for private chats
+// This is the simplified version without streaming - streaming is handled by StreamingChatHandler for groups
 type ChatService struct {
-	aiAgent       *ai.Agent
+	agent         *ai.Agent
+	convMgr       *ai.ConversationManager
+	tgClient      *TelegramClient
 	style         ConversationStyle
 	lastChatTime  map[int64]time.Time
 	chatCooldown  time.Duration
@@ -39,42 +43,38 @@ type ChatType int
 
 const (
 	ChatTypePrivate ChatType = iota // 私聊
-	ChatTypeGroup                  // 群组
+	ChatTypeGroup                   // 群组
 	ChatTypeSupergroup              // 超级群组
 )
 
 // ChatMessage represents a chat message with context
 type ChatMessage struct {
-	UserID      int64
-	UserName    string
-	Content     string
-	IsReply     bool
-	IsMention   bool
-	ChatType    ChatType
-	Timestamp   time.Time
+	UserID    int64
+	UserName  string
+	Content   string
+	IsReply   bool
+	IsMention bool
+	ChatType  ChatType
+	Timestamp time.Time
 }
 
 // ChatResponse represents the response from chat service
 type ChatResponse struct {
-	Text      string
+	Text        string
 	ShouldReply bool
-	Edit      bool
 }
 
 // NewChatService creates a new AI chat service
-func NewChatService(apiKey string) *ChatService {
+func NewChatService(agent *ai.Agent, convMgr *ai.ConversationManager, tgClient *TelegramClient) *ChatService {
 	cs := &ChatService{
+		agent:         agent,
+		convMgr:       convMgr,
+		tgClient:      tgClient,
 		style:         StyleFriendly,
 		lastChatTime:  make(map[int64]time.Time),
 		chatCooldown:  2 * time.Second,
 		adminIDs:      make(map[int64]bool),
 		knowledgeBase: make(map[string]string),
-	}
-
-	// Initialize AI if API key provided
-	if apiKey != "" {
-		cs.aiAgent = ai.NewAgent(apiKey)
-		log.Printf("[ChatService] AI agent initialized: enabled=%v", cs.aiAgent.IsEnabled())
 	}
 
 	// Initialize knowledge base
@@ -133,18 +133,19 @@ func (cs *ChatService) SetStyle(style ConversationStyle) {
 }
 
 // ShouldReply determines if the service should reply to a message
+// Note: For private chats, this always returns true if there's content
 func (cs *ChatService) ShouldReply(msg *ChatMessage) bool {
-	// 私聊中不启用 AI 聊天，只用于搜索
+	// Private chats always get a response
 	if msg.ChatType == ChatTypePrivate {
-		return false
+		return true
 	}
 
-	// 群组中：Always reply if mentioned
+	// Group chats: reply if mentioned
 	if msg.IsMention {
 		return true
 	}
 
-	// 群组中：Always reply if replying to bot message
+	// Group chats: reply if replying to bot message
 	if msg.IsReply {
 		return true
 	}
@@ -208,32 +209,33 @@ func (cs *ChatService) isChatWorthy(content string) bool {
 	return false
 }
 
-// GetResponse generates a response to the chat message
-func (cs *ChatService) GetResponse(msg *ChatMessage) *ChatResponse {
+// HandleMessage handles an incoming message and returns the response
+func (cs *ChatService) HandleMessage(ctx context.Context, userID, chatID int64, userName, content string, chatType ChatType) (string, error) {
 	// Update last chat time
 	cs.mu.Lock()
-	cs.lastChatTime[msg.UserID] = time.Now()
+	cs.lastChatTime[userID] = time.Now()
 	cs.mu.Unlock()
 
-	isAdmin := cs.isAdmin(msg.UserID)
+	isAdmin := cs.isAdmin(userID)
 
 	// 1. Check knowledge base first
-	if response := cs.checkKnowledgeBase(msg.Content); response != "" {
-		return &ChatResponse{Text: response, ShouldReply: true}
+	if response := cs.checkKnowledgeBase(content); response != "" {
+		return response, nil
 	}
 
 	// 2. Use AI if available
-	if cs.aiAgent != nil && cs.aiAgent.IsEnabled() {
-		if response := cs.getAIResponse(msg, isAdmin); response != "" {
-			return &ChatResponse{Text: response, ShouldReply: true}
+	if cs.agent != nil && cs.agent.IsEnabled() {
+		response, err := cs.getAIResponse(ctx, userID, chatID, userName, content, chatType, isAdmin)
+		if err == nil && response != "" {
+			return response, nil
+		}
+		if err != nil {
+			log.Printf("[ChatService] AI error: %v", err)
 		}
 	}
 
 	// 3. Fallback to predefined responses
-	return &ChatResponse{
-		Text:       cs.getFallbackResponse(msg.Content, isAdmin),
-		ShouldReply: true,
-	}
+	return cs.getFallbackResponse(content, isAdmin), nil
 }
 
 // checkKnowledgeBase checks if message matches knowledge base entries
@@ -253,35 +255,65 @@ func (cs *ChatService) checkKnowledgeBase(content string) string {
 }
 
 // getAIResponse gets response from AI agent
-func (cs *ChatService) getAIResponse(msg *ChatMessage, isAdmin bool) string {
-	// Add user context
-	userContext := fmt.Sprintf("[用户 %s]", msg.UserName)
-	if isAdmin {
-		userContext = fmt.Sprintf("[管理员 %s]", msg.UserName)
+func (cs *ChatService) getAIResponse(ctx context.Context, userID, chatID int64, userName, content string, chatType ChatType, isAdmin bool) (string, error) {
+	// Get or create conversation
+	chatTypeStr := "private"
+	if chatType == ChatTypeGroup {
+		chatTypeStr = "group"
+	} else if chatType == ChatTypeSupergroup {
+		chatTypeStr = "supergroup"
 	}
 
-	// Combine context with message
-	fullMessage := fmt.Sprintf("%s 说: %s", userContext, msg.Content)
+	conv, err := cs.convMgr.GetOrCreate(ctx, userID, chatID, chatTypeStr)
+	if err != nil {
+		return "", fmt.Errorf("failed to get conversation: %w", err)
+	}
+
+	// Add user message to conversation
+	if err := cs.convMgr.AddAndSaveMessage(conv.ID, "user", content); err != nil {
+		log.Printf("[ChatService] Failed to save user message: %v", err)
+	}
+
+	// Compact if needed
+	if err := cs.convMgr.CompactIfNeeded(conv.ID); err != nil {
+		log.Printf("[ChatService] Failed to compact conversation: %v", err)
+	}
+
+	// Build system prompt
+	systemPrompt := cs.buildSystemPrompt(isAdmin)
+
+	// Build chat request (non-streaming for private chat)
+	req := &ai.ChatRequest{
+		Messages:     conv.GetMessages(),
+		SystemPrompt: systemPrompt,
+		MaxTokens:    cs.agent.GetMaxTokens(),
+		Temperature:  cs.agent.GetTemperature(),
+		Stream:       false, // Private chat doesn't use streaming
+	}
 
 	// Call AI
-	response, err := cs.aiAgent.ProcessMessage(msg.UserID, fullMessage)
+	response, err := cs.agent.Send(ctx, req)
 	if err != nil {
-		log.Printf("[ChatService] AI error: %v", err)
-		return ""
+		return "", err
 	}
 
 	// Clean up response
-	response = strings.TrimSpace(response)
-	response = strings.TrimPrefix(response, "[assistant]: ")
-	response = strings.TrimPrefix(response, "Assistant: ")
-	response = strings.TrimPrefix(response, "AI: ")
+	content = strings.TrimSpace(response.Content)
+	content = strings.TrimPrefix(content, "[assistant]: ")
+	content = strings.TrimPrefix(content, "Assistant: ")
+	content = strings.TrimPrefix(content, "AI: ")
 
-	// Limit length
-	if len(response) > 350 {
-		response = response[:347] + "..."
+	// Limit length for private chat
+	if len(content) > 1000 {
+		content = content[:997] + "..."
 	}
 
-	return response
+	// Save assistant message to conversation
+	if err := cs.convMgr.AddAndSaveMessage(conv.ID, "assistant", content); err != nil {
+		log.Printf("[ChatService] Failed to save assistant message: %v", err)
+	}
+
+	return content, nil
 }
 
 // buildSystemPrompt builds the AI system prompt based on style
@@ -420,20 +452,6 @@ func (cs *ChatService) randomResponse(responses []string) string {
 	return responses[rand.Intn(len(responses))]
 }
 
-// ProcessMessage is a convenience method to process a plain message
-func (cs *ChatService) ProcessMessage(userID int64, userName, content string, isReply, isMention bool, chatType ChatType) *ChatResponse {
-	msg := &ChatMessage{
-		UserID:    userID,
-		UserName:  userName,
-		Content:   content,
-		IsReply:   isReply,
-		IsMention: isMention,
-		ChatType:   chatType,
-		Timestamp: time.Now(),
-	}
-	return cs.GetResponse(msg)
-}
-
 // AddKnowledge adds or updates a knowledge base entry
 func (cs *ChatService) AddKnowledge(keyword, answer string) {
 	cs.mu.Lock()
@@ -450,8 +468,20 @@ func (cs *ChatService) RemoveKnowledge(keyword string) {
 
 // IsAIEnabled returns whether AI is enabled
 func (cs *ChatService) IsAIEnabled() bool {
-	if cs.aiAgent == nil {
+	if cs.agent == nil {
 		return false
 	}
-	return cs.aiAgent.IsEnabled()
+	return cs.agent.IsEnabled()
+}
+
+// GetConversation returns the conversation for a user and chat
+func (cs *ChatService) GetConversation(ctx context.Context, userID, chatID int64, chatType ChatType) (*ai.Conversation, error) {
+	chatTypeStr := "private"
+	if chatType == ChatTypeGroup {
+		chatTypeStr = "group"
+	} else if chatType == ChatTypeSupergroup {
+		chatTypeStr = "supergroup"
+	}
+
+	return cs.convMgr.GetOrCreate(ctx, userID, chatID, chatTypeStr)
 }

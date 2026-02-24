@@ -121,6 +121,10 @@ func (s *UserMappingService) GetMoviePilotUserID(telegramID int64) (int64, bool)
 	defer s.mu.RUnlock()
 
 	moviepilotID, exists := s.mappings[fmt.Sprintf("%d", telegramID)]
+	// Treat ID 0 as invalid/non-existent
+	if exists && moviepilotID == 0 {
+		return 0, false
+	}
 	return moviepilotID, exists
 }
 
