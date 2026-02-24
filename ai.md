@@ -87,11 +87,15 @@ detail:id:{id}:type:{type}  # 查看详情
 - **问题2**: 详情页返回列表按钮无响应
 - **原因**: 详情页使用 sendPhoto 发送图片消息，返回时尝试编辑图片消息会失败
 - **修复**: 添加 DeleteMessage 响应字段，从详情页返回时删除图片消息并重新发送列表
+- **问题3**: DeleteMessage API 返回值解析错误
+- **原因**: deleteMessage API 返回 bool 结果，但代码尝试解析为 Message 对象
+- **修复**: 改用 makeSimpleRequest 方法处理返回 bool 的 API
 - **数据源调整**: 改用 TMDB 直接数据，不再验证 MoviePilot 资源可用性
 - **修改文件**:
   - `internal/handlers/search.go` - 多页获取+随机打乱，导航检测
   - `internal/bot/poll.go` - 处理 DeleteMessage 响应
   - `internal/callback/types.go` - 添加 DeleteMessage 字段
+  - `internal/services/telegram.go` - 修复 DeleteMessage API 调用
 
 ### 2024-02-25 - 推荐去重修复
 - **问题**: 精选推荐中出现同一媒体多个版本（如 4K、1080P）的重复情况
