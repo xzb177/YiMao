@@ -190,7 +190,8 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Printf("[ChatService] AI Chat initialized: enabled=%v", chatService.IsAIEnabled())
 
 	// Initialize Streaming Chat Handler (for group chats)
-	streamingChatHandler := services.NewStreamingChatHandler(agent, agent.GetConversationManager(), telegramClient)
+	streamingChatHandler := services.NewStreamingChatHandler(agent, agent.GetConversationManager(), telegramClient, aiStore)
+	streamingChatHandler.SetAdminIDs(adminIDs)
 	log.Println("✅ Streaming chat handler initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)

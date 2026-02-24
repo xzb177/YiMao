@@ -182,6 +182,12 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, chatService *services.Ch
 	log.Printf("[PollGroupChat] Message from %s: isMention=%v, isReply=%v",
 		userName, isMention, isReplyToBot)
 
+	// Process message for Q&A learning (always, regardless of ShouldReply)
+	if streamingHandler != nil {
+		ctx := context.Background()
+		streamingHandler.ProcessMessageForLearning(ctx, msg.From.ID, msg.Chat.ID, msg.MessageID, userName, query, time.Now())
+	}
+
 	// Only respond to mentions or replies
 	if chatService.ShouldReply(chatMsg) {
 		log.Printf("[PollGroupChat] ShouldReply=true, routing to streaming handler...")

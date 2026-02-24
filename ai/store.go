@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -103,10 +105,64 @@ func (s *Store) initSchema() error {
 		created_at INTEGER NOT NULL,
 		FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 	);
+
+	-- Q&A Learning tables
+	CREATE TABLE IF NOT EXISTS qa_pairs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		question TEXT NOT NULL,
+		answer TEXT NOT NULL,
+		question_normalized TEXT NOT NULL,
+		source_chat_id INTEGER NOT NULL,
+		source_user_id INTEGER NOT NULL,
+		answer_user_id INTEGER NOT NULL,
+		is_admin_answer INTEGER DEFAULT 0,
+		confidence REAL DEFAULT 0.5,
+		created_at INTEGER NOT NULL,
+		last_used_at INTEGER,
+		usage_count INTEGER DEFAULT 0,
+		success_count INTEGER DEFAULT 0,
+		fail_count INTEGER DEFAULT 0
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_qa_question_normalized ON qa_pairs(question_normalized);
+	CREATE INDEX IF NOT EXISTS idx_qa_source_chat ON qa_pairs(source_chat_id);
+	CREATE INDEX IF NOT EXISTS idx_qa_created_at ON qa_pairs(created_at);
+	CREATE INDEX IF NOT EXISTS idx_qa_usage_count ON qa_pairs(usage_count DESC);
+
+	CREATE TABLE IF NOT EXISTS qa_keywords (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		qa_id INTEGER NOT NULL,
+		keyword TEXT NOT NULL,
+		FOREIGN KEY (qa_id) REFERENCES qa_pairs(id) ON DELETE CASCADE
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_qa_keywords_keyword ON qa_keywords(keyword);
+	CREATE INDEX IF NOT EXISTS idx_qa_keywords_qa_id ON qa_keywords(qa_id);
+
+	CREATE TABLE IF NOT EXISTS pending_questions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		chat_id INTEGER NOT NULL,
+		message_id INTEGER NOT NULL,
+		user_id INTEGER NOT NULL,
+		question TEXT NOT NULL,
+		question_normalized TEXT NOT NULL,
+		asked_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		status TEXT DEFAULT 'pending'
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_pending_qa_chat ON pending_questions(chat_id, asked_at);
+	CREATE INDEX IF NOT EXISTS idx_pending_qa_status ON pending_questions(status);
+	CREATE INDEX IF NOT EXISTS idx_pending_qa_expires ON pending_questions(expires_at);
 	`
 
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for new tables
+	return s.runMigrations()
 }
 
 // Close closes the database connection
@@ -521,4 +577,499 @@ type StoreStats struct {
 	MessageCount      int
 	UserCount         int
 	SizeBytes         int64
+	QAPairCount       int
+	PendingQuestionCount int
+}
+
+// ============================================================================
+// Q&A Pair Operations
+// ============================================================================
+
+// AddQAPair adds a new Q&A pair to the store
+func (s *Store) AddQAPair(pair *QAPair) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().Unix()
+	result, err := s.db.Exec(`
+		INSERT INTO qa_pairs (question, answer, question_normalized,
+			source_chat_id, source_user_id, answer_user_id, is_admin_answer,
+			confidence, created_at, usage_count, success_count, fail_count)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0)
+	`, pair.Question, pair.Answer, pair.QuestionNormalized,
+		pair.SourceChatID, pair.SourceUserID, pair.AnswerUserID,
+		boolToInt(pair.IsAdminAnswer), pair.Confidence, now)
+
+	if err != nil {
+		return err
+	}
+
+	// Get the ID and add keywords
+	id, _ := result.LastInsertId()
+	pair.ID = id
+
+	// Extract and add keywords using simple extraction
+	keywords := s.extractKeywords(pair.Question)
+	for _, kw := range keywords {
+		if _, err := s.db.Exec(`INSERT INTO qa_keywords (qa_id, keyword) VALUES (?, ?)`, id, kw); err != nil {
+			// Log but continue on keyword error
+			continue
+		}
+	}
+
+	return nil
+}
+
+// FindQAByNormalized finds a Q&A pair by normalized question
+func (s *Store) FindQAByNormalized(normalized string) (*QAPair, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var pair QAPair
+	err := s.db.QueryRow(`
+		SELECT id, question, answer, question_normalized, source_chat_id,
+			source_user_id, answer_user_id, is_admin_answer, confidence,
+			created_at, last_used_at, usage_count, success_count, fail_count
+		FROM qa_pairs WHERE question_normalized = ?
+		LIMIT 1
+	`, normalized).Scan(
+		&pair.ID, &pair.Question, &pair.Answer, &pair.QuestionNormalized,
+		&pair.SourceChatID, &pair.SourceUserID, &pair.AnswerUserID,
+		&pair.IsAdminAnswer, &pair.Confidence, &pair.CreatedAt,
+		&pair.LastUsedAt, &pair.UsageCount, &pair.SuccessCount,
+		&pair.FailCount,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &pair, err
+}
+
+// FindQAByKeywords finds Q&A pairs matching keywords
+func (s *Store) FindQAByKeywords(keywords []string) ([]*QAPair, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(keywords) == 0 {
+		return nil, nil
+	}
+
+	// Build query with placeholders
+	query := `
+		SELECT DISTINCT q.id, q.question, q.answer, q.question_normalized,
+			q.source_chat_id, q.source_user_id, q.answer_user_id,
+			q.is_admin_answer, q.confidence, q.created_at, q.last_used_at,
+			q.usage_count, q.success_count, q.fail_count
+		FROM qa_pairs q
+		INNER JOIN qa_keywords k ON q.id = k.qa_id
+		WHERE k.keyword IN (`
+
+	args := make([]interface{}, len(keywords))
+	for i, kw := range keywords {
+		if i > 0 {
+			query += ", "
+		}
+		query += "?"
+		args[i] = kw
+	}
+	query += ") ORDER BY q.usage_count DESC, q.created_at DESC LIMIT 20"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pairs []*QAPair
+	for rows.Next() {
+		var pair QAPair
+		err := rows.Scan(
+			&pair.ID, &pair.Question, &pair.Answer, &pair.QuestionNormalized,
+			&pair.SourceChatID, &pair.SourceUserID, &pair.AnswerUserID,
+			&pair.IsAdminAnswer, &pair.Confidence, &pair.CreatedAt,
+			&pair.LastUsedAt, &pair.UsageCount, &pair.SuccessCount,
+			&pair.FailCount,
+		)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, &pair)
+	}
+
+	return pairs, nil
+}
+
+// GetQAKeywords gets keywords for a Q&A pair
+func (s *Store) GetQAKeywords(qaID int64) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(`SELECT keyword FROM qa_keywords WHERE qa_id = ?`, qaID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var keywords []string
+	for rows.Next() {
+		var kw string
+		if err := rows.Scan(&kw); err != nil {
+			return nil, err
+		}
+		keywords = append(keywords, kw)
+	}
+
+	return keywords, nil
+}
+
+// GetRecentQAPairs gets recent/popular Q&A pairs
+func (s *Store) GetRecentQAPairs(limit int) ([]*QAPair, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `
+		SELECT id, question, answer, question_normalized, source_chat_id,
+			source_user_id, answer_user_id, is_admin_answer, confidence,
+			created_at, last_used_at, usage_count, success_count, fail_count
+		FROM qa_pairs ORDER BY usage_count DESC, created_at DESC LIMIT ?
+	`
+
+	rows, err := s.db.Query(query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pairs []*QAPair
+	for rows.Next() {
+		var pair QAPair
+		err := rows.Scan(
+			&pair.ID, &pair.Question, &pair.Answer, &pair.QuestionNormalized,
+			&pair.SourceChatID, &pair.SourceUserID, &pair.AnswerUserID,
+			&pair.IsAdminAnswer, &pair.Confidence, &pair.CreatedAt,
+			&pair.LastUsedAt, &pair.UsageCount, &pair.SuccessCount,
+			&pair.FailCount,
+		)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, &pair)
+	}
+
+	return pairs, nil
+}
+
+// UpdateQAUsage updates usage statistics for a Q&A pair
+func (s *Store) UpdateQAUsage(qaID int64, success bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().Unix()
+
+	if success {
+		_, err := s.db.Exec(`
+			UPDATE qa_pairs
+			SET usage_count = usage_count + 1,
+				success_count = success_count + 1,
+				last_used_at = ?
+			WHERE id = ?
+		`, now, qaID)
+		return err
+	}
+
+	_, err := s.db.Exec(`
+		UPDATE qa_pairs
+		SET usage_count = usage_count + 1,
+			fail_count = fail_count + 1,
+			last_used_at = ?
+		WHERE id = ?
+	`, now, qaID)
+	return err
+}
+
+// GetQAPairByID gets a Q&A pair by ID
+func (s *Store) GetQAPairByID(id int64) (*QAPair, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var pair QAPair
+	err := s.db.QueryRow(`
+		SELECT id, question, answer, question_normalized, source_chat_id,
+			source_user_id, answer_user_id, is_admin_answer, confidence,
+			created_at, last_used_at, usage_count, success_count, fail_count
+		FROM qa_pairs WHERE id = ?
+	`, id).Scan(
+		&pair.ID, &pair.Question, &pair.Answer, &pair.QuestionNormalized,
+		&pair.SourceChatID, &pair.SourceUserID, &pair.AnswerUserID,
+		&pair.IsAdminAnswer, &pair.Confidence, &pair.CreatedAt,
+		&pair.LastUsedAt, &pair.UsageCount, &pair.SuccessCount,
+		&pair.FailCount,
+	)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return &pair, err
+}
+
+// DeleteQAPair deletes a Q&A pair
+func (s *Store) DeleteQAPair(id int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`DELETE FROM qa_pairs WHERE id = ?`, id)
+	return err
+}
+
+// GetAllQAPairs returns all Q&A pairs with pagination
+func (s *Store) GetAllQAPairs(offset, limit int) ([]*QAPair, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	query := `
+		SELECT id, question, answer, question_normalized, source_chat_id,
+			source_user_id, answer_user_id, is_admin_answer, confidence,
+			created_at, last_used_at, usage_count, success_count, fail_count
+		FROM qa_pairs ORDER BY created_at DESC LIMIT ? OFFSET ?
+	`
+
+	rows, err := s.db.Query(query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var pairs []*QAPair
+	for rows.Next() {
+		var pair QAPair
+		err := rows.Scan(
+			&pair.ID, &pair.Question, &pair.Answer, &pair.QuestionNormalized,
+			&pair.SourceChatID, &pair.SourceUserID, &pair.AnswerUserID,
+			&pair.IsAdminAnswer, &pair.Confidence, &pair.CreatedAt,
+			&pair.LastUsedAt, &pair.UsageCount, &pair.SuccessCount,
+			&pair.FailCount,
+		)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, &pair)
+	}
+
+	return pairs, nil
+}
+
+// ============================================================================
+// Pending Question Operations
+// ============================================================================
+
+// AddPendingQuestion adds a pending question
+func (s *Store) AddPendingQuestion(q *PendingQuestion) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`
+		INSERT INTO pending_questions
+			(chat_id, message_id, user_id, question, question_normalized,
+			 asked_at, expires_at, status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, q.ChatID, q.MessageID, q.UserID, q.Question,
+		q.QuestionNormalized, q.AskedAt, q.ExpiresAt, q.Status)
+
+	return err
+}
+
+// GetPendingQuestions gets pending questions for a chat
+func (s *Store) GetPendingQuestions(chatID int64, status string) ([]*PendingQuestion, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(`
+		SELECT id, chat_id, message_id, user_id, question, question_normalized,
+			asked_at, expires_at, status
+		FROM pending_questions
+		WHERE chat_id = ? AND status = ? AND expires_at > ?
+		ORDER BY asked_at DESC
+	`, chatID, status, time.Now().Unix())
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var questions []*PendingQuestion
+	for rows.Next() {
+		var q PendingQuestion
+		err := rows.Scan(
+			&q.ID, &q.ChatID, &q.MessageID, &q.UserID,
+			&q.Question, &q.QuestionNormalized, &q.AskedAt,
+			&q.ExpiresAt, &q.Status,
+		)
+		if err != nil {
+			return nil, err
+		}
+		questions = append(questions, &q)
+	}
+
+	return questions, nil
+}
+
+// UpdatePendingQuestionStatus updates the status of a pending question
+func (s *Store) UpdatePendingQuestionStatus(id int64, status string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(`
+		UPDATE pending_questions SET status = ? WHERE id = ?
+	`, status, id)
+
+	return err
+}
+
+// CleanupExpiredQuestions removes expired pending questions
+func (s *Store) CleanupExpiredQuestions() (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().Unix()
+	result, err := s.db.Exec(`
+		DELETE FROM pending_questions WHERE expires_at < ?
+	`, now)
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.RowsAffected()
+}
+
+// GetPendingQuestionCount returns count of pending questions by status
+func (s *Store) GetPendingQuestionCount(status string) (int, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var count int
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM pending_questions WHERE status = ? AND expires_at > ?
+	`, status, time.Now().Unix()).Scan(&count)
+
+	return count, err
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+// boolToInt converts a boolean to integer (0 or 1)
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// intToBool converts an integer to boolean
+func intToBool(i int) bool {
+	return i != 0
+}
+
+// extractKeywords extracts keywords from text
+func (s *Store) extractKeywords(text string) []string {
+	// Simple extraction: split by whitespace and filter short words
+	words := strings.Fields(text)
+	keywords := make(map[string]bool)
+
+	// Stop words (common words to ignore)
+	stopWords := map[string]bool{
+		"的": true, "了": true, "在": true, "是": true,
+		"我": true, "有": true, "和": true, "就": true,
+		"不": true, "人": true, "都": true, "一": true,
+		"一个": true, "上": true, "也": true, "很": true,
+		"到": true, "说": true, "要": true, "去": true,
+		"你": true, "会": true, "着": true, "没有": true,
+		"吗": true, "呢": true, "吧": true,
+	}
+
+	for _, word := range words {
+		word = strings.ToLower(strings.Trim(word, "。，、；：？！\"'（）【】"))
+		if len(word) >= 2 && !stopWords[word] {
+			keywords[word] = true
+		}
+	}
+
+	result := make([]string, 0, len(keywords))
+	for kw := range keywords {
+		result = append(result, kw)
+	}
+	return result
+}
+
+// runMigrations runs any necessary database migrations
+func (s *Store) runMigrations() error {
+	// Check if qa_pairs table exists, if not create it
+	var tableExists int
+	err := s.db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='qa_pairs'").Scan(&tableExists)
+	if err != nil {
+		return err
+	}
+
+	if tableExists == 0 {
+		log.Println("[Store] Running Q&A migration...")
+		qaSchema := `
+		CREATE TABLE IF NOT EXISTS qa_pairs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			question TEXT NOT NULL,
+			answer TEXT NOT NULL,
+			question_normalized TEXT NOT NULL,
+			source_chat_id INTEGER NOT NULL,
+			source_user_id INTEGER NOT NULL,
+			answer_user_id INTEGER NOT NULL,
+			is_admin_answer INTEGER DEFAULT 0,
+			confidence REAL DEFAULT 0.5,
+			created_at INTEGER NOT NULL,
+			last_used_at INTEGER,
+			usage_count INTEGER DEFAULT 0,
+			success_count INTEGER DEFAULT 0,
+			fail_count INTEGER DEFAULT 0
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_qa_question_normalized ON qa_pairs(question_normalized);
+		CREATE INDEX IF NOT EXISTS idx_qa_source_chat ON qa_pairs(source_chat_id);
+		CREATE INDEX IF NOT EXISTS idx_qa_created_at ON qa_pairs(created_at);
+		CREATE INDEX IF NOT EXISTS idx_qa_usage_count ON qa_pairs(usage_count DESC);
+
+		CREATE TABLE IF NOT EXISTS qa_keywords (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			qa_id INTEGER NOT NULL,
+			keyword TEXT NOT NULL,
+			FOREIGN KEY (qa_id) REFERENCES qa_pairs(id) ON DELETE CASCADE
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_qa_keywords_keyword ON qa_keywords(keyword);
+		CREATE INDEX IF NOT EXISTS idx_qa_keywords_qa_id ON qa_keywords(qa_id);
+
+		CREATE TABLE IF NOT EXISTS pending_questions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			chat_id INTEGER NOT NULL,
+			message_id INTEGER NOT NULL,
+			user_id INTEGER NOT NULL,
+			question TEXT NOT NULL,
+			question_normalized TEXT NOT NULL,
+			asked_at INTEGER NOT NULL,
+			expires_at INTEGER NOT NULL,
+			status TEXT DEFAULT 'pending'
+		);
+
+		CREATE INDEX IF NOT EXISTS idx_pending_qa_chat ON pending_questions(chat_id, asked_at);
+		CREATE INDEX IF NOT EXISTS idx_pending_qa_status ON pending_questions(status);
+		CREATE INDEX IF NOT EXISTS idx_pending_qa_expires ON pending_questions(expires_at);
+		`
+		_, err = s.db.Exec(qaSchema)
+		if err != nil {
+			return fmt.Errorf("failed to create Q&A tables: %w", err)
+		}
+		log.Println("[Store] Q&A tables created successfully")
+	}
+
+	return nil
 }
