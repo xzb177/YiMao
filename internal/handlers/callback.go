@@ -70,7 +70,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	// Only show AI recommendation in private chats
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
-		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+		msg.Text("🎬 精选推荐 · 发现优质内容").Newline()
 	}
 
 	msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
@@ -110,28 +110,28 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 }
 
 func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, error) {
-	// AI recommendation is only available in private chats
+	// Recommendation is only available in private chats
 	if ctx.ChatType != "private" {
 		return &callback.Response{
-			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
+			Text:        "⚠️ 推荐功能仅在私聊中可用",
 			CallbackMsg: "请私聊使用",
 			ShowAlert:   true,
 		}, nil
 	}
 
 	msg := services.NewMessageBuilder()
-	msg.Bold("🤖 AI 智能推荐").Newline()
+	msg.Bold("🎬 精选推荐").Newline()
 	msg.Newline()
-	msg.Italic("✨ 为您精选优质内容").Newline()
+	msg.Italic("✨ 发现你喜欢的精彩内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门电影", "search:type:trending")
-	kb.AddButton("📺 热播剧集", "search:type:hot")
+	kb.AddButton("🔥 本周热门", "search:type:trending")
+	kb.AddButton("📺 热门剧集", "search:type:hot")
 	kb.NewRow()
-	kb.AddButton("⭐ 高分佳作", "search:type:toprated")
-	kb.AddButton("🆕 最新上线", "search:type:new")
+	kb.AddButton("⭐ 必看神作", "search:type:toprated")
+	kb.AddButton("🆕 最新上映", "search:type:new")
 	kb.NewRow()
-	kb.AddButton("🎲 随机发现", "search:type:random")
+	kb.AddButton("🎲 随机探索", "search:type:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
@@ -204,10 +204,15 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 
 	// Check if we have cached data from search results first
-	items, _, _, hasSearch := sess.GetSearchResults()
+	items, _, query, hasSearch := sess.GetSearchResults()
 	if hasSearch {
 		for _, item := range items {
 			if item.ID == mediaID {
+				// Push navigation entry before showing detail
+				// If query is like "trending", "hot", "new", "toprated", "random", it's from AI recommendation
+				if isAIRecommendationQuery(query) {
+					sess.PushNavEntry("ai_recommendation", query, query)
+				}
 				// Use search result data - it already has all we need
 				log.Printf("[DetailHandler] Using search result info for: %s", item.Title)
 				return h.buildDetailFromSearch(item, mediaType, sess), nil
@@ -232,6 +237,17 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// If all else fails, build a simple detail page
 	return h.buildSimpleDetail(tmdbID, mediaType, sess), nil
+}
+
+// isAIRecommendationQuery checks if the query is from AI recommendation
+func isAIRecommendationQuery(query string) bool {
+	aiTypes := []string{"trending", "hot", "new", "toprated", "random"}
+	for _, t := range aiTypes {
+		if query == t {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
@@ -471,17 +487,20 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 
 		mediaInfo, err := h.moviepilot.GetMediaInfo(mediaID, mpType)
 		if err == nil && mediaInfo != nil {
-			return h.buildDetailFromMediaInfo(mediaInfo, sess)
+			// Get the query from session to determine back button behavior
+			_, _, query, _ := sess.GetSearchResults()
+			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
 		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
 	}
 
 	// Fallback to basic detail view from session data
-	return h.buildBasicDetailFromSearch(item, mediaType)
+	_, _, query, _ := sess.GetSearchResults()
+	return h.buildBasicDetailFromSearch(item, mediaType, query)
 }
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
-func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session) *callback.Response {
+func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query string) *callback.Response {
 	msg := services.NewMessageBuilder()
 
 	// Determine media type
@@ -506,6 +525,12 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	}
 	msg.Textf("🏷️ %s", typeLabel).Newline()
 	msg.Newline()
+
+	// Genres/Category
+	if len(info.Genres) > 0 {
+		msg.Textf("🎭 %s", strings.Join(info.Genres, "、")).Newline()
+		msg.Newline()
+	}
 
 	// TV show seasons info
 	if isTV && len(info.Seasons) > 0 {
@@ -571,7 +596,14 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.NewRow()
 	}
 
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	// Back button - determine target based on query
+	if isAIRecommendationQuery(query) {
+		// From AI recommendation, go back to the same recommendation type
+		kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
+	} else {
+		// From other sources, go back to main menu
+		kb.AddButton("⬅️ 返回主菜单", "start")
+	}
 
 	// Check for poster image first
 	photoURL := ""
@@ -610,7 +642,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 }
 
 // buildBasicDetailFromSearch builds basic detail page when MoviePilot API fails
-func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string) *callback.Response {
+func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string, query string) *callback.Response {
 	msg := services.NewMessageBuilder()
 
 	// Type icon and label
@@ -695,7 +727,14 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		kb.NewRow()
 	}
 
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	// Back button - determine target based on query
+	if isAIRecommendationQuery(query) {
+		// From AI recommendation, go back to the same recommendation type
+		kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
+	} else {
+		// From other sources, go back to main menu
+		kb.AddButton("⬅️ 返回主菜单", "start")
+	}
 
 	// Check for poster
 	photoURL := ""
@@ -896,7 +935,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		msg.Bold("👋 欢迎使用云海影视助手").Newline()
 		msg.Newline()
 		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
-		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+		msg.Text("🎬 精选推荐 · 发现优质内容").Newline()
 		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
 		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
 		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
@@ -942,7 +981,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		msg.Bold("👋 欢迎使用云海影视助手").Newline()
 		msg.Newline()
 		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
-		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
+		msg.Text("🎬 精选推荐 · 发现优质内容").Newline()
 		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
 		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
 		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()

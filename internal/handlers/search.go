@@ -264,7 +264,7 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 	// AI recommendation is only available in private chats
 	if ctx.ChatType != "private" {
 		return &callback.Response{
-			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
+			Text:        "⚠️ 推荐功能仅在私聊中可用",
 			CallbackMsg: "请私聊使用",
 			ShowAlert:   true,
 		}, nil
@@ -275,11 +275,11 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 	// Get trending recommendations from MoviePilot
 	results, err := h.getTrendingResults(tType)
 	if err != nil {
-		msg.Bold("🤖 AI 推荐").Newline()
+		msg.Bold("🎬 精选推荐").Newline()
 		msg.Newline()
-		msg.Text("抱歉，暂时无法获取推荐内容。").Newline()
+		msg.Text("😓 推荐服务暂时不可用").Newline()
 		msg.Newline()
-		msg.Italic("💡 请稍后再试或使用搜索功能")
+		msg.Italic("💡 稍后再试或使用搜索功能")
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("⬅️ 返回主菜单", "start")
@@ -292,31 +292,39 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 	}
 
 	// Build response with results
-	msg.Bold("🤖 AI 推荐").Newline()
+	msg.Bold("🎬 精选推荐").Newline()
 	msg.Newline()
 
 	title := ""
+	subtitle := ""
 	switch tType {
 	case "trending":
-		title = "🔥 热门电影"
+		title = "🔥 本周热门"
+		subtitle = "大家都在看的好片"
 	case "hot":
-		title = "📺 热播剧集"
+		title = "📺 热门剧集"
+		subtitle = "追剧必看热门番"
 	case "toprated":
-		title = "⭐ 高分佳作"
+		title = "⭐ 必看神作"
+		subtitle = "高分经典，不容错过"
 	case "new":
-		title = "🆕 最新上线"
+		title = "🆕 最新上映"
+		subtitle = "刚上线的新鲜内容"
 	case "random":
-		title = "🎲 随机发现"
+		title = "🎲 随机探索"
+		subtitle = "发现未知的精彩"
 	default:
-		title = "🤖 AI 推荐"
+		title = "🎬 精选推荐"
+		subtitle = "为您推荐优质内容"
 	}
 	msg.Italic(title).Newline()
+	msg.Text(subtitle).Newline()
 	msg.Newline()
 
 	if len(results) == 0 {
-		msg.Text("暂无推荐内容").Newline()
+		msg.Italic("💫 暂时没有找到相关内容").Newline()
 		msg.Newline()
-		msg.Italic("💡 试试其他推荐类型")
+		msg.Text("试试其他分类，或许有惊喜哦")
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔥 热门电影", "search:type:trending")
@@ -346,13 +354,20 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	searchItems := make([]session.SearchItem, 0, len(results))
 	for _, item := range results {
+		// Convert Chinese type to English for callback data
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+
 		searchItem := session.SearchItem{
-			ID:     fmt.Sprintf("%d", item.ID),
-			Title:  item.Title,
-			Year:   item.Year.Int(),
-			Type:   string(item.Type),
-			Rating: item.Rating,
-			Poster: item.Poster,
+			ID:       fmt.Sprintf("%d", item.ID),
+			Title:    item.Title,
+			Year:     item.Year.Int(),
+			Type:     mediaType, // Use English type for callbacks
+			Rating:   item.Rating,
+			Poster:   item.Poster,
+			Overview: item.Overview,
 		}
 		searchItems = append(searchItems, searchItem)
 	}
@@ -377,8 +392,12 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 
 		msg.Textf("%d. %s%s%s%s", i+1, item.Title, year, mediaType, rating).Newline()
 
-		// Add button for each item - use detail callback instead of select
-		kb.AddButton(fmt.Sprintf("%d", i+1), fmt.Sprintf("detail:id:%d:type:%s", item.ID, item.Type))
+		// Add button for each item - use English type for callback data
+		mediaTypeForCallback := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaTypeForCallback = "tv"
+		}
+		kb.AddButton(fmt.Sprintf("%d", i+1), fmt.Sprintf("detail:id:%d:type:%s", item.ID, mediaTypeForCallback))
 
 		// New row every 4 items
 		if (i+1)%4 == 0 || i == displayCount-1 {
@@ -402,60 +421,198 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 // getTrendingResults gets trending results based on type
 func (h *SearchHandler) getTrendingResults(tType string) ([]services.SearchResult, error) {
 	switch tType {
-	case "trending", "hot":
-		// Get recent requests and find popular ones
-		return h.getPopularMedia()
+	case "trending":
+		// 热门电影 - 使用 TMDB trending API + MoviePilot 验证
+		return h.getTrendingMoviesHybrid()
+	case "hot":
+		// 热播剧集 - 使用 TMDB trending TV API + MoviePilot 验证
+		return h.getTrendingTVHybrid()
 	case "toprated":
-		return h.getTopRatedMedia()
+		return h.getTopRatedMediaHybrid()
 	case "new":
-		return h.getNewMedia()
+		return h.getNewMediaHybrid()
 	case "random":
 		return h.getRandomMedia()
 	default:
-		return h.getPopularMedia()
+		return h.getTrendingMoviesHybrid()
 	}
 }
 
-// getPopularMedia returns popular media from recent requests
-func (h *SearchHandler) getPopularMedia() ([]services.SearchResult, error) {
-	// Expanded keywords list for variety
-	allKeywords := []string{
-		"复仇者联盟", "沙丘", "奥本海默", "流浪地球", "阿凡达", "泰坦尼克", "黑客帝国", "教父", "权力的游戏",
-		"星际穿越", "盗梦空间", "蝙蝠侠", "蜘蛛侠", "钢铁侠", "雷神", "美国队长", "黑寡妇",
-		"神奇女侠", "海王", "闪电侠", "绿灯侠", "金刚狼", "死侍", "银河护卫队",
+// getTrendingMoviesHybrid gets trending movies from TMDB and filters by MoviePilot availability
+func (h *SearchHandler) getTrendingMoviesHybrid() ([]services.SearchResult, error) {
+	if h.tmdb == nil {
+		return h.getFallbackMedia()
 	}
 
-	// Randomly select and shuffle keywords
-	selected := shuffleStrings(allKeywords, 6)
+	tmdbResults, err := h.tmdb.GetTrendingMovies("week")
+	if err != nil {
+		log.Printf("[SearchHandler] TMDB GetTrendingMovies failed: %v", err)
+		return h.getFallbackMedia()
+	}
 
-	var allResults []services.SearchResult
-	seen := make(map[string]bool)
+	// Filter through MoviePilot to check availability
+	return h.filterTMDBResultsByMoviePilot(tmdbResults.Results, "movie")
+}
 
-	for _, kw := range selected {
-		results, err := h.moviepilot.SearchMedia(kw, 1)
+// getTrendingTVHybrid gets trending TV shows from TMDB and filters by MoviePilot availability
+func (h *SearchHandler) getTrendingTVHybrid() ([]services.SearchResult, error) {
+	if h.tmdb == nil {
+		return h.getFallbackTVMedia()
+	}
+
+	tmdbResults, err := h.tmdb.GetTrendingTV("week")
+	if err != nil {
+		log.Printf("[SearchHandler] TMDB GetTrendingTV failed: %v", err)
+		return h.getFallbackTVMedia()
+	}
+
+	// Filter through MoviePilot to check availability
+	return h.filterTMDBResultsByMoviePilot(tmdbResults.Results, "tv")
+}
+
+// getTopRatedMediaHybrid gets top-rated media from TMDB and filters by MoviePilot
+func (h *SearchHandler) getTopRatedMediaHybrid() ([]services.SearchResult, error) {
+	if h.tmdb == nil {
+		return h.getFallbackMedia()
+	}
+
+	tmdbResults, err := h.tmdb.GetPopularMovies(1)
+	if err != nil {
+		log.Printf("[SearchHandler] TMDB GetPopularMovies failed: %v", err)
+		return h.getFallbackMedia()
+	}
+
+	// Filter and only return high-rated content
+	var highRated []services.TMDBTrendingMediaInfo
+	for _, item := range tmdbResults.Results {
+		if item.VoteAverage >= 7.5 {
+			highRated = append(highRated, item)
+		}
+	}
+
+	return h.filterTMDBResultsByMoviePilot(highRated, "movie")
+}
+
+// getNewMediaHybrid gets new releases from TMDB and filters by MoviePilot
+func (h *SearchHandler) getNewMediaHybrid() ([]services.SearchResult, error) {
+	if h.tmdb == nil {
+		return h.getNewMedia()
+	}
+
+	tmdbResults, err := h.tmdb.GetTrendingMovies("week")
+	if err != nil {
+		log.Printf("[SearchHandler] TMDB GetTrendingMovies failed: %v", err)
+		return h.getNewMedia()
+	}
+
+	// Filter for recent content (last 2 years)
+	currentYear := time.Now().Year()
+	var recentResults []services.TMDBTrendingMediaInfo
+
+	for _, item := range tmdbResults.Results {
+		if item.ReleaseDate != "" {
+			year := 0
+			fmt.Sscanf(item.ReleaseDate, "%d-", &year)
+			if year >= currentYear-2 {
+				recentResults = append(recentResults, item)
+			}
+		}
+	}
+
+	return h.filterTMDBResultsByMoviePilot(recentResults, "movie")
+}
+
+// filterTMDBResultsByMoviePilot filters TMDB results by checking if they exist in MoviePilot
+func (h *SearchHandler) filterTMDBResultsByMoviePilot(items []services.TMDBTrendingMediaInfo, mediaType string) ([]services.SearchResult, error) {
+	var validResults []services.SearchResult
+	seen := make(map[int]bool)
+
+	for _, item := range items {
+		tmdbID := item.ID
+		if seen[tmdbID] {
+			continue
+		}
+		seen[tmdbID] = true
+
+		// Check if MoviePilot has this media
+		mediaInfo, err := h.moviepilot.GetMediaInfo(tmdbID, services.MediaType(mediaType))
 		if err != nil {
-			log.Printf("[SearchHandler] Search for '%s' failed: %v", kw, err)
+			// MoviePilot doesn't have this media, skip it
+			log.Printf("[SearchHandler] MoviePilot doesn't have TMDB ID %d (%s), skipping", tmdbID, getItemTitle(item))
 			continue
 		}
 
-		items := results.Results
-		for _, item := range items {
-			if !seen[item.Title] {
-				seen[item.Title] = true
-				allResults = append(allResults, item)
-				if len(allResults) >= 8 {
-					break
-				}
-			}
+		// Use the original mediaType parameter (English) instead of mediaInfo.Type (Chinese)
+		result := services.SearchResult{
+			ID:       tmdbID,
+			Title:    mediaInfo.Title,
+			Year:     mediaInfo.Year,
+			Type:     mediaType, // Use English type for callback data
+			Poster:   mediaInfo.Poster,
+			Rating:   mediaInfo.Rating,
+			Overview: mediaInfo.Overview,
 		}
-		if len(allResults) >= 8 {
+		validResults = append(validResults, result)
+
+		if len(validResults) >= 8 {
 			break
 		}
 	}
 
+	// If we got results, return them
+	if len(validResults) > 0 {
+		log.Printf("[SearchHandler] Filtered %d valid results from TMDB", len(validResults))
+		return validResults, nil
+	}
+
+	// Fallback if no valid results found
+	log.Printf("[SearchHandler] No valid results after filtering, using fallback")
+	if mediaType == "tv" {
+		return h.getFallbackTVMedia()
+	}
+	return h.getFallbackMedia()
+}
+
+// getItemTitle gets title from TMDBTrendingMediaInfo
+func getItemTitle(item services.TMDBTrendingMediaInfo) string {
+	if item.Title != "" {
+		return item.Title
+	}
+	return item.Name
+}
+
+// getNewMediaFromAPI gets new media using better keywords
+func (h *SearchHandler) getNewMediaFromAPI() ([]services.SearchResult, error) {
+	// Use year-based search for newer content
+	currentYear := time.Now().Year()
+
+	// Try multiple recent year searches
+	years := []int{currentYear, currentYear - 1, currentYear - 2}
+
+	var allResults []services.SearchResult
+	seen := make(map[string]bool)
+
+	for _, year := range years {
+		// Search for content from this year
+		yearStr := fmt.Sprintf("%d", year)
+		results, err := h.moviepilot.SearchMedia(yearStr, 1)
+		if err != nil {
+			continue
+		}
+
+		for _, item := range results.Results {
+			if !seen[item.Title] && item.Year.Int() >= year {
+				seen[item.Title] = true
+				allResults = append(allResults, item)
+				if len(allResults) >= 8 {
+					return allResults, nil
+				}
+			}
+		}
+	}
+
 	if len(allResults) == 0 {
-		// Fallback to empty
-		return []services.SearchResult{}, nil
+		return h.getNewMedia()
 	}
 
 	return allResults, nil
@@ -463,11 +620,73 @@ func (h *SearchHandler) getPopularMedia() ([]services.SearchResult, error) {
 
 // getTopRatedMedia returns high-rated media
 func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
-	// Expanded keywords list
+	// High-quality classic and modern films
 	allKeywords := []string{
-		"肖申克的救赎", "教父", "这个杀手不太冷", "泰坦尼克号", "阿甘正传", "楚门的世界", "星际穿越", "千与千寻",
-		"狮子王", "辛德勒的名单", "美丽人生", "钢琴家", "触不可及", "三傻大闹宝莱坞", "放牛班的春天",
-		"疯狂动物城", "寻梦环游记", "机器人总动员", "飞屋环游记", "玩具总动员", "超能陆战队",
+		"肖申克的救赎", "教父", "这个杀手不太冷", "泰坦尼克号", "阿甘正传",
+		"楚门的世界", "星际穿越", "千与千寻", "狮子王", "辛德勒的名单",
+		"美丽人生", "钢琴家", "触不可及", "三傻大闹宝莱坞", "放牛班的春天",
+		"疯狂动物城", "寻梦环游记", "机器人总动员", "飞屋环游记", "玩具总动员",
+		"超能陆战队", "头脑特工队", " coco", "你的名字", "天气之子",
+	}
+
+	selected := shuffleStrings(allKeywords, 10)
+
+	var allResults []services.SearchResult
+	seen := make(map[string]bool)
+
+	for _, kw := range selected {
+		results, err := h.moviepilot.SearchMedia(kw, 1)
+		if err != nil {
+			continue
+		}
+
+		items := results.Results
+		for _, item := range items {
+			if !seen[item.Title] && item.Rating >= 7.5 {
+				seen[item.Title] = true
+				allResults = append(allResults, item)
+				if len(allResults) >= 8 {
+					return allResults, nil
+				}
+			}
+		}
+	}
+
+	// Fallback to lower rating if not enough results
+	if len(allResults) < 4 {
+		for _, kw := range selected {
+			results, err := h.moviepilot.SearchMedia(kw, 1)
+			if err != nil {
+				continue
+			}
+
+			items := results.Results
+			for _, item := range items {
+				if !seen[item.Title] && item.Rating >= 6.5 {
+					seen[item.Title] = true
+					allResults = append(allResults, item)
+					if len(allResults) >= 8 {
+						return allResults, nil
+					}
+				}
+			}
+		}
+	}
+
+	return allResults, nil
+}
+
+// getNewMedia returns recently added media (fallback)
+func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
+	currentYear := time.Now().Year()
+
+	// Recent popular movies
+	allKeywords := []string{
+		fmt.Sprintf("%d", currentYear),
+		fmt.Sprintf("%d", currentYear-1),
+		"沙丘2", "奥本海默", "盟约", "惊奇队长", "蜘蛛侠", "蝙蝠侠",
+		"黑豹", "奇异博士", "雷神", "黑寡妇", "永恒族", "尚气",
+		"侏罗纪世界", "哥斯拉", "金刚", "速度与激情", "碟中谍",
 	}
 
 	selected := shuffleStrings(allKeywords, 8)
@@ -483,54 +702,13 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.Title] && item.Rating >= 7.0 {
+			if !seen[item.Title] && item.Year.Int() >= currentYear-2 {
 				seen[item.Title] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
-					break
+					return allResults, nil
 				}
 			}
-		}
-		if len(allResults) >= 8 {
-			break
-		}
-	}
-
-	return allResults, nil
-}
-
-// getNewMedia returns recently added media
-func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
-	// Expanded keywords list
-	allKeywords := []string{
-		"沙丘2", "奥本海默", "盟约", "惊奇队长", "蜘蛛侠", "蝙蝠侠", "黑豹", "奇异博士2",
-		"雷神4", "黑寡妇", "永恒族", "尚气", "蜘蛛侠：英雄无归", "奇异博士2", "雷神4：爱与雷霆",
-		"侏罗纪世界3", "侏罗纪世界：统治", "哥斯拉大战金刚", "金刚大战哥斯拉",
-	}
-
-	selected := shuffleStrings(allKeywords, 6)
-
-	var allResults []services.SearchResult
-	seen := make(map[string]bool)
-
-	for _, kw := range selected {
-		results, err := h.moviepilot.SearchMedia(kw, 1)
-		if err != nil {
-			continue
-		}
-
-		items := results.Results
-		for _, item := range items {
-			if !seen[item.Title] {
-				seen[item.Title] = true
-				allResults = append(allResults, item)
-				if len(allResults) >= 8 {
-					break
-				}
-			}
-		}
-		if len(allResults) >= 8 {
-			break
 		}
 	}
 
@@ -539,16 +717,65 @@ func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
 
 // getRandomMedia returns random media recommendations
 func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
-	// Random keywords for variety
-	keywords := []string{"科幻", "动作", "喜剧", "动画", "悬疑", "恐怖", "爱情", "冒险"}
-
-	// Pick 3 random keywords
-	selected := make([]string, 0)
-	for i := 0; i < 3; i++ {
-		idx := len(keywords) * (i + 1) / 3
-		selected = append(selected, keywords[idx])
+	// More diverse random categories with better keywords
+	categories := [][]string{
+		{"科幻", "星际", "未来", "太空", "机器人", "末日"},
+		{"动作", "冒险", "特工", "警匪", "战争", "格斗"},
+		{"喜剧", "搞笑", "爱情", "浪漫", "家庭", "温馨"},
+		{"动画", "动漫", "卡通", "皮克斯", "吉卜力", "迪士尼"},
+		{"悬疑", "惊悚", "恐怖", "犯罪", "推理", "侦探"},
+		{"奇幻", "魔法", "神话", "传说", "超能", "异能"},
 	}
 
+	// Pick 2 random categories
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	selectedCategories := make([]string, 0)
+	indices := r.Perm(len(categories))[:2]
+	for _, idx := range indices {
+		selectedCategories = append(selectedCategories, categories[idx]...)
+	}
+
+	// Shuffle and pick keywords
+	selectedKeywords := shuffleStrings(selectedCategories, 6)
+
+	var allResults []services.SearchResult
+	seen := make(map[string]bool)
+
+	for _, kw := range selectedKeywords {
+		results, err := h.moviepilot.SearchMedia(kw, 1)
+		if err != nil {
+			continue
+		}
+
+		items := results.Results
+		for _, item := range items {
+			if !seen[item.Title] && item.Rating >= 5.0 {
+				seen[item.Title] = true
+				allResults = append(allResults, item)
+				if len(allResults) >= 8 {
+					return allResults, nil
+				}
+			}
+		}
+	}
+
+	// Fallback if no results
+	if len(allResults) == 0 {
+		results, _ := h.getFallbackMedia()
+		return results, nil
+	}
+
+	return allResults, nil
+}
+
+// getFallbackMedia returns fallback popular media
+func (h *SearchHandler) getFallbackMedia() ([]services.SearchResult, error) {
+	fallbackKeywords := []string{
+		"复仇者联盟", "沙丘", "奥本海默", "流浪地球", "阿凡达",
+		"泰坦尼克", "黑客帝国", "星际穿越", "盗梦空间", "蝙蝠侠",
+	}
+
+	selected := shuffleStrings(fallbackKeywords, 6)
 	var allResults []services.SearchResult
 	seen := make(map[string]bool)
 
@@ -564,12 +791,41 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 				seen[item.Title] = true
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
-					break
+					return allResults, nil
 				}
 			}
 		}
-		if len(allResults) >= 8 {
-			break
+	}
+
+	return allResults, nil
+}
+
+// getFallbackTVMedia returns fallback TV media
+func (h *SearchHandler) getFallbackTVMedia() ([]services.SearchResult, error) {
+	fallbackKeywords := []string{
+		"权力的游戏", "行尸走肉", "绝命毒师", "怪奇物语", "黑镜",
+		"纸钞屋", "鱿鱼游戏", "王国", "黑暗", "使女的故事",
+	}
+
+	selected := shuffleStrings(fallbackKeywords, 6)
+	var allResults []services.SearchResult
+	seen := make(map[string]bool)
+
+	for _, kw := range selected {
+		results, err := h.moviepilot.SearchMedia(kw, 1)
+		if err != nil {
+			continue
+		}
+
+		items := results.Results
+		for _, item := range items {
+			if !seen[item.Title] {
+				seen[item.Title] = true
+				allResults = append(allResults, item)
+				if len(allResults) >= 8 {
+					return allResults, nil
+				}
+			}
 		}
 	}
 
@@ -606,9 +862,15 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 		}
 		text += fmt.Sprintf("%d. %s (%s) %s%s\n", i+1, item.Title, year, mediaType, rating)
 
+		// Convert Chinese type to English for callback data
+		mediaTypeForCallback := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaTypeForCallback = "tv"
+		}
+
 		row = append(row, types.TelegramInlineKeyboardButton{
 			Text:         fmt.Sprintf("%d", i+1),
-			CallbackData: fmt.Sprintf("select:id:%d:type:%s", item.ID, item.Type),
+			CallbackData: fmt.Sprintf("select:id:%d:type:%s", item.ID, mediaTypeForCallback),
 		})
 
 		if len(row) == 4 {
@@ -631,13 +893,19 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 		if i >= 8 {
 			break
 		}
+		// Convert Chinese type to English for callback data
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
 		searchItems[i] = session.SearchItem{
-			ID:     fmt.Sprintf("%d", item.ID),
-			Title:  item.Title,
-			Year:   item.Year.Int(),
-			Type:   string(item.Type),
-			Rating: item.Rating,
-			Poster: item.Poster,
+			ID:       fmt.Sprintf("%d", item.ID),
+			Title:    item.Title,
+			Year:     item.Year.Int(),
+			Type:     mediaType, // Use English type for callbacks
+			Rating:   item.Rating,
+			Poster:   item.Poster,
+			Overview: item.Overview,
 		}
 	}
 	sess.SetSearchResults(searchItems, 1, query)

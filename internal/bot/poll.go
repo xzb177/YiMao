@@ -176,9 +176,9 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		return
 	}
 
-	// Handle /ai command - send AI recommendation menu
+	// Handle /ai command - send recommendation menu
 	if query == "/ai" {
-		sendAIMenu(telegram, msg.Chat.ID)
+		sendRecommendationMenu(telegram, msg.Chat.ID)
 		return
 	}
 
@@ -187,23 +187,23 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	HandlePollSearchQuery(msg, telegram, moviepilot, sessMgr, searchHistory, tmdb)
 }
 
-// sendAIMenu sends the AI recommendation menu
-func sendAIMenu(telegram *services.TelegramClient, chatID int64) {
+// sendRecommendationMenu sends the recommendation menu
+func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🤖 AI 智能推荐").Newline()
+	msg.Bold("🎬 精选推荐").Newline()
 	msg.Newline()
-	msg.Text("为您精选优质内容").Newline()
+	msg.Text("发现你喜欢的精彩内容").Newline()
 	msg.Newline()
 	msg.Italic("💡 选择推荐类型开始探索")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门电影", "ai:trending")
-	kb.AddButton("📺 热播剧集", "ai:hot")
+	kb.AddButton("🔥 本周热门", "search:type:trending")
+	kb.AddButton("📺 热门剧集", "search:type:hot")
 	kb.NewRow()
-	kb.AddButton("⭐ 高分佳作", "ai:toprated")
-	kb.AddButton("🆕 最新上线", "ai:new")
+	kb.AddButton("⭐ 必看神作", "search:type:toprated")
+	kb.AddButton("🆕 最新上映", "search:type:new")
 	kb.NewRow()
-	kb.AddButton("🎲 随机发现", "ai:random")
+	kb.AddButton("🎲 随机探索", "search:type:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

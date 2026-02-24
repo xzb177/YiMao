@@ -113,6 +113,13 @@ type MediaInfo struct {
 	Rating      float64       `json:"vote_average"`
 	Type        MediaType     `json:"type"`
 	Seasons     []Season      `json:"seasons,omitempty"`
+	Genres      []string      `json:"genres,omitempty"`
+}
+
+// Genre represents a genre/category
+type Genre struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
 }
 
 // Season represents a TV season
@@ -247,8 +254,9 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 	if mediaType == MediaTypeTV {
 		typeStr = "电视剧"
 	}
-	// MoviePilot API requires type_name parameter for TV shows
-	endpoint := fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s", typeStr, mediaID, typeStr)
+	// URL encode the type string for Chinese characters
+	endpoint := fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s",
+		url.QueryEscape(typeStr), mediaID, url.QueryEscape(typeStr))
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
@@ -259,6 +267,14 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 	if err := json.Unmarshal(body, &info); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+
+	// Check if the media actually exists (title should not be empty)
+	if info.Title == "" && info.ID == 0 {
+		return nil, fmt.Errorf("media not found in MoviePilot")
+	}
+
+	// Set the media type from our parameter (more reliable than parsing response)
+	info.Type = mediaType
 
 	return &info, nil
 }

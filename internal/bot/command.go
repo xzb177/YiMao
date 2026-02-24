@@ -37,7 +37,7 @@ func HandleCommand(
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 	case "/ai":
-		sendAIMenu(telegram, msg.Chat.ID)
+		sendRecommendationMenu(telegram, msg.Chat.ID)
 	case "/requests":
 		text := "📋 请使用 /start 菜单中的 我的请求 功能"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)

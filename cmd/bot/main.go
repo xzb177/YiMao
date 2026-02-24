@@ -331,7 +331,7 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	commands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索影片"},
-		{Command: "ai", Description: "🤖 AI 推荐"},
+		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},

@@ -591,7 +591,7 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 
 	kb.AddButton("🔍 搜索影片", "start_search")
 	if showAI {
-		kb.AddButton("🤖 AI 推荐", "start_ai")
+			kb.AddButton("🎬 精选推荐", "start_ai")
 	}
 
 	kb.NewRow()
