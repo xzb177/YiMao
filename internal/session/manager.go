@@ -78,7 +78,16 @@ func NewManager(maxAge time.Duration, maxSize int) *Manager {
 	return m
 }
 
-// GetOrCreate gets or creates a session for a user
+// GetOrCreate gets or creates a session for a user.
+//
+// If the session already exists, it updates the LastActivity time and returns it.
+// If the session doesn't exist, it creates a new one.
+//
+// When the session limit (maxSize) is reached:
+// 1. First tries to clean up expired sessions
+// 2. If still at limit, evicts the oldest inactive session
+//
+// This method is thread-safe and can be called concurrently.
 func (m *Manager) GetOrCreate(userID int64) *Session {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -117,7 +126,11 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	return sess
 }
 
-// GetOrCreateWithCleanup creates a session and triggers cleanup if threshold is reached
+// GetOrCreateWithCleanup creates a session and triggers cleanup if threshold is reached.
+//
+// This method checks if the session count is at 80% capacity and triggers
+// a proactive cleanup in a separate goroutine if needed. This helps prevent
+// memory buildup during high traffic periods before the hard limit is reached.
 func (m *Manager) GetOrCreateWithCleanup(userID int64) *Session {
 	// Check if we should proactively cleanup (at 80% capacity)
 	m.mu.RLock()

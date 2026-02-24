@@ -57,14 +57,26 @@ func (fy FlexibleYear) IsZero() bool {
 	return int(fy) == 0
 }
 
-// MoviePilotClient provides access to MoviePilot API
+// MoviePilotClient provides access to MoviePilot API.
+//
+// The client handles authentication via API key and manages HTTP connection pooling
+// for efficient API communication. All methods are thread-safe and can be called
+// concurrently.
+//
+// API Base URL format: http://host:port (e.g., http://192.168.1.1:4500)
 type MoviePilotClient struct {
 	baseURL    string
 	apiKey     string
 	httpClient *http.Client
 }
 
-// NewMoviePilotClient creates a new MoviePilot client
+// NewMoviePilotClient creates a new MoviePilot client with optimized HTTP settings.
+//
+// The client is configured with:
+// - 30s request timeout
+// - Connection pooling (100 max idle connections)
+// - HTTP/2 support for better performance
+// - Keep-alive connections (90s idle timeout)
 func NewMoviePilotClient(baseURL, apiKey string) *MoviePilotClient {
 	// Ensure baseURL doesn't have trailing slash
 	for len(baseURL) > 0 && baseURL[len(baseURL)-1] == '/' {

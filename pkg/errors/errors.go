@@ -2,6 +2,7 @@ package errors
 
 import (
 	"fmt"
+	"log"
 )
 
 // ErrorCode represents a unique error code
@@ -133,4 +134,27 @@ func AIErr(msg string, cause error) *AppError {
 
 func MediaNotFound(msg string) *AppError {
 	return New(ErrCodeMediaNotFound, msg)
+}
+
+// LogError logs an error with component context
+func LogError(component, action string, err error) {
+	if err == nil {
+		return
+	}
+	if appErr, ok := err.(*AppError); ok {
+		log.Printf("[%s] %s failed: %s", component, action, appErr.Error())
+	} else {
+		log.Printf("[%s] %s failed: %v", component, action, err)
+	}
+}
+
+// LogInfo logs an informational message
+func LogInfo(component, action string, msg string) {
+	log.Printf("[%s] %s: %s", component, action, msg)
+}
+
+// LogDebug logs a debug message (only in debug mode)
+func LogDebug(component, action string, msg string) {
+	// Only log in debug mode if needed
+	// log.Printf("[DEBUG] [%s] %s: %s", component, action, msg)
 }

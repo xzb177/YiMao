@@ -11,6 +11,7 @@ import (
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
+	"emby-telegram-bot/pkg/metrics"
 	"emby-telegram-bot/pkg/types"
 )
 
@@ -39,15 +40,18 @@ func (c *recommendationCache) get(key string) ([]services.SearchResult, bool) {
 
 	entry, exists := c.data[key]
 	if !exists {
+		metrics.RecordCacheMiss("recommendation")
 		return nil, false
 	}
 
 	if time.Now().After(entry.expiredAt) {
 		// Expired, remove it
 		delete(c.data, key)
+		metrics.RecordCacheMiss("recommendation")
 		return nil, false
 	}
 
+	metrics.RecordCacheHit("recommendation")
 	return entry.results, true
 }
 
