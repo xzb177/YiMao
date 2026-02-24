@@ -284,18 +284,28 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 			case result := <-resultChan:
 				if result.err == nil && len(result.seasons) > 0 {
 					searchItem.Seasons = result.seasons
-					log.Printf("[PollSearch] Fetched %d seasons for %s from TMDB", len(result.seasons), item.Title)
 				}
 			case <-time.After(3 * time.Second):
-				log.Printf("[PollSearch] Timeout fetching seasons for %s from TMDB", item.Title)
+				// Timeout, silently skip season info
 			}
 		}
 
 		searchItems[i] = searchItem
 	}
 
+	// 统计获取到的季数信息
+	seasonCount := 0
+	for _, item := range searchItems {
+		if len(item.Seasons) > 0 {
+			seasonCount++
+		}
+	}
+	if seasonCount > 0 {
+		log.Printf("[搜索] 获取到 %d/%d 部剧集的季数信息", seasonCount, len(searchItems))
+	}
+
 	sess.SetSearchResults(searchItems, 1, query)
-	log.Printf("[PollSearch] Stored %d search results in session for user %d", len(searchItems), msg.From.ID)
+	log.Printf("[搜索] 查询 \"%s\": %d 条结果", query, len(results.Results))
 
 	// Build search results message
 	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n",

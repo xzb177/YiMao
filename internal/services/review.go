@@ -91,21 +91,18 @@ func (s *ReviewService) load() error {
 
 // saveLocked saves reviews to file (must be called with lock held)
 func (s *ReviewService) saveLocked() error {
-	log.Printf("[ReviewService] saveLocked: Starting marshal of %d reviews", len(s.reviews))
 	data, err := json.MarshalIndent(s.reviews, "", "  ")
 	if err != nil {
-		log.Printf("[ReviewService] Failed to marshal reviews: %v", err)
+		log.Printf("[ReviewService] 序列化失败: %v", err)
 		return err
 	}
-	log.Printf("[ReviewService] saveLocked: Marshaled %d bytes", len(data))
 
-	log.Printf("[ReviewService] saveLocked: Writing to %s", s.reviewsFile)
 	if err := os.WriteFile(s.reviewsFile, data, 0644); err != nil {
-		log.Printf("[ReviewService] Failed to write reviews file %s: %v", s.reviewsFile, err)
+		log.Printf("[ReviewService] 写入文件失败: %v", err)
 		return err
 	}
 
-	log.Printf("[ReviewService] Saved %d reviews to %s", len(s.reviews), s.reviewsFile)
+	log.Printf("[ReviewService] 保存 %d 条审核请求", len(s.reviews))
 	return nil
 }
 
@@ -124,17 +121,21 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 
 	s.reviews[review.RequestID] = review
 
-	log.Printf("[ReviewService] Created review request: %s for user %d (priority: %s)", review.RequestID, review.TelegramID, review.Priority)
-	log.Printf("[ReviewService] About to save %d reviews to %s", len(s.reviews), s.reviewsFile)
-
-	err := s.saveLocked()
-	if err != nil {
-		log.Printf("[ReviewService] ERROR saving reviews: %v", err)
-		return err
+	// Map priority to Chinese for logging
+	priorityText := map[string]string{
+		"low":    "较低",
+		"normal": "普通",
+		"high":   "较高",
+		"urgent": "紧急",
+	}[review.Priority]
+	if priorityText == "" {
+		priorityText = review.Priority
 	}
 
-	log.Printf("[ReviewService] Successfully saved review request")
-	return nil
+	log.Printf("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s",
+		review.RequestID, review.TelegramID, priorityText, review.MediaTitle)
+
+	return s.saveLocked()
 }
 
 // GetRequest retrieves a review request by ID

@@ -221,10 +221,13 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		return nil, err
 	}
 
-	log.Printf("[Telegram] Request: %s, payload: %s", logger.Sanitize(apiURL), logger.SanitizePayload(jsonData))
+	// 只打印 API 端点，不打印完整 payload
+	method := extractMethod(apiURL)
+	log.Printf("[Telegram] API: %s", method)
 
 	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
+		log.Printf("[Telegram] 请求失败: %s", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -234,8 +237,6 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[Telegram] Response: %s", logger.Sanitize(string(body)))
-
 	var result struct {
 		OK      bool                  `json:"ok"`
 		Result  *types.TelegramMessage `json:"result"`
@@ -243,17 +244,29 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[Telegram] 解析响应失败: %v", err)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if !result.OK {
 		if result.Error != nil {
+			log.Printf("[Telegram] API 错误: %s", result.Error.Message)
 			return nil, result.Error
 		}
+		log.Printf("[Telegram] API 未知错误: %s", string(body))
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
 	}
 
 	return result.Result, nil
+}
+
+// extractMethod 提取 API 方法名称（用于日志）
+func extractMethod(apiURL string) string {
+	parts := strings.Split(apiURL, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return apiURL
 }
 
 // makeSimpleRequest makes an API request that returns a boolean result (like answerCallbackQuery)
@@ -263,10 +276,12 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 		return err
 	}
 
-	log.Printf("[Telegram] Request: %s, payload: %s", logger.Sanitize(apiURL), logger.SanitizePayload(jsonData))
+	method := extractMethod(apiURL)
+	log.Printf("[Telegram] API: %s", method)
 
 	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
+		log.Printf("[Telegram] 请求失败: %s", err)
 		return fmt.Errorf("request failed: %w", err)
 	}
 	defer resp.Body.Close()
@@ -276,8 +291,6 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 		return fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[Telegram] Response: %s", logger.Sanitize(string(body)))
-
 	var result struct {
 		OK     bool                 `json:"ok"`
 		Result bool                 `json:"result"`
@@ -285,11 +298,13 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[Telegram] 解析响应失败: %v", err)
 		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if !result.OK {
 		if result.Error != nil {
+			log.Printf("[Telegram] API 错误: %s", result.Error.Message)
 			return result.Error
 		}
 		return fmt.Errorf("telegram API error: %s", string(body))

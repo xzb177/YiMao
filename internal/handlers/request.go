@@ -50,8 +50,6 @@ func NewRequestHandler(
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[RequestHandler] Starting: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
-
 	// Handle priority selection callback
 	if ctx.Callback.Action == "request_priority" {
 		return h.HandlePrioritySelection(ctx)
@@ -71,19 +69,20 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if tmdbID == 0 {
 		return nil, errors.InvalidInput("invalid media ID")
 	}
-	log.Printf("[RequestHandler] Parsed TMDB ID: %d", tmdbID)
+	fmt.Sscanf(mediaID, "%d", &tmdbID)
+	if tmdbID == 0 {
+		return nil, errors.InvalidInput("invalid media ID")
+	}
 
 	// Parse season parameter (for TV shows)
 	season := 0
 	if seasonStr, hasSeason := ctx.Callback.Params["season"]; hasSeason {
 		fmt.Sscanf(seasonStr, "%d", &season)
-		log.Printf("[RequestHandler] Season: %d", season)
 	}
 
 	// Get MoviePilot user ID from user mapping
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	if !exists || moviepilotID == 0 {
-		log.Printf("[RequestHandler] No moviepilot ID found for user %d", ctx.UserID)
 		// Build link instructions message with button
 		msg := services.NewMessageBuilder()
 		msg.Bold("🔗 需要绑定账号").Newline()
@@ -104,12 +103,10 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			Edit:   true,
 		}, nil
 	}
-	log.Printf("[RequestHandler] User mapped to moviepilotID: %d", moviepilotID)
 
 	// Check quota using quota service
 	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
 		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
-		log.Printf("[RequestHandler] Quota check failed for user %d", ctx.UserID)
 		return &callback.Response{
 			Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
 			CallbackMsg: "配额已用完",
@@ -156,7 +153,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 				mediaYear = item.Year
 				posterPath = item.Poster
 				overview = item.Overview
-				log.Printf("[RequestHandler] Found in search results: %s (%d)", mediaTitle, mediaYear)
 				break
 			}
 		}
@@ -168,18 +164,15 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			mediaTitle = cachedItem.Title
 			mediaYear = cachedItem.Year
 			overview = cachedItem.Overview
-			log.Printf("[RequestHandler] Found in AI cache: %s (%d)", mediaTitle, mediaYear)
 		}
 	}
 
 	// Final fallback
 	if mediaTitle == "" {
-		log.Printf("[RequestHandler] No matching media found, using fallback TMDB:%d", tmdbID)
 		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
 	}
 
 	// Check if media already exists in Emby library
-	log.Printf("[RequestHandler] Checking Emby library for: %s (%d)", mediaTitle, mediaYear)
 	embyType := services.MediaTypeMovie
 	if mediaType == "tv" {
 		embyType = services.MediaTypeTV
@@ -187,11 +180,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err != nil {
-		log.Printf("[RequestHandler] Emby search failed: %v", err)
 		// Continue with request creation even if search fails
 	} else if existingMedia != nil {
-		// Media exists in library, show confirmation dialog
-		log.Printf("[RequestHandler] Media found in Emby: %s (ID: %s)", existingMedia.Title, existingMedia.ID)
+		log.Printf("[求片] 媒体库已存在: %s", existingMedia.Title)
 
 		// Build message showing media already exists
 		message := fmt.Sprintf("⚠️ 媒体库中已存在\n\n📺 %s", existingMedia.Title)
@@ -515,9 +506,15 @@ func (h *RequestHandler) HandlePrioritySelection(ctx *callback.Context) (*callba
 		"high":   "🟠",
 		"urgent": "🔴",
 	}
+	priorityText := map[string]string{
+		"low":    "较低",
+		"normal": "普通",
+		"high":   "较高",
+		"urgent": "紧急",
+	}
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("%s 求片已提交（%s优先级）\n\n📺 %s", priorityEmoji[priority], priority, mediaTitle),
+		Text:        fmt.Sprintf("%s 求片已提交（%s优先级）\n\n📺 %s", priorityEmoji[priority], priorityText[priority], mediaTitle),
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
@@ -531,7 +528,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		return
 	}
 
-	log.Printf("[RequestHandler] Notifying %d admins about review request: %s", len(adminIDs), review.RequestID)
+	log.Printf("[审核] 通知 %d 位管理员: %s", len(adminIDs), review.MediaTitle)
 
 	mediaTypeLabel := "电影"
 	if review.MediaType == services.MediaTypeTV {
@@ -576,6 +573,17 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		}
 	}
 
+	// 优先级显示
+	priorityText := map[string]string{
+		"low":    "较低",
+		"normal": "普通",
+		"high":   "较高",
+		"urgent": "紧急",
+	}[review.Priority]
+	if priorityText != "" {
+		message += fmt.Sprintf("\n🔔 优先级: %s", priorityText)
+	}
+
 	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
 
 	// Add action buttons
@@ -588,11 +596,8 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 				},
 			},
 		}
-		log.Printf("[RequestHandler] Sending review notification to admin %d", adminID)
 		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
-			log.Printf("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
-		} else {
-			log.Printf("[RequestHandler] Successfully notified admin %d", adminID)
+			log.Printf("[审核] 通知管理员失败 %d: %v", adminID, err)
 		}
 	}
 }
