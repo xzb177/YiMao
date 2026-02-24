@@ -142,3 +142,18 @@ detail:id:{id}:type:{type}  # 查看详情
   - 支持从详情页返回列表
   - 布局调整为 2x3 网格（搜索/AI、请求/反馈、绑定/帮助）
 - **测试结果**: ✅ 搜索历史和反馈历史功能均正常工作
+
+### 2024-02-25 - 清空搜索历史修复
+- **问题**: 点击"清空历史"按钮后没有实际清空搜索历史
+- **原因分析**:
+  - 回调解析器使用冒号分隔格式 `action:key1:value1:key2:value2`
+  - 当回调数据 `search:clear_history` 只有键没有值时，解析器会忽略该键
+  - `ClearHistory` 函数在持有锁的情况下调用 `save()` 导致死锁
+- **修复**:
+  - 将回调数据格式从 `search:clear_history` 改为 `search:clear_history:1`
+  - 修改 `ClearHistory` 函数释放锁后再调用 `saveAsync` 避免死锁
+  - 添加调试日志便于排查问题
+- **修改文件**:
+  - `internal/handlers/search.go` - 修复回调数据格式，添加日志
+  - `internal/services/search_history.go` - 修复死锁问题
+- **测试结果**: ✅ 清空搜索历史功能正常工作
