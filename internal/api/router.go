@@ -395,8 +395,12 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 
 // handleEmbyWebhook handles Emby webhook
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
+	// Log request for debugging
+	body, _ := io.ReadAll(req.Body)
+	log.Printf("[API] Emby webhook received - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
+
 	var payload services.EmbyWebhookPayload
-	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+	if err := json.Unmarshal(body, &payload); err != nil {
 		log.Printf("[API] Failed to decode Emby webhook: %v", err)
 		http.Error(w, "Invalid payload", http.StatusBadRequest)
 		return
@@ -452,23 +456,42 @@ func (r *Router) handleMoviePilotWebhook(w http.ResponseWriter, req *http.Reques
 
 // handleAutoDetectWebhook auto-detects webhook type
 func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Request) {
+	// Read body first
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		log.Printf("[API] Failed to read request body: %v", err)
+		http.Error(w, "Failed to read body", http.StatusBadRequest)
+		return
+	}
+	log.Printf("[API] Auto-detect webhook - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
+
 	// Try to decode as Emby first
 	var embyPayload services.EmbyWebhookPayload
-	if err := json.NewDecoder(req.Body).Decode(&embyPayload); err == nil && embyPayload.Event != "" {
-		if err := r.webhookService.HandleEmbyWebhook(embyPayload); err != nil {
-			http.Error(w, "Failed to process", http.StatusInternalServerError)
-		} else {
-			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if err := json.Unmarshal(body, &embyPayload); err == nil {
+		// Check for Emby event (NotificationType or Event field)
+		event := embyPayload.Event
+		if event == "" {
+			event = embyPayload.EventField
 		}
-		return
+		if event != "" {
+			log.Printf("[API] Detected Emby webhook: %s", event)
+			if err := r.webhookService.HandleEmbyWebhook(embyPayload); err != nil {
+				log.Printf("[API] Failed to handle Emby webhook: %v", err)
+				http.Error(w, "Failed to process", http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+				json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			}
+			return
+		}
 	}
 
 	// Try Jellyseerr
-	body, _ := getRequestBody(req)
 	var jellyseerrPayload services.JellyseerrWebhookPayload
 	if err := json.Unmarshal(body, &jellyseerrPayload); err == nil && jellyseerrPayload.Event != "" {
+		log.Printf("[API] Detected Jellyseerr webhook: %s", jellyseerrPayload.Event)
 		if err := r.webhookService.HandleJellyseerrWebhook(jellyseerrPayload); err != nil {
+			log.Printf("[API] Failed to handle Jellyseerr webhook: %v", err)
 			http.Error(w, "Failed to process", http.StatusInternalServerError)
 		} else {
 			w.WriteHeader(http.StatusOK)
@@ -477,6 +500,7 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
+	log.Printf("[API] Unknown webhook type, Body: %s", string(body))
 	http.Error(w, "Unknown webhook type", http.StatusBadRequest)
 }
 
