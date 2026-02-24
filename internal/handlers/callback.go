@@ -898,16 +898,18 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
 		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
 		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
 		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
 		msg.Newline()
 		msg.Italic("💡 点击下方按钮开始探索").Newline()
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
+		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
 			Text:     msg.Build(),
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
+			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil
 	}
 
@@ -942,16 +944,18 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
 		msg.Text("🤖 AI 推荐 · 发现热门好片").Newline()
 		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
+		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
 		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
 		msg.Newline()
 		msg.Italic("💡 点击下方按钮开始探索").Newline()
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
+		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
 			Text:     msg.Build(),
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboard(isAdmin)),
+			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil
 	}
 }

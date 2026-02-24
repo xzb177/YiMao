@@ -124,11 +124,13 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 	msg.Text("🔍 智能搜索 — 快速查找心仪影片").Newline()
 	msg.Text("🤖 AI 推荐 — 发现热门好片").Newline()
 	msg.Text("📋 请求管理 — 跟踪您的求片进度").Newline()
+	msg.Text("🐛 我的反馈 — 查看问题反馈").Newline()
 	msg.Text("🔗 账号绑定 — 同步您的观影记录").Newline()
 	msg.Newline()
 	msg.Italic("💡 点击下方按钮开始探索").Newline()
 
-	keyboard := services.BuildStartKeyboard(isAdmin)
+	// Always show AI menu for /start command (user explicitly using command)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 	telegram.SendMessage(chatID, msg.Build(), "Markdown", keyboard)
 }
 

@@ -40,7 +40,12 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 	log.Printf("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
 
-	// Check if viewing feedback list
+	// Check if this is the "my_feedback" menu button - show list directly
+	if ctx.Callback.Action == "my_feedback" {
+		return h.handleViewList(ctx)
+	}
+
+	// Check if viewing feedback list (feedback:view)
 	if _, hasView := ctx.Callback.Params["view"]; hasView {
 		return h.handleViewList(ctx)
 	}
@@ -62,6 +67,12 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 		case "quality", "audio", "subtitle", "not_found", "playback", "other":
 			return h.handleTypeSelect(ctx)
 		}
+	}
+
+	// Check if this is "feedback" action without params - could be "feedback:view" case
+	// When params are empty but action is feedback, treat as view list
+	if ctx.Callback.Action == "feedback" && len(ctx.Callback.Params) == 0 {
+		return h.handleViewList(ctx)
 	}
 
 	// Otherwise, this is the initial feedback button click

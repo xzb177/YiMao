@@ -131,10 +131,14 @@ detail:id:{id}:type:{type}  # 查看详情
   - `internal/services/telegram.go` - 主菜单键盘添加按钮
   - `internal/handlers/callback.go` - 更新主菜单说明文字
   - `internal/handlers/feedback.go` - 添加反馈列表和详情查看
+  - `internal/handlers/callback.go` - BackHandler 使用新键盘函数
+  - `internal/bot/command.go` - SendStartMenu 使用新键盘函数
   - `cmd/bot/main.go` - 注册 `my_feedback` 回调
 - **功能**:
   - 主菜单新增「🐛 我的反馈」按钮
   - 点击查看用户所有反馈历史
   - 显示反馈状态：🔵待处理、💬已回复、🔧处理中、✅已解决、🚫已关闭
   - 支持查看反馈详情和管理员回复
+  - 支持从详情页返回列表
   - 布局调整为 2x3 网格（搜索/AI、请求/反馈、绑定/帮助）
+- **测试结果**: ✅ 搜索历史和反馈历史功能均正常工作
