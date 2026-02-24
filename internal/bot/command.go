@@ -41,6 +41,9 @@ func HandleCommand(
 	case "/requests":
 		text := "📋 请使用 /start 菜单中的 我的请求 功能"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+	case "/watchlist":
+		text := "📎 请使用 /start 菜单中的 我的片单 功能"
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":

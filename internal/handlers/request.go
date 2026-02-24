@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 	"time"
 
@@ -293,6 +292,19 @@ func (h *RequestHandler) showPrioritySelection(
 	userName string,
 	moviepilotID int64,
 ) *callback.Response {
+	// Store request info in session to avoid passing in callback_data
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("pending_request_review_id", reviewID)
+	sess.Set("pending_request_tmdb_id", tmdbID)
+	sess.Set("pending_request_media_type", mediaType)
+	sess.Set("pending_request_media_title", mediaTitle)
+	sess.Set("pending_request_media_year", mediaYear)
+	sess.Set("pending_request_season", season)
+	sess.Set("pending_request_poster_path", posterPath)
+	sess.Set("pending_request_overview", overview)
+	sess.Set("pending_request_username", userName)
+	sess.Set("pending_request_moviepilot_id", moviepilotID)
+
 	// Build media info display
 	msg := services.NewMessageBuilder()
 	msg.Bold("🎬 选择请求优先级").Newline()
@@ -316,15 +328,14 @@ func (h *RequestHandler) showPrioritySelection(
 
 	msg.Text("请选择请求优先级：").Newline()
 
-	// Build priority selection keyboard
+	// Build priority selection keyboard - simplified format without Chinese characters
+	// Format: request_priority:{priority}
 	kb := services.NewKeyboardBuilder()
-	// Format: request_priority:reviewID:tmdbID:priority:mediaType:mediaTitle:mediaYear:season
-	dataPrefix := fmt.Sprintf("request_priority:%s:%d", reviewID, tmdbID)
-	kb.AddButton("🟡 普通", fmt.Sprintf("%s:normal:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
-	kb.AddButton("🟠 较高", fmt.Sprintf("%s:high:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.AddButton("🟡 普通", "request_priority:normal")
+	kb.AddButton("🟠 较高", "request_priority:high")
 	kb.NewRow()
-	kb.AddButton("🟢 较低", fmt.Sprintf("%s:low:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
-	kb.AddButton("🔴 紧急", fmt.Sprintf("%s:urgent:%s:%s:%d:%d", dataPrefix, mediaType, mediaTitle, mediaYear, season))
+	kb.AddButton("🟢 较低", "request_priority:low")
+	kb.AddButton("🔴 紧急", "request_priority:urgent")
 	kb.NewRow()
 	kb.AddButton("❌ 取消", "cancel_request")
 
@@ -337,39 +348,134 @@ func (h *RequestHandler) showPrioritySelection(
 
 // HandlePrioritySelection handles priority selection and creates the request
 func (h *RequestHandler) HandlePrioritySelection(ctx *callback.Context) (*callback.Response, error) {
-	// Parse the callback data
-	// Format: request_priority:reviewID:tmdbID:priority:mediaType:mediaTitle:mediaYear:season
-	parts := strings.Split(ctx.Callback.Raw, ":")
-	if len(parts) < 8 {
+	// Get priority from callback data
+	// Format: request_priority:{priority}
+	priority := ctx.Callback.Params["priority"]
+	if priority == "" {
+		// Try parsing from raw data
+		parts := strings.Split(ctx.Callback.Raw, ":")
+		if len(parts) >= 2 {
+			priority = parts[1]
+		} else {
+			return &callback.Response{
+				Text:        "❌ 参数错误",
+				CallbackMsg: "参数错误",
+				ShowAlert:   true,
+			}, nil
+		}
+	}
+
+	// Validate priority
+	validPriorities := map[string]bool{"low": true, "normal": true, "high": true, "urgent": true}
+	if !validPriorities[priority] {
 		return &callback.Response{
-			Text:        "❌ 参数错误",
-			CallbackMsg: "参数错误",
+			Text:        "❌ 无效的优先级",
+			CallbackMsg: "无效的优先级",
 			ShowAlert:   true,
 		}, nil
 	}
 
-	reviewID := parts[1]
-	tmdbID, _ := strconv.Atoi(parts[2])
-	priority := parts[3]
-	mediaType := parts[4]
-	mediaTitle := parts[5]
-	mediaYear, _ := strconv.Atoi(parts[6])
-	season, _ := strconv.Atoi(parts[7])
-
-	// Get user mapping for MoviePilot ID
-	moviepilotID, _ := h.userMapping.GetMoviePilotUserID(ctx.UserID)
-	userName := fmt.Sprintf("User_%d", ctx.UserID)
-
-	// Get poster and overview from session
+	// Get request info from session
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+
+	reviewIDVal, hasReviewID := sess.Get("pending_request_review_id")
+	tmdbIDVal, hasTmdbID := sess.Get("pending_request_tmdb_id")
+	mediaTypeVal, hasMediaType := sess.Get("pending_request_media_type")
+	mediaTitleVal, hasMediaTitle := sess.Get("pending_request_media_title")
+	mediaYearVal, _ := sess.Get("pending_request_media_year")
+	seasonVal, _ := sess.Get("pending_request_season")
+	posterPathVal, _ := sess.Get("pending_request_poster_path")
+	overviewVal, _ := sess.Get("pending_request_overview")
+	userNameVal, _ := sess.Get("pending_request_username")
+	moviepilotIDVal, _ := sess.Get("pending_request_moviepilot_id")
+
+	if !hasReviewID || !hasTmdbID || !hasMediaType || !hasMediaTitle {
+		return &callback.Response{
+			Text:        "❌ 会话已过期，请重新请求",
+			CallbackMsg: "会话已过期",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	reviewID := fmt.Sprintf("%v", reviewIDVal)
+
+	// Proper type conversions
+	var tmdbIDInt int
+	switch v := tmdbIDVal.(type) {
+	case int:
+		tmdbIDInt = v
+	case int64:
+		tmdbIDInt = int(v)
+	case float64:
+		tmdbIDInt = int(v)
+	case string:
+		fmt.Sscanf(v, "%d", &tmdbIDInt)
+	}
+
+	mediaType := fmt.Sprintf("%v", mediaTypeVal)
+	mediaTitle := fmt.Sprintf("%v", mediaTitleVal)
+
+	var mediaYear int
+	switch v := mediaYearVal.(type) {
+	case int:
+		mediaYear = v
+	case int64:
+		mediaYear = int(v)
+	case float64:
+		mediaYear = int(v)
+	}
+
+	var season int
+	switch v := seasonVal.(type) {
+	case int:
+		season = v
+	case int64:
+		season = int(v)
+	case float64:
+		season = int(v)
+	}
+
 	posterPath := ""
+	if posterPathVal != nil {
+		posterPath = fmt.Sprintf("%v", posterPathVal)
+	}
+
 	overview := ""
-	if v, ok := sess.Get("poster_path"); ok {
-		posterPath = fmt.Sprintf("%v", v)
+	if overviewVal != nil {
+		overview = fmt.Sprintf("%v", overviewVal)
 	}
-	if v, ok := sess.Get("overview"); ok {
-		overview = fmt.Sprintf("%v", v)
+
+	userName := fmt.Sprintf("User_%d", ctx.UserID)
+	if userNameVal != nil {
+		userName = fmt.Sprintf("%v", userNameVal)
 	}
+
+	var moviepilotID int64
+	if moviepilotIDVal != nil {
+		switch v := moviepilotIDVal.(type) {
+		case int64:
+			moviepilotID = v
+		case int:
+			moviepilotID = int64(v)
+		case float64:
+			moviepilotID = int64(v)
+		}
+	} else {
+		// Try to get from user mapping
+		moviepilotID, _ = h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	}
+
+	// Clear pending request data from session
+	sess.Delete("pending_request_review_id")
+	sess.Delete("pending_request_tmdb_id")
+	sess.Delete("pending_request_media_type")
+	sess.Delete("pending_request_media_title")
+	sess.Delete("pending_request_media_year")
+	sess.Delete("pending_request_season")
+	sess.Delete("pending_request_poster_path")
+	sess.Delete("pending_request_overview")
+	sess.Delete("pending_request_username")
+	sess.Delete("pending_request_moviepilot_id")
 
 	// Create the review request
 	review := &services.ReviewRequest{
@@ -377,7 +483,7 @@ func (h *RequestHandler) HandlePrioritySelection(ctx *callback.Context) (*callba
 		TelegramID:   ctx.UserID,
 		TelegramName: userName,
 		MoviePilotID: moviepilotID,
-		TmdbID:       tmdbID,
+		TmdbID:       tmdbIDInt,
 		MediaTitle:   mediaTitle,
 		MediaYear:    mediaYear,
 		MediaType:    services.MediaTypeMovie,
