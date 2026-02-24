@@ -149,10 +149,17 @@ func (s *MediaNotificationService) save() error {
 		"settings": s.settings,
 	}, "", "  ")
 	if err != nil {
+		log.Printf("[MediaNotification] Failed to marshal settings: %v", err)
 		return err
 	}
 
-	return os.WriteFile(s.dataFile, data, 0644)
+	if err := os.WriteFile(s.dataFile, data, 0644); err != nil {
+		log.Printf("[MediaNotification] Failed to save settings to %s: %v", s.dataFile, err)
+		return err
+	}
+
+	log.Printf("[MediaNotification] Saved settings for %d admins to %s", len(s.settings), s.dataFile)
+	return nil
 }
 
 // GetSettings returns notification settings for an admin
@@ -189,6 +196,7 @@ func (s *MediaNotificationService) SetSettings(settings *AdminNotificationSettin
 func (s *MediaNotificationService) SetInstantEnabled(adminID int64, enabled bool) error {
 	settings := s.GetSettings(adminID)
 	settings.InstantEnabled = enabled
+	log.Printf("[MediaNotification] SetInstantEnabled: adminID=%d, enabled=%v", adminID, enabled)
 	return s.SetSettings(settings)
 }
 
@@ -196,6 +204,7 @@ func (s *MediaNotificationService) SetInstantEnabled(adminID int64, enabled bool
 func (s *MediaNotificationService) SetDailySummaryEnabled(adminID int64, enabled bool) error {
 	settings := s.GetSettings(adminID)
 	settings.DailySummaryEnabled = enabled
+	log.Printf("[MediaNotification] SetDailySummaryEnabled: adminID=%d, enabled=%v", adminID, enabled)
 	return s.SetSettings(settings)
 }
 
@@ -210,6 +219,7 @@ func (s *MediaNotificationService) SetDailyTime(adminID int64, timeStr string) e
 func (s *MediaNotificationService) ToggleEnabled(adminID int64) bool {
 	settings := s.GetSettings(adminID)
 	settings.Enabled = !settings.Enabled
+	log.Printf("[MediaNotification] ToggleEnabled: adminID=%d, new enabled state=%v", adminID, settings.Enabled)
 	s.SetSettings(settings)
 	return settings.Enabled
 }
@@ -279,6 +289,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 		// Skip if completely disabled
 		if !settings.Enabled {
+			log.Printf("[MediaNotification] Admin %d: notifications disabled, skipping", adminID)
 			continue
 		}
 
@@ -305,9 +316,12 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 		// Send instant notification if enabled (unlock before sending to avoid deadlock)
 		if settings.InstantEnabled {
+			log.Printf("[MediaNotification] Admin %d: sending instant notification for %s", adminID, item.Title)
 			s.mu.Unlock()
 			s.sendInstantNotification(adminID, item, settings.Format)
 			s.mu.Lock()
+		} else {
+			log.Printf("[MediaNotification] Admin %d: instant notifications disabled, only adding to daily summary", adminID)
 		}
 	}
 }
