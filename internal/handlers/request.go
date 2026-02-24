@@ -79,10 +79,24 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	if !exists || moviepilotID == 0 {
 		log.Printf("[RequestHandler] No moviepilot ID found for user %d", ctx.UserID)
+		// Build link instructions message with button
+		msg := services.NewMessageBuilder()
+		msg.Bold("🔗 需要绑定账号").Newline()
+		msg.Newline()
+		msg.Text("求片功能需要绑定 MoviePilot 账号才能使用").Newline()
+		msg.Newline()
+		msg.Text("📝 绑定格式：").Newline()
+		msg.Code("/link 用户名 密码").Newline()
+		msg.Newline()
+		msg.Italic("💡 新用户会自动注册，无需手动添加").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🔗 立即绑定账号", "link")
+		kb.AddButton("⬅️ 返回主菜单", "start")
+
 		return &callback.Response{
-			Text:        "❓ 请先使用 /link 命令绑定账号",
-			CallbackMsg: "需要绑定账号",
-			ShowAlert:   true,
+			Text:   msg.Build(),
+			Edit:   true,
 		}, nil
 	}
 	log.Printf("[RequestHandler] User mapped to moviepilotID: %d", moviepilotID)
