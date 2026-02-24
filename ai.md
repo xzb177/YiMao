@@ -1,6 +1,23 @@
 # Emby Telegram Bot 项目记录
 
 ## 项目概述
+| 2026-02-24 | **配额服务死锁修复** 🔒⚠️ |
+| | - **问题**: 用户 829140581 点击求片按钮无反应，请求卡死 |
+| | - **根因**: QuotaService 存在严重死锁问题 |
+| | - **死锁分析**:
+| |   - `save()` 方法使用 `RLock`，但调用者已持有 `Lock`
+| |   - `GetOrCreateQuota()` 在持有锁时调用 `save()`
+| |   - `CheckMovieQuota`/`CheckTVQuota` 调用 `GetOrCreateQuota()` 后又调用 `checkAndReset()`
+| | - **用户现象**: 点击求片5次，每次都卡在 "User mapped to moviepilotID: 4" 后无响应 |
+| | - **解决方案**:
+| |   - 新增 `saveAsync()` 方法 - 异步保存无需锁
+| |   - 新增 `getOrCreateQuotaUnsafe()` 方法 - 用于已持锁上下文
+| |   - 重构 `CheckMovieQuota`, `CheckTVQuota`, `UseMovieQuota`, `UseTVQuota`, `RestoreQuota`, `SyncFromMoviePilot`
+| |   - 使用 copy-on-write 模式避免竞态条件
+| | - **修改文件**: `internal/services/quota.go`
+| | - **部署状态**: ✅ 已构建并部署
+| | - **提交**: `1d7c41a`
+
 | 2026-02-24 | **代码审查与错误处理改进** 🔍🛡️ |
 | | - **审查范围**: 全面审查代码，查找潜在bug和错误 |
 | | - **已修复问题**:
