@@ -164,37 +164,66 @@ func (c *Config) validate() error {
 }
 
 // loadAdmins loads admin configuration from file
+// Supports two formats:
+// 1. New: {"admins": {"123456": "Name", "789012": "Name2"}}
+// 2. Legacy: {"admin1": 123456, "admin2": 789012} (name -> id)
 func (c *Config) loadAdmins() error {
 	data, err := os.ReadFile(c.AdminFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Create default admin file
-			defaultAdmins := map[string]int64{
-				"admin": 0, // Placeholder
-			}
-			if err := c.saveAdmins(defaultAdmins); err != nil {
-				return err
-			}
+			// Don't create default file - AdminService handles it
 			return nil
 		}
 		return err
 	}
 
-	var admins map[string]int64
-	if err := json.Unmarshal(data, &admins); err != nil {
-		return err
+	// Try new format first: {"admins": {"id": "name", ...}}
+	var newFormat struct {
+		Admins map[string]string `json:"admins"`
+	}
+	if err := json.Unmarshal(data, &newFormat); err == nil && len(newFormat.Admins) > 0 {
+		c.Admins = make(map[int64]string)
+		for idStr, name := range newFormat.Admins {
+			var id int64
+			if _, err := fmt.Sscanf(idStr, "%d", &id); err == nil {
+				c.Admins[id] = name
+			}
+		}
+		return nil
 	}
 
-	// Invert to ID -> name
-	c.Admins = make(map[int64]string)
-	for name, id := range admins {
-		c.Admins[id] = name
+	// Try legacy format: {"name1": id1, "name2": id2}
+	var legacyAdmins map[string]int64
+	if err := json.Unmarshal(data, &legacyAdmins); err == nil {
+		// Invert to ID -> name
+		c.Admins = make(map[int64]string)
+		for name, id := range legacyAdmins {
+			c.Admins[id] = name
+		}
+		return nil
 	}
 
-	return nil
+	// If both formats fail, try flat object like {"admin": 0}
+	var flatFormat map[string]json.RawMessage
+	if err := json.Unmarshal(data, &flatFormat); err == nil {
+		c.Admins = make(map[int64]string)
+		for key, val := range flatFormat {
+			// Skip non-numeric values
+			var id int64
+			if err := json.Unmarshal(val, &id); err == nil && id > 0 {
+				c.Admins[id] = key
+			}
+		}
+		if len(c.Admins) > 0 {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("invalid admin file format")
 }
 
-// saveAdmins saves admin configuration to file
+// saveAdmins saves admin configuration to file (legacy format, not recommended)
+// Use AdminService.AddAdmin/RemoveAdmin instead
 func (c *Config) saveAdmins(admins map[string]int64) error {
 	data, err := json.MarshalIndent(admins, "", "  ")
 	if err != nil {
