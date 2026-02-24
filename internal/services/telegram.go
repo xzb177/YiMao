@@ -93,8 +93,8 @@ func (c *TelegramClient) DeleteMessage(chatID int64, messageID int64) error {
 		"message_id": messageID,
 	}
 
-	_, err := c.makeRequest(apiURL, payload)
-	return err
+	// DeleteMessage returns bool result, not Message
+	return c.makeSimpleRequest(apiURL, payload)
 }
 
 // AnswerCallback answers a callback query
