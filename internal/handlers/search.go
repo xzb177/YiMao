@@ -66,6 +66,8 @@ func shuffleStrings(items []string, n int) []string {
 }
 
 func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	log.Printf("[SearchHandler] Handle: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
+
 	// Check if this is a search result selection
 	if tmdbIDStr, hasID := ctx.Callback.Params["id"]; hasID {
 		return h.handleSelect(ctx, tmdbIDStr)
@@ -93,11 +95,15 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Check if clearing history
 	if _, hasClear := ctx.Callback.Params["clear_history"]; hasClear {
+		log.Printf("[SearchHandler] Clearing search history for user %d", ctx.UserID)
 		if h.searchHistory != nil {
-			h.searchHistory.ClearHistory(ctx.UserID)
+			if err := h.searchHistory.ClearHistory(ctx.UserID); err != nil {
+				log.Printf("[SearchHandler] Failed to clear history: %v", err)
+			}
 		}
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("⬅️ 返回主菜单", "start")
+		log.Printf("[SearchHandler] Returning 'history cleared' message with keyboard")
 		return &callback.Response{
 			Text:     "🗑️ 搜索历史已清空",
 			Edit:     true,
@@ -172,7 +178,7 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 			// Add clear history button
 			if len(history) > 0 {
 				kb.NewRow()
-				kb.AddButton("🗑️ 清空历史", "search:clear_history")
+				kb.AddButton("🗑️ 清空历史", "search:clear_history:1")
 			}
 			kb.NewRow()
 			kb.AddButton("⬅️ 返回主菜单", "start")
@@ -676,7 +682,7 @@ func (h *SearchHandler) showSearchHistory(userID int64, chatID int64) error {
 	}
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🗑️ 清空历史", "search:clear_history")
+	kb.AddButton("🗑️ 清空历史", "search:clear_history:1")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

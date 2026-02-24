@@ -184,10 +184,18 @@ func (s *SearchHistoryService) GetSuggestions(telegramID int64, query string) []
 // ClearHistory clears search history for a user
 func (s *SearchHistoryService) ClearHistory(telegramID int64) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	delete(s.history, telegramID)
-	return s.save()
+
+	// Copy data for saving after releasing lock
+	historyCopy := make(map[int64][]SearchEntry)
+	for k, v := range s.history {
+		historyCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	// Save without holding the lock
+	s.saveAsync(historyCopy)
+	return nil
 }
 
 // Helper functions for case-insensitive search
