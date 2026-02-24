@@ -411,6 +411,19 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 	kb.NewRow()
 	kb.AddButton("🤖 其他推荐", "ai")
 
+	// Check if we're returning from detail view (the message is likely a photo)
+	// In that case, we need to delete and resend instead of editing
+	isReturningFromDetail := ctx.Callback != nil && ctx.Callback.Action == "search" && ctx.Callback.Params["type"] != ""
+
+	if isReturningFromDetail {
+		return &callback.Response{
+			Text:         msg.Build(),
+			Edit:         false,
+			DeleteMessage: true,
+			Keyboard:     convertKeyboard(kb.Build()),
+		}, nil
+	}
+
 	return &callback.Response{
 		Text:     msg.Build(),
 		Edit:     true,
@@ -438,36 +451,70 @@ func (h *SearchHandler) getTrendingResults(tType string) ([]services.SearchResul
 	}
 }
 
-// getTrendingMoviesHybrid gets trending movies from TMDB and filters by MoviePilot availability
+// getTrendingMoviesHybrid gets trending movies from TMDB
 func (h *SearchHandler) getTrendingMoviesHybrid() ([]services.SearchResult, error) {
 	if h.tmdb == nil {
 		return h.getFallbackMedia()
 	}
 
-	tmdbResults, err := h.tmdb.GetTrendingMovies("week")
-	if err != nil {
-		log.Printf("[SearchHandler] TMDB GetTrendingMovies failed: %v", err)
+	// Fetch multiple pages and shuffle for variety
+	var allItems []services.TMDBTrendingMediaInfo
+	pages := []int{1, 2, 3}
+
+	for _, page := range pages {
+		tmdbResults, err := h.tmdb.GetPopularMovies(page)
+		if err != nil {
+			log.Printf("[SearchHandler] TMDB GetPopularMovies page %d failed: %v", page, err)
+			continue
+		}
+		allItems = append(allItems, tmdbResults.Results...)
+	}
+
+	if len(allItems) == 0 {
 		return h.getFallbackMedia()
 	}
 
-	// Filter through MoviePilot to check availability
-	return h.filterTMDBResultsByMoviePilot(tmdbResults.Results, "movie")
+	// Shuffle results
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := len(allItems) - 1; i > 0; i-- {
+		j := r.Intn(i + 1)
+		allItems[i], allItems[j] = allItems[j], allItems[i]
+	}
+
+	return h.convertTMDBToSearchResults(allItems, "movie"), nil
 }
 
-// getTrendingTVHybrid gets trending TV shows from TMDB and filters by MoviePilot availability
+// getTrendingTVHybrid gets trending TV shows from TMDB
 func (h *SearchHandler) getTrendingTVHybrid() ([]services.SearchResult, error) {
 	if h.tmdb == nil {
 		return h.getFallbackTVMedia()
 	}
 
-	tmdbResults, err := h.tmdb.GetTrendingTV("week")
-	if err != nil {
-		log.Printf("[SearchHandler] TMDB GetTrendingTV failed: %v", err)
+	// Fetch multiple pages and shuffle for variety
+	var allItems []services.TMDBTrendingMediaInfo
+	pages := []int{1, 2, 3}
+
+	for _, page := range pages {
+		tmdbResults, err := h.tmdb.GetPopularTV(page)
+		if err != nil {
+			log.Printf("[SearchHandler] TMDB GetPopularTV page %d failed: %v", page, err)
+			continue
+		}
+		allItems = append(allItems, tmdbResults.Results...)
+	}
+
+	if len(allItems) == 0 {
 		return h.getFallbackTVMedia()
 	}
 
-	// Filter through MoviePilot to check availability
-	return h.filterTMDBResultsByMoviePilot(tmdbResults.Results, "tv")
+	// Shuffle results
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := len(allItems) - 1; i > 0; i-- {
+		j := r.Intn(i + 1)
+		allItems[i], allItems[j] = allItems[j], allItems[i]
+	}
+
+	return h.convertTMDBToSearchResults(allItems, "tv"), nil
 }
 
 // getTopRatedMediaHybrid gets top-rated media from TMDB and filters by MoviePilot
@@ -476,50 +523,127 @@ func (h *SearchHandler) getTopRatedMediaHybrid() ([]services.SearchResult, error
 		return h.getFallbackMedia()
 	}
 
-	tmdbResults, err := h.tmdb.GetPopularMovies(1)
-	if err != nil {
-		log.Printf("[SearchHandler] TMDB GetPopularMovies failed: %v", err)
+	// Fetch multiple pages and shuffle for variety
+	var allItems []services.TMDBTrendingMediaInfo
+	pages := []int{1, 2, 3}
+
+	for _, page := range pages {
+		tmdbResults, err := h.tmdb.GetTopRatedMovies(page)
+		if err != nil {
+			log.Printf("[SearchHandler] TMDB GetTopRatedMovies page %d failed: %v", page, err)
+			continue
+		}
+		allItems = append(allItems, tmdbResults.Results...)
+	}
+
+	if len(allItems) == 0 {
 		return h.getFallbackMedia()
 	}
 
-	// Filter and only return high-rated content
-	var highRated []services.TMDBTrendingMediaInfo
-	for _, item := range tmdbResults.Results {
-		if item.VoteAverage >= 7.5 {
-			highRated = append(highRated, item)
-		}
+	// Shuffle results
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for i := len(allItems) - 1; i > 0; i-- {
+		j := r.Intn(i + 1)
+		allItems[i], allItems[j] = allItems[j], allItems[i]
 	}
 
-	return h.filterTMDBResultsByMoviePilot(highRated, "movie")
+	return h.convertTMDBToSearchResults(allItems, "movie"), nil
 }
 
-// getNewMediaHybrid gets new releases from TMDB and filters by MoviePilot
+// getNewMediaHybrid gets new releases from TMDB
 func (h *SearchHandler) getNewMediaHybrid() ([]services.SearchResult, error) {
 	if h.tmdb == nil {
 		return h.getNewMedia()
 	}
 
-	tmdbResults, err := h.tmdb.GetTrendingMovies("week")
+	// Use now playing for new releases
+	tmdbResults, err := h.tmdb.GetNowPlayingMovies(1)
 	if err != nil {
-		log.Printf("[SearchHandler] TMDB GetTrendingMovies failed: %v", err)
-		return h.getNewMedia()
+		log.Printf("[SearchHandler] TMDB GetNowPlayingMovies failed: %v", err)
+	} else if len(tmdbResults.Results) >= 8 {
+		// Shuffle now playing results
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		shuffled := make([]services.TMDBTrendingMediaInfo, len(tmdbResults.Results))
+		copy(shuffled, tmdbResults.Results)
+		for i := len(shuffled) - 1; i > 0; i-- {
+			j := r.Intn(i + 1)
+			shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+		}
+		return h.convertTMDBToSearchResults(shuffled, "movie"), nil
 	}
 
-	// Filter for recent content (last 2 years)
+	// Fallback to popular with year filter
+	var allRecent []services.TMDBTrendingMediaInfo
 	currentYear := time.Now().Year()
-	var recentResults []services.TMDBTrendingMediaInfo
 
-	for _, item := range tmdbResults.Results {
-		if item.ReleaseDate != "" {
-			year := 0
-			fmt.Sscanf(item.ReleaseDate, "%d-", &year)
-			if year >= currentYear-2 {
-				recentResults = append(recentResults, item)
+	// Fetch multiple pages
+	for page := 1; page <= 3; page++ {
+		tmdbResults, err := h.tmdb.GetPopularMovies(page)
+		if err != nil {
+			log.Printf("[SearchHandler] TMDB GetPopularMovies page %d failed: %v", page, err)
+			continue
+		}
+
+		// Filter for recent content (last 3 years)
+		for _, item := range tmdbResults.Results {
+			if item.ReleaseDate != "" {
+				year := 0
+				fmt.Sscanf(item.ReleaseDate, "%d-", &year)
+				if year >= currentYear-3 {
+					allRecent = append(allRecent, item)
+				}
 			}
 		}
 	}
 
-	return h.filterTMDBResultsByMoviePilot(recentResults, "movie")
+	if len(allRecent) >= 8 {
+		// Shuffle recent results
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		for i := len(allRecent) - 1; i > 0; i-- {
+			j := r.Intn(i + 1)
+			allRecent[i], allRecent[j] = allRecent[j], allRecent[i]
+		}
+		return h.convertTMDBToSearchResults(allRecent, "movie"), nil
+	}
+
+	// Last resort - use fallback
+	return h.getNewMedia()
+}
+
+// convertTMDBToSearchResults converts TMDB trending results to search results directly
+func (h *SearchHandler) convertTMDBToSearchResults(items []services.TMDBTrendingMediaInfo, mediaType string) []services.SearchResult {
+	var results []services.SearchResult
+	seen := make(map[int]bool)
+
+	for _, item := range items {
+		if seen[item.ID] {
+			continue
+		}
+		seen[item.ID] = true
+
+		// Extract year from release date
+		year := 0
+		if item.ReleaseDate != "" {
+			fmt.Sscanf(item.ReleaseDate, "%d-", &year)
+		}
+
+		result := services.SearchResult{
+			ID:       item.ID,
+			Title:    getItemTitle(item),
+			Year:     services.FlexibleYear(year),
+			Type:     mediaType,
+			Poster:   item.PosterPath,
+			Rating:   item.VoteAverage,
+			Overview: item.Overview,
+		}
+		results = append(results, result)
+
+		if len(results) >= 8 {
+			break
+		}
+	}
+
+	return results
 }
 
 // filterTMDBResultsByMoviePilot filters TMDB results by checking if they exist in MoviePilot
@@ -633,6 +757,7 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 
 	var allResults []services.SearchResult
 	seen := make(map[int]bool)
+	seenPrefix := make(map[string]bool) // Track title prefixes to avoid series clustering
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -643,7 +768,22 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 		items := results.Results
 		for _, item := range items {
 			if !seen[item.ID] && item.Rating >= 7.5 {
+				// Extract title prefix to detect series
+				prefix := ""
+				runes := []rune(item.Title)
+				if len(runes) >= 2 {
+					prefix = string(runes[:2])
+				}
+
+				// Skip if we already have something with this prefix
+				if prefix != "" && seenPrefix[prefix] {
+					continue
+				}
+
 				seen[item.ID] = true
+				if prefix != "" {
+					seenPrefix[prefix] = true
+				}
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -680,21 +820,45 @@ func (h *SearchHandler) getTopRatedMedia() ([]services.SearchResult, error) {
 func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
 	currentYear := time.Now().Year()
 
-	// Recent popular movies
-	allKeywords := []string{
-		fmt.Sprintf("%d", currentYear),
-		fmt.Sprintf("%d", currentYear-1),
-		"沙丘2", "奥本海默", "盟约", "惊奇队长", "蜘蛛侠", "蝙蝠侠",
-		"黑豹", "奇异博士", "雷神", "黑寡妇", "永恒族", "尚气",
-		"侏罗纪世界", "哥斯拉", "金刚", "速度与激情", "碟中谍",
+	// Use specific recent movie titles instead of years to avoid series clustering
+	// Grouped by genre to ensure variety
+	categories := [][]string{
+		// Sci-Fi / Action
+		{"沙丘2", "奥本海默", "银河护卫队3", "闪电侠", "蚁人与黄蜂女"},
+		// Superhero
+		{"惊奇队长2", "海王2", "蓝甲虫", "闪电侠", "雷霆沙赞"},
+		// Action/Adventure
+		{"碟中谍7", "速度与激情10", "约翰 Wick4", "夺宝奇兵5", "鬼玩人崛起"},
+		// Animation
+		{"蜘蛛侠纵横宇宙", "超级马力欧", "元素方城市", "忍者神龟", "星愿"},
+		// Asian cinema
+		{"流浪地球2", "满江红", "无名", "深海", "熊出没"},
+		// Horror/Thriller
+		{"邪恶 Nun", "欢迎来到 rifle", "梅根", "恐惧", "微笑"},
 	}
 
-	selected := shuffleStrings(allKeywords, 8)
+	// Pick one from each category to ensure variety
+	r := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var selectedKeywords []string
+
+	for _, category := range categories {
+		if len(category) > 0 {
+			idx := r.Intn(len(category))
+			selectedKeywords = append(selectedKeywords, category[idx])
+		}
+	}
+
+	// Shuffle and pick up to 8
+	shuffled := shuffleStrings(selectedKeywords, len(selectedKeywords))
+	if len(shuffled) > 8 {
+		shuffled = shuffled[:8]
+	}
 
 	var allResults []services.SearchResult
 	seen := make(map[int]bool)
+	seenPrefix := make(map[string]bool) // Track title prefixes to avoid series clustering
 
-	for _, kw := range selected {
+	for _, kw := range shuffled {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
 		if err != nil {
 			continue
@@ -702,11 +866,57 @@ func (h *SearchHandler) getNewMedia() ([]services.SearchResult, error) {
 
 		items := results.Results
 		for _, item := range items {
-			if !seen[item.ID] && item.Year.Int() >= currentYear-2 {
+			// Skip if we already have this TMDB ID
+			if seen[item.ID] {
+				continue
+			}
+
+			// Extract title prefix (first 2-3 chars) to detect series
+			// This helps avoid getting 沙丘, 沙丘2, 沙丘3 together
+			prefix := ""
+			if len(item.Title) >= 2 {
+				// For Chinese titles, use first 2 characters
+				runes := []rune(item.Title)
+				if len(runes) >= 2 {
+					prefix = string(runes[:2])
+				}
+			}
+
+			// Skip if we already have something with this prefix (series clustering)
+			if prefix != "" && seenPrefix[prefix] {
+				continue
+			}
+
+			// Filter by year
+			if item.Year.Int() >= currentYear-3 {
 				seen[item.ID] = true
+				if prefix != "" {
+					seenPrefix[prefix] = true
+				}
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
+				}
+			}
+		}
+	}
+
+	// If we still don't have enough, relax the prefix restriction
+	if len(allResults) < 4 {
+		for _, kw := range shuffled {
+			results, err := h.moviepilot.SearchMedia(kw, 1)
+			if err != nil {
+				continue
+			}
+
+			items := results.Results
+			for _, item := range items {
+				if !seen[item.ID] && item.Year.Int() >= currentYear-5 {
+					seen[item.ID] = true
+					allResults = append(allResults, item)
+					if len(allResults) >= 8 {
+						return allResults, nil
+					}
 				}
 			}
 		}
@@ -739,7 +949,8 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 	selectedKeywords := shuffleStrings(selectedCategories, 6)
 
 	var allResults []services.SearchResult
-	seen := make(map[int]bool) // Use TMDB ID for deduplication
+	seen := make(map[int]bool)
+	seenPrefix := make(map[string]bool) // Track title prefixes to avoid series clustering
 
 	for _, kw := range selectedKeywords {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -750,7 +961,22 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 		items := results.Results
 		for _, item := range items {
 			if !seen[item.ID] && item.Rating >= 5.0 {
+				// Extract title prefix to detect series
+				prefix := ""
+				runes := []rune(item.Title)
+				if len(runes) >= 2 {
+					prefix = string(runes[:2])
+				}
+
+				// Skip if we already have something with this prefix
+				if prefix != "" && seenPrefix[prefix] {
+					continue
+				}
+
 				seen[item.ID] = true
+				if prefix != "" {
+					seenPrefix[prefix] = true
+				}
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -777,7 +1003,8 @@ func (h *SearchHandler) getFallbackMedia() ([]services.SearchResult, error) {
 
 	selected := shuffleStrings(fallbackKeywords, 6)
 	var allResults []services.SearchResult
-	seen := make(map[int]bool) // Use TMDB ID for deduplication
+	seen := make(map[int]bool)
+	seenPrefix := make(map[string]bool) // Track title prefixes to avoid series clustering
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -788,11 +1015,26 @@ func (h *SearchHandler) getFallbackMedia() ([]services.SearchResult, error) {
 		items := results.Results
 		for _, item := range items {
 			// Skip non-movie items
-			if item.Type != "电影" && item.Type != "MOV" && item.Type != "电影" {
+			if item.Type != "电影" && item.Type != "MOV" {
 				continue
 			}
 			if !seen[item.ID] {
+				// Extract title prefix to detect series
+				prefix := ""
+				runes := []rune(item.Title)
+				if len(runes) >= 2 {
+					prefix = string(runes[:2])
+				}
+
+				// Skip if we already have something with this prefix
+				if prefix != "" && seenPrefix[prefix] {
+					continue
+				}
+
 				seen[item.ID] = true
+				if prefix != "" {
+					seenPrefix[prefix] = true
+				}
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil
@@ -813,7 +1055,8 @@ func (h *SearchHandler) getFallbackTVMedia() ([]services.SearchResult, error) {
 
 	selected := shuffleStrings(fallbackKeywords, 6)
 	var allResults []services.SearchResult
-	seen := make(map[int]bool) // Use TMDB ID for deduplication
+	seen := make(map[int]bool)
+	seenPrefix := make(map[string]bool) // Track title prefixes to avoid series clustering
 
 	for _, kw := range selected {
 		results, err := h.moviepilot.SearchMedia(kw, 1)
@@ -828,7 +1071,22 @@ func (h *SearchHandler) getFallbackTVMedia() ([]services.SearchResult, error) {
 				continue
 			}
 			if !seen[item.ID] {
+				// Extract title prefix to detect series
+				prefix := ""
+				runes := []rune(item.Title)
+				if len(runes) >= 2 {
+					prefix = string(runes[:2])
+				}
+
+				// Skip if we already have something with this prefix
+				if prefix != "" && seenPrefix[prefix] {
+					continue
+				}
+
 				seen[item.ID] = true
+				if prefix != "" {
+					seenPrefix[prefix] = true
+				}
 				allResults = append(allResults, item)
 				if len(allResults) >= 8 {
 					return allResults, nil

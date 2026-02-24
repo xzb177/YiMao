@@ -447,7 +447,15 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 				log.Printf("[Callback] SendPhoto error: %v", sendErr)
 			}
 		} else if resp.Text != "" {
-			if resp.Edit {
+			if resp.DeleteMessage {
+				// Delete current message and send new one
+				if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
+					log.Printf("[Callback] DeleteMessage error: %v", delErr)
+				}
+				if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
+					log.Printf("[Callback] SendMessage error: %v", sendErr)
+				}
+			} else if resp.Edit {
 				// Edit existing message
 				if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard); editErr != nil {
 					log.Printf("[Callback] EditMessage error: %v", editErr)

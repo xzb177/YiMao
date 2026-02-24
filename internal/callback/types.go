@@ -69,13 +69,14 @@ type Context struct {
 
 // Response represents the result of callback handling
 type Response struct {
-	Text        string
-	Edit        bool
-	ShowAlert   bool
-	Keyboard    *Keyboard
-	CallbackMsg string
-	Photo       string  // Photo URL to send (will send as new message, not edit)
-	PhotoCaption string // Caption for the photo
+	Text         string
+	Edit         bool
+	ShowAlert    bool
+	Keyboard     *Keyboard
+	CallbackMsg  string
+	Photo        string  // Photo URL to send (will send as new message, not edit)
+	PhotoCaption string  // Caption for the photo
+	DeleteMessage bool   // If true, delete the current message before sending new one
 }
 
 // Keyboard represents an inline keyboard
