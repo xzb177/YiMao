@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Action represents a callback action
@@ -31,6 +32,73 @@ const (
 	ActionHot          Action = "hot"
 	ActionNew          Action = "new"
 )
+
+// validActions is the whitelist of allowed callback actions
+var validActions = map[Action]bool{
+	// Standard actions
+	ActionStart:        true,
+	ActionSearch:       true,
+	ActionAI:           true,
+	ActionHot:          true,
+	ActionNew:          true,
+	ActionDetail:       true,
+	ActionDetailSeasons: true,
+	ActionRequest:      true,
+	ActionPage:         true,
+	ActionSelect:       true,
+	ActionBack:         true,
+	ActionCancel:       true,
+	ActionRequests:     true,
+	ActionLink:         true,
+	ActionHelp:         true,
+	ActionFeedback:     true,
+	ActionRandom:       true,
+
+	// Review system actions
+	"review_approve": true,
+	"review_reject":  true,
+	"review_cancel":  true,
+	"my_reviews":     true,
+	"review_list":    true,
+
+	// Admin actions
+	"admin_approve":              true,
+	"admin_decline":              true,
+	"admin_pending":              true,
+	"admin_issue_reply":          true,
+	"admin_issue_fixed":          true,
+	"admin_issue_processing":     true,
+	"admin_issue_close":          true,
+	"admin_menu":                 true,
+	"admin_notif_settings":       true,
+	"admin_notif_toggle_instant": true,
+	"admin_notif_toggle_daily":  true,
+	"admin_notif_toggle":         true,
+	"admin_notif_settime":        true,
+	"admin_notif_format_simple":  true,
+	"admin_notif_format_detailed": true,
+
+	// Request related actions
+	"force_subscribe":  true,
+	"cancel_request":   true,
+
+	// Watchlist actions
+	"watchlist":                   true,
+	"watchlist_add":               true,
+	"watchlist_page":              true,
+	"watchlist_remove":            true,
+	"watchlist_collections":       true,
+	"watchlist_create_collection": true,
+	"watchlist_collection_items":  true,
+}
+
+// isValidAction checks if an action is in the whitelist
+func isValidAction(action Action) bool {
+	return validActions[action]
+}
+
+// actionWhiteListMu protects access to validActions for future dynamic updates
+var actionWhiteListMu sync.RWMutex
 
 // Callback represents a standardized callback query
 type Callback struct {
@@ -128,6 +196,13 @@ func (p *Parser) Parse(data string) (*Callback, error) {
 		if cb.Params == nil {
 			cb.Params = make(map[string]string)
 		}
+		// Validate action against whitelist
+		actionWhiteListMu.RLock()
+		valid := isValidAction(cb.Action)
+		actionWhiteListMu.RUnlock()
+		if !valid {
+			return nil, fmt.Errorf("invalid action: %s", cb.Action)
+		}
 		return &cb, nil
 	}
 
@@ -143,8 +218,18 @@ func (p *Parser) Parse(data string) (*Callback, error) {
 		actionStr = strings.TrimPrefix(actionStr, "start_")
 	}
 
+	action := Action(actionStr)
+
+	// Validate action against whitelist
+	actionWhiteListMu.RLock()
+	valid := isValidAction(action)
+	actionWhiteListMu.RUnlock()
+	if !valid {
+		return nil, fmt.Errorf("invalid action: %s", action)
+	}
+
 	cb := &Callback{
-		Action: Action(actionStr),
+		Action: action,
 		Params: make(map[string]string),
 		Raw:    data,
 	}

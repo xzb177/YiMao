@@ -272,11 +272,14 @@ watchlist_add:{tmdbID}  # 加入片单
   - `QuotaService.getOrCreateQuotaUnsafe` 中的死锁风险：持有锁时调用 `save()`
   - `QuotaService.SyncFromJellyseerr` 同样的死锁风险
   - `request.go` 中重复的 TMDB ID 解析代码
-- **审查发现的其他问题（已记录待修复）**:
-  - Callback action 白名单验证缺失（中等）
-  - Goroutine 错误处理不完善（中等）
+- **已修复的中等问题**:
+  - Callback action 白名单验证：添加 `validActions` 白名单，拒绝未注册的 action
+  - Goroutine 错误处理：`notifyAdmins` 添加错误日志记录
+- **审查发现的其他问题（已记录待后续修复）**:
   - 日志级别不一致（轻微）
   - 魔法数字未提取为常量（轻微）
 - **修改文件**:
-  - `internal/services/quota.go` - 修复死锁风险，移除 unsafe 函数中的 save 调用
-  - `internal/handlers/request.go` - 删除重复的代码行
+  - `internal/services/quota.go` - 修复死锁风险
+  - `internal/handlers/request.go` - 删除重复代码
+  - `internal/callback/types.go` - 添加 action 白名单验证
+  - `internal/handlers/feedback.go` - 添加错误处理

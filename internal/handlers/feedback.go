@@ -353,9 +353,11 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 
 	message := msg.Build()
 
-	// Send to all admins
+	// Send to all admins with error handling
 	for _, adminID := range adminIDs {
-		h.telegram.SendMessage(adminID, message, "Markdown", kb.Build())
+		if _, err := h.telegram.SendMessage(adminID, message, "Markdown", kb.Build()); err != nil {
+			log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+		}
 	}
 }
 
