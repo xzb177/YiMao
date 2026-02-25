@@ -164,3 +164,31 @@ watchlist_add:{tmdbID}  # 加入片单
   - 连接池: 100 最大连接
 - **输入验证**: 新增 `pkg/validation/sanitize.go` 防止恶意输入
 - **会话管理**: 改进日志记录，便于调试
+
+### 2024-02-25 - 入库通知优化与片单功能简化
+- **功能移除**: 删除请求优先级功能，简化求片流程
+- **片单优化**:
+  - 添加分页支持，每页显示 5 个项目
+  - 简化添加流程，直接添加无需确认
+  - 优化按钮布局和交互体验
+- **剧集入库聚合**:
+  - 10秒内同剧集多集合并显示（如 E01-E05）
+  - 聚合消息格式化输出
+- **入库通知格式优化**:
+  - 使用横屏 backdrop 图片（1920x1080）
+  - 从 TMDB 获取公开可访问的图片
+  - 图片下载后通过 multipart 上传到 Telegram
+  - 匹配参考频道 https://t.me/longemby_notify 样式
+- **推送策略调整**:
+  - 入库通知仅推送到群组（chatID < -100）
+  - 不再推送给管理员私聊
+  - 移除 mediaNotificationSvc 管理员推送
+- **质量检测**: 添加从文件路径解析质量信息功能
+- **日志优化**: 简化入库日志输出
+- **修改文件**:
+  - `internal/handlers/request.go` - 移除优先级选择流程
+  - `internal/handlers/watchlist.go` - 分页支持和简化添加
+  - `internal/services/webhook.go` - 剧集聚合、横屏图片、推送限制
+  - `internal/services/telegram.go` - 图片下载上传
+  - `internal/services/review.go` - 移除优先级排序
+  - `cmd/bot/main.go` - 回调注册更新
