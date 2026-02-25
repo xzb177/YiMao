@@ -363,6 +363,9 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		log.Printf("[入库] %s", itemName)
 	}
 
+	// Add to daily summary list
+	s.addMediaItemToSummary(payload, enhancedPayload)
+
 	// Only send to main chat (group chat, not private)
 	// 私聊不推送入库通知，只推送到群组
 	if s.chatID != 0 && s.chatID < -100 { // Only send to group chats (chatID < -100)
@@ -564,6 +567,9 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		}
 
 		log.Printf("[入库] %s S%02d %s (%d集)", agg.SeriesName, agg.Season, epRange, len(agg.Episodes))
+
+		// Add to daily summary list
+		s.addAggregatedEpisodeToSummary(agg, epRange)
 
 		delete(s.epAggregation, key)
 	}
@@ -1665,6 +1671,122 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 	}
 
 	return builder.String()
+}
+
+// addMediaItemToSummary adds media item to daily summary list
+func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) {
+	if s.mediaNotificationSvc == nil {
+		return
+	}
+
+	// Get media type
+	mediaType := MediaTypeMovie
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+
+	// Detect media type
+	if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+		mediaType = MediaTypeSeries
+	}
+
+	// Check if anime
+	isAnime := false
+	libraryName := payload.Library
+	if libraryName == "" && payload.Item != nil {
+		libraryName = payload.Item.Path
+	}
+	if libraryName != "" {
+		lowerLib := strings.ToLower(libraryName)
+		animeKeywords := []string{"anim", "动画", "anime", "卡通", "漫画"}
+		for _, kw := range animeKeywords {
+			if strings.Contains(lowerLib, kw) {
+				isAnime = true
+				break
+			}
+		}
+	}
+
+	if isAnime {
+		mediaType = MediaTypeAnime
+	}
+
+	// Get year
+	year := 0
+	if payload.Year != nil {
+		year = *payload.Year
+	}
+	if year == 0 && payload.Item != nil && payload.Item.Year != nil {
+		year = *payload.Item.Year
+	}
+	if year == 0 && enhanced != nil {
+		year = enhanced.Year
+	}
+
+	// Create media item
+	item := &MediaItem{
+		Title:         payload.ItemName,
+		Year:          year,
+		LibraryName:   libraryName,
+		MediaType:     mediaType,
+		SeriesName:    payload.SeriesName,
+		SeasonNumber:  payload.Season,
+		EpisodeStart:  payload.Episode,
+		EpisodeEnd:    payload.Episode,
+		EpisodeCount:  1,
+		IsCompleted:   false,
+	}
+
+	s.mediaNotificationSvc.AddItem(item)
+	log.Printf("[汇总] 已添加到每日汇总: %s", item.Title)
+}
+
+// addAggregatedEpisodeToSummary adds aggregated episode to daily summary list
+func (s *WebhookService) addAggregatedEpisodeToSummary(agg *EpisodeAggregation, epRange string) {
+	if s.mediaNotificationSvc == nil {
+		return
+	}
+
+	// Detect media type from library name
+	mediaType := MediaTypeSeries
+	isAnime := false
+	if agg.LibraryName != "" {
+		lowerLib := strings.ToLower(agg.LibraryName)
+		animeKeywords := []string{"anim", "动画", "anime", "卡通", "漫画"}
+		for _, kw := range animeKeywords {
+			if strings.Contains(lowerLib, kw) {
+				isAnime = true
+				break
+			}
+		}
+	}
+
+	if isAnime {
+		mediaType = MediaTypeAnime
+	}
+
+	// Parse episode range to get episode count
+	episodeCount := len(agg.Episodes)
+	episodeStart := agg.Episodes[0]
+	episodeEnd := agg.Episodes[len(agg.Episodes)-1]
+
+	// Create media item
+	item := &MediaItem{
+		Title:         agg.SeriesName,
+		Year:          agg.Year,
+		LibraryName:   agg.LibraryName,
+		MediaType:     mediaType,
+		SeriesName:    agg.SeriesName,
+		SeasonNumber:  agg.Season,
+		EpisodeStart:  episodeStart,
+		EpisodeEnd:    episodeEnd,
+		EpisodeCount:  episodeCount,
+		IsCompleted:   false,
+	}
+
+	s.mediaNotificationSvc.AddItem(item)
+	log.Printf("[汇总] 已添加到每日汇总: %s S%02d %s", agg.SeriesName, agg.Season, epRange)
 }
 
 // handleTestNotification handles test notification

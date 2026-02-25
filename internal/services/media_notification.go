@@ -59,7 +59,7 @@ type MediaItem struct {
 // AdminNotificationSettings stores notification preferences for an admin
 type AdminNotificationSettings struct {
 	AdminID           int64             `json:"admin_id"`
-	DailyTime         string           `json:"daily_time"`         // Format: "HH:MM", default "12:59"
+	DailyTime         string           `json:"daily_time"`         // Format: "HH:MM", default "23:50"
 	Enabled           bool             `json:"enabled"`             // Overall notification toggle
 	InstantEnabled    bool             `json:"instant_enabled"`    // Enable instant notifications
 	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification
@@ -174,7 +174,7 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 	// Return default settings
 	return &AdminNotificationSettings{
 		AdminID:           adminID,
-		DailyTime:         "12:59",
+		DailyTime:         "23:50",
 		Enabled:           true,
 		InstantEnabled:    true,  // Default to instant notifications
 		DailySummaryEnabled: false, // Default to disabled
@@ -266,7 +266,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			// Return default settings without calling GetSettings (which would try to acquire lock again)
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:           adminID,
-				DailyTime:         "12:59",
+				DailyTime:         "23:50",
 				Enabled:           true,
 				InstantEnabled:    true,
 				DailySummaryEnabled: false,
@@ -573,7 +573,7 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 		} else {
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:           adminID,
-				DailyTime:         "12:59",
+				DailyTime:         "23:50",
 				Enabled:           true,
 				InstantEnabled:    true,
 				DailySummaryEnabled: false,
