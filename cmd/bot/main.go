@@ -137,7 +137,6 @@ type Dependencies struct {
 	Notification      *services.NotificationService
 	Scheduler         *services.Scheduler
 	SearchHistory     *services.SearchHistoryService
-	WatchlistService  *services.WatchlistService
 	FeedbackHandler   *handlers.FeedbackHandler
 }
 
@@ -217,10 +216,6 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Initialize Search History Service
 	searchHistory := services.NewSearchHistoryService(cfg.DataDir)
 
-	// Initialize Watchlist Service
-	watchlistService := services.NewWatchlistService(cfg.DataDir)
-	log.Println("  [12/12] Watchlist service initialized")
-
 	// Start cleanup routines
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -248,7 +243,6 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		Notification:     notificationService,
 		Scheduler:        scheduler,
 		SearchHistory:    searchHistory,
-		WatchlistService: watchlistService,
 	}
 }
 
@@ -274,7 +268,6 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler := handlers.NewAdminHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
-	watchlistHandler := handlers.NewWatchlistHandler(services.SessionMgr, services.Telegram, services.WatchlistService, services.TMDBClient)
 
 	// Inject dependencies
 	startHandler.SetAdminService(services.AdminService)
@@ -331,15 +324,6 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
 	registry.RegisterFunc("cancel_request", requestHandler.HandleCancelRequest)
 
-	// Watchlist callbacks
-	registry.RegisterFunc("watchlist", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_add", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_page", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_remove", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_collections", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_create_collection", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_collection_items", watchlistHandler.Handle)
-
 	log.Println("✅ Callback handlers registered")
 
 	// Build full dependencies
@@ -360,7 +344,6 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		Notification:     services.Notification,
 		Scheduler:        services.Scheduler,
 		SearchHistory:    services.SearchHistory,
-		WatchlistService: services.WatchlistService,
 	}
 
 	return registry, deps
@@ -373,7 +356,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "search", Description: "🔍 搜索影片"},
 		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
-		{Command: "watchlist", Description: "📎 我的片单"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
 		{Command: "help", Description: "❓ 帮助中心"},

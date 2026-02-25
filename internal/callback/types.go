@@ -81,15 +81,6 @@ var validActions = map[Action]bool{
 	// Request related actions
 	"force_subscribe":  true,
 	"cancel_request":   true,
-
-	// Watchlist actions
-	"watchlist":                   true,
-	"watchlist_add":               true,
-	"watchlist_page":              true,
-	"watchlist_remove":            true,
-	"watchlist_collections":       true,
-	"watchlist_create_collection": true,
-	"watchlist_collection_items":  true,
 }
 
 // isValidAction checks if an action is in the whitelist

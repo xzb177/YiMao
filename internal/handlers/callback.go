@@ -525,7 +525,6 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 
 	// Add action buttons in one row
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
-	kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", tvDetails.ID))
 	kb.AddButton("⬅️ 返回列表", "start")
 	kb.NewRow()
 
@@ -777,7 +776,6 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	if isTV && len(seasons) > 0 {
 		// TV show - action buttons row
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
-		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
 		// Back button - determine target based on query
 		if isAIRecommendationQuery(query) {
 			kb.AddButton("⬅️ 返回", fmt.Sprintf("search:type:%s", query))
@@ -812,7 +810,6 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	} else {
 		// Movie - single subscribe button
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
-		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
 		kb.NewRow()
@@ -935,7 +932,6 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 
 	if isTV && len(item.Seasons) > 0 {
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
-		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
 		kb.NewRow()
 		for i, s := range item.Seasons {
 			if i >= 4 {
@@ -956,7 +952,6 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		kb.NewRow()
 	} else {
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
-		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()

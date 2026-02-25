@@ -266,6 +266,22 @@ watchlist_add:{tmdbID}  # 加入片单
 - **修改文件**:
   - `internal/handlers/callback.go` - 添加资源可用性检测和警告显示
 
+### 2025-02-25 - 删除片单功能
+- **功能移除**: 完全删除个人片单功能
+  - 移除用户可收藏影片到个人片单的功能
+  - 移除命名收藏夹分类管理功能
+  - 简化 UI，减少功能复杂度
+- **删除文件**:
+  - `internal/handlers/watchlist.go` - 片单处理器
+  - `internal/services/watchlist.go` - 片单服务
+  - `data/watchlists.json` - 片单数据文件
+- **修改文件**:
+  - `internal/callback/types.go` - 移除 watchlist 相关 action 白名单
+  - `internal/handlers/callback.go` - 移除详情页「加入片单」按钮
+  - `internal/services/telegram.go` - 移除主菜单「我的片单」按钮
+  - `cmd/bot/main.go` - 移除 WatchlistService 初始化和注册
+  - `install.sh` - 移除 watchlists.json 初始化
+
 ### 2025-02-25 - 全面代码审查与修复
 - **代码审查**: 对项目进行全面代码审查，检查安全性、并发、资源管理等方面
 - **发现并修复的严重问题**:
