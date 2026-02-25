@@ -94,8 +94,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		kb.AddButton("⬅️ 返回", "start")
 
 		return &callback.Response{
-			Text:   msg.Build(),
-			Edit:   true,
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
 
