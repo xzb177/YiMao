@@ -34,13 +34,17 @@ func main() {
 	log.Printf("   Data directory: %s", cfg.DataDir)
 
 	// Parse chat ID
+	log.Println("🔍 Parsing chat ID...")
 	chatID, err := strconv.ParseInt(cfg.TelegramChatID, 10, 64)
 	if err != nil {
 		log.Fatalf("❌ Invalid Telegram Chat ID '%s': %v", cfg.TelegramChatID, err)
 	}
+	log.Printf("✅ Chat ID parsed: %d", chatID)
 
 	// Initialize services
+	log.Println("🔧 Initializing services...")
 	deps := initServices(cfg, chatID)
+	log.Println("✅ Services initialized")
 
 	// Initialize Security Service
 	securityService := services.NewSecurityService()
@@ -139,21 +143,34 @@ type Dependencies struct {
 
 // initServices initializes all services
 func initServices(cfg *config.Config, chatID int64) *Dependencies {
+	log.Println("  [1/10] Creating basic clients and services...")
+	log.Println("    - TelegramClient...")
 	telegramClient := services.NewTelegramClient(cfg.TelegramBotToken)
+	log.Println("    - MoviePilotClient...")
 	moviepilotClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
+	log.Println("    - SessionManager...")
 	sessMgr := session.NewManager(time.Duration(cfg.MaxSessionAge)*time.Hour, cfg.MaxSessions)
+	log.Println("    - UserMappingService...")
 	userMappingService := services.NewUserMappingService(cfg.DataDir)
+	log.Println("    - BindingRequestService...")
 	bindingRequestService := services.NewBindingRequestService(cfg.DataDir)
+	log.Println("    - PreferencesService...")
 	preferencesService := services.NewPreferencesService(cfg.DataDir)
+	log.Println("    - IssueService...")
 	issueService := services.NewIssueService(cfg.DataDir)
+	log.Println("    - AdminService...")
 	adminService := services.NewAdminService(cfg.DataDir)
+	log.Println("    - QuotaService...")
 	quotaService := services.NewQuotaService(cfg.DataDir, moviepilotClient)
+	log.Println("    - ReviewService...")
 	reviewService := services.NewReviewService(cfg.DataDir)
+	log.Println("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+	log.Println("  [2/10] Basic services created")
 
 	// Initialize Media Notification Service
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService)
-	log.Println("✅ Media notification service initialized")
+	log.Println("  [3/10] Media notification service initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)
 	adminsMap := adminService.GetAllAdmins()
@@ -164,7 +181,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		}
 	}
 	quotaService.SetAdminIDs(adminIDs)
+	log.Println("  [4/10] Admin IDs configured")
 
+	log.Println("  [5/10] Creating webhook service...")
 	webhookService := services.NewWebhookService(
 		telegramClient,
 		moviepilotClient,
@@ -176,27 +195,30 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		cfg.EmbyAPIKey,
 		mediaNotificationSvc,
 	)
+	log.Println("  [6/10] Webhook service created")
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
+	log.Println("  [7/10] TMDB client created")
 
 	// Initialize Notification Service
+	log.Println("  [8/10] Creating notification service...")
 	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
-	log.Println("✅ Notification service initialized")
+	log.Println("  [9/10] Notification service created")
 
 	// Initialize Scheduler for daily recommendations
+	log.Println("  [10/10] Creating scheduler...")
 	scheduler := services.NewScheduler(notificationService, moviepilotClient, adminService, userMappingService)
 	scheduler.SetDailyTime(9, 0) // 9 AM daily
 	scheduler.Start()
-	log.Println("✅ Scheduler started")
+	log.Println("  [11/11] Scheduler started")
 
 	// Initialize Search History Service
 	searchHistory := services.NewSearchHistoryService(cfg.DataDir)
-	log.Println("✅ Search history service initialized")
 
 	// Initialize Watchlist Service
 	watchlistService := services.NewWatchlistService(cfg.DataDir)
-	log.Println("✅ Watchlist service initialized")
+	log.Println("  [12/12] Watchlist service initialized")
 
 	// Start cleanup routines
 	go func() {

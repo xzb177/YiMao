@@ -66,8 +66,8 @@ func (s *UserMappingService) load() error {
 	data, err := os.ReadFile(s.mappingsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Create empty file
-			s.save()
+			// Create empty file - use saveLocked since we already hold the lock
+			_ = s.saveLocked()
 			return nil
 		}
 		return err
