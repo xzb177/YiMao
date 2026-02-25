@@ -335,3 +335,13 @@ watchlist_add:{tmdbID}  # 加入片单
   - 将片单功能相关更新日志标记为"已废弃"
 - **修改文件**:
   - `ai.md` - 文档一致性修正
+
+### 2025-02-25 - 每日汇总通知时间调整与入库记录功能
+- **调整**: 将每日汇总通知时间从 12:59 改为 23:50（晚间推送更合适）
+- **新增功能**: 入库媒体自动添加到每日汇总列表
+  - 实时入库时自动记录到汇总列表
+  - 剧集聚合入库时自动记录到汇总列表
+  - 支持检测媒体类型（电影/剧集/动画）
+- **修改文件**:
+  - `internal/services/media_notification.go` - 默认汇总时间改为 23:50
+  - `internal/services/webhook.go` - 新增 addMediaItemToSummary() 和 addAggregatedEpisodeToSummary() 方法
