@@ -50,6 +50,8 @@ func NewRequestHandler(
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	log.Printf("[RequestHandler] Handle called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
+
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
 	mediaType, hasType := ctx.Callback.Params["type"]
@@ -75,8 +77,11 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		fmt.Sscanf(seasonStr, "%d", &season)
 	}
 
+	log.Printf("[RequestHandler] Parsed: tmdbID=%d, mediaType=%s, season=%d", tmdbID, mediaType, season)
+
 	// Get MoviePilot user ID from user mapping
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	log.Printf("[RequestHandler] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		// Build link instructions message with button
 		msg := services.NewMessageBuilder()
@@ -174,8 +179,10 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		embyType = services.MediaTypeTV
 	}
 
+	log.Printf("[RequestHandler] Searching Emby for: %s (%d) %s", mediaTitle, mediaYear, embyType)
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err != nil {
+		log.Printf("[RequestHandler] Emby search failed (continuing): %v", err)
 		// Continue with request creation even if search fails
 	} else if existingMedia != nil {
 		log.Printf("[求片] 媒体库已存在: %s", existingMedia.Title)
@@ -219,6 +226,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
+	log.Printf("[RequestHandler] Creating review request...")
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 

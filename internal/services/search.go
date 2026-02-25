@@ -96,17 +96,41 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 		return nil
 	}
 
-	// Convert seasons
-	seasons := make([]session.Season, len(mediaInfo.Seasons))
-	for i, s := range mediaInfo.Seasons {
-		seasons[i] = session.Season{
-			SeasonNumber: s.SeasonNumber,
-			EpisodeCount: s.EpisodeCount,
-			Name:         s.Name,
+	// Convert seasons from SeasonInfo (preferred)
+	if len(mediaInfo.SeasonInfo) > 0 {
+		seasons := make([]session.Season, len(mediaInfo.SeasonInfo))
+		for i, s := range mediaInfo.SeasonInfo {
+			seasons[i] = session.Season{
+				SeasonNumber: s.SeasonNumber,
+				EpisodeCount: s.EpisodeCount,
+				Name:         s.Name,
+			}
+		}
+		return seasons
+	}
+
+	// Try to parse seasons as a map/object
+	if mediaInfo.Seasons != nil {
+		// Seasons is a map, extract season numbers
+		seasonsMap, ok := mediaInfo.Seasons.(map[string]interface{})
+		if ok && len(seasonsMap) > 0 {
+			seasons := make([]session.Season, 0, len(seasonsMap))
+			for key := range seasonsMap {
+				var seasonNum int
+				fmt.Sscanf(key, "%d", &seasonNum)
+				if seasonNum > 0 {
+					seasons = append(seasons, session.Season{
+						SeasonNumber: seasonNum,
+						EpisodeCount: 0,
+						Name:         fmt.Sprintf("第%d季", seasonNum),
+					})
+				}
+			}
+			return seasons
 		}
 	}
 
-	return seasons
+	return nil
 }
 
 // GetCachedResults retrieves cached search results from session

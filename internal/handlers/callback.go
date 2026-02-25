@@ -21,6 +21,43 @@ const (
 	MaxSeasonsDisplay = 4
 )
 
+// extractSeasons extracts season list from MediaInfo
+func extractSeasons(info *services.MediaInfo) []session.Season {
+	// Try SeasonInfo first (preferred)
+	if len(info.SeasonInfo) > 0 {
+		seasons := make([]session.Season, len(info.SeasonInfo))
+		for i, s := range info.SeasonInfo {
+			seasons[i] = session.Season{
+				SeasonNumber: s.SeasonNumber,
+				EpisodeCount: s.EpisodeCount,
+				Name:         s.Name,
+			}
+		}
+		return seasons
+	}
+
+	// Try Seasons as map
+	if info.Seasons != nil {
+		if seasonsMap, ok := info.Seasons.(map[string]interface{}); ok {
+			seasons := make([]session.Season, 0, len(seasonsMap))
+			for key := range seasonsMap {
+				var seasonNum int
+				fmt.Sscanf(key, "%d", &seasonNum)
+				if seasonNum > 0 {
+					seasons = append(seasons, session.Season{
+						SeasonNumber: seasonNum,
+						EpisodeCount: 0,
+						Name:         fmt.Sprintf("第%d季", seasonNum),
+					})
+				}
+			}
+			return seasons
+		}
+	}
+
+	return nil
+}
+
 // StartHandler handles start menu callbacks
 type StartHandler struct {
 	cfg         *config.Config
@@ -328,13 +365,15 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 }
 
 func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
+	// For TV shows, fetch full details with seasons
+	if media.MediaType == "tv" && h.tmdb != nil {
+		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess)
+	}
+
 	msg := services.NewMessageBuilder()
 
 	// Type icon
 	typeIcon := "🎬"
-	if media.MediaType == "tv" {
-		typeIcon = "📺"
-	}
 
 	// Header
 	msg.Bold(fmt.Sprintf("%s %s", typeIcon, media.GetTitle())).Newline()
@@ -389,18 +428,137 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	// TMDB ID
 	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", media.ID)).Newline()
 
-	// Request button label
-	buttonLabel := "✅ 立即求片"
-	if media.MediaType == "tv" {
-		buttonLabel = "✅ 求剧集"
-	}
-
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, media.MediaType))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, media.MediaType, media.Title))
+	kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
+// buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
+func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session) *callback.Response {
+	// Fetch TV details with seasons from TMDB
+	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
+	if err != nil {
+		log.Printf("[DetailHandler] Failed to get TV details from TMDB: %v", err)
+		// Fallback to simple detail
+		return h.buildSimpleTVDetail(tmdbID, title, sess)
+	}
+
+	msg := services.NewMessageBuilder()
+
+	// Header with title
+	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
+	msg.Newline()
+
+	// Year and rating
+	infoLine := ""
+	if tvDetails.FirstAirDate != "" && len(tvDetails.FirstAirDate) >= 4 {
+		year := tvDetails.FirstAirDate[:4]
+		infoLine = fmt.Sprintf("📅 %s年", year)
+	}
+	if tvDetails.VoteAverage > 0 {
+		if infoLine != "" {
+			infoLine += "  •  "
+		}
+		infoLine += fmt.Sprintf("⭐ %.1f分", tvDetails.VoteAverage)
+	}
+	if infoLine != "" {
+		msg.Text(infoLine).Newline()
+	}
+
+	// Genres
+	if len(tvDetails.Genres) > 0 {
+		genreNames := make([]string, 0)
+		for _, g := range tvDetails.Genres {
+			genreNames = append(genreNames, g.Name)
+		}
+		if len(genreNames) > 0 {
+			msg.Text(fmt.Sprintf("🎭 %s", strings.Join(genreNames, "、"))).Newline()
+		}
+	}
+
+	// Show number of seasons and episodes
+	if tvDetails.NumberOfSeasons > 0 {
+		msg.Text(fmt.Sprintf("📺 共 %d 季 · %d 集", tvDetails.NumberOfSeasons, tvDetails.NumberOfEpisodes)).Newline()
+	}
+
+	msg.Newline()
+
+	// Overview (truncate if too long)
+	if tvDetails.Overview != "" {
+		overview := tvDetails.Overview
+		if len(overview) > 200 {
+			overview = overview[:200] + "..."
+		}
+		msg.Italic("📖 剧情简介").Newline()
+		msg.Text(overview).Newline()
+		msg.Newline()
+	}
+
+	// TMDB ID
+	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", tvDetails.ID)).Newline()
+
+	// Build keyboard with season buttons
+	kb := services.NewKeyboardBuilder()
+
+	// Add "Subscribe All" button
+	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
+	kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", tvDetails.ID))
+	kb.NewRow()
+
+	// Show first few seasons
+	displayCount := len(tvDetails.Seasons)
+	if displayCount > 4 {
+		displayCount = 4
+	}
+	for i, s := range tvDetails.Seasons {
+		if i >= displayCount {
+			break
+		}
+		seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+		if s.SeasonNumber == 0 {
+			seasonName = "特别篇"
+		}
+		kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%d:type:tv:season:%d", tvDetails.ID, s.SeasonNumber))
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+
+	// Add "Show All Seasons" button if there are more seasons
+	if len(tvDetails.Seasons) > 4 {
+		kb.AddButton(fmt.Sprintf("更多... (%d季)", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
+		kb.NewRow()
+	}
+
+	kb.AddButton("⬅️ 返回列表", "start")
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}
+}
+
+// buildSimpleTVDetail builds a simple TV detail page (fallback)
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session) *callback.Response {
+	msg := services.NewMessageBuilder()
+	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
+	msg.Newline()
+	msg.Italic("暂无法获取季数信息，请尝试直接订阅全季").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
+	kb.AddButton("⬅️ 返回列表", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -488,7 +646,8 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	if mediaID > 0 && h.moviepilot != nil {
 		// Determine media type
 		mpType := services.MediaTypeMovie
-		if mediaType == "tv" || item.Type == "tv" || item.Type == "电视剧" {
+		isTV := mediaType == "tv" || item.Type == "tv" || item.Type == "电视剧"
+		if isTV {
 			mpType = services.MediaTypeTV
 		}
 
@@ -499,6 +658,12 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
 		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
+
+		// For TV shows, fallback to TMDB for season info
+		if isTV && h.tmdb != nil {
+			log.Printf("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
+			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess)
+		}
 	}
 
 	// Fallback to basic detail view from session data
@@ -540,11 +705,12 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	}
 
 	// TV show seasons info
-	if isTV && len(info.Seasons) > 0 {
-		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(info.Seasons))).Newline()
-		for i, s := range info.Seasons {
+	seasons := extractSeasons(info)
+	if isTV && len(seasons) > 0 {
+		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(seasons))).Newline()
+		for i, s := range seasons {
 			if i >= 3 {
-				msg.Textf("   ... 还有 %d 季", len(info.Seasons)-3).Newline()
+				msg.Textf("   ... 还有 %d 季", len(seasons)-3).Newline()
 				break
 			}
 			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
@@ -573,14 +739,14 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
 
-	if isTV && len(info.Seasons) > 0 {
+	if isTV && len(seasons) > 0 {
 		// TV show - show season options
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
 		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
 		kb.NewRow()
 
 		// Show first few seasons
-		for i, s := range info.Seasons {
+		for i, s := range seasons {
 			if i >= 4 {
 				break
 			}
@@ -593,8 +759,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 				kb.NewRow()
 			}
 		}
-		if len(info.Seasons) > 4 {
-			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(info.Seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
+		if len(seasons) > 4 {
+			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
 		}
 		kb.NewRow()
 	} else {

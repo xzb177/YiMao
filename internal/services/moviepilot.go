@@ -124,8 +124,16 @@ type MediaInfo struct {
 	Backdrop    string        `json:"backdrop_path"`
 	Rating      float64       `json:"vote_average"`
 	Type        MediaType     `json:"type"`
-	Seasons     []Season      `json:"seasons,omitempty"`
+	Seasons     interface{}   `json:"seasons,omitempty"` // Can be object or array
+	SeasonInfo  []SeasonInfo  `json:"season_info,omitempty"`
 	Genres      []string      `json:"genres,omitempty"`
+}
+
+// SeasonInfo represents season information from MoviePilot
+type SeasonInfo struct {
+	SeasonNumber int    `json:"season_number"`
+	EpisodeCount int    `json:"episode_count"`
+	Name         string `json:"name"`
 }
 
 // Genre represents a genre/category

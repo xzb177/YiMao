@@ -119,6 +119,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	log.Printf("[LinkCommand] Authentication successful, userID=%d", userID)
 
 	// Save mapping using the provided userMapping service
+	log.Printf("[LinkCommand] Calling AddMapping...")
 	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
 		log.Printf("[LinkCommand] Failed to save mapping: %v", err)
 		text := "❌ 绑定失败：无法保存映射"
@@ -126,9 +127,11 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		return
 	}
 
-	log.Printf("[LinkCommand] User %d bound to MoviePilot ID %d", msg.From.ID, userID)
+	log.Printf("[LinkCommand] AddMapping completed, sending success message")
 	text := "✅ 绑定成功\n\n您现在可以使用求片功能了"
-	telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+	if _, err := telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil); err != nil {
+		log.Printf("[LinkCommand] Failed to send success message: %v", err)
+	}
 }
 
 // SendStartMenu sends the start menu
