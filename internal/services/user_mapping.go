@@ -204,7 +204,22 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 		s.usernames[telegramKey] = jellyseerrUsername
 	}
 
-	s.scheduleSave()
+	// Mark dirty and trigger async save (without holding the lock)
+	s.dirty = true
+	go func() {
+		time.Sleep(saveDelay)
+		s.mu.Lock()
+		if s.dirty && !s.savePending {
+			s.savePending = true
+			s.mu.Unlock()
+			s.save()
+			s.mu.Lock()
+			s.savePending = false
+		} else {
+			s.mu.Unlock()
+		}
+	}()
+
 	return nil
 }
 
