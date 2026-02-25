@@ -192,3 +192,40 @@ watchlist_add:{tmdbID}  # 加入片单
   - `internal/services/telegram.go` - 图片下载上传
   - `internal/services/review.go` - 移除优先级排序
   - `cmd/bot/main.go` - 回调注册更新
+
+### 2025-02-25 - 剧集季数选择功能
+- **新增功能**: TV 剧集详情页显示季数选择按钮
+  - 从 TMDB API 获取完整季数和集数信息
+  - 显示季数总览（如"共 11 季 · 134 集"）
+  - 每个季独立按钮（S1, S2, ...）
+  - 支持订阅全季或单独订阅某一季
+- **数据获取策略**:
+  - 优先从 MoviePilot 获取媒体信息
+  - MoviePilot 无数据时 fallback 到 TMDB API
+  - 确保 TV 剧集始终能显示季数信息
+- **按钮布局优化**:
+  - 第一行: `[订阅全季] [加入片单] [返回]`
+  - 季数按钮: 每行 3 个，简洁布局
+  - 超过 6 季显示 "查看全部 X 季" 按钮
+  - 移除冗余的图标，按钮文字更简洁
+- **技术实现**:
+  - 新增 `extractSeasons()` 辅助函数处理多种季数数据格式
+  - 新增 `buildDetailFromTMDBTV()` 函数从 TMDB 获取完整 TV 信息
+  - 修复 JSON 季数字段解析问题（对象 vs 数组）
+- **修改文件**:
+  - `internal/handlers/callback.go` - 季数显示和布局优化
+  - `internal/services/moviepilot.go` - 季数字段类型改为 interface{}
+  - `internal/services/search.go` - 使用 SeasonInfo 字段
+
+### 2025-02-25 - 死锁问题修复
+- **问题1**: 服务启动时卡在 "Creating basic clients and services..."
+- **原因**: `UserMappingService.load()` 持有锁时调用 `save()`，导致死锁
+- **修复**: 改用 `saveLocked()` 方法，因为锁已被持有
+- **问题2**: `/link` 命令无响应，卡在 "Authentication successful"
+- **原因**: `AddMapping()` 持有锁时调用 `scheduleSave()`，再次尝试获取锁
+- **修复**: 将异步保存逻辑内联到 `AddMapping()` 中
+- **问题3**: 未绑定用户点击求片按钮，没有显示绑定提示按钮
+- **修复**: 添加 `Keyboard` 字段到 Response，确保绑定按钮显示
+- **修改文件**:
+  - `internal/services/user_mapping.go` - 死锁修复
+  - `internal/handlers/request.go` - 绑定提示按钮修复
