@@ -137,6 +137,7 @@ func (s *QuotaService) saveLocked() error {
 }
 
 // getOrCreateQuotaUnsafe gets or creates a quota without locking (caller must hold lock)
+// Note: This does NOT save to disk - caller must handle saving
 func (s *QuotaService) getOrCreateQuotaUnsafe(telegramID int64) *UserQuota {
 	if quota, exists := s.quotas[telegramID]; exists {
 		return quota
@@ -152,8 +153,7 @@ func (s *QuotaService) getOrCreateQuotaUnsafe(telegramID int64) *UserQuota {
 	}
 
 	s.quotas[telegramID] = quota
-	s.save()
-
+	// Don't save here - caller must handle saving to avoid deadlock
 	return quota
 }
 
@@ -194,16 +194,21 @@ func (s *QuotaService) SyncFromJellyseerr(telegramID, jellyseerrID int64) error 
 		return fmt.Errorf("moviepilot client not configured")
 	}
 
-	// MoviePilot doesn't have quota API, so we just track locally
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	userQuota := s.GetOrCreateQuota(telegramID)
+	userQuota := s.getOrCreateQuotaUnsafe(telegramID)
 	userQuota.MoviePilotID = jellyseerrID
 	userQuota.JellyseerrID = jellyseerrID // For backwards compatibility
 	userQuota.LastSync = time.Now()
 
-	return s.save()
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+	return nil
 }
 
 // SyncFromMoviePilot syncs quota from MoviePilot server

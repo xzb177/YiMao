@@ -265,3 +265,18 @@ watchlist_add:{tmdbID}  # 加入片单
   - 求片按钮文字改为 `🔄 尝试求片`（而非 `✅ 立即求片`）
 - **修改文件**:
   - `internal/handlers/callback.go` - 添加资源可用性检测和警告显示
+
+### 2025-02-25 - 全面代码审查与修复
+- **代码审查**: 对项目进行全面代码审查，检查安全性、并发、资源管理等方面
+- **发现并修复的严重问题**:
+  - `QuotaService.getOrCreateQuotaUnsafe` 中的死锁风险：持有锁时调用 `save()`
+  - `QuotaService.SyncFromJellyseerr` 同样的死锁风险
+  - `request.go` 中重复的 TMDB ID 解析代码
+- **审查发现的其他问题（已记录待修复）**:
+  - Callback action 白名单验证缺失（中等）
+  - Goroutine 错误处理不完善（中等）
+  - 日志级别不一致（轻微）
+  - 魔法数字未提取为常量（轻微）
+- **修改文件**:
+  - `internal/services/quota.go` - 修复死锁风险，移除 unsafe 函数中的 save 调用
+  - `internal/handlers/request.go` - 删除重复的代码行

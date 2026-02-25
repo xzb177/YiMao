@@ -66,10 +66,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if tmdbID == 0 {
 		return nil, errors.InvalidInput("invalid media ID")
 	}
-	fmt.Sscanf(mediaID, "%d", &tmdbID)
-	if tmdbID == 0 {
-		return nil, errors.InvalidInput("invalid media ID")
-	}
 
 	// Parse season parameter (for TV shows)
 	season := 0
