@@ -299,3 +299,22 @@ watchlist_add:{tmdbID}  # 加入片单
   - `internal/handlers/request.go` - 删除重复代码
   - `internal/callback/types.go` - 添加 action 白名单验证
   - `internal/handlers/feedback.go` - 添加错误处理
+
+### 2025-02-25 - 剧集详情页按钮布局优化
+- **优化目标**: 提升用户体验，使常用按钮更易访问
+- **按钮布局重构**:
+  - **第一行（主要操作）**: `[✅ 订阅全季] [🐛 反馈]`
+  - **第二行（导航）**: `[⬅️ 返回列表] [📺 全部 N 季]`（如有多季）
+  - **后续行**: 季数按钮（每行 3 个）
+- **改进点**:
+  - 反馈按钮从底部移至顶部，更易访问
+  - 按钮按功能分组：操作、导航、选择
+  - 所有 TV 详情页布局统一（TMDB、MoviePilot、搜索结果）
+  - 季数列表页新增反馈按钮
+- **修改文件**:
+  - `internal/handlers/callback.go` - 所有详情页按钮布局重构
+    - `buildDetailFromTMDBTV()` - TMDB TV 详情页
+    - `buildSimpleTVDetail()` - 简化 TV 详情页
+    - `buildDetailFromMediaInfo()` - MoviePilot TV 详情页
+    - `buildBasicDetailFromSearch()` - 搜索结果详情页
+    - `HandleSeasons()` - 季数列表页
