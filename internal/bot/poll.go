@@ -156,7 +156,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
 		strings.Contains(strings.ToLower(query), "@云海看板娘")
 
-	log.Printf("[PollGroupChat] Message from %s: isMention=%v", msg.From.FirstName, isMention)
+	log.Printf("[PollGroupChat] ChatID=%d, Title=%s, Message from %s: isMention=%v", msg.Chat.ID, msg.Chat.Title, msg.From.FirstName, isMention)
 
 	// Only respond to mentions
 	if !isMention {

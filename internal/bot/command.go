@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"fmt"
 	"log"
 	"strings"
 
@@ -35,6 +36,9 @@ func HandleCommand(
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
 	case "/help":
 		SendHelpMessage(telegram, msg.Chat.ID)
+	case "/id":
+		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: `%d`\n聊天类型: %s\n用户 ID: `%d`", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 	case "/search":
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
