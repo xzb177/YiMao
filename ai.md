@@ -313,6 +313,21 @@ watchlist_add:{tmdbID}  # 加入片单
     - `buildBasicDetailFromSearch()` - 搜索结果详情页
     - `HandleSeasons()` - 季数列表页
 
+### 2025-02-25 - 入库通知格式优化（STRM 文件处理）
+- **问题**: 使用 `.strm` 引用文件时，入库通知在显示质量后就停止，看起来像被截断
+- **原因**:
+  - `.strm` 文件的 MediaSources 中的 Size 只有几百字节（引用文件本身的大小）
+  - 当 FileSize 小于 1MB 时没有实际意义，但不显示会让通知看起来不完整
+- **修复**:
+  - 忽略小于 1MB 的文件大小（可能是 .strm 文件本身的大小）
+  - 当没有有效文件大小时，质量行后面只添加一个换行符，保持格式一致性
+  - 添加调试日志输出 FileSize 和 FileCount 值
+- **影响**:
+  - `.strm` 文件的入库通知现在在质量行后正确结束，不会显示无意义的几百字节
+  - 如果有实际媒体文件大小信息（>1MB），仍然会正常显示
+- **修改文件**:
+  - `internal/services/webhook.go` - formatEmbyNotificationEnhanced, formatPhotoCaption, formatEpisodePhotoCaption
+
 ### 2025-02-25 - 文档一致性修正
 - **问题**: ai.md 文档前面描述的功能仍包含已删除的片单功能
 - **修复**:

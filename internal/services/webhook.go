@@ -1256,17 +1256,25 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	quality := ""
 	if enhanced != nil {
 		quality = s.getFullQuality(enhanced)
-		log.Printf("[Debug] Final quality in formatEmbyNotificationEnhanced: '%s'", quality)
+		log.Printf("[Debug] Final quality in formatEmbyNotificationEnhanced: '%s', FileSize=%d, FileCount=%d",
+			quality, enhanced.FileSize, enhanced.FileCount)
 	} else {
 		log.Printf("[Debug] enhanced is nil in formatEmbyNotificationEnhanced")
 	}
 	if quality != "" {
 		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
-		builder.WriteString("\n\n")
+		// Only add extra newline if we have more content coming (ignore .strm file sizes < 1MB)
+		hasValidSize := enhanced != nil && enhanced.FileSize > 1024*1024
+		if hasValidSize {
+			builder.WriteString("\n\n")
+		} else {
+			builder.WriteString("\n")
+		}
 	}
 
 	// File size (using decimal GB for consistency with examples)
-	if enhanced != nil && enhanced.FileSize > 0 {
+	// Ignore files smaller than 1MB (likely .strm files)
+	if enhanced != nil && enhanced.FileSize > 1024*1024 {
 		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
@@ -1580,12 +1588,19 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		quality = s.getFullQuality(enhanced)
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s\n\n", quality))
+		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
+		// Only add extra newline if we have more content coming (ignore .strm file sizes < 1MB)
+		hasValidSize := enhanced != nil && enhanced.FileSize > 1024*1024
+		if hasValidSize {
+			builder.WriteString("\n\n")
+		} else {
+			builder.WriteString("\n")
+		}
 	}
 
-	// File size
-	if enhanced != nil && enhanced.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+	// File size (ignore files smaller than 1MB - likely .strm files)
+	if enhanced != nil && enhanced.FileSize > 1024*1024 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
 	// File count
@@ -1630,12 +1645,18 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 
 	// Quality line
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s\n\n", agg.Quality))
+		builder.WriteString(fmt.Sprintf("💎 质量： %s", agg.Quality))
+		// Only add extra newline if we have more content coming (ignore .strm file sizes < 1MB)
+		if agg.FileSize > 1024*1024 {
+			builder.WriteString("\n\n")
+		} else {
+			builder.WriteString("\n")
+		}
 	}
 
-	// File size
-	if agg.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(agg.FileSize)))
+	// File size (ignore files smaller than 1MB - likely .strm files)
+	if agg.FileSize > 1024*1024 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
