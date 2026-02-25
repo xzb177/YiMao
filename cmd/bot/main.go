@@ -304,9 +304,6 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("my_reviews", reviewHandler.Handle)
 	registry.RegisterFunc("review_list", reviewHandler.Handle)
 
-	// Request priority callbacks
-	registry.RegisterFunc("request_priority", requestHandler.HandlePrioritySelection)
-
 	// Emby library check callbacks
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
 	registry.RegisterFunc("cancel_request", requestHandler.HandleCancelRequest)
@@ -314,7 +311,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	// Watchlist callbacks
 	registry.RegisterFunc("watchlist", watchlistHandler.Handle)
 	registry.RegisterFunc("watchlist_add", watchlistHandler.Handle)
-	registry.RegisterFunc("watchlist_confirm_add", watchlistHandler.Handle)
+	registry.RegisterFunc("watchlist_page", watchlistHandler.Handle)
 	registry.RegisterFunc("watchlist_remove", watchlistHandler.Handle)
 	registry.RegisterFunc("watchlist_collections", watchlistHandler.Handle)
 	registry.RegisterFunc("watchlist_create_collection", watchlistHandler.Handle)

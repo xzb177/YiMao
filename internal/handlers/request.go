@@ -50,11 +50,6 @@ func NewRequestHandler(
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	// Handle priority selection callback
-	if ctx.Callback.Action == "request_priority" {
-		return h.HandlePrioritySelection(ctx)
-	}
-
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
 	mediaType, hasType := ctx.Callback.Params["type"]
@@ -226,13 +221,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 
-	// First, show priority selection if not in review system
-	if h.enableReview {
-		resp := h.showPrioritySelection(ctx, reviewID, tmdbID, mediaType, mediaTitle, mediaYear, season, posterPath, overview, userName, moviepilotID)
-		return resp, nil
-	}
-
-	// Direct create without review (if disabled)
 	review := &services.ReviewRequest{
 		RequestID:    reviewID,
 		TelegramID:   ctx.UserID,
@@ -245,7 +233,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		Season:       season,
 		PosterPath:   posterPath,
 		Overview:     overview,
-		Priority:     "normal", // Default priority
 	}
 
 	if mediaType == "tv" {
@@ -253,7 +240,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 
 	if err := h.reviewService.CreateRequest(review); err != nil {
-		log.Printf("[RequestHandler] Failed to create review request: %v", err)
+		log.Printf("[求片] 创建请求失败: %v", err)
 		return &callback.Response{
 			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
@@ -271,254 +258,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}, nil
 }
 
-// showPrioritySelection shows priority selection for media request
-func (h *RequestHandler) showPrioritySelection(
-	ctx *callback.Context,
-	reviewID string,
-	tmdbID int,
-	mediaType, mediaTitle string,
-	mediaYear int,
-	season int,
-	posterPath, overview string,
-	userName string,
-	moviepilotID int64,
-) *callback.Response {
-	// Store request info in session to avoid passing in callback_data
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Set("pending_request_review_id", reviewID)
-	sess.Set("pending_request_tmdb_id", tmdbID)
-	sess.Set("pending_request_media_type", mediaType)
-	sess.Set("pending_request_media_title", mediaTitle)
-	sess.Set("pending_request_media_year", mediaYear)
-	sess.Set("pending_request_season", season)
-	sess.Set("pending_request_poster_path", posterPath)
-	sess.Set("pending_request_overview", overview)
-	sess.Set("pending_request_username", userName)
-	sess.Set("pending_request_moviepilot_id", moviepilotID)
-
-	// Build media info display
-	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 选择请求优先级").Newline()
-	msg.Newline()
-
-	// Show media info
-	msg.Textf("📺 %s", mediaTitle)
-	if mediaYear > 0 {
-		msg.Textf(" (%d)", mediaYear)
-	}
-	msg.Newline()
-
-	if overview != "" && len(overview) > 0 {
-		shortOverview := overview
-		if len(shortOverview) > 150 {
-			shortOverview = shortOverview[:150] + "..."
-		}
-		msg.Italic(shortOverview).Newline()
-		msg.Newline()
-	}
-
-	msg.Text("请选择请求优先级：").Newline()
-
-	// Build priority selection keyboard - simplified format without Chinese characters
-	// Format: request_priority:{priority}
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🟡 普通", "request_priority:normal")
-	kb.AddButton("🟠 较高", "request_priority:high")
-	kb.NewRow()
-	kb.AddButton("🟢 较低", "request_priority:low")
-	kb.AddButton("🔴 紧急", "request_priority:urgent")
-	kb.NewRow()
-	kb.AddButton("❌ 取消", "cancel_request")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Keyboard: convertKeyboard(kb.Build()),
-		Edit:     false,
-	}
-}
-
-// HandlePrioritySelection handles priority selection and creates the request
-func (h *RequestHandler) HandlePrioritySelection(ctx *callback.Context) (*callback.Response, error) {
-	// Get priority from callback data
-	// Format: request_priority:{priority}
-	priority := ctx.Callback.Params["priority"]
-	if priority == "" {
-		// Try parsing from raw data
-		parts := strings.Split(ctx.Callback.Raw, ":")
-		if len(parts) >= 2 {
-			priority = parts[1]
-		} else {
-			return &callback.Response{
-				Text:        "❌ 参数错误",
-				CallbackMsg: "参数错误",
-				ShowAlert:   true,
-			}, nil
-		}
-	}
-
-	// Validate priority
-	validPriorities := map[string]bool{"low": true, "normal": true, "high": true, "urgent": true}
-	if !validPriorities[priority] {
-		return &callback.Response{
-			Text:        "❌ 无效的优先级",
-			CallbackMsg: "无效的优先级",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Get request info from session
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-
-	reviewIDVal, hasReviewID := sess.Get("pending_request_review_id")
-	tmdbIDVal, hasTmdbID := sess.Get("pending_request_tmdb_id")
-	mediaTypeVal, hasMediaType := sess.Get("pending_request_media_type")
-	mediaTitleVal, hasMediaTitle := sess.Get("pending_request_media_title")
-	mediaYearVal, _ := sess.Get("pending_request_media_year")
-	seasonVal, _ := sess.Get("pending_request_season")
-	posterPathVal, _ := sess.Get("pending_request_poster_path")
-	overviewVal, _ := sess.Get("pending_request_overview")
-	userNameVal, _ := sess.Get("pending_request_username")
-	moviepilotIDVal, _ := sess.Get("pending_request_moviepilot_id")
-
-	if !hasReviewID || !hasTmdbID || !hasMediaType || !hasMediaTitle {
-		return &callback.Response{
-			Text:        "❌ 会话已过期，请重新请求",
-			CallbackMsg: "会话已过期",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	reviewID := fmt.Sprintf("%v", reviewIDVal)
-
-	// Proper type conversions
-	var tmdbIDInt int
-	switch v := tmdbIDVal.(type) {
-	case int:
-		tmdbIDInt = v
-	case int64:
-		tmdbIDInt = int(v)
-	case float64:
-		tmdbIDInt = int(v)
-	case string:
-		fmt.Sscanf(v, "%d", &tmdbIDInt)
-	}
-
-	mediaType := fmt.Sprintf("%v", mediaTypeVal)
-	mediaTitle := fmt.Sprintf("%v", mediaTitleVal)
-
-	var mediaYear int
-	switch v := mediaYearVal.(type) {
-	case int:
-		mediaYear = v
-	case int64:
-		mediaYear = int(v)
-	case float64:
-		mediaYear = int(v)
-	}
-
-	var season int
-	switch v := seasonVal.(type) {
-	case int:
-		season = v
-	case int64:
-		season = int(v)
-	case float64:
-		season = int(v)
-	}
-
-	posterPath := ""
-	if posterPathVal != nil {
-		posterPath = fmt.Sprintf("%v", posterPathVal)
-	}
-
-	overview := ""
-	if overviewVal != nil {
-		overview = fmt.Sprintf("%v", overviewVal)
-	}
-
-	userName := fmt.Sprintf("User_%d", ctx.UserID)
-	if userNameVal != nil {
-		userName = fmt.Sprintf("%v", userNameVal)
-	}
-
-	var moviepilotID int64
-	if moviepilotIDVal != nil {
-		switch v := moviepilotIDVal.(type) {
-		case int64:
-			moviepilotID = v
-		case int:
-			moviepilotID = int64(v)
-		case float64:
-			moviepilotID = int64(v)
-		}
-	} else {
-		// Try to get from user mapping
-		moviepilotID, _ = h.userMapping.GetMoviePilotUserID(ctx.UserID)
-	}
-
-	// Clear pending request data from session
-	sess.Delete("pending_request_review_id")
-	sess.Delete("pending_request_tmdb_id")
-	sess.Delete("pending_request_media_type")
-	sess.Delete("pending_request_media_title")
-	sess.Delete("pending_request_media_year")
-	sess.Delete("pending_request_season")
-	sess.Delete("pending_request_poster_path")
-	sess.Delete("pending_request_overview")
-	sess.Delete("pending_request_username")
-	sess.Delete("pending_request_moviepilot_id")
-
-	// Create the review request
-	review := &services.ReviewRequest{
-		RequestID:    reviewID,
-		TelegramID:   ctx.UserID,
-		TelegramName: userName,
-		MoviePilotID: moviepilotID,
-		TmdbID:       tmdbIDInt,
-		MediaTitle:   mediaTitle,
-		MediaYear:    mediaYear,
-		MediaType:    services.MediaTypeMovie,
-		Season:       season,
-		PosterPath:   posterPath,
-		Overview:     overview,
-		Priority:     priority,
-	}
-
-	if mediaType == "tv" {
-		review.MediaType = services.MediaTypeTV
-	}
-
-	if err := h.reviewService.CreateRequest(review); err != nil {
-		log.Printf("[RequestHandler] Failed to create review request: %v", err)
-		return &callback.Response{
-			Text:        "❌ 提交失败",
-			CallbackMsg: "失败",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Notify admins about the review request
-	go h.notifyAdminsForReview(review)
-
-	priorityEmoji := map[string]string{
-		"low":    "🟢",
-		"normal": "🟡",
-		"high":   "🟠",
-		"urgent": "🔴",
-	}
-	priorityText := map[string]string{
-		"low":    "较低",
-		"normal": "普通",
-		"high":   "较高",
-		"urgent": "紧急",
-	}
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("%s 求片已提交（%s优先级）\n\n📺 %s", priorityEmoji[priority], priorityText[priority], mediaTitle),
-		CallbackMsg: "请求已提交",
-		ShowAlert:   true,
-	}, nil
-}
 
 // notifyAdminsForReview notifies all admins about a new review request
 func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
@@ -571,17 +310,6 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 				message += fmt.Sprintf("\n⏱️ 时长: %d分钟", mins)
 			}
 		}
-	}
-
-	// 优先级显示
-	priorityText := map[string]string{
-		"low":    "较低",
-		"normal": "普通",
-		"high":   "较高",
-		"urgent": "紧急",
-	}[review.Priority]
-	if priorityText != "" {
-		message += fmt.Sprintf("\n🔔 优先级: %s", priorityText)
 	}
 
 	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)

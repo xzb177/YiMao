@@ -576,6 +576,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	if isTV && len(info.Seasons) > 0 {
 		// TV show - show season options
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
+		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
 		kb.NewRow()
 
 		// Show first few seasons
@@ -712,6 +713,7 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 
 	if isTV && len(item.Seasons) > 0 {
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
+		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
 		kb.NewRow()
 		for i, s := range item.Seasons {
 			if i >= 4 {

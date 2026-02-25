@@ -147,7 +147,7 @@ func (s *ReviewService) GetRequest(requestID string) (*ReviewRequest, bool) {
 	return review, exists
 }
 
-// GetPendingRequests returns all pending review requests sorted by priority
+// GetPendingRequests returns all pending review requests sorted by created time
 func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -159,29 +159,11 @@ func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 		}
 	}
 
-	// Sort by priority (urgent > high > normal > low), then by created time
-	priorityOrder := map[string]int{
-		"urgent": 4,
-		"high":   3,
-		"normal": 2,
-		"low":    1,
-	}
-
+	// Sort by created time desc (newer first)
 	for i := 0; i < len(pending); i++ {
 		for j := i + 1; j < len(pending); j++ {
-			iPriority := priorityOrder[pending[i].Priority]
-			jPriority := priorityOrder[pending[j].Priority]
-
-			if iPriority != jPriority {
-				// Higher priority comes first
-				if iPriority > jPriority {
-					pending[i], pending[j] = pending[j], pending[i]
-				}
-			} else {
-				// Same priority, sort by time (newer first)
-				if pending[i].CreatedAt.After(pending[j].CreatedAt) {
-					pending[i], pending[j] = pending[j], pending[i]
-				}
+			if pending[i].CreatedAt.Before(pending[j].CreatedAt) {
+				pending[i], pending[j] = pending[j], pending[i]
 			}
 		}
 	}
@@ -290,35 +272,6 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 	log.Printf("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
 
 	return review, s.saveLocked()
-}
-
-// SetPriority sets the priority of a review request
-func (s *ReviewService) SetPriority(requestID, priority string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	review, exists := s.reviews[requestID]
-	if !exists {
-		return fmt.Errorf("review request not found: %s", requestID)
-	}
-
-	// Validate priority
-	validPriorities := map[string]bool{
-		"low":    true,
-		"normal": true,
-		"high":   true,
-		"urgent": true,
-	}
-
-	if !validPriorities[priority] {
-		return fmt.Errorf("invalid priority: %s", priority)
-	}
-
-	review.Priority = priority
-
-	log.Printf("[ReviewService] Set priority for request %s to %s", requestID, priority)
-
-	return s.saveLocked()
 }
 
 // DeleteRequest deletes a review request

@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"emby-telegram-bot/pkg/types"
@@ -122,11 +124,29 @@ type WebhookService struct {
 	embyAPIKey           string
 	mediaNotificationSvc *MediaNotificationService
 	messageCache         *MessageCache
+	// Episode aggregation
+	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
+	epAggregationMu      sync.RWMutex
+	epAggregationTimer   *time.Timer
+}
+
+// EpisodeAggregation holds aggregated episode info
+type EpisodeAggregation struct {
+	SeriesName   string
+	Year         int
+	Season       int
+	Episodes     []int                   // episode numbers
+	FirstAdded   time.Time
+	Quality      string
+	FileSize     int64
+	FileCount    int
+	ImageURL     string
+	EnhancedInfo *EmbyEnhancedInfo
 }
 
 // NewWebhookService creates a new webhook service
 func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService) *WebhookService {
-	return &WebhookService{
+	svc := &WebhookService{
 		telegram:             telegram,
 		moviepilot:           moviepilot,
 		userMapping:          userMapping,
@@ -136,8 +156,16 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		embyURL:              embyURL,
 		embyAPIKey:           embyAPIKey,
 		mediaNotificationSvc: mediaNotificationSvc,
-		messageCache:         NewMessageCache(5 * time.Minute), // Cache for 5 minutes
+		messageCache:         NewMessageCache(5 * time.Minute),
+		epAggregation:        make(map[string]*EpisodeAggregation),
 	}
+
+	// Start aggregation flush timer (every 30 seconds)
+	svc.epAggregationTimer = time.AfterFunc(30*time.Second, func() {
+		svc.flushEpisodeAggregation()
+	})
+
+	return svc
 }
 
 // HandleEmbyWebhook handles an incoming Emby webhook
@@ -154,10 +182,12 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 		itemName = payload.Item.Name
 	}
 
-	log.Printf("[Webhook] Emby event: %s, item: %s", eventType, itemName)
-
-	// Normalize event name (Emby sends ItemAdded)
+	// 只对非入库事件打印日志
 	event := strings.ToLower(eventType)
+	isItemAdded := event == "item.added" || event == "itemadded" || event == "library.new" || event == "librarynew"
+	if !isItemAdded {
+		log.Printf("[Webhook] Emby event: %s, item: %s", eventType, itemName)
+	}
 
 	switch event {
 	case "item.added", "itemadded", "library.new", "librarynew":
@@ -182,15 +212,28 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 
 // handleItemAdded handles new item added event
 func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
-	// Get item type from various sources
+	// Get item type and name
 	itemType := payload.ItemType
 	if itemType == "" && payload.Item != nil {
 		itemType = payload.Item.Type
 	}
 
-	// Note: We now send Episode notifications for immediate feedback
-	// Previously skipped to reduce noise, but users want real-time updates
+	itemName := payload.ItemName
+	if itemName == "" && payload.Item != nil {
+		itemName = payload.Item.Name
+	}
 
+	// For episodes, add to aggregation instead of sending immediately
+	if itemType == "Episode" && payload.SeriesName != "" {
+		return s.aggregateEpisode(payload)
+	}
+
+	// For movies and other content, send immediately
+	return s.sendImmediateNotification(payload, itemType, itemName)
+}
+
+// sendImmediateNotification sends notification immediately for non-episode content
+func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, itemType, itemName string) error {
 	// Try to get enhanced info from Emby API (with retry)
 	var enhancedPayload *EmbyEnhancedInfo
 	var err error
@@ -200,32 +243,231 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 		if err == nil {
 			break
 		}
-		log.Printf("[Webhook] Attempt %d: failed to get enhanced info: %v", i+1, err)
+		// 只在最后一次尝试失败时打印日志
+		if i == 4 {
+			log.Printf("[Webhook] Failed to get enhanced info for %s: %v", itemName, err)
+		}
 		time.Sleep(time.Second)
 	}
 
 	// Format message with enhanced info if available
 	message := s.formatEmbyNotificationEnhanced(payload, enhancedPayload)
 
-	// Check if we should send with photo
-	if enhancedPayload != nil && enhancedPayload.ImageURL != "" {
-		s.sendNotificationWithPhoto(message, enhancedPayload.ImageURL)
-	} else {
-		// Send to main chat with cache check
-		if s.chatID != 0 {
-			if !s.sendWithCache(s.chatID, message) {
-				log.Printf("[Webhook] Duplicate notification skipped for chat %d", s.chatID)
-			}
+	// 简洁的入库日志
+	if itemName != "" {
+		log.Printf("[入库] %s", itemName)
+	}
+
+	// Only send to main chat (group chat, not private)
+	// 私聊不推送入库通知，只推送到群组
+	if s.chatID != 0 && s.chatID < -100 { // Only send to group chats (chatID < -100)
+		// Check if we should send with photo
+		if enhancedPayload != nil && enhancedPayload.ImageURL != "" {
+			s.sendNotificationWithPhoto(message, enhancedPayload.ImageURL)
+		} else {
+			s.sendWithCache(s.chatID, message)
 		}
 	}
 
-	// Also send to media notification service for admin notifications
-	if s.mediaNotificationSvc != nil {
-		mediaItem := s.convertToMediaItem(payload, enhancedPayload)
-		s.mediaNotificationSvc.AddItem(mediaItem)
+	return nil
+}
+
+// aggregateEpisode adds episode to aggregation buffer
+func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
+	s.epAggregationMu.Lock()
+	defer s.epAggregationMu.Unlock()
+
+	// Create aggregation key: seriesName_season
+	aggregationKey := fmt.Sprintf("%s_S%02d", payload.SeriesName, payload.Season)
+
+	// Get existing or create new aggregation
+	agg, exists := s.epAggregation[aggregationKey]
+	if !exists {
+		// Try to get enhanced info
+		var enhancedInfo *EmbyEnhancedInfo
+		for i := 0; i < 3; i++ {
+			var err error
+			enhancedInfo, err = s.getEmbyEnhancedInfo(payload.ItemID)
+			if err == nil {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		year := 0
+		if payload.Year != nil {
+			year = *payload.Year
+		}
+		if year == 0 && enhancedInfo != nil {
+			year = enhancedInfo.Year
+		}
+
+		agg = &EpisodeAggregation{
+			SeriesName:   payload.SeriesName,
+			Year:         year,
+			Season:       payload.Season,
+			Episodes:     []int{},
+			FirstAdded:   time.Now(),
+			EnhancedInfo: enhancedInfo,
+		}
+		if enhancedInfo != nil {
+			agg.ImageURL = enhancedInfo.ImageURL
+			agg.Quality = enhancedInfo.Quality
+			if enhancedInfo.IsWEBDL {
+				agg.Quality = fmt.Sprintf("WEB-DL %s", enhancedInfo.Quality)
+			}
+			agg.FileSize = enhancedInfo.FileSize
+			agg.FileCount = enhancedInfo.FileCount
+		}
+		s.epAggregation[aggregationKey] = agg
+
+		// Reset timer to flush after 10 seconds of no new episodes
+		if s.epAggregationTimer != nil {
+			s.epAggregationTimer.Stop()
+		}
+		s.epAggregationTimer = time.AfterFunc(10*time.Second, func() {
+			s.flushEpisodeAggregation()
+		})
+	}
+
+	// Add episode if not already in list
+	episode := payload.Episode
+	alreadyAdded := false
+	for _, ep := range agg.Episodes {
+		if ep == episode {
+			alreadyAdded = true
+			break
+		}
+	}
+	if !alreadyAdded {
+		agg.Episodes = append(agg.Episodes, episode)
+		log.Printf("[入库聚合] %s S%02dE%02d", payload.SeriesName, payload.Season, episode)
 	}
 
 	return nil
+}
+
+// flushEpisodeAggregation sends aggregated episode notifications
+func (s *WebhookService) flushEpisodeAggregation() {
+	s.epAggregationMu.Lock()
+	defer s.epAggregationMu.Unlock()
+
+	if len(s.epAggregation) == 0 {
+		return
+	}
+
+	for key, agg := range s.epAggregation {
+		if len(agg.Episodes) == 0 {
+			continue
+		}
+
+		// Sort episodes
+		sort.Ints(agg.Episodes)
+
+		// Build episode range string
+		epRange := buildEpisodeRangeString(agg.Episodes)
+
+		// Build message
+		message := s.formatAggregatedEpisodeMessage(agg, epRange)
+
+		// Send notification only to group chats (chatID < -100)
+		if s.chatID != 0 && s.chatID < -100 {
+			if agg.ImageURL != "" {
+				s.sendNotificationWithPhoto(message, agg.ImageURL)
+			} else {
+				s.sendWithCache(s.chatID, message)
+			}
+		}
+
+		log.Printf("[入库] %s S%02d %s (%d集)", agg.SeriesName, agg.Season, epRange, len(agg.Episodes))
+
+		delete(s.epAggregation, key)
+	}
+}
+
+// buildEpisodeRangeString builds episode range string like "E01-E05, E07, E09-E12"
+func buildEpisodeRangeString(episodes []int) string {
+	if len(episodes) == 0 {
+		return ""
+	}
+	if len(episodes) == 1 {
+		return fmt.Sprintf("E%02d", episodes[0])
+	}
+
+	var ranges []string
+	start := episodes[0]
+	end := episodes[0]
+
+	for i := 1; i < len(episodes); i++ {
+		if episodes[i] == end+1 {
+			end = episodes[i]
+		} else {
+			// Flush current range
+			if start == end {
+				ranges = append(ranges, fmt.Sprintf("E%02d", start))
+			} else {
+				ranges = append(ranges, fmt.Sprintf("E%02d-E%02d", start, end))
+			}
+			start = episodes[i]
+			end = episodes[i]
+		}
+	}
+	// Flush last range
+	if start == end {
+		ranges = append(ranges, fmt.Sprintf("E%02d", start))
+	} else {
+		ranges = append(ranges, fmt.Sprintf("E%02d-E%02d", start, end))
+	}
+
+	return strings.Join(ranges, ", ")
+}
+
+// formatAggregatedEpisodeMessage formats aggregated episode notification
+func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation, epRange string) string {
+	var builder strings.Builder
+
+	// Header
+	builder.WriteString("✅ 入库成功：")
+	if agg.Year > 1900 && agg.Year < 2100 {
+		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+	} else {
+		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+	}
+	builder.WriteString("\n")
+	builder.WriteString("───────────────────\n\n")
+
+	// Name line
+	builder.WriteString("🎬 名称：")
+	if agg.Year > 1900 && agg.Year < 2100 {
+		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+	} else {
+		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+	}
+	builder.WriteString("\n")
+
+	// Category - use enhanced info or default to 国产剧
+	category := "国产剧"
+	if agg.EnhancedInfo != nil {
+		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
+	}
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
+
+	// Quality
+	if agg.Quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s\n", agg.Quality))
+	}
+
+	// File size
+	if agg.FileSize > 0 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
+	}
+
+	// File count
+	if agg.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", agg.FileCount))
+	}
+
+	return builder.String()
 }
 
 // EmbyEnhancedInfo holds enhanced media information from Emby API
@@ -305,20 +547,39 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 		}
 	}
 
-	// Extract image URL
-	if itemID, ok := result["Id"].(string); ok {
-		if tagName, ok := result["BackdropImageTags"].([]interface{}); ok && len(tagName) > 0 {
-			if tag, ok := tagName[0].(string); ok {
-				info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
-					s.embyURL, itemID, tag)
-			}
+	// Extract image URL - try to get from TMDB first (publicly accessible)
+	// Check for TMDB ID in ProviderIds
+	var tmdbID string
+	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
+		if tid, ok := providerIds["Tmdb"].(string); ok {
+			tmdbID = tid
 		}
-		// Fallback to primary image
-		if info.ImageURL == "" {
-			if tagName, ok := result["ImageTags"].([]interface{}); ok && len(tagName) > 0 {
-				if tag, ok := tagName[0].(string); ok {
-					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?fillWidth=800&quality=90",
+	}
+
+	// Get backdrop from TMDB if we have the ID (横屏图片)
+	if tmdbID != "" {
+		if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
+			info.ImageURL = backdropURL
+		}
+	}
+
+	// Fallback to Emby images if TMDB failed
+	if info.ImageURL == "" {
+		if itemID, ok := result["Id"].(string); ok {
+			// Try backdrop first (横屏)
+			if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
+				if tag, ok := imageTags["Backdrop"].(string); ok {
+					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
 						s.embyURL, itemID, tag)
+				}
+			}
+			// Fallback to primary image
+			if info.ImageURL == "" {
+				if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
+					if tag, ok := imageTags["Primary"].(string); ok {
+						info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
+							s.embyURL, itemID, tag)
+					}
 				}
 			}
 		}
@@ -326,11 +587,22 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 
 	// Extract media info for quality and file count
 	if mediaSources, ok := result["MediaSources"].([]interface{}); ok && len(mediaSources) > 0 {
+		log.Printf("[Debug] MediaSources found: %d sources", len(mediaSources))
 		for _, ms := range mediaSources {
 			if source, ok := ms.(map[string]interface{}); ok {
-				// Get quality from media type
+				// Get quality from media type or parse from path
 				if width, ok := source["Width"].(float64); ok {
 					info.Quality = s.detectQuality(int(width))
+					log.Printf("[Debug] Quality from Width: %s (width=%d)", info.Quality, int(width))
+				} else {
+					log.Printf("[Debug] No Width field in MediaSource")
+					// Try to parse quality from file path
+					if path, ok := source["Path"].(string); ok {
+						info.Quality = s.parseQualityFromPath(path)
+						log.Printf("[Debug] Quality from Path: %s (path=%s)", info.Quality, path)
+					} else {
+						log.Printf("[Debug] No Path field in MediaSource")
+					}
 				}
 
 				// Get file size
@@ -368,6 +640,84 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	return info, nil
 }
 
+// getTMDBBackdrop fetches backdrop URL from TMDB API (横屏图片)
+func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
+	apiKey := "a62307d3a16cd0a605de3857d9ed614e"
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Try TMDB 3 API for movie details
+	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s", tmdbID, apiKey)
+	resp, err := client.Get(url)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		// Try TV API
+		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s", tmdbID, apiKey)
+		resp, err = client.Get(tvURL)
+		if err != nil {
+			return ""
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return ""
+		}
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+
+	// Get backdrop path (横屏图片)
+	if backdropPath, ok := result["backdrop_path"].(string); ok && backdropPath != "" {
+		return fmt.Sprintf("https://image.tmdb.org/t/p/original%s", backdropPath)
+	}
+
+	return ""
+}
+
+// getTMDBPoster fetches poster URL from TMDB API (竖版海报)
+func (s *WebhookService) getTMDBPoster(tmdbID string) string {
+	apiKey := "a62307d3a16cd0a605de3857d9ed614e"
+
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Try TMDB 3 API for movie details (use English for consistent poster)
+	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s", tmdbID, apiKey)
+	resp, err := client.Get(url)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+		// Try TV API
+		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s", tmdbID, apiKey)
+		resp, err = client.Get(tvURL)
+		if err != nil {
+			return ""
+		}
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return ""
+		}
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return ""
+	}
+
+	// Get poster path
+	if posterPath, ok := result["poster_path"].(string); ok && posterPath != "" {
+		return fmt.Sprintf("https://image.tmdb.org/t/p/w500%s", posterPath)
+	}
+
+	return ""
+}
+
 // detectWEBDL detects if the source is a WEB-DL from the path
 func (s *WebhookService) detectWEBDL(path string) bool {
 	pathLower := strings.ToLower(path)
@@ -393,6 +743,30 @@ func (s *WebhookService) detectQuality(width int) string {
 	default:
 		return "SD"
 	}
+}
+
+// parseQualityFromPath parses quality from file path
+func (s *WebhookService) parseQualityFromPath(path string) string {
+	path = strings.ToLower(path)
+	log.Printf("[Quality] Parsing quality from path: %s", path)
+
+	// Check for resolution indicators in path
+	if strings.Contains(path, "2160p") {
+		return "2160p"
+	}
+	if strings.Contains(path, "1080p") {
+		return "1080p"
+	}
+	if strings.Contains(path, "720p") {
+		return "720p"
+	}
+	if strings.Contains(path, "480p") {
+		return "480p"
+	}
+
+	// Fallback to detecting from container or default
+	log.Printf("[Quality] Could not parse quality from path: %s", path)
+	return "1080p"
 }
 
 // getFullQuality returns full quality string including WEB-DL info
@@ -481,7 +855,7 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	}
 
 	builder.WriteString("\n")
-	builder.WriteString("───────────────────\n")
+	builder.WriteString("───────────────────\n\n")
 
 	// Name line
 	builder.WriteString("🎬 名称：")
@@ -524,13 +898,14 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	quality := ""
 	if enhanced != nil {
 		quality = s.getFullQuality(enhanced)
+		log.Printf("[Debug] Final quality in formatEmbyNotificationEnhanced: '%s'", quality)
+	} else {
+		log.Printf("[Debug] enhanced is nil in formatEmbyNotificationEnhanced")
 	}
 	if quality != "" {
 		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
 		builder.WriteString("\n")
 	}
-
-	builder.WriteString("\n")
 
 	// File size (using decimal GB for consistency with examples)
 	if enhanced != nil && enhanced.FileSize > 0 {
@@ -539,7 +914,7 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 
 	// File count
 	if enhanced != nil && enhanced.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", enhanced.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", enhanced.FileCount))
 	}
 
 	return builder.String()
@@ -566,7 +941,7 @@ func (s *WebhookService) getDetailedCategory(itemType string, enhanced *EmbyEnha
 			return "日本电影"
 		case "华语", "台湾", "香港", "中国", "chinese", "taiwanese", "hong kong":
 			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "华语剧集"
+				return "国产剧"
 			}
 			return "华语电影"
 		case "动漫", "动画", "anime", "animation", "cartoon":
@@ -643,7 +1018,7 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 
 	// Check cache using message content as key
 	if s.messageCache != nil && s.messageCache.Check(s.chatID, message) {
-		log.Printf("[Webhook] Duplicate notification skipped (photo) for chat %d", s.chatID)
+		// 静默跳过重复通知
 		return
 	}
 

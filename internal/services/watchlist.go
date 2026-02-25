@@ -338,3 +338,8 @@ func (s *WatchlistService) GetWatchlistStats(telegramID int64) map[string]interf
 
 	return stats
 }
+
+// Now returns the current time, useful for testing
+func (s *WatchlistService) Now() time.Time {
+	return time.Now()
+}

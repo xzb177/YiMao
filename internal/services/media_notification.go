@@ -289,7 +289,6 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 		// Skip if completely disabled
 		if !settings.Enabled {
-			log.Printf("[MediaNotification] Admin %d: notifications disabled, skipping", adminID)
 			continue
 		}
 
@@ -316,12 +315,9 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 		// Send instant notification if enabled (unlock before sending to avoid deadlock)
 		if settings.InstantEnabled {
-			log.Printf("[MediaNotification] Admin %d: sending instant notification for %s", adminID, item.Title)
 			s.mu.Unlock()
 			s.sendInstantNotification(adminID, item, settings.Format)
 			s.mu.Lock()
-		} else {
-			log.Printf("[MediaNotification] Admin %d: instant notifications disabled, only adding to daily summary", adminID)
 		}
 	}
 }
