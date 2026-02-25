@@ -55,6 +55,16 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 // handleApprove handles approve callback
 func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response, error) {
+	// Check admin permission
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		log.Printf("[ReviewHandler] 非管理员尝试批准请求: userID=%d", ctx.UserID)
+		return &callback.Response{
+			Text:        "❌ 此操作仅限管理员使用",
+			CallbackMsg: "无权限",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	requestID := ctx.Callback.Params["id"]
 
 	// Approve the review
@@ -124,6 +134,16 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 // handleReject handles reject callback
 func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response, error) {
+	// Check admin permission
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		log.Printf("[ReviewHandler] 非管理员尝试拒绝请求: userID=%d", ctx.UserID)
+		return &callback.Response{
+			Text:        "❌ 此操作仅限管理员使用",
+			CallbackMsg: "无权限",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	requestID := ctx.Callback.Params["id"]
 
 	// Reject the review (no reason provided in quick reject)

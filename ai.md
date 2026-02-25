@@ -246,3 +246,11 @@ watchlist_add:{tmdbID}  # 加入片单
   - `internal/services/webhook.go` - 横幅图片修复、格式切换支持、调试日志
   - `cmd/bot/main.go` - 传递 NotificationFormat 配置
   - `.env.example` - 添加 NOTIFICATION_FORMAT 说明
+
+### 2025-02-25 - 管理员权限检查修复
+- **问题**: `review_approve` 和 `review_reject` 回调没有管理员权限检查
+- **影响**: 任何用户都可以批准或拒绝求片请求（严重安全问题）
+- **原因**: `ReviewHandler.handleApprove` 和 `handleReject` 缺少权限验证
+- **修复**: 在两个方法中添加 `adminService.IsAdmin()` 检查
+- **修改文件**:
+  - `internal/handlers/review.go` - 添加管理员权限检查到批准/拒绝方法

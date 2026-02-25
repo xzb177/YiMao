@@ -46,6 +46,16 @@ type EmbyItem struct {
 	Overview    string `json:"Overview"`
 	Genres      []string `json:"Genres"`
 	CommunityRating float64 `json:"CommunityRating"`
+	Path        string `json:"Path"`         // File path
+	FileName    string `json:"FileName"`     // File name
+	ProviderIds map[string]string `json:"ProviderIds"` // TMDB, IMDb, TVDB IDs
+	MediaSources []EmbyMediaSource `json:"MediaSources"` // Media sources with file size
+}
+
+// EmbyMediaSource represents a media source with file information
+type EmbyMediaSource struct {
+	Size int64  `json:"Size"`    // File size in bytes
+	Path string `json:"Path"`    // File path
 }
 
 // JellyseerrWebhookPayload represents a Jellyseerr webhook payload
@@ -236,6 +246,18 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 
 // sendImmediateNotification sends notification immediately for non-episode content
 func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, itemType, itemName string) error {
+	// Debug: check if payload.Item is available
+	if payload.Item != nil {
+		log.Printf("[Debug] payload.Item exists: Name=%s, Path=%s", payload.Item.Name, payload.Item.Path)
+		if payload.Item.ProviderIds != nil {
+			log.Printf("[Debug] payload.Item.ProviderIds: %v", payload.Item.ProviderIds)
+		} else {
+			log.Printf("[Debug] payload.Item.ProviderIds is nil")
+		}
+	} else {
+		log.Printf("[Debug] payload.Item is nil")
+	}
+
 	// Try to get enhanced info from Emby API (with retry)
 	var enhancedPayload *EmbyEnhancedInfo
 	var err error
@@ -250,6 +272,82 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 			log.Printf("[Webhook] Failed to get enhanced info for %s: %v", itemName, err)
 		}
 		time.Sleep(time.Second)
+	}
+
+	// If enhanced info is missing or quality is empty, try to parse from webhook payload
+	if (enhancedPayload == nil || enhancedPayload.Quality == "") && payload.Item != nil {
+		path := payload.Item.Path
+		if path == "" {
+			path = payload.Item.FileName
+		}
+		if path != "" {
+			quality := s.parseQualityFromPath(path)
+			isWEBDL := s.detectWEBDL(path)
+			log.Printf("[Webhook] Parsed quality from webhook path: %s (WEB-DL: %v)", quality, isWEBDL)
+
+			if enhancedPayload == nil {
+				// Create minimal enhanced info from webhook payload
+				enhancedPayload = &EmbyEnhancedInfo{
+					Quality: quality,
+					IsWEBDL: isWEBDL,
+				}
+				// Copy available fields
+				if payload.Item.Name != "" {
+					enhancedPayload.Title = payload.Item.Name
+				}
+				if payload.Item.Year != nil {
+					enhancedPayload.Year = *payload.Item.Year
+				}
+				if len(payload.Item.Genres) > 0 {
+					enhancedPayload.Genres = payload.Item.Genres
+				}
+				if payload.Item.Overview != "" {
+					enhancedPayload.Overview = payload.Item.Overview
+				}
+				if payload.Item.CommunityRating > 0 {
+					enhancedPayload.Rating = payload.Item.CommunityRating
+				}
+				// Get file size from MediaSources
+				for _, ms := range payload.Item.MediaSources {
+					if ms.Size > 0 {
+						enhancedPayload.FileSize = ms.Size
+						enhancedPayload.FileCount = 1
+						break
+					}
+				}
+			} else {
+				// Update existing enhanced info with parsed quality
+				enhancedPayload.Quality = quality
+				enhancedPayload.IsWEBDL = isWEBDL
+				// If genres is empty, try to copy from webhook payload
+				if len(enhancedPayload.Genres) == 0 && len(payload.Item.Genres) > 0 {
+					enhancedPayload.Genres = payload.Item.Genres
+				}
+				// If file size is 0, try to get from MediaSources
+				if enhancedPayload.FileSize == 0 {
+					for _, ms := range payload.Item.MediaSources {
+						if ms.Size > 0 {
+							enhancedPayload.FileSize = ms.Size
+							if enhancedPayload.FileCount == 0 {
+								enhancedPayload.FileCount = 1
+							}
+							break
+						}
+					}
+				}
+			}
+
+			// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
+			if enhancedPayload.ImageURL == "" && payload.Item.ProviderIds != nil {
+				if tmdbID, ok := payload.Item.ProviderIds["Tmdb"]; ok && tmdbID != "" {
+					log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds: %s", tmdbID)
+					if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
+						enhancedPayload.ImageURL = backdropURL
+						log.Printf("[Webhook] Got TMDB backdrop: %s", backdropURL)
+					}
+				}
+			}
+		}
 	}
 
 	// Format message with enhanced info if available, based on notification format
@@ -270,7 +368,9 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 	if s.chatID != 0 && s.chatID < -100 { // Only send to group chats (chatID < -100)
 		// Check if we should send with photo
 		if enhancedPayload != nil && enhancedPayload.ImageURL != "" {
-			s.sendNotificationWithPhoto(message, enhancedPayload.ImageURL)
+			// For photo notifications, use a more compact format to fit within 1024 char limit
+			photoCaption := s.formatPhotoCaption(payload, enhancedPayload)
+			s.sendNotificationWithPhoto(photoCaption, enhancedPayload.ImageURL)
 		} else {
 			s.sendWithCache(s.chatID, message)
 		}
@@ -299,6 +399,76 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 				break
 			}
 			time.Sleep(500 * time.Millisecond)
+		}
+
+		// If enhanced info is missing or quality is empty, try to parse from webhook payload
+		if (enhancedInfo == nil || enhancedInfo.Quality == "") && payload.Item != nil {
+			path := payload.Item.Path
+			if path == "" {
+				path = payload.Item.FileName
+			}
+			if path != "" {
+				quality := s.parseQualityFromPath(path)
+				isWEBDL := s.detectWEBDL(path)
+				log.Printf("[Webhook] Parsed quality from webhook path (episode): %s (WEB-DL: %v)", quality, isWEBDL)
+
+				if enhancedInfo == nil {
+					// Create minimal enhanced info from webhook payload
+					enhancedInfo = &EmbyEnhancedInfo{
+						Quality: quality,
+						IsWEBDL: isWEBDL,
+					}
+					// Copy available fields
+					if payload.Item.Name != "" {
+						enhancedInfo.Title = payload.Item.Name
+					}
+					if payload.Item.Year != nil {
+						enhancedInfo.Year = *payload.Item.Year
+					}
+					if len(payload.Item.Genres) > 0 {
+						enhancedInfo.Genres = payload.Item.Genres
+					}
+					// Get file size from MediaSources
+					for _, ms := range payload.Item.MediaSources {
+						if ms.Size > 0 {
+							enhancedInfo.FileSize = ms.Size
+							enhancedInfo.FileCount = 1
+							break
+						}
+					}
+				} else {
+					// Update existing enhanced info with parsed quality
+					enhancedInfo.Quality = quality
+					enhancedInfo.IsWEBDL = isWEBDL
+					// If genres is empty, try to copy from webhook payload
+					if len(enhancedInfo.Genres) == 0 && len(payload.Item.Genres) > 0 {
+						enhancedInfo.Genres = payload.Item.Genres
+					}
+					// If file size is 0, try to get from MediaSources
+					if enhancedInfo.FileSize == 0 {
+						for _, ms := range payload.Item.MediaSources {
+							if ms.Size > 0 {
+								enhancedInfo.FileSize = ms.Size
+								if enhancedInfo.FileCount == 0 {
+									enhancedInfo.FileCount = 1
+								}
+								break
+							}
+						}
+					}
+				}
+
+				// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
+				if enhancedInfo.ImageURL == "" && payload.Item.ProviderIds != nil {
+					if tmdbID, ok := payload.Item.ProviderIds["Tmdb"]; ok && tmdbID != "" {
+						log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds (episode): %s", tmdbID)
+						if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
+							enhancedInfo.ImageURL = backdropURL
+							log.Printf("[Webhook] Got TMDB backdrop (episode): %s", backdropURL)
+						}
+					}
+				}
+			}
 		}
 
 		year := 0
@@ -385,7 +555,9 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		// Send notification only to group chats (chatID < -100)
 		if s.chatID != 0 && s.chatID < -100 {
 			if agg.ImageURL != "" {
-				s.sendNotificationWithPhoto(message, agg.ImageURL)
+				// For photo notifications, use a more compact format to fit within 1024 char limit
+				photoCaption := s.formatEpisodePhotoCaption(agg, epRange)
+				s.sendNotificationWithPhoto(photoCaption, agg.ImageURL)
 			} else {
 				s.sendWithCache(s.chatID, message)
 			}
@@ -1078,7 +1250,7 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	// Category line - detailed category
 	builder.WriteString("🏷️ 类别：")
 	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
-	builder.WriteString("\n")
+	builder.WriteString("\n\n")
 
 	// Quality line - with WEB-DL info
 	quality := ""
@@ -1090,7 +1262,7 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	}
 	if quality != "" {
 		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
-		builder.WriteString("\n")
+		builder.WriteString("\n\n")
 	}
 
 	// File size (using decimal GB for consistency with examples)
@@ -1113,39 +1285,106 @@ func (s *WebhookService) getDetailedCategory(itemType string, enhanced *EmbyEnha
 	}
 
 	// Check genres for region/category info
+	hasAnimation := false
+	hasChinese := false
+	hasJapanese := false
+	hasKorean := false
+	hasWestern := false
+	hasCostume := false
+	hasFantasy := false
+	hasSciFi := false
+	hasRomance := false
+	hasAction := false
+
 	for _, genre := range enhanced.Genres {
-		switch strings.ToLower(genre) {
-		case "韩剧", "韩国", "korean", "korea":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "韩剧"
-			}
-			return "韩国电影"
-		case "日剧", "日本", "japanese", "japan":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "日剧"
-			}
-			return "日本电影"
-		case "华语", "台湾", "香港", "中国", "chinese", "taiwanese", "hong kong":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "国产剧"
-			}
-			return "华语电影"
+		g := strings.ToLower(genre)
+		switch g {
 		case "动漫", "动画", "anime", "animation", "cartoon":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "日本动漫"
+			hasAnimation = true
+		case "华语", "台湾", "香港", "中国", "chinese", "taiwanese", "hong kong", "国产", "大陆", "古装", "武侠":
+			if g == "古装" || g == "武侠" {
+				hasCostume = true
 			}
-			return "动画电影"
-		case "欧美", "美国", " british", "american", "western", "us", "uk":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "美剧"
-			}
-			return "欧美电影"
-		case "泰国", "thai", "thailand":
-			if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-				return "泰剧"
-			}
-			return "泰国电影"
+			hasChinese = true
+		case "日剧", "日本", "japanese", "japan":
+			hasJapanese = true
+		case "韩剧", "韩国", "korean", "korea":
+			hasKorean = true
+		case "欧美", "美国", "american", "western", "us", "uk", "british":
+			hasWestern = true
+		case "奇幻", "仙侠", " fantasy":
+			hasFantasy = true
+		case "科幻", "sci-fi", "scifi":
+			hasSciFi = true
+		case "言情", "爱情", "romance":
+			hasRomance = true
+		case "动作", "action":
+			hasAction = true
 		}
+	}
+
+	// Determine category based on item type and flags
+	isEpisode := itemType == "Episode" || itemType == "Series" || itemType == "Season"
+
+	if hasAnimation {
+		if isEpisode {
+			if hasChinese {
+				return "国漫"
+			}
+			if hasJapanese {
+				return "日漫"
+			}
+			return "动漫"
+		}
+		return "动画电影"
+	}
+
+	if hasCostume && isEpisode {
+		return "古装剧"
+	}
+
+	if hasFantasy && hasCostume && isEpisode {
+		return "古装奇幻"
+	}
+
+	if hasSciFi && isEpisode {
+		return "科幻剧"
+	}
+
+	if hasRomance && isEpisode {
+		return "言情剧"
+	}
+
+	if hasAction && hasCostume && isEpisode {
+		return "武侠剧"
+	}
+
+	if hasChinese {
+		if isEpisode {
+			return "国产剧"
+		}
+		return "华语电影"
+	}
+
+	if hasJapanese {
+		if isEpisode {
+			return "日剧"
+		}
+		return "日本电影"
+	}
+
+	if hasKorean {
+		if isEpisode {
+			return "韩剧"
+		}
+		return "韩国电影"
+	}
+
+	if hasWestern {
+		if isEpisode {
+			return "美剧"
+		}
+		return "欧美电影"
 	}
 
 	// Fallback to basic category
@@ -1196,6 +1435,20 @@ func (s *WebhookService) formatFileSize(bytes int64) string {
 	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+// truncateCaption truncates caption to fit Telegram's 1024 character limit
+func (s *WebhookService) truncateCaption(caption string) string {
+	const maxCaptionLength = 1024
+	if len(caption) <= maxCaptionLength {
+		return caption
+	}
+	// Truncate and add ellipsis
+	runes := []rune(caption)
+	if len(runes) > maxCaptionLength {
+		return string(runes[:maxCaptionLength-3]) + "..."
+	}
+	return caption
+}
+
 // sendNotificationWithPhoto sends notification with photo
 func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 	if s.chatID == 0 {
@@ -1208,8 +1461,15 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 		return
 	}
 
+	// Truncate caption to fit Telegram's 1024 character limit
+	caption := s.truncateCaption(message)
+	if len(caption) < len(message) {
+		log.Printf("[Webhook] Caption truncated from %d to %d characters", len(message), len(caption))
+	}
+	log.Printf("[Webhook] Sending photo caption (%d chars):\n%s", len(caption), caption)
+
 	// Send photo with caption
-	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, message, nil); err != nil {
+	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, caption, nil); err != nil {
 		log.Printf("[Webhook] Failed to send photo, falling back to text message: %v", err)
 		// Fallback to text message
 		s.sendWithCache(s.chatID, message)
@@ -1220,6 +1480,170 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 	if s.messageCache != nil {
 		s.messageCache.Add(s.chatID, message)
 	}
+}
+
+// formatPhotoCaption formats a compact caption for photo notifications (Telegram limit: 1024 chars)
+func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
+	var builder strings.Builder
+
+	// Get title
+	title := payload.ItemName
+	if title == "" && payload.Item != nil {
+		title = payload.Item.Name
+	}
+	if enhanced != nil && enhanced.Title != "" {
+		title = enhanced.Title
+	}
+
+	// Get item type
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+
+	// Add year if available
+	year := 0
+	if payload.Year != nil {
+		year = *payload.Year
+	}
+	if year == 0 && payload.Item != nil && payload.Item.Year != nil {
+		year = *payload.Item.Year
+	}
+	if year == 0 && enhanced != nil {
+		year = enhanced.Year
+	}
+
+	// Get series name
+	seriesName := payload.SeriesName
+
+	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
+	builder.WriteString("✅ 入库成功：")
+	if itemType == "Episode" && seriesName != "" {
+		season := payload.Season
+		episode := payload.Episode
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+		}
+	} else if itemType == "Season" && seriesName != "" {
+		season := payload.Season
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+		}
+	} else {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
+		}
+	}
+	builder.WriteString("\n")
+	builder.WriteString("───────────────────\n\n")
+
+	// Name line
+	builder.WriteString("🎬 名称：")
+	if itemType == "Episode" && seriesName != "" {
+		season := payload.Season
+		episode := payload.Episode
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+		}
+	} else if itemType == "Season" && seriesName != "" {
+		season := payload.Season
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+		} else {
+			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+		}
+	} else {
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+		} else {
+			builder.WriteString(title)
+		}
+	}
+	builder.WriteString("\n\n")
+
+	// Category line
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
+	builder.WriteString("\n\n")
+
+	// Quality line - use getFullQuality for proper WEB-DL format
+	quality := ""
+	if enhanced != nil && enhanced.Quality != "" {
+		quality = s.getFullQuality(enhanced)
+	}
+	if quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s\n\n", quality))
+	}
+
+	// File size
+	if enhanced != nil && enhanced.FileSize > 0 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+	}
+
+	// File count
+	if enhanced != nil && enhanced.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", enhanced.FileCount))
+	}
+
+	return builder.String()
+}
+
+// formatEpisodePhotoCaption formats a caption for episode photo notifications (matching reference format)
+func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRange string) string {
+	var builder strings.Builder
+
+	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
+	builder.WriteString("✅ 入库成功：")
+	if agg.Year > 1900 && agg.Year < 2100 {
+		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+	} else {
+		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+	}
+	builder.WriteString("\n")
+	builder.WriteString("───────────────────\n\n")
+
+	// Name line
+	builder.WriteString("🎬 名称：")
+	if agg.Year > 1900 && agg.Year < 2100 {
+		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+	} else {
+		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+	}
+	builder.WriteString("\n\n")
+
+	// Category line - use detailed category from enhanced info
+	builder.WriteString("🏷️ 类别：")
+	if agg.EnhancedInfo != nil {
+		builder.WriteString(s.getDetailedCategory("Episode", agg.EnhancedInfo))
+	} else {
+		builder.WriteString("剧集")
+	}
+	builder.WriteString("\n\n")
+
+	// Quality line
+	if agg.Quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量： %s\n\n", agg.Quality))
+	}
+
+	// File size
+	if agg.FileSize > 0 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(agg.FileSize)))
+	}
+
+	// File count
+	if agg.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", agg.FileCount))
+	}
+
+	return builder.String()
 }
 
 // handleTestNotification handles test notification

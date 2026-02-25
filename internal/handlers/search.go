@@ -192,9 +192,24 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return err
 	}
 
+	// Check for empty results
+	if results == nil || len(results.Results) == 0 {
+		log.Printf("[SearchHandler] No results found for query: %s", query)
+		h.sendNoResultsMessage(chatID, query)
+		return nil
+	}
+
 	// Send results
 	h.sendSearchResults(userID, chatID, query, results)
 	return nil
+}
+
+// sendNoResultsMessage sends a message when no search results are found
+func (h *SearchHandler) sendNoResultsMessage(chatID int64, query string) {
+	msg := fmt.Sprintf("🔍 搜索结果「%s」\n\n😔 未搜索到需要的资源\n\n💡 建议：\n• 检查影片名称是否正确\n• 尝试使用更简短的关键词\n• 或使用英文片名搜索", query)
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+	h.telegram.SendMessage(chatID, msg, "", kb.Build())
 }
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
