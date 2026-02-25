@@ -509,15 +509,16 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	// Build keyboard with season buttons
 	kb := services.NewKeyboardBuilder()
 
-	// Add "Subscribe All" button
+	// Add action buttons in one row
 	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
 	kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", tvDetails.ID))
+	kb.AddButton("⬅️ 返回列表", "start")
 	kb.NewRow()
 
-	// Show first few seasons
+	// Show seasons in a clean grid layout (3 per row)
 	displayCount := len(tvDetails.Seasons)
-	if displayCount > 4 {
-		displayCount = 4
+	if displayCount > 6 {
+		displayCount = 6
 	}
 	for i, s := range tvDetails.Seasons {
 		if i >= displayCount {
@@ -527,19 +528,20 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		if s.SeasonNumber == 0 {
 			seasonName = "特别篇"
 		}
-		kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%d:type:tv:season:%d", tvDetails.ID, s.SeasonNumber))
-		if (i+1)%2 == 0 {
+		kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", tvDetails.ID, s.SeasonNumber))
+		if (i+1)%3 == 0 {
 			kb.NewRow()
 		}
 	}
 
 	// Add "Show All Seasons" button if there are more seasons
-	if len(tvDetails.Seasons) > 4 {
-		kb.AddButton(fmt.Sprintf("更多... (%d季)", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
+	if len(tvDetails.Seasons) > 6 {
+		kb.NewRow()
+		kb.AddButton(fmt.Sprintf("📺 查看全部 %d 季", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
 		kb.NewRow()
 	}
 
-	kb.AddButton("⬅️ 返回列表", "start")
+	// Bottom row with feedback
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
 
 	return &callback.Response{
@@ -740,29 +742,40 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	kb := services.NewKeyboardBuilder()
 
 	if isTV && len(seasons) > 0 {
-		// TV show - show season options
+		// TV show - action buttons row
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
 		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", info.ID))
+		// Back button - determine target based on query
+		if isAIRecommendationQuery(query) {
+			kb.AddButton("⬅️ 返回", fmt.Sprintf("search:type:%s", query))
+		} else {
+			kb.AddButton("⬅️ 返回", "start")
+		}
 		kb.NewRow()
 
-		// Show first few seasons
+		// Show seasons in a clean grid layout (3 per row)
+		displayCount := len(seasons)
+		if displayCount > 6 {
+			displayCount = 6
+		}
 		for i, s := range seasons {
-			if i >= 4 {
+			if i >= displayCount {
 				break
 			}
 			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
 			if s.SeasonNumber == 0 {
 				seasonName = "特别篇"
 			}
-			kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
-			if (i+1)%2 == 0 {
+			kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
+			if (i+1)%3 == 0 {
 				kb.NewRow()
 			}
 		}
-		if len(seasons) > 4 {
-			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
+		if len(seasons) > 6 {
+			kb.NewRow()
+			kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
+			kb.NewRow()
 		}
-		kb.NewRow()
 	} else {
 		// Movie - single subscribe button
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
@@ -770,15 +783,12 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
 		kb.NewRow()
-	}
-
-	// Back button - determine target based on query
-	if isAIRecommendationQuery(query) {
-		// From AI recommendation, go back to the same recommendation type
-		kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
-	} else {
-		// From other sources, go back to main menu
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		// Back button - determine target based on query
+		if isAIRecommendationQuery(query) {
+			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
+		} else {
+			kb.AddButton("⬅️ 返回主菜单", "start")
+		}
 	}
 
 	// Check for poster image first
