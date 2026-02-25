@@ -229,3 +229,20 @@ watchlist_add:{tmdbID}  # 加入片单
 - **修改文件**:
   - `internal/services/user_mapping.go` - 死锁修复
   - `internal/handlers/request.go` - 绑定提示按钮修复
+
+### 2025-02-25 - 通知格式切换与横幅图片修复
+- **新增功能**: 通知格式切换
+  - 环境变量 `NOTIFICATION_FORMAT` 支持 `simple` 或 `detailed`
+  - `simple`: 简洁格式，仅显示核心信息（标题、质量、大小、时间）
+  - `detailed`: 详细格式，显示完整媒体信息（名称、类别、质量、文件信息）
+- **横幅图片修复**:
+  - 修复 Emby 横幅图片无法正确获取的问题
+  - 之前代码从 `ImageTags["Backdrop"]` 读取，但 Emby API 返回的是 `BackdropImageTags` 数组
+  - 现在正确从 `BackdropImageTags[0]` 读取横幅标签
+  - 图片获取优先级：TMDB 横幅 → Emby 横幅 → Emby 主图
+- **调试优化**: 添加详细的调试日志，便于排查图片获取问题
+- **修改文件**:
+  - `internal/config/config.go` - 添加 NotificationFormat 配置字段
+  - `internal/services/webhook.go` - 横幅图片修复、格式切换支持、调试日志
+  - `cmd/bot/main.go` - 传递 NotificationFormat 配置
+  - `.env.example` - 添加 NOTIFICATION_FORMAT 说明
