@@ -523,9 +523,16 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		requestButtonText = "🔄 尝试求片"
 	}
 
-	// Add action buttons in one row
+	// First row: main action buttons (subscribe + feedback)
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
+	kb.NewRow()
+
+	// Second row: navigation buttons
 	kb.AddButton("⬅️ 返回列表", "start")
+	if len(tvDetails.Seasons) > 6 {
+		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
+	}
 	kb.NewRow()
 
 	// Show seasons in a clean grid layout (3 per row)
@@ -546,16 +553,6 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 			kb.NewRow()
 		}
 	}
-
-	// Add "Show All Seasons" button if there are more seasons
-	if len(tvDetails.Seasons) > 6 {
-		kb.NewRow()
-		kb.AddButton(fmt.Sprintf("📺 查看全部 %d 季", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
-		kb.NewRow()
-	}
-
-	// Bottom row with feedback
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -586,7 +583,12 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 		requestButtonText = "🔄 尝试求片"
 	}
 
+	// First row: main action buttons
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tmdbID, title))
+	kb.NewRow()
+
+	// Second row: navigation
 	kb.AddButton("⬅️ 返回列表", "start")
 
 	return &callback.Response{
@@ -774,13 +776,19 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	kb := services.NewKeyboardBuilder()
 
 	if isTV && len(seasons) > 0 {
-		// TV show - action buttons row
+		// TV show - first row: main action buttons (subscribe + feedback)
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
-		// Back button - determine target based on query
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", info.ID, info.Title))
+		kb.NewRow()
+
+		// Second row: navigation buttons
 		if isAIRecommendationQuery(query) {
 			kb.AddButton("⬅️ 返回", fmt.Sprintf("search:type:%s", query))
 		} else {
 			kb.AddButton("⬅️ 返回", "start")
+		}
+		if len(seasons) > 6 {
+			kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
 		}
 		kb.NewRow()
 
@@ -801,11 +809,6 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 			if (i+1)%3 == 0 {
 				kb.NewRow()
 			}
-		}
-		if len(seasons) > 6 {
-			kb.NewRow()
-			kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
-			kb.NewRow()
 		}
 	} else {
 		// Movie - single subscribe button
@@ -931,8 +934,23 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 	}
 
 	if isTV && len(item.Seasons) > 0 {
+		// First row: main action buttons (subscribe + feedback)
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", item.ID, item.Title))
 		kb.NewRow()
+
+		// Second row: navigation
+		if isAIRecommendationQuery(query) {
+			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
+		} else {
+			kb.AddButton("⬅️ 返回主菜单", "start")
+		}
+		if len(item.Seasons) > 4 {
+			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
+		}
+		kb.NewRow()
+
+		// Season buttons (2 per row for compact display)
 		for i, s := range item.Seasons {
 			if i >= 4 {
 				break
@@ -946,24 +964,18 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 				kb.NewRow()
 			}
 		}
-		if len(item.Seasons) > 4 {
-			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
-		}
-		kb.NewRow()
 	} else {
+		// Non-TV (movie or other): request + feedback + back
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
-		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()
-	}
 
-	// Back button - determine target based on query
-	if isAIRecommendationQuery(query) {
-		// From AI recommendation, go back to the same recommendation type
-		kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
-	} else {
-		// From other sources, go back to main menu
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		// Back button - determine target based on query
+		if isAIRecommendationQuery(query) {
+			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
+		} else {
+			kb.AddButton("⬅️ 返回主菜单", "start")
+		}
 	}
 
 	// Check for poster
@@ -1124,13 +1136,13 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		kb.NewRow()
 	}
 
-	// Add "Subscribe All" button
+	// Action row: subscribe + feedback
 	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", targetItem.ID, targetItem.Title))
 	kb.NewRow()
 
-	// Back to detail button
+	// Navigation row
 	kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv", targetItem.ID))
-	kb.NewRow()
 	kb.AddButton("🏠 返回主菜单", "start")
 
 	return &callback.Response{
