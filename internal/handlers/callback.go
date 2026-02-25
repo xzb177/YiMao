@@ -367,7 +367,8 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
 	// For TV shows, fetch full details with seasons
 	if media.MediaType == "tv" && h.tmdb != nil {
-		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess)
+		// From TMDB directly, assume MoviePilot availability is unknown (default to false to show warning)
+		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false)
 	}
 
 	msg := services.NewMessageBuilder()
@@ -443,13 +444,13 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 }
 
 // buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
-func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session) *callback.Response {
+func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, mpNotAvailable bool) *callback.Response {
 	// Fetch TV details with seasons from TMDB
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
 		log.Printf("[DetailHandler] Failed to get TV details from TMDB: %v", err)
 		// Fallback to simple detail
-		return h.buildSimpleTVDetail(tmdbID, title, sess)
+		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable)
 	}
 
 	msg := services.NewMessageBuilder()
@@ -506,11 +507,24 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	// TMDB ID
 	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", tvDetails.ID)).Newline()
 
+	// Warning if MoviePilot doesn't have this media
+	if mpNotAvailable {
+		msg.Newline()
+		msg.Bold("⚠️ 资源库暂无").Newline()
+		msg.Text("当前资源库中暂无此剧集，求片后将尝试自动搜索").Newline()
+	}
+
 	// Build keyboard with season buttons
 	kb := services.NewKeyboardBuilder()
 
+	// Change button text if MoviePilot doesn't have the media
+	requestButtonText := "✅ 订阅全季"
+	if mpNotAvailable {
+		requestButtonText = "🔄 尝试求片"
+	}
+
 	// Add action buttons in one row
-	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
+	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
 	kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%d", tvDetails.ID))
 	kb.AddButton("⬅️ 返回列表", "start")
 	kb.NewRow()
@@ -552,14 +566,28 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
-func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session) *callback.Response {
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool) *callback.Response {
 	msg := services.NewMessageBuilder()
 	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
 	msg.Newline()
 	msg.Italic("暂无法获取季数信息，请尝试直接订阅全季").Newline()
 
+	// Warning if MoviePilot doesn't have this media
+	if mpNotAvailable {
+		msg.Newline()
+		msg.Bold("⚠️ 资源库暂无").Newline()
+		msg.Text("当前资源库中暂无此剧集，求片后将尝试自动搜索").Newline()
+	}
+
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
+
+	// Change button text if MoviePilot doesn't have the media
+	requestButtonText := "✅ 订阅全季"
+	if mpNotAvailable {
+		requestButtonText = "🔄 尝试求片"
+	}
+
+	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
 	kb.AddButton("⬅️ 返回列表", "start")
 
 	return &callback.Response{
@@ -645,6 +673,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType string, sess *session.Session) *callback.Response {
 	// Try to get full media info from MoviePilot first
 	mediaID, _ := strconv.Atoi(item.ID)
+	mpNotAvailable := false // Track if MoviePilot has the media
 	if mediaID > 0 && h.moviepilot != nil {
 		// Determine media type
 		mpType := services.MediaTypeMovie
@@ -660,17 +689,21 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
 		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
+		// Check if error is "not found" to warn user
+		if err != nil && strings.Contains(err.Error(), "not found") {
+			mpNotAvailable = true
+		}
 
 		// For TV shows, fallback to TMDB for season info
 		if isTV && h.tmdb != nil {
 			log.Printf("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
-			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess)
+			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, mpNotAvailable)
 		}
 	}
 
 	// Fallback to basic detail view from session data
 	_, _, query, _ := sess.GetSearchResults()
-	return h.buildBasicDetailFromSearch(item, mediaType, query)
+	return h.buildBasicDetailFromSearch(item, mediaType, query, mpNotAvailable)
 }
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
@@ -828,7 +861,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 }
 
 // buildBasicDetailFromSearch builds basic detail page when MoviePilot API fails
-func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string, query string) *callback.Response {
+func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string, query string, mpNotAvailable bool) *callback.Response {
 	msg := services.NewMessageBuilder()
 
 	// Type icon and label
@@ -884,11 +917,24 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 
 	msg.Text(fmt.Sprintf("🆔 TMDB ID: %s", item.ID)).Newline()
 
+	// Warning if MoviePilot doesn't have this media
+	if mpNotAvailable {
+		msg.Newline()
+		msg.Bold("⚠️ 资源库暂无").Newline()
+		msg.Text("当前资源库中暂无此影片，求片后将尝试自动搜索").Newline()
+	}
+
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
 
+	// Change button text if MoviePilot doesn't have the media
+	requestButtonText := "✅ 立即求片"
+	if mpNotAvailable {
+		requestButtonText = "🔄 尝试求片"
+	}
+
 	if isTV && len(item.Seasons) > 0 {
-		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
+		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
 		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
 		kb.NewRow()
 		for i, s := range item.Seasons {
@@ -909,7 +955,7 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		}
 		kb.NewRow()
 	} else {
-		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
+		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
 		kb.AddButton("📎 加入片单", fmt.Sprintf("watchlist_add:%s", item.ID))
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))

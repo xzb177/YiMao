@@ -254,3 +254,14 @@ watchlist_add:{tmdbID}  # 加入片单
 - **修复**: 在两个方法中添加 `adminService.IsAdmin()` 检查
 - **修改文件**:
   - `internal/handlers/review.go` - 添加管理员权限检查到批准/拒绝方法
+
+### 2025-02-25 - MoviePilot 无资源时显示警告
+- **问题**: MoviePilot 没有资源时，详情页仍然显示"立即求片"，用户不知道可能无资源
+- **影响**: 用户求片后才发现可能没有资源，体验不好
+- **原因**: `GetMediaInfo` 失败后，详情页 fallback 到 TMDB 或基本视图，没有显示资源不可用警告
+- **修复**:
+  - 在 `buildDetailFromSearch` 中检测 MoviePilot "not found" 错误
+  - 当 MoviePilot 无资源时，详情页显示 `⚠️ 资源库暂无` 警告
+  - 求片按钮文字改为 `🔄 尝试求片`（而非 `✅ 立即求片`）
+- **修改文件**:
+  - `internal/handlers/callback.go` - 添加资源可用性检测和警告显示
