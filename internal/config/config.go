@@ -67,6 +67,9 @@ type Config struct {
 	RateLimitWindow   int  // window duration in seconds
 	MaxFailedAttempts int  // failed attempts before IP block
 	BlockDuration     int  // block duration in minutes
+
+	// Notification Format
+	NotificationFormat string // "simple" or "detailed"
 }
 
 // Load loads configuration from environment variables and files
@@ -102,6 +105,7 @@ func Load() (*Config, error) {
 		RateLimitWindow:     getEnvInt("RATE_LIMIT_WINDOW", 60),    // seconds
 		MaxFailedAttempts:   getEnvInt("MAX_FAILED_ATTEMPTS", 5),
 		BlockDuration:       getEnvInt("BLOCK_DURATION", 30),       // minutes
+		NotificationFormat:  getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
 	}
 
 	// Set file paths

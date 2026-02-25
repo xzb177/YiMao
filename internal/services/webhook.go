@@ -124,6 +124,7 @@ type WebhookService struct {
 	embyAPIKey           string
 	mediaNotificationSvc *MediaNotificationService
 	messageCache         *MessageCache
+	notificationFormat   string // "simple" or "detailed"
 	// Episode aggregation
 	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
 	epAggregationMu      sync.RWMutex
@@ -145,7 +146,7 @@ type EpisodeAggregation struct {
 }
 
 // NewWebhookService creates a new webhook service
-func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService) *WebhookService {
+func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string) *WebhookService {
 	svc := &WebhookService{
 		telegram:             telegram,
 		moviepilot:           moviepilot,
@@ -157,6 +158,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		embyAPIKey:           embyAPIKey,
 		mediaNotificationSvc: mediaNotificationSvc,
 		messageCache:         NewMessageCache(5 * time.Minute),
+		notificationFormat:   notificationFormat,
 		epAggregation:        make(map[string]*EpisodeAggregation),
 	}
 
@@ -250,8 +252,13 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		time.Sleep(time.Second)
 	}
 
-	// Format message with enhanced info if available
-	message := s.formatEmbyNotificationEnhanced(payload, enhancedPayload)
+	// Format message with enhanced info if available, based on notification format
+	var message string
+	if s.notificationFormat == "simple" {
+		message = s.formatEmbyNotificationSimple(payload, enhancedPayload)
+	} else {
+		message = s.formatEmbyNotificationEnhanced(payload, enhancedPayload)
+	}
 
 	// 简洁的入库日志
 	if itemName != "" {
@@ -367,8 +374,13 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		// Build episode range string
 		epRange := buildEpisodeRangeString(agg.Episodes)
 
-		// Build message
-		message := s.formatAggregatedEpisodeMessage(agg, epRange)
+		// Build message based on notification format
+		var message string
+		if s.notificationFormat == "simple" {
+			message = s.formatAggregatedEpisodeSimple(agg, epRange)
+		} else {
+			message = s.formatAggregatedEpisodeMessage(agg, epRange)
+		}
 
 		// Send notification only to group chats (chatID < -100)
 		if s.chatID != 0 && s.chatID < -100 {
@@ -470,6 +482,169 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 	return builder.String()
 }
 
+// formatAggregatedEpisodeSimple formats aggregated episode notification in simple format
+func (s *WebhookService) formatAggregatedEpisodeSimple(agg *EpisodeAggregation, epRange string) string {
+	var builder strings.Builder
+
+	// Library emoji based on type
+	emoji := "📺"
+
+	builder.WriteString(fmt.Sprintf("%s 入库通知\n\n", emoji))
+
+	// Title
+	builder.WriteString(fmt.Sprintf("《%s》", agg.SeriesName))
+	if agg.Year > 1900 && agg.Year < 2100 {
+		builder.WriteString(fmt.Sprintf(" (%d)", agg.Year))
+	}
+	if agg.Season > 0 {
+		builder.WriteString(fmt.Sprintf(" 第%d季", agg.Season))
+	}
+	// Episode range
+	builder.WriteString(fmt.Sprintf(" %s", epRange))
+	builder.WriteString("\n")
+
+	// Quality
+	if agg.Quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 %s", agg.Quality))
+	}
+
+	// File size (using decimal GB)
+	if agg.FileSize > 0 {
+		if agg.Quality != "" {
+			builder.WriteString(" · ")
+		}
+		builder.WriteString(fmt.Sprintf("📦 %s", s.formatFileSizeDecimal(agg.FileSize)))
+	}
+
+	builder.WriteString("\n")
+
+	// Time
+	builder.WriteString(fmt.Sprintf("🕒 %s", time.Now().Format("15:04")))
+
+	return builder.String()
+}
+
+// formatEmbyNotificationSimple formats an Emby notification in simple format
+func (s *WebhookService) formatEmbyNotificationSimple(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
+	var builder strings.Builder
+
+	// Get title from various sources
+	title := payload.ItemName
+	if title == "" && payload.Item != nil {
+		title = payload.Item.Name
+	}
+	if enhanced != nil && enhanced.Title != "" {
+		title = enhanced.Title
+	}
+
+	// Get item type
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+
+	// Add year if available
+	year := 0
+	if payload.Year != nil {
+		year = *payload.Year
+	}
+	if year == 0 && payload.Item != nil && payload.Item.Year != nil {
+		year = *payload.Item.Year
+	}
+	if year == 0 && enhanced != nil {
+		year = enhanced.Year
+	}
+
+	// Library emoji based on type
+	emoji := "🎬"
+	switch itemType {
+	case "Episode":
+		emoji = "📺"
+	case "Season":
+		emoji = "📺"
+	case "Series":
+		emoji = "📺"
+	}
+
+	builder.WriteString(fmt.Sprintf("%s 入库通知\n\n", emoji))
+
+	// Title
+	if itemType == "Episode" && payload.SeriesName != "" {
+		builder.WriteString(fmt.Sprintf("《%s》", payload.SeriesName))
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", year))
+		}
+		if payload.Season > 0 {
+			builder.WriteString(fmt.Sprintf(" 第%d季", payload.Season))
+		}
+		if payload.Episode > 0 {
+			builder.WriteString(fmt.Sprintf(" EP%02d", payload.Episode))
+		}
+	} else if itemType == "Season" && payload.SeriesName != "" {
+		builder.WriteString(fmt.Sprintf("《%s》", payload.SeriesName))
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", year))
+		}
+		if payload.Season > 0 {
+			builder.WriteString(fmt.Sprintf(" 第%d季", payload.Season))
+		}
+	} else if itemType == "Series" {
+		builder.WriteString(fmt.Sprintf("《%s》", title))
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", year))
+		}
+	} else {
+		builder.WriteString(fmt.Sprintf("《%s》", title))
+		if year > 1900 && year < 2100 {
+			builder.WriteString(fmt.Sprintf(" (%d)", year))
+		}
+	}
+
+	builder.WriteString("\n")
+
+	// Library
+	if payload.Library != "" {
+		builder.WriteString(fmt.Sprintf("📁 库: %s", payload.Library))
+	}
+
+	// Quality
+	quality := ""
+	if enhanced != nil && enhanced.Quality != "" {
+		quality = enhanced.Quality
+		if enhanced.IsWEBDL && !strings.Contains(strings.ToLower(enhanced.Quality), "web-dl") {
+			quality = fmt.Sprintf("WEB-DL %s", enhanced.Quality)
+		}
+	}
+	if quality != "" {
+		if payload.Library != "" {
+			builder.WriteString(" · ")
+		}
+		builder.WriteString(fmt.Sprintf("💎 %s", quality))
+	}
+
+	// Rating
+	rating := 0.0
+	if payload.Item != nil && payload.Item.CommunityRating > 0 {
+		rating = payload.Item.CommunityRating
+	}
+	if enhanced != nil && enhanced.Rating > 0 {
+		rating = enhanced.Rating
+	}
+	if rating > 0 {
+		if payload.Library != "" || quality != "" {
+			builder.WriteString(" · ")
+		}
+		builder.WriteString(fmt.Sprintf("⭐ %.1f", rating))
+	}
+
+	builder.WriteString("\n")
+
+	// Time
+	builder.WriteString(fmt.Sprintf("🕒 %s", time.Now().Format("15:04")))
+
+	return builder.String()
+}
+
 // EmbyEnhancedInfo holds enhanced media information from Emby API
 type EmbyEnhancedInfo struct {
 	Title        string
@@ -556,22 +731,30 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 		}
 	}
 
+	log.Printf("[Debug] TMDB ID: %s", tmdbID)
+
 	// Get backdrop from TMDB if we have the ID (横屏图片)
 	if tmdbID != "" {
 		if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 			info.ImageURL = backdropURL
+			log.Printf("[Debug] Using TMDB backdrop: %s", backdropURL)
+		} else {
+			log.Printf("[Debug] TMDB backdrop not found for ID: %s", tmdbID)
 		}
 	}
 
 	// Fallback to Emby images if TMDB failed
 	if info.ImageURL == "" {
 		if itemID, ok := result["Id"].(string); ok {
-			// Try backdrop first (横屏)
-			if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
-				if tag, ok := imageTags["Backdrop"].(string); ok {
+			// Try backdrop first (横屏) - BackdropImageTags is an array
+			if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
+				if tag, ok := backdropImageTags[0].(string); ok {
 					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
 						s.embyURL, itemID, tag)
+					log.Printf("[Debug] Using Emby backdrop: %s", info.ImageURL)
 				}
+			} else {
+				log.Printf("[Debug] No Emby BackdropImageTags found")
 			}
 			// Fallback to primary image
 			if info.ImageURL == "" {
@@ -579,10 +762,13 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 					if tag, ok := imageTags["Primary"].(string); ok {
 						info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
 							s.embyURL, itemID, tag)
+						log.Printf("[Debug] Using Emby primary image: %s", info.ImageURL)
 					}
 				}
 			}
 		}
+	} else {
+		log.Printf("[Debug] ImageURL set: %s", info.ImageURL)
 	}
 
 	// Extract media info for quality and file count
