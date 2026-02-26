@@ -528,3 +528,78 @@ watchlist_add:{tmdbID}  # 加入片单
   - `getEmbyEnhancedInfoForEpisode` 输出 episode 信息和错误状态
 - **修改文件**:
   - `internal/services/webhook.go` - formatPhotoCaption() 和 formatEpisodePhotoCaption() 函数优化
+
+
+---
+
+## 2026-02-27 入库通知格式优化与订阅重试
+
+### 入库通知格式优化
+
+#### 集数显示优化
+- **问题**: 不连续集数显示过长，如 `S03 E02, E06, E08, E10, E12, E18`
+- **解决**: 强制首尾合并，统一格式为 `E02-E18`（忽略中间断层）
+- **单集**: 保持 `E02` 格式
+
+#### 通知格式优化
+- **顶部行** `✅ 入库成功`：保留完整信息（剧名+年份+季集数）
+  - 示例：`✅ 入库成功：全职猎人 (1999) S01 E02-E18`
+- **名称行** `🎬 名称`：只显示剧名+年份，移除重复的季集数
+  - 示例：`🎬 名称：全职猎人 (1999)`
+
+#### 完整效果预览
+```
+✅ 入库成功：全职猎人 S01 E02-E18
+──────
+
+🎬 名称：全职猎人 (1999)
+
+🏷️ 类别：动漫
+
+💎 质量：WEB-DL 1080p
+
+📦 总大小：5.41G
+
+📁 文件数量：5 个
+```
+
+### TMDB 图片获取修复
+
+#### ProviderIds 键名大小写问题
+- **问题**: Emby webhook 返回 `ProviderIds: {"Tvdb": "xxx", "Imdb": "xxx"}`
+- **原代码**: 只查找小写的 `tmdb` 键，导致无法获取 TMDB ID
+- **解决**: 支持多种键名变体
+  - `"tmdb"` (小写)
+  - `"Tmdb"` (首字母大写)
+  - `"Tvdb"` (TVDB ID，TMDB API 可用)
+
+#### 图片获取优先级
+1. **TMDB backdrop** (外部可访问) ✅
+2. Emby backdrop (因 Cloudflare 保护，可能无法访问)
+3. Emby primary (备用)
+
+### 订阅重试机制
+
+#### 问题诊断
+- **现象**: 批准后订阅状态为 `"R"` (Recycled/重新搜索)
+- **原因**: MoviePilot 找不到资源，订阅进入回收状态
+
+#### 自动重试逻辑
+- **检测**: 每 5 分钟刷新订阅状态
+- **触发**: 当订阅状态为 `"R"` 时自动执行
+- **流程**:
+  1. 删除旧订阅
+  2. 重新创建订阅（使用原始媒体信息）
+  3. 更新订阅 ID
+- **日志**: `[ReviewService] Resubscribing xxx: new subscription ID xxx`
+
+### 文件变更
+- `internal/services/webhook.go` - 季集格式化、TMDB ID 获取
+- `internal/services/review.go` - 自动重新订阅功能
+- `internal/services/telegram.go` - 订阅重试辅助函数
+
+### 部署信息
+- 提交: `2e9b3cf`
+- 推送: `a6c98f0..2e9b3cf`
+- 部署时间: 2026-02-27
+
