@@ -1408,8 +1408,11 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		year = enhanced.Year
 	}
 
-	// Get series name
+	// Get series name - check both top-level and nested Item
 	seriesName := payload.SeriesName
+	if seriesName == "" && payload.Item != nil {
+		seriesName = payload.Item.SeriesName
+	}
 
 	// Header line - "✅ 入库成功：名称"
 	builder.WriteString("✅ 入库成功：")
@@ -1454,9 +1457,13 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
-	// File size line
-	if enhanced != nil && enhanced.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+	// File size line - show all sizes but mark .strm files
+	if enhanced != nil {
+		if enhanced.FileSize > 1024*1024 {
+			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		} else if enhanced.FileSize > 0 {
+			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		}
 	}
 
 	// File count line
@@ -1706,8 +1713,11 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		itemType = payload.Item.Type
 	}
 
-	// Get series name
+	// Get series name - check both top-level and nested Item
 	seriesName := payload.SeriesName
+	if seriesName == "" && payload.Item != nil {
+		seriesName = payload.Item.SeriesName
+	}
 
 	// Build display name (for ✅ 入库成功 line)
 	successName := title
