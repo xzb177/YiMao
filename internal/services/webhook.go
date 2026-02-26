@@ -361,7 +361,16 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 
 			// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
 			if enhancedPayload.ImageURL == "" && payload.Item.ProviderIds != nil {
-				if tmdbID, ok := payload.Item.ProviderIds["tmdb"]; ok && tmdbID != "" {
+				// Try lowercase "tmdb" first
+				var tmdbID string
+				if tid, ok := payload.Item.ProviderIds["tmdb"]; ok && tid != "" {
+					tmdbID = tid
+				} else if tid, ok := payload.Item.ProviderIds["Tmdb"]; ok && tid != "" {
+					tmdbID = tid
+				} else if tid, ok := payload.Item.ProviderIds["Tvdb"]; ok && tid != "" {
+					tmdbID = tid
+				}
+				if tmdbID != "" {
 					log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds: %s", tmdbID)
 					if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 						enhancedPayload.ImageURL = backdropURL
@@ -560,7 +569,16 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 
 				// Try to get image from TMDB using ProviderIds
 				if enhancedInfo.ImageURL == "" && payload.Item.ProviderIds != nil {
-					if tmdbID, ok := payload.Item.ProviderIds["tmdb"]; ok && tmdbID != "" {
+					// Try lowercase "tmdb" first, then "Tmdb", then "Tvdb"
+					var tmdbID string
+					if tid, ok := payload.Item.ProviderIds["tmdb"]; ok && tid != "" {
+						tmdbID = tid
+					} else if tid, ok := payload.Item.ProviderIds["Tmdb"]; ok && tid != "" {
+						tmdbID = tid
+					} else if tid, ok := payload.Item.ProviderIds["Tvdb"]; ok && tid != "" {
+						tmdbID = tid
+					}
+					if tmdbID != "" {
 						log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds (episode): %s", tmdbID)
 						if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 							enhancedInfo.ImageURL = backdropURL
@@ -839,12 +857,38 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		}
 
 		// Send notification only to group chats (chatID < -100)
+		// 强制使用图片发送：优先 TMDB（外部可访问），Emby 图片因 Cloudflare 无法被 Telegram 访问
 		if s.chatID != 0 && s.chatID < -100 {
-			if agg.ImageURL != "" {
-				// For photo notifications, use a more compact format to fit within 1024 char limit
-				photoCaption := s.formatEpisodePhotoCaption(agg, epRange)
-				s.sendNotificationWithPhoto(photoCaption, agg.ImageURL)
+			photoURL := ""
+
+			// 优先尝试从 TMDB 获取（外部可访问）
+			if agg.EnhancedInfo != nil && agg.EnhancedInfo.TMDBID != "" {
+				if backdropURL := s.getTMDBBackdrop(agg.EnhancedInfo.TMDBID); backdropURL != "" {
+					photoURL = backdropURL
+					log.Printf("[入库聚合] 从 TMDB 获取到 backdrop: %s", photoURL)
+				}
+			}
+
+			// TMDB 获取失败时，回退到 Emby（可能无法显示，但保留逻辑）
+			if photoURL == "" && agg.ImageURL != "" {
+				photoURL = agg.ImageURL
+				log.Printf("[入库聚合] 使用 Emby 图片（可能因 Cloudflare 无法显示）: %s", photoURL)
+			}
+
+			// 如果还是没有，尝试从 Emby API 获取
+			if photoURL == "" && agg.SeriesID != "" {
+				if seriesInfo, err := s.getSeriesInfo(agg.SeriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
+					photoURL = seriesInfo.ImageURL
+					log.Printf("[入库聚合] 从 Emby API 获取到图片（可能因 Cloudflare 无法显示）: %s", photoURL)
+				}
+			}
+
+			// 使用现有的多行排版文本作为 caption 发送图片
+			if photoURL != "" {
+				s.sendNotificationWithPhoto(message, photoURL)
 			} else {
+				// 实在获取不到图片，回退到纯文本
+				log.Printf("[入库聚合] 无法获取图片，使用纯文本发送")
 				s.sendWithCache(s.chatID, message)
 			}
 		}
@@ -858,7 +902,8 @@ func (s *WebhookService) flushEpisodeAggregation() {
 	}
 }
 
-// buildEpisodeRangeString builds episode range string like "E01-E05, E07, E09-E12"
+// buildEpisodeRangeString builds episode range string with forced head-tail merge
+// 单集显示 "E02"，多集强制首尾合并显示 "E02-E18"（忽略中间断层）
 func buildEpisodeRangeString(episodes []int) string {
 	if len(episodes) == 0 {
 		return ""
@@ -867,44 +912,28 @@ func buildEpisodeRangeString(episodes []int) string {
 		return fmt.Sprintf("E%02d", episodes[0])
 	}
 
-	var ranges []string
-	start := episodes[0]
-	end := episodes[0]
-
-	for i := 1; i < len(episodes); i++ {
-		if episodes[i] == end+1 {
-			end = episodes[i]
-		} else {
-			// Flush current range
-			if start == end {
-				ranges = append(ranges, fmt.Sprintf("E%02d", start))
-			} else {
-				ranges = append(ranges, fmt.Sprintf("E%02d-E%02d", start, end))
-			}
-			start = episodes[i]
-			end = episodes[i]
-		}
-	}
-	// Flush last range
-	if start == end {
-		ranges = append(ranges, fmt.Sprintf("E%02d", start))
-	} else {
-		ranges = append(ranges, fmt.Sprintf("E%02d-E%02d", start, end))
-	}
-
-	return strings.Join(ranges, ", ")
+	// 多集：强制使用最小集数-最大集数，忽略中间是否连续
+	return fmt.Sprintf("E%02d-E%02d", episodes[0], episodes[len(episodes)-1])
 }
 
 // formatAggregatedEpisodeMessage formats aggregated episode notification (极简呼吸感排版)
 func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Build title with year, season and episode range
+	// Build title with year, season and episode range (用于顶部"✅ 入库成功"行)
 	var title string
 	if agg.Year > 1900 && agg.Year < 2100 {
 		title = fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange)
 	} else {
 		title = fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange)
+	}
+
+	// Build name only (年份+剧集名，不包含季集数，用于"🎬 名称"行)
+	var nameOnly string
+	if agg.Year > 1900 && agg.Year < 2100 {
+		nameOnly = fmt.Sprintf("%s (%d)", agg.SeriesName, agg.Year)
+	} else {
+		nameOnly = agg.SeriesName
 	}
 
 	// Header line - complete title with year/season/episode
@@ -913,10 +942,10 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 	builder.WriteString("\n")
 	builder.WriteString("──────\n")
 
-	// Name line
+	// Name line - only series name (with year), no season/episode
 	builder.WriteString("\n")
 	builder.WriteString("🎬 名称：")
-	builder.WriteString(title)
+	builder.WriteString(nameOnly)
 	builder.WriteString("\n")
 
 	// Category line
@@ -1232,15 +1261,15 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 
 	// Try to get image using parent backdrop info from webhook payload (优先级最高)
 	if info.ImageURL == "" && parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
-		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
-			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0])
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
+			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0], s.embyAPIKey)
 		log.Printf("[Debug] Using parent backdrop from webhook: %s", info.ImageURL)
 	}
 
 	// 最后的回退：如果还没有图片，尝试使用 seriesPrimaryImageTag（竖版海报）
 	if info.ImageURL == "" && seriesPrimaryImageTag != "" && seriesID != "" {
-		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
-			s.embyURL, seriesID, seriesPrimaryImageTag)
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
+			s.embyURL, seriesID, seriesPrimaryImageTag, s.embyAPIKey)
 		log.Printf("[Debug] Using series primary image fallback: %s", info.ImageURL)
 	}
 
@@ -1314,18 +1343,28 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 		}
 	}
 
-	// Extract TMDB ID
+	// Extract TMDB ID - try both lowercase and uppercase variants (Emby uses Tvdb/Tmdb)
 	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
-		if tid, ok := providerIds["tmdb"].(string); ok {
+		// Try lowercase "tmdb" first
+		if tid, ok := providerIds["tmdb"].(string); ok && tid != "" {
 			info.TMDBID = tid
+			log.Printf("[Debug] Found TMDB ID from tmdb: %s", tid)
+		} else if tid, ok := providerIds["Tmdb"].(string); ok && tid != "" {
+			// Try capitalized "Tmdb"
+			info.TMDBID = tid
+			log.Printf("[Debug] Found TMDB ID from Tmdb: %s", tid)
+		} else if tid, ok := providerIds["Tvdb"].(string); ok && tid != "" {
+			// Use Tvdb as fallback (TMDB API can sometimes use TVDB ID)
+			info.TMDBID = tid
+			log.Printf("[Debug] Using Tvdb ID as TMDB ID: %s", tid)
 		}
 	}
 
 	// 优先获取横幅图（Backdrop）
 	if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
 		if tag, ok := backdropImageTags[0].(string); ok {
-			info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
-				s.embyURL, seriesID, tag)
+			info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
+				s.embyURL, seriesID, tag, s.embyAPIKey)
 			log.Printf("[Debug] Series backdrop image: %s", info.ImageURL)
 		}
 	}
@@ -1333,8 +1372,8 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 	if info.ImageURL == "" {
 		if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
 			if tag, ok := imageTags["Primary"].(string); ok {
-				info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
-					s.embyURL, seriesID, tag)
+				info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
+					s.embyURL, seriesID, tag, s.embyAPIKey)
 				log.Printf("[Debug] Series primary image: %s", info.ImageURL)
 			}
 		}
@@ -1405,10 +1444,17 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	}
 
 	// Extract image URL - try to get from TMDB first (publicly accessible)
-	// Check for TMDB ID in ProviderIds
+	// Check for TMDB ID in ProviderIds (Emby uses Tvdb/Tmdb)
 	var tmdbID string
 	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
-		if tid, ok := providerIds["tmdb"].(string); ok {
+		// Try lowercase "tmdb" first
+		if tid, ok := providerIds["tmdb"].(string); ok && tid != "" {
+			tmdbID = tid
+		} else if tid, ok := providerIds["Tmdb"].(string); ok && tid != "" {
+			// Try capitalized "Tmdb"
+			tmdbID = tid
+		} else if tid, ok := providerIds["Tvdb"].(string); ok && tid != "" {
+			// Use Tvdb as fallback (TMDB API can sometimes use TVDB ID)
 			tmdbID = tid
 		}
 	}
@@ -1431,8 +1477,8 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 			// Try backdrop first (横屏) - BackdropImageTags is an array
 			if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
 				if tag, ok := backdropImageTags[0].(string); ok {
-					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
-						s.embyURL, itemID, tag)
+					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
+						s.embyURL, itemID, tag, s.embyAPIKey)
 					log.Printf("[Debug] Using Emby backdrop: %s", info.ImageURL)
 				}
 			} else {
@@ -1442,8 +1488,8 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 			if info.ImageURL == "" {
 				if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
 					if tag, ok := imageTags["Primary"].(string); ok {
-						info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
-							s.embyURL, itemID, tag)
+						info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
+							s.embyURL, itemID, tag, s.embyAPIKey)
 						log.Printf("[Debug] Using Emby primary image: %s", info.ImageURL)
 					}
 				}
@@ -1988,8 +2034,20 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 	}
 	log.Printf("[Webhook] Sending photo caption (%d chars):\n%s", len(caption), caption)
 
-	// Send photo with caption
-	if _, err := s.telegram.SendPhoto(s.chatID, photoURL, caption, nil); err != nil {
+	var err error
+	// Check if this is an Emby URL that needs authentication
+	if strings.Contains(photoURL, s.embyURL) && s.embyAPIKey != "" {
+		// Use authenticated download for Emby images
+		headers := map[string]string{
+			"X-Emby-Token": s.embyAPIKey,
+		}
+		_, err = s.telegram.SendPhotoWithAuth(s.chatID, photoURL, caption, headers, nil)
+	} else {
+		// Use regular send for non-Emby images (TMDB, etc.)
+		_, err = s.telegram.SendPhoto(s.chatID, photoURL, caption, nil)
+	}
+
+	if err != nil {
 		log.Printf("[Webhook] Failed to send photo, falling back to text message: %v", err)
 		// Fallback to text message
 		s.sendWithCache(s.chatID, message)
@@ -2035,6 +2093,28 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		seriesName = payload.Item.SeriesName
 	}
 
+	// Get year for nameOnly display
+	year := 0
+	if payload.Year != nil {
+		year = *payload.Year
+	}
+	if year == 0 && payload.Item != nil && payload.Item.Year != nil {
+		year = *payload.Item.Year
+	}
+	if year == 0 && enhanced != nil {
+		year = enhanced.Year
+	}
+
+	// Build nameOnly (年份+剧集名，不包含季集数，用于"🎬 名称"行)
+	var nameOnly string
+	if year > 1900 && year < 2100 && seriesName != "" {
+		nameOnly = fmt.Sprintf("%s (%d)", seriesName, year)
+	} else if seriesName != "" {
+		nameOnly = seriesName
+	} else {
+		nameOnly = title
+	}
+
 	// Build display name (for ✅ 入库成功 line)
 	successName := title
 	if itemType == "Episode" && seriesName != "" {
@@ -2045,63 +2125,14 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		successName = title
 	}
 
-	// Build titleStr (for 🎬 名称 line - with full details)
-	// Get season and episode from correct fields (Item.ParentIndexNumber and Item.IndexNumber)
-	var titleStr string
-	if itemType == "Episode" && seriesName != "" {
-		season := 0
-		episode := 0
-
-		// Try to get season/episode from Item object first (correct fields)
-		if payload.Item != nil {
-			if payload.Item.ParentIndexNumber != nil {
-				season = *payload.Item.ParentIndexNumber
-			}
-			if payload.Item.IndexNumber != nil {
-				episode = *payload.Item.IndexNumber
-			}
-		}
-
-		// Fallback to top-level fields if Item doesn't have the data
-		if season == 0 && payload.Season != 0 {
-			season = payload.Season
-		}
-		if episode == 0 && payload.Episode != 0 {
-			episode = payload.Episode
-		}
-
-		// If both season and episode are 0, this might be a series entry, not a single episode
-		if season == 0 && episode == 0 {
-			titleStr = seriesName  // Only show series name, don't show S00 E00
-		} else {
-			titleStr = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
-		}
-	} else if itemType == "Season" && seriesName != "" {
-		season := 0
-		// Try to get season from Item object first
-		if payload.Item != nil && payload.Item.ParentIndexNumber != nil {
-			season = *payload.Item.ParentIndexNumber
-		}
-		if season == 0 {
-			season = payload.Season
-		}
-		if season > 0 {
-			titleStr = fmt.Sprintf("%s S%02d", seriesName, season)
-		} else {
-			titleStr = seriesName
-		}
-	} else {
-		titleStr = title
-	}
-
 	// Header line - only name, no year/season info
 	builder.WriteString("✅ 入库成功：")
 	builder.WriteString(successName)
 	builder.WriteString("\n")
 	builder.WriteString("───────────────────\n\n")
 
-	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", titleStr))
+	// Name line - only series name (with year), no season/episode
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", nameOnly))
 
 	// Category line
 	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", s.getDetailedCategory(itemType, enhanced)))
@@ -2809,7 +2840,7 @@ func (s *WebhookService) convertToSearchResult(item map[string]interface{}) (*Em
 	if itemID, ok := item["Id"].(string); ok {
 		if tags, ok := item["ImageTags"].([]interface{}); ok && len(tags) > 0 {
 			if tag, ok := tags[0].(string); ok {
-				result.PosterURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?fillWidth=400&quality=90", s.embyURL, itemID, tag)
+				result.PosterURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?fillWidth=400&quality=90&api_key=%s", s.embyURL, itemID, tag, s.embyAPIKey)
 			}
 		}
 	}

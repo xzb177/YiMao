@@ -411,16 +411,82 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	// Track recycled subscriptions that need to be resubscribed
+	var toResubscribe []string
+
 	for _, item := range toUpdate {
 		if sub, exists := subMap[item.subID]; exists {
 			if review, ok := s.reviews[item.requestID]; ok {
 				if review.SubscriptionState != sub.State {
+					oldState := review.SubscriptionState
 					review.SubscriptionState = sub.State
-					log.Printf("[ReviewService] Updated %s: %s -> %s", item.requestID, review.SubscriptionState, sub.State)
+					log.Printf("[ReviewService] Updated %s: %s -> %s", item.requestID, oldState, sub.State)
+
+					// If state is "R" (Recycled), mark for resubscription
+					if sub.State == "R" {
+						toResubscribe = append(toResubscribe, item.requestID)
+					}
 				}
 			}
 		}
 	}
 
 	s.saveLocked()
+
+	// Resubscribe recycled subscriptions (在锁外执行避免死锁)
+	if len(toResubscribe) > 0 {
+		go s.resubscribeRecycledRequests(toResubscribe)
+	}
+}
+
+// resubscribeRecycledRequests resubscribes requests that are in "R" (Recycled) state
+func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
+	for _, requestID := range requestIDs {
+		s.mu.RLock()
+		review, exists := s.reviews[requestID]
+		s.mu.RUnlock()
+
+		if !exists {
+			continue
+		}
+
+		// Delete old subscription first
+		if review.SubscriptionID > 0 {
+			log.Printf("[ReviewService] Deleting old subscription %d for %s", review.SubscriptionID, requestID)
+			if err := s.moviepilot.DeleteRequest(review.SubscriptionID); err != nil {
+				log.Printf("[ReviewService] Failed to delete old subscription: %v", err)
+			}
+		}
+
+		// Resubscribe
+		log.Printf("[ReviewService] Resubscribing %s: %s (%d)", requestID, review.MediaTitle, review.TmdbID)
+		mpMediaType := MediaTypeMovie
+		if review.MediaType == MediaTypeTV {
+			mpMediaType = MediaTypeTV
+		}
+
+		season := review.Season
+		if season == 0 && review.MediaType == MediaTypeTV {
+			season = 1
+		}
+
+		req, err := s.moviepilot.RequestMedia(
+			review.MediaTitle,
+			review.MediaYear,
+			review.TmdbID,
+			mpMediaType,
+			season,
+		)
+		if err != nil {
+			log.Printf("[ReviewService] Failed to resubscribe %s: %v", requestID, err)
+			continue
+		}
+
+		// Update subscription info
+		if err := s.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
+			log.Printf("[ReviewService] Failed to update subscription info: %v", err)
+		}
+
+		log.Printf("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
+	}
 }

@@ -129,6 +129,111 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 	return c.SendPhotoFromURL(chatID, photoURL, caption, keyboard)
 }
 
+// SendPhotoWithAuth sends a photo with caption, using custom headers for image download
+// This is needed for Emby images that require X-Emby-Token authentication
+func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	log.Printf("[Telegram] Downloading photo with auth from: %s", photoURL)
+
+	// Create request with custom headers
+	req, err := http.NewRequest("GET", photoURL, nil)
+	if err != nil {
+		log.Printf("[Telegram] Failed to create request: %v", err)
+		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	}
+
+	// Add custom headers (e.g., X-Emby-Token)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	// Download the image
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[Telegram] Failed to download photo: %v", err)
+		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("[Telegram] Photo download status: %d", resp.StatusCode)
+		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	}
+
+	log.Printf("[Telegram] Photo downloaded, size: %d bytes", resp.ContentLength)
+
+	// Create multipart form
+	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
+
+	// Read image data
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+
+	// Add chat_id
+	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
+
+	// Add caption
+	if caption != "" {
+		writer.WriteField("caption", caption)
+	}
+
+	// Add photo file
+	part, err := writer.CreateFormFile("photo", "photo.jpg")
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = io.Copy(part, resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add keyboard if provided
+	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
+		keyboardJSON, _ := json.Marshal(keyboard)
+		writer.WriteField("reply_markup", string(keyboardJSON))
+	}
+
+	writer.Close()
+
+	// Create request
+	req2, err := http.NewRequest("POST", apiURL, &buf)
+	if err != nil {
+		return nil, err
+	}
+
+	req2.Header.Set("Content-Type", writer.FormDataContentType())
+
+	resp2, err := c.httpClient.Do(req2)
+	if err != nil {
+		log.Printf("[Telegram] Multipart request failed: %v", err)
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp2.Body.Close()
+
+	body, _ := io.ReadAll(resp2.Body)
+
+	var result struct {
+		OK      bool                  `json:"ok"`
+		Result  *types.TelegramMessage `json:"result"`
+		Error   *types.TelegramError  `json:"error"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[Telegram] Failed to decode response: %v", err)
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	if !result.OK {
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		return nil, fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	log.Printf("[Telegram] SendPhotoWithAuth successful")
+	return result.Result, nil
+}
+
 // SendPhotoFromURL downloads photo from URL and sends it to Telegram
 func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	log.Printf("[Telegram] Downloading photo from: %s", photoURL)
