@@ -1,3 +1,31 @@
+# YiMao 项目更新日志
+
+---
+
+## ⚠️ 重要警告：媒体库入库通知功能
+
+**核心文件**: `internal/services/webhook.go`
+
+**禁止随意修改以下逻辑**：
+1. **图片获取优先级** - 必须保持 TMDB > Emby（Emby 图片受 Cloudflare 保护，Telegram 无法访问）
+2. **入库聚合机制** - 剧集批量聚合延迟发送，防止刷屏
+3. **文件大小累加** - 聚合时正确累加 FileSize/FileCount
+4. **季集格式化** - 统一使用 `E01-E23` 格式（忽略中间断层）
+5. **通知排版格式** - 呼吸感空行、统一"总大小"标签
+
+**修改前必须**：
+- 理解现有逻辑的完整流程
+- 在测试环境验证
+- 确保不影响现有功能
+
+**关键函数**：
+- `flushAggregation()` - 入库聚合发送
+- `getEmbyEnhancedInfoForEpisode()` - 剧集增强信息获取
+- `getTMDBBackdrop()` - TMDB 横幅图获取
+- `buildEpisodeRangeString()` - 季集范围格式化
+
+---
+
 # 精选推荐功能
 
 ## 概述
@@ -602,4 +630,18 @@ watchlist_add:{tmdbID}  # 加入片单
 - 提交: `2e9b3cf`
 - 推送: `a6c98f0..2e9b3cf`
 - 部署时间: 2026-02-27
+
+
+
+## 2026-02-27
+
+### fix: 入库通知横幅图优先级调整
+- **问题**: Emby 图片优先级高于 TMDB，导致 Telegram 无法访问（Cloudflare 保护）
+- **修复**: 调整图片获取优先级为 **TMDB > Emby**，确保横幅图可正常显示
+- **文件**: `internal/services/webhook.go`
+- **优先级顺序**:
+  1. TMDB backdrop（优先，外部可访问）
+  2. Emby parent backdrop（回退）
+  3. Emby series primary（最后回退）
+
 

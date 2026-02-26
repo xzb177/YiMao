@@ -737,19 +737,19 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 	sort.Ints(episodes)
 
 	// 图片获取：如果没有图片且有 SeriesID，尝试重新获取横幅图
-	if imageURL == "" && seriesID != "" {
-		log.Printf("[入库聚合] 尝试获取 Series 图片，seriesID=%s", seriesID)
-		// 先尝试从 Emby 获取 Series 的 backdrop
-		if seriesInfo, err := s.getSeriesInfo(seriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
-			imageURL = seriesInfo.ImageURL
-			log.Printf("[入库聚合] 从 Series 获取到图片: %s", imageURL)
-		}
-	}
-	// 如果仍然没有图片，尝试从 enhancedInfo 的 TMDB ID 获取
+	// 优先从 TMDB 获取横幅图片（外部可访问，质量高）
 	if imageURL == "" && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
 		if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
 			imageURL = backdropURL
 			log.Printf("[入库聚合] 从 TMDB 获取到 backdrop: %s", imageURL)
+		}
+	}
+	// 回退：TMDB 获取失败时，尝试从 Emby 获取 Series 的 backdrop
+	if imageURL == "" && seriesID != "" {
+		log.Printf("[入库聚合] 尝试从 Emby Series 获取图片（回退方案），seriesID=%s", seriesID)
+		if seriesInfo, err := s.getSeriesInfo(seriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
+			imageURL = seriesInfo.ImageURL
+			log.Printf("[入库聚合] 从 Emby Series 获取到图片: %s", imageURL)
 		}
 	}
 
@@ -1259,26 +1259,26 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 		log.Printf("[Debug] Failed to get episode info: %v", err)
 	}
 
-	// Try to get image using parent backdrop info from webhook payload (优先级最高)
-	if info.ImageURL == "" && parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
-		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
-			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0], s.embyAPIKey)
-		log.Printf("[Debug] Using parent backdrop from webhook: %s", info.ImageURL)
-	}
-
-	// 最后的回退：如果还没有图片，尝试使用 seriesPrimaryImageTag（竖版海报）
-	if info.ImageURL == "" && seriesPrimaryImageTag != "" && seriesID != "" {
-		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
-			s.embyURL, seriesID, seriesPrimaryImageTag, s.embyAPIKey)
-		log.Printf("[Debug] Using series primary image fallback: %s", info.ImageURL)
-	}
-
-	// If no image yet, try TMDB using the TMDB ID we collected
-	if info.ImageURL == "" && info.TMDBID != "" {
+	// 优先从 TMDB 获取横幅图片（外部可访问，质量高）
+	if info.TMDBID != "" {
 		if backdropURL := s.getTMDBBackdrop(info.TMDBID); backdropURL != "" {
 			info.ImageURL = backdropURL
 			log.Printf("[Debug] Using TMDB backdrop for episode: %s", backdropURL)
 		}
+	}
+
+	// 回退方案1：尝试从 Emby 获取 parent backdrop
+	if info.ImageURL == "" && parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
+			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0], s.embyAPIKey)
+		log.Printf("[Debug] Using Emby parent backdrop (fallback): %s", info.ImageURL)
+	}
+
+	// 回退方案2：尝试使用 seriesPrimaryImageTag（竖版海报）
+	if info.ImageURL == "" && seriesPrimaryImageTag != "" && seriesID != "" {
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
+			s.embyURL, seriesID, seriesPrimaryImageTag, s.embyAPIKey)
+		log.Printf("[Debug] Using series primary image fallback: %s", info.ImageURL)
 	}
 
 	return info, nil
