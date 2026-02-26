@@ -56,12 +56,12 @@ func (h *MyRequestsHandler) Handle(ctx *callback.Context) (*callback.Response, e
 
 	if moviepilotID == 0 {
 		return &callback.Response{
-			Text: "❓ 请先使用 /link 命令绑定账号",
+			Text: "🔗 请先绑定账号后使用",
 			Edit: true,
 			Keyboard: &callback.Keyboard{
 				InlineKeyboard: [][]callback.Button{
-					{{Text: "🔗 绑定账号", CallbackData: "link"}},
-					{{Text: "⬅️ 返回主菜单", CallbackData: "start"}},
+					{{Text: "🔗 立即绑定", CallbackData: "link"}},
+					{{Text: "⬅️ 返回", CallbackData: "start"}},
 				},
 			},
 		}, nil
@@ -145,56 +145,40 @@ func NewHelpHandler() *HelpHandler {
 
 func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("❓ 帮助中心").Newline()
-	msg.Newline()
 	msg.Bold("✨ 功能介绍").Newline()
 	msg.Newline()
 
-	msg.Bold("🔍 搜索影片").Newline()
-	msg.Text("  输入影片名称即可搜索，支持中文/英文").Newline()
-	msg.Text("  可搜索电影、剧集、演员、导演等").Newline()
-	msg.Text("  💡 示例：输入「沙丘」或「Dune」").Newline()
+	msg.Bold("🔍 智能搜索").Newline()
+	msg.Text("  输入片名即刻搜索，中英文通用").Newline()
+	msg.Text("  💡 试试「沙丘」「Dune」").Newline()
 	msg.Newline()
 
 	msg.Bold("🎬 精选推荐").Newline()
-	msg.Text("  为你发现精彩内容").Newline()
-	msg.Text("  🔥 本周热门 — 大家都在看").Newline()
-	msg.Text("  📺 热门剧集 — 追剧必备").Newline()
-	msg.Text("  ⭐ 必看神作 — 高分经典").Newline()
-	msg.Text("  🆕 最新上映 — 新片速递").Newline()
-	msg.Text("  🎲 随机探索 — 发现未知").Newline()
+	msg.Text("  🔥 热门 · 📺 剧集 · ⭐ 高分").Newline()
+	msg.Text("  🆕 新片 · 🎲 随机发现").Newline()
 	msg.Newline()
 
-	msg.Bold("📋 请求管理").Newline()
-	msg.Text("  一键求片，系统自动处理").Newline()
-	msg.Text("  实时跟踪：等待→处理中→已入库").Newline()
-	msg.Text("  支持电影和剧集订阅").Newline()
+	msg.Bold("📋 一键求片").Newline()
+	msg.Text("  搜索结果直接求片，自动下载入库").Newline()
+	msg.Text("  剧集支持分季订阅，按需选择").Newline()
 	msg.Newline()
 
 	msg.Bold("🔗 账号绑定").Newline()
-	msg.Text("  绑定后可查看「我的请求」").Newline()
-	msg.Text("  💡 绑定格式：/link 用户名 密码").Newline()
+	msg.Text("  /link 用户名 密码").Newline()
+	msg.Text("  绑定后查看「我的请求」状态").Newline()
 	msg.Newline()
 
-	msg.Bold("📊 配额系统").Newline()
-	msg.Text("  每日有请求次数限制").Newline()
-	msg.Text("  /quota 查看剩余配额").Newline()
-	msg.Newline()
-
-	msg.Bold("⌨️ 快捷命令").Newline()
+	msg.Bold("📊 快捷命令").Newline()
 	msg.Text("  /start — 主菜单").Newline()
-	msg.Text("  /search — 搜索影片").Newline()
-	msg.Text("  /ai — 精选推荐").Newline()
+	msg.Text("  /search — 搜索").Newline()
+	msg.Text("  /ai — 推荐").Newline()
 	msg.Text("  /requests — 我的请求").Newline()
-	msg.Text("  /link — 绑定账号").Newline()
-	msg.Text("  /quota — 查看配额").Newline()
-	msg.Text("  /help — 帮助").Newline()
 	msg.Newline()
 
-	msg.Italic("💬 遇到问题？联系管理员").Newline()
+	msg.Italic("💬 有问题？联系管理员").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

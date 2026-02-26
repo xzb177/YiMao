@@ -440,7 +440,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	log.Printf("[HandleForceSubscribe] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		return &callback.Response{
-			Text:        "❓ 请先使用 /link 命令绑定账号",
+			Text:        "🔗 请先绑定账号",
 			CallbackMsg: "需要绑定账号",
 			ShowAlert:   true,
 		}, nil
