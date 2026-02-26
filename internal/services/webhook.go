@@ -342,7 +342,7 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 
 			// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
 			if enhancedPayload.ImageURL == "" && payload.Item.ProviderIds != nil {
-				if tmdbID, ok := payload.Item.ProviderIds["Tmdb"]; ok && tmdbID != "" {
+				if tmdbID, ok := payload.Item.ProviderIds["tmdb"]; ok && tmdbID != "" {
 					log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds: %s", tmdbID)
 					if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 						enhancedPayload.ImageURL = backdropURL
@@ -503,7 +503,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 
 				// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
 				if enhancedInfo.ImageURL == "" && payload.Item.ProviderIds != nil {
-					if tmdbID, ok := payload.Item.ProviderIds["Tmdb"]; ok && tmdbID != "" {
+					if tmdbID, ok := payload.Item.ProviderIds["tmdb"]; ok && tmdbID != "" {
 						log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds (episode): %s", tmdbID)
 						if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 							enhancedInfo.ImageURL = backdropURL
@@ -945,7 +945,7 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	// Check for TMDB ID in ProviderIds
 	var tmdbID string
 	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
-		if tid, ok := providerIds["Tmdb"].(string); ok {
+		if tid, ok := providerIds["tmdb"].(string); ok {
 			tmdbID = tid
 		}
 	}

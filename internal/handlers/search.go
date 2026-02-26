@@ -291,8 +291,16 @@ func truncateString(s string, maxLen int) string {
 }
 
 func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*callback.Response, error) {
-	// Redirect to detail handler - build detail callback data
-	detailCallback := fmt.Sprintf("detail:id:%s:type:movie", tmdbIDStr)
+	// Get the media type from the original callback params
+	mediaType := "movie" // default
+	if typeStr, hasType := ctx.Callback.Params["type"]; hasType {
+		mediaType = typeStr
+	}
+
+	log.Printf("[SearchHandler] handleSelect: id=%s, type=%s", tmdbIDStr, mediaType)
+
+	// Redirect to detail handler - build detail callback data with correct type
+	detailCallback := fmt.Sprintf("detail:id:%s:type:%s", tmdbIDStr, mediaType)
 
 	// Parse and delegate to detail handler
 	parser := callback.NewParser()

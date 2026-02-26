@@ -117,8 +117,15 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 
 // SendPhoto sends a photo with caption to a chat
 func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	// Try to download and send as file if URL is not publicly accessible
-	// Telegram can't access private URLs, so we download first
+	// Use URL method first to avoid multipart encoding issues with Chinese characters
+	// Telegram will download the image directly
+	msg, err := c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	if err == nil {
+		return msg, nil
+	}
+
+	// If URL method fails, try downloading and sending as file
+	log.Printf("[Telegram] URL method failed: %v, trying file upload", err)
 	return c.SendPhotoFromURL(chatID, photoURL, caption, keyboard)
 }
 

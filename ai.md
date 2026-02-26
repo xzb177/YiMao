@@ -345,3 +345,18 @@ watchlist_add:{tmdbID}  # 加入片单
 - **修改文件**:
   - `internal/services/media_notification.go` - 默认汇总时间改为 23:50
   - `internal/services/webhook.go` - 新增 addMediaItemToSummary() 和 addAggregatedEpisodeToSummary() 方法
+
+### 2025-02-26 - 搜索详情页修复与入库通知图片修复
+- **问题1**: 点击搜索结果后详情页不出来
+  - **原因**: `handleSelect` 方法硬编码了 `type:movie`，导致剧集也被当作电影处理
+  - **修复**: 从 callback 的 `Params["type"]` 中获取正确的 media type
+- **问题2**: 入库通知 TMDB 图片无法显示
+  - **原因**: Emby 返回的 ProviderIds 中 TMDB key 是小写 `tmdb`，但代码检查的是首字母大写 `Tmdb`
+  - **修复**: 将 `ProviderIds["Tmdb"]` 改为 `ProviderIds["tmdb"]`
+- **问题3**: 发送图片时 UTF-8 编码错误
+  - **原因**: multipart form 处理中文字符时编码问题
+  - **修复**: `SendPhoto` 方法优先使用 URL 方式发送图片，避免 multipart 编码问题
+- **修改文件**:
+  - `internal/handlers/search.go` - handleSelect() 方法修复
+  - `internal/services/webhook.go` - TMDB ID 提取修复（3处）
+  - `internal/services/telegram.go` - SendPhoto() 方法优化
