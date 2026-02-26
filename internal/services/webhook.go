@@ -348,6 +348,43 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 					}
 				}
 			}
+		} else {
+			// No path available in webhook payload - check MediaSources directly
+			log.Printf("[Webhook] No path available, checking MediaSources (%d items)", len(payload.Item.MediaSources))
+			if enhancedPayload == nil {
+				enhancedPayload = &EmbyEnhancedInfo{}
+			}
+			// Get file info from MediaSources
+			for _, ms := range payload.Item.MediaSources {
+				if ms.Size > 0 {
+					enhancedPayload.FileSize = ms.Size
+					enhancedPayload.FileCount = 1
+					log.Printf("[Webhook] Got file size from MediaSources: %d bytes", ms.Size)
+					// Try to parse quality from MediaSource path
+					if ms.Path != "" {
+						enhancedPayload.Quality = s.parseQualityFromPath(ms.Path)
+						enhancedPayload.IsWEBDL = s.detectWEBDL(ms.Path)
+						log.Printf("[Webhook] Parsed quality from MediaSource path: %s", enhancedPayload.Quality)
+					}
+					break
+				}
+			}
+			// Copy other available fields
+			if payload.Item.Name != "" && enhancedPayload.Title == "" {
+				enhancedPayload.Title = payload.Item.Name
+			}
+			if payload.Item.Year != nil && enhancedPayload.Year == 0 {
+				enhancedPayload.Year = *payload.Item.Year
+			}
+			if len(payload.Item.Genres) > 0 && len(enhancedPayload.Genres) == 0 {
+				enhancedPayload.Genres = payload.Item.Genres
+			}
+			if payload.Item.Overview != "" && enhancedPayload.Overview == "" {
+				enhancedPayload.Overview = payload.Item.Overview
+			}
+			if payload.Item.CommunityRating > 0 && enhancedPayload.Rating == 0 {
+				enhancedPayload.Rating = payload.Item.CommunityRating
+			}
 		}
 	}
 
