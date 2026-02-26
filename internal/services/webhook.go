@@ -27,8 +27,8 @@ type EmbyWebhookPayload struct {
 	ItemType   string `json:"ItemType"`
 	Library    string `json:"LibraryName"`
 	SeriesName string `json:"SeriesName"`
-	Season     int    `json:"SeasonNumber"`
-	Episode    int    `json:"IndexNumber"`
+	Season     int    `json:"SeasonNumber"`       // Deprecated: use ParentIndexNumber
+	Episode    int    `json:"IndexNumber"`        // Deprecated: use IndexNumber in Item
 	Overview   string `json:"Overview"`
 	Timestamp  string `json:"Timestamp"`
 	UserID     string `json:"UserId"`
@@ -51,10 +51,16 @@ type EmbyItem struct {
 	ProviderIds map[string]string `json:"ProviderIds"` // TMDB, IMDb, TVDB IDs
 	MediaSources []EmbyMediaSource `json:"MediaSources"` // Media sources with file size
 	// Parent/ Series info for episodes
-	SeriesId             string `json:"SeriesId"`
-	ParentBackdropItemId string `json:"ParentBackdropItemId"`
+	SeriesId             string   `json:"SeriesId"`
+	SeriesName           string   `json:"SeriesName"`           // Series name for episodes
+	SeasonName           string   `json:"SeasonName"`           // Season name
+	ParentIndexNumber    *int     `json:"ParentIndexNumber"`    // Season number (correct field for episodes)
+	IndexNumber          *int     `json:"IndexNumber"`          // Episode number (correct field for episodes)
+	ParentBackdropItemId string   `json:"ParentBackdropItemId"`
 	ParentBackdropImageTags []string `json:"ParentBackdropImageTags"`
-	SeriesPrimaryImageTag string `json:"SeriesPrimaryImageTag"`
+	SeriesPrimaryImageTag string   `json:"SeriesPrimaryImageTag"`
+	ParentThumbItemId     string   `json:"ParentThumbItemId"`
+	ParentThumbImageTag   string   `json:"ParentThumbImageTag"`
 	PrimaryImageAspectRatio float64 `json:"PrimaryImageAspectRatio"`
 	ImageTags            map[string]string `json:"ImageTags"`
 	BackdropImageTags    []string `json:"BackdropImageTags"`
@@ -144,10 +150,10 @@ type WebhookService struct {
 	messageCache         *MessageCache
 	notificationFormat   string // "simple" or "detailed"
 	tmdbAPIKey           string // TMDB API key for fetching images
-	// Episode aggregation
+	// Episode aggregation - 每个剧集独立的防抖动机制
 	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
 	epAggregationMu      sync.RWMutex
-	epAggregationTimer   *time.Timer
+	aggregationDelay     time.Duration                  // 聚合延迟时间 (默认60秒)
 }
 
 // EpisodeAggregation holds aggregated episode info
@@ -163,30 +169,28 @@ type EpisodeAggregation struct {
 	ImageURL     string
 	EnhancedInfo *EmbyEnhancedInfo
 	LibraryName  string                  // Library name for category detection
+	timer        *time.Timer             // Independent timer for this aggregation
+	mu           sync.Mutex              // Mutex for this specific aggregation
 }
 
 // NewWebhookService creates a new webhook service
 func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
 	svc := &WebhookService{
-		telegram:             telegram,
-		moviepilot:           moviepilot,
-		userMapping:          userMapping,
-		adminService:         adminService,
-		preferences:          preferences,
-		chatID:               chatID,
-		embyURL:              embyURL,
-		embyAPIKey:           embyAPIKey,
+		telegram:           telegram,
+		moviepilot:         moviepilot,
+		userMapping:        userMapping,
+		adminService:       adminService,
+		preferences:        preferences,
+		chatID:             chatID,
+		embyURL:            embyURL,
+		embyAPIKey:         embyAPIKey,
 		mediaNotificationSvc: mediaNotificationSvc,
-		messageCache:         NewMessageCache(5 * time.Minute),
-		notificationFormat:   notificationFormat,
-		tmdbAPIKey:           tmdbAPIKey,
-		epAggregation:        make(map[string]*EpisodeAggregation),
+		messageCache:       NewMessageCache(5 * time.Minute),
+		notificationFormat: notificationFormat,
+		tmdbAPIKey:         tmdbAPIKey,
+		epAggregation:      make(map[string]*EpisodeAggregation),
+		aggregationDelay:   60 * time.Second,  // 默认60秒聚合延迟
 	}
-
-	// Start aggregation flush timer (every 30 seconds)
-	svc.epAggregationTimer = time.AfterFunc(30*time.Second, func() {
-		svc.flushEpisodeAggregation()
-	})
 
 	return svc
 }
@@ -430,13 +434,35 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 	return nil
 }
 
-// aggregateEpisode adds episode to aggregation buffer
+// aggregateEpisode adds episode to aggregation buffer with per-key debounce mechanism
 func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
-	s.epAggregationMu.Lock()
-	defer s.epAggregationMu.Unlock()
+	// Get season number from correct field (ParentIndexNumber in Item)
+	season := 0
+	if payload.Item != nil && payload.Item.ParentIndexNumber != nil {
+		season = *payload.Item.ParentIndexNumber
+	}
+	if season == 0 && payload.Season != 0 {
+		season = payload.Season
+	}
+
+	// Get episode number from correct field (IndexNumber in Item)
+	episode := 0
+	if payload.Item != nil && payload.Item.IndexNumber != nil {
+		episode = *payload.Item.IndexNumber
+	}
+	if episode == 0 && payload.Episode != 0 {
+		episode = payload.Episode
+	}
+
+	if episode == 0 {
+		log.Printf("[入库聚合] 跳过无效集数: %s", payload.SeriesName)
+		return nil
+	}
 
 	// Create aggregation key: seriesName_season
-	aggregationKey := fmt.Sprintf("%s_S%02d", payload.SeriesName, payload.Season)
+	aggregationKey := fmt.Sprintf("%s_S%02d", payload.SeriesName, season)
+
+	s.epAggregationMu.Lock()
 
 	// Get existing or create new aggregation
 	agg, exists := s.epAggregation[aggregationKey]
@@ -498,34 +524,6 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 					if len(payload.Item.Genres) > 0 {
 						enhancedInfo.Genres = payload.Item.Genres
 					}
-					// Get file size from MediaSources
-					for _, ms := range payload.Item.MediaSources {
-						if ms.Size > 0 {
-							enhancedInfo.FileSize = ms.Size
-							enhancedInfo.FileCount = 1
-							break
-						}
-					}
-				} else {
-					// Update existing enhanced info with parsed quality
-					enhancedInfo.Quality = quality
-					enhancedInfo.IsWEBDL = isWEBDL
-					// If genres is empty, try to copy from webhook payload
-					if len(enhancedInfo.Genres) == 0 && len(payload.Item.Genres) > 0 {
-						enhancedInfo.Genres = payload.Item.Genres
-					}
-					// If file size is 0, try to get from MediaSources
-					if enhancedInfo.FileSize == 0 {
-						for _, ms := range payload.Item.MediaSources {
-							if ms.Size > 0 {
-								enhancedInfo.FileSize = ms.Size
-								if enhancedInfo.FileCount == 0 {
-									enhancedInfo.FileCount = 1
-								}
-								break
-							}
-						}
-					}
 				}
 
 				// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
@@ -549,10 +547,11 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			year = enhancedInfo.Year
 		}
 
+		// Create new aggregation with independent timer
 		agg = &EpisodeAggregation{
 			SeriesName:   payload.SeriesName,
 			Year:         year,
-			Season:       payload.Season,
+			Season:       season,
 			Episodes:     []int{},
 			FirstAdded:   time.Now(),
 			EnhancedInfo: enhancedInfo,
@@ -564,22 +563,23 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			if enhancedInfo.IsWEBDL {
 				agg.Quality = fmt.Sprintf("WEB-DL %s", enhancedInfo.Quality)
 			}
-			agg.FileSize = enhancedInfo.FileSize
-			agg.FileCount = enhancedInfo.FileCount
 		}
 		s.epAggregation[aggregationKey] = agg
 
-		// Reset timer to flush after 10 seconds of no new episodes
-		if s.epAggregationTimer != nil {
-			s.epAggregationTimer.Stop()
-		}
-		s.epAggregationTimer = time.AfterFunc(10*time.Second, func() {
-			s.flushEpisodeAggregation()
+		// Create independent timer for this aggregation key
+		key := aggregationKey // Capture for closure
+		agg.timer = time.AfterFunc(s.aggregationDelay, func() {
+			s.flushSingleAggregation(key)
 		})
+
+		log.Printf("[入库聚合] 创建新聚合: %s S%02d, 延迟 %v 后发送", payload.SeriesName, season, s.aggregationDelay)
 	}
 
-	// Add episode if not already in list
-	episode := payload.Episode
+	// Lock this specific aggregation for episode addition
+	agg.mu.Lock()
+	defer agg.mu.Unlock()
+
+	// Check if episode already exists
 	alreadyAdded := false
 	for _, ep := range agg.Episodes {
 		if ep == episode {
@@ -587,15 +587,162 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			break
 		}
 	}
+
+	// Extract file size and count from this episode
+	var thisFileSize int64
+	var thisFileCount int
+	if payload.Item != nil {
+		for _, ms := range payload.Item.MediaSources {
+			if ms.Size > 0 {
+				thisFileSize = ms.Size
+				thisFileCount = 1
+				break
+			}
+		}
+	}
+
 	if !alreadyAdded {
 		agg.Episodes = append(agg.Episodes, episode)
-		log.Printf("[入库聚合] %s S%02dE%02d", payload.SeriesName, payload.Season, episode)
+		agg.FileSize += thisFileSize
+		agg.FileCount += thisFileCount
+
+		// Reset timer when new episode arrives (debounce)
+		if agg.timer != nil {
+			agg.timer.Stop()
+		}
+		key := aggregationKey // Capture for closure
+		agg.timer = time.AfterFunc(s.aggregationDelay, func() {
+			s.flushSingleAggregation(key)
+		})
+
+		log.Printf("[入库聚合] 添加集数: %s S%02dE%02d (当前共%d集, 总大小:%s), 重置定时器 %v",
+			payload.SeriesName, season, episode, len(agg.Episodes),
+			s.formatFileSizeDecimal(agg.FileSize), s.aggregationDelay)
+	} else {
+		log.Printf("[入库聚合] 集数已存在: %s S%02dE%02d, 跳过", payload.SeriesName, season, episode)
 	}
+
+	s.epAggregationMu.Unlock()
 
 	return nil
 }
 
-// flushEpisodeAggregation sends aggregated episode notifications
+// flushSingleAggregation sends a single aggregated episode notification (called by per-key timer)
+func (s *WebhookService) flushSingleAggregation(key string) {
+	s.epAggregationMu.Lock()
+	agg, exists := s.epAggregation[key]
+	if !exists {
+		s.epAggregationMu.Unlock()
+		return
+	}
+
+	// Lock this specific aggregation during flush
+	agg.mu.Lock()
+
+	// Stop and cleanup timer
+	if agg.timer != nil {
+		agg.timer.Stop()
+		agg.timer = nil
+	}
+
+	// Make a copy of the data we need
+	seriesName := agg.SeriesName
+	season := agg.Season
+	episodes := make([]int, len(agg.Episodes))
+	copy(episodes, agg.Episodes)
+	year := agg.Year
+	quality := agg.Quality
+	imageURL := agg.ImageURL
+	fileSize := agg.FileSize
+	fileCount := agg.FileCount
+	enhancedInfo := agg.EnhancedInfo
+	libraryName := agg.LibraryName
+
+	// Remove from map
+	delete(s.epAggregation, key)
+
+	agg.mu.Unlock()
+	s.epAggregationMu.Unlock()
+
+	if len(episodes) == 0 {
+		return
+	}
+
+	// Sort episodes
+	sort.Ints(episodes)
+
+	// Build episode range string
+	epRange := buildEpisodeRangeString(episodes)
+
+	// Build message based on notification format
+	var message string
+	if s.notificationFormat == "simple" {
+		message = s.formatAggregatedEpisodeSimple(&EpisodeAggregation{
+			SeriesName:   seriesName,
+			Year:         year,
+			Season:       season,
+			Episodes:     episodes,
+			Quality:      quality,
+			ImageURL:     imageURL,
+			FileSize:     fileSize,
+			FileCount:    fileCount,
+			EnhancedInfo: enhancedInfo,
+			LibraryName:  libraryName,
+		}, epRange)
+	} else {
+		message = s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
+			SeriesName:   seriesName,
+			Year:         year,
+			Season:       season,
+			Episodes:     episodes,
+			Quality:      quality,
+			ImageURL:     imageURL,
+			FileSize:     fileSize,
+			FileCount:    fileCount,
+			EnhancedInfo: enhancedInfo,
+			LibraryName:  libraryName,
+		}, epRange)
+	}
+
+	// Send notification only to group chats (chatID < -100)
+	if s.chatID != 0 && s.chatID < -100 {
+		if imageURL != "" {
+			// For photo notifications, use a more compact format to fit within 1024 char limit
+			photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
+				SeriesName:   seriesName,
+				Year:         year,
+				Season:       season,
+				Episodes:     episodes,
+				Quality:      quality,
+				ImageURL:     imageURL,
+				FileSize:     fileSize,
+				FileCount:    fileCount,
+				EnhancedInfo: enhancedInfo,
+				LibraryName:  libraryName,
+			}, epRange)
+			s.sendNotificationWithPhoto(photoCaption, imageURL)
+		} else {
+			s.sendWithCache(s.chatID, message)
+		}
+	}
+
+	log.Printf("[入库] %s S%02d %s (%d集, 总大小:%s)", seriesName, season, epRange, len(episodes), s.formatFileSizeDecimal(fileSize))
+
+	// Add to daily summary list
+	s.addAggregatedEpisodeToSummary(&EpisodeAggregation{
+		SeriesName:   seriesName,
+		Year:         year,
+		Season:       season,
+		Episodes:     episodes,
+		Quality:      quality,
+		FileSize:     fileSize,
+		FileCount:    fileCount,
+		EnhancedInfo: enhancedInfo,
+		LibraryName:  libraryName,
+	}, epRange)
+}
+
+// flushEpisodeAggregation sends all aggregated episode notifications (legacy support)
 func (s *WebhookService) flushEpisodeAggregation() {
 	s.epAggregationMu.Lock()
 	defer s.epAggregationMu.Unlock()
@@ -608,6 +755,14 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		if len(agg.Episodes) == 0 {
 			continue
 		}
+
+		// Stop timer if exists
+		agg.mu.Lock()
+		if agg.timer != nil {
+			agg.timer.Stop()
+			agg.timer = nil
+		}
+		agg.mu.Unlock()
 
 		// Sort episodes
 		sort.Ints(agg.Episodes)
@@ -822,19 +977,45 @@ func (s *WebhookService) formatEmbyNotificationSimple(payload EmbyWebhookPayload
 		if year > 1900 && year < 2100 {
 			builder.WriteString(fmt.Sprintf(" (%d)", year))
 		}
-		if payload.Season > 0 {
-			builder.WriteString(fmt.Sprintf(" 第%d季", payload.Season))
+		// Get season/episode from correct fields
+		season := 0
+		episode := 0
+		if payload.Item != nil {
+			if payload.Item.ParentIndexNumber != nil {
+				season = *payload.Item.ParentIndexNumber
+			}
+			if payload.Item.IndexNumber != nil {
+				episode = *payload.Item.IndexNumber
+			}
 		}
-		if payload.Episode > 0 {
-			builder.WriteString(fmt.Sprintf(" EP%02d", payload.Episode))
+		if season == 0 && payload.Season != 0 {
+			season = payload.Season
+		}
+		if episode == 0 && payload.Episode != 0 {
+			episode = payload.Episode
+		}
+		// Only show season/episode if at least one is non-zero
+		if season > 0 {
+			builder.WriteString(fmt.Sprintf(" 第%d季", season))
+		}
+		if episode > 0 {
+			builder.WriteString(fmt.Sprintf(" EP%02d", episode))
 		}
 	} else if itemType == "Season" && payload.SeriesName != "" {
 		builder.WriteString(fmt.Sprintf("《%s》", payload.SeriesName))
 		if year > 1900 && year < 2100 {
 			builder.WriteString(fmt.Sprintf(" (%d)", year))
 		}
-		if payload.Season > 0 {
-			builder.WriteString(fmt.Sprintf(" 第%d季", payload.Season))
+		// Get season from correct field
+		season := 0
+		if payload.Item != nil && payload.Item.ParentIndexNumber != nil {
+			season = *payload.Item.ParentIndexNumber
+		}
+		if season == 0 && payload.Season != 0 {
+			season = payload.Season
+		}
+		if season > 0 {
+			builder.WriteString(fmt.Sprintf(" 第%d季", season))
 		}
 	} else if itemType == "Series" {
 		builder.WriteString(fmt.Sprintf("《%s》", title))
@@ -1435,12 +1616,42 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	// Name line
 	displayName := title
 	if itemType == "Episode" && seriesName != "" {
-		season := payload.Season
-		episode := payload.Episode
-		displayName = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
+		// Get season/episode from correct fields
+		season := 0
+		episode := 0
+		if payload.Item != nil {
+			if payload.Item.ParentIndexNumber != nil {
+				season = *payload.Item.ParentIndexNumber
+			}
+			if payload.Item.IndexNumber != nil {
+				episode = *payload.Item.IndexNumber
+			}
+		}
+		if season == 0 && payload.Season != 0 {
+			season = payload.Season
+		}
+		if episode == 0 && payload.Episode != 0 {
+			episode = payload.Episode
+		}
+		// If both season and episode are 0, only show series name
+		if season == 0 && episode == 0 {
+			displayName = seriesName
+		} else {
+			displayName = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
+		}
 	} else if itemType == "Season" && seriesName != "" {
-		season := payload.Season
-		displayName = fmt.Sprintf("%s S%02d", seriesName, season)
+		season := 0
+		if payload.Item != nil && payload.Item.ParentIndexNumber != nil {
+			season = *payload.Item.ParentIndexNumber
+		}
+		if season == 0 && payload.Season != 0 {
+			season = payload.Season
+		}
+		if season > 0 {
+			displayName = fmt.Sprintf("%s S%02d", seriesName, season)
+		} else {
+			displayName = seriesName
+		}
 	}
 	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", displayName))
 
@@ -1457,17 +1668,18 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
-	// File size line - show all sizes but mark .strm files
+	// File size line - UNCONDITIONALLY display, no if conditions
 	if enhanced != nil {
 		if enhanced.FileSize > 1024*1024 {
 			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		} else if enhanced.FileSize > 0 {
+		} else {
+			// Small file size or .strm files - always show
 			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 		}
 	}
 
-	// File count line
-	if enhanced != nil && enhanced.FileCount > 0 {
+	// File count line - UNCONDITIONALLY display, no if conditions
+	if enhanced != nil {
 		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个\n", enhanced.FileCount))
 	}
 
@@ -1730,14 +1942,50 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	}
 
 	// Build titleStr (for 🎬 名称 line - with full details)
+	// Get season and episode from correct fields (Item.ParentIndexNumber and Item.IndexNumber)
 	var titleStr string
 	if itemType == "Episode" && seriesName != "" {
-		season := payload.Season
-		episode := payload.Episode
-		titleStr = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
+		season := 0
+		episode := 0
+
+		// Try to get season/episode from Item object first (correct fields)
+		if payload.Item != nil {
+			if payload.Item.ParentIndexNumber != nil {
+				season = *payload.Item.ParentIndexNumber
+			}
+			if payload.Item.IndexNumber != nil {
+				episode = *payload.Item.IndexNumber
+			}
+		}
+
+		// Fallback to top-level fields if Item doesn't have the data
+		if season == 0 && payload.Season != 0 {
+			season = payload.Season
+		}
+		if episode == 0 && payload.Episode != 0 {
+			episode = payload.Episode
+		}
+
+		// If both season and episode are 0, this might be a series entry, not a single episode
+		if season == 0 && episode == 0 {
+			titleStr = seriesName  // Only show series name, don't show S00 E00
+		} else {
+			titleStr = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
+		}
 	} else if itemType == "Season" && seriesName != "" {
-		season := payload.Season
-		titleStr = fmt.Sprintf("%s S%02d", seriesName, season)
+		season := 0
+		// Try to get season from Item object first
+		if payload.Item != nil && payload.Item.ParentIndexNumber != nil {
+			season = *payload.Item.ParentIndexNumber
+		}
+		if season == 0 {
+			season = payload.Season
+		}
+		if season > 0 {
+			titleStr = fmt.Sprintf("%s S%02d", seriesName, season)
+		} else {
+			titleStr = seriesName
+		}
 	} else {
 		titleStr = title
 	}
@@ -1763,18 +2011,18 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
-	// File size - show all sizes but mark .strm files
+	// File size - UNCONDITIONALLY display, no if conditions
 	if enhanced != nil {
 		if enhanced.FileSize > 1024*1024 {
 			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		} else if enhanced.FileSize > 0 {
-			// Small file size indicates .strm or similar reference file
+		} else {
+			// Small file size or .strm files - always show
 			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 		}
 	}
 
-	// File count
-	if enhanced != nil && enhanced.FileCount > 0 {
+	// File count - UNCONDITIONALLY display, no if conditions
+	if enhanced != nil {
 		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", enhanced.FileCount))
 	}
 
@@ -1814,18 +2062,16 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", agg.Quality))
 	}
 
-	// File size - show all sizes but mark .strm files
+	// File size - UNCONDITIONALLY display, no if conditions
 	if agg.FileSize > 1024*1024 {
 		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
-	} else if agg.FileSize > 0 {
-		// Small file size indicates .strm or similar reference file
+	} else {
+		// Small file size or .strm files - always show
 		builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
-	// File count
-	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
-	}
+	// File count - UNCONDITIONALLY display, no if conditions
+	builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
 
 	return builder.String()
 }
@@ -1881,6 +2127,24 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		year = enhanced.Year
 	}
 
+	// Get season and episode from correct fields
+	season := 0
+	episode := 0
+	if payload.Item != nil {
+		if payload.Item.ParentIndexNumber != nil {
+			season = *payload.Item.ParentIndexNumber
+		}
+		if payload.Item.IndexNumber != nil {
+			episode = *payload.Item.IndexNumber
+		}
+	}
+	if season == 0 && payload.Season != 0 {
+		season = payload.Season
+	}
+	if episode == 0 && payload.Episode != 0 {
+		episode = payload.Episode
+	}
+
 	// Create media item
 	item := &MediaItem{
 		Title:         payload.ItemName,
@@ -1888,9 +2152,9 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		LibraryName:   libraryName,
 		MediaType:     mediaType,
 		SeriesName:    payload.SeriesName,
-		SeasonNumber:  payload.Season,
-		EpisodeStart:  payload.Episode,
-		EpisodeEnd:    payload.Episode,
+		SeasonNumber:  season,
+		EpisodeStart:  episode,
+		EpisodeEnd:    episode,
 		EpisodeCount:  1,
 		IsCompleted:   false,
 	}
@@ -2504,20 +2768,38 @@ func (s *WebhookService) convertToMediaItem(payload EmbyWebhookPayload, enhanced
 		itemType = payload.Item.Type
 	}
 
+	// Get season and episode from correct fields
+	season := 0
+	episode := 0
+	if payload.Item != nil {
+		if payload.Item.ParentIndexNumber != nil {
+			season = *payload.Item.ParentIndexNumber
+		}
+		if payload.Item.IndexNumber != nil {
+			episode = *payload.Item.IndexNumber
+		}
+	}
+	if season == 0 && payload.Season != 0 {
+		season = payload.Season
+	}
+	if episode == 0 && payload.Episode != 0 {
+		episode = payload.Episode
+	}
+
 	switch itemType {
 	case "Movie":
 		item.MediaType = MediaTypeMovie
 	case "Episode":
 		item.MediaType = MediaTypeSeries
 		item.SeriesName = payload.SeriesName
-		item.SeasonNumber = payload.Season
-		item.EpisodeStart = payload.Episode
-		item.EpisodeEnd = payload.Episode
+		item.SeasonNumber = season
+		item.EpisodeStart = episode
+		item.EpisodeEnd = episode
 		item.EpisodeCount = 1
 	case "Season":
 		item.MediaType = MediaTypeSeries
 		item.SeriesName = payload.SeriesName
-		item.SeasonNumber = payload.Season
+		item.SeasonNumber = season
 		item.IsCompleted = true
 	case "Series":
 		item.MediaType = MediaTypeSeries
