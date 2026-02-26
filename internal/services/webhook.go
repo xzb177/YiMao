@@ -703,28 +703,28 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", title))
 
 	// Category - use enhanced info or default to 国产剧
 	category := "国产剧"
 	if agg.EnhancedInfo != nil {
 		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", category))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
 
 	// Quality
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", agg.Quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", agg.Quality))
 	}
 
 	// File size
 	if agg.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
 	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d` 个", agg.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
 	}
 
 	return builder.String()
@@ -1439,11 +1439,11 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		season := payload.Season
 		displayName = fmt.Sprintf("%s S%02d", seriesName, season)
 	}
-	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", displayName))
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", displayName))
 
 	// Category line
 	category := s.getDetailedCategory(itemType, enhanced)
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", category))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
 
 	// Quality line
 	quality := ""
@@ -1451,17 +1451,17 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		quality = s.getFullQuality(enhanced)
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
 	// File size line
 	if enhanced != nil && enhanced.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
 	// File count line
 	if enhanced != nil && enhanced.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d`\n", enhanced.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个\n", enhanced.FileCount))
 	}
 
 	return builder.String()
@@ -1739,10 +1739,10 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", titleStr))
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", titleStr))
 
 	// Category line
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", s.getDetailedCategory(itemType, enhanced)))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", s.getDetailedCategory(itemType, enhanced)))
 
 	// Quality line - use getFullQuality for proper WEB-DL format
 	quality := ""
@@ -1750,22 +1750,22 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		quality = s.getFullQuality(enhanced)
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
 	// File size - show all sizes but mark .strm files
 	if enhanced != nil {
 		if enhanced.FileSize > 1024*1024 {
-			builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 		} else if enhanced.FileSize > 0 {
 			// Small file size indicates .strm or similar reference file
-			builder.WriteString(fmt.Sprintf("📋 引用文件：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 		}
 	}
 
 	// File count
 	if enhanced != nil && enhanced.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d`", enhanced.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", enhanced.FileCount))
 	}
 
 	return builder.String()
@@ -1790,31 +1790,31 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", title))
 
 	// Category line - use detailed category from enhanced info
 	category := "剧集"
 	if agg.EnhancedInfo != nil {
 		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", category))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
 
 	// Quality line
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", agg.Quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", agg.Quality))
 	}
 
 	// File size - show all sizes but mark .strm files
 	if agg.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
 	} else if agg.FileSize > 0 {
 		// Small file size indicates .strm or similar reference file
-		builder.WriteString(fmt.Sprintf("📋 引用文件：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
+		builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
 	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d`", agg.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
 	}
 
 	return builder.String()
