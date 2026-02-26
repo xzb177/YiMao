@@ -944,6 +944,8 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 		info.IsWEBDL = episodeInfo.IsWEBDL
 		info.Container = episodeInfo.Container
 		info.RunTimeTicks = episodeInfo.RunTimeTicks
+		log.Printf("[Debug] Episode info - Quality: %s, FileSize: %d, FileCount: %d",
+			info.Quality, info.FileSize, info.FileCount)
 		// Use episode's title, year, rating, overview if series didn't provide them
 		if info.Title == "" {
 			info.Title = episodeInfo.Title
@@ -961,6 +963,8 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 		if info.TMDBID == "" && episodeInfo.TMDBID != "" {
 			info.TMDBID = episodeInfo.TMDBID
 		}
+	} else {
+		log.Printf("[Debug] Failed to get episode info: %v", err)
 	}
 
 	// Try to get image using parent backdrop info from webhook payload
@@ -1679,6 +1683,14 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
 	var builder strings.Builder
 
+	// Debug logging for enhanced info
+	if enhanced != nil {
+		log.Printf("[Debug] formatPhotoCaption - Quality: %s, FileSize: %d bytes, FileCount: %d",
+			enhanced.Quality, enhanced.FileSize, enhanced.FileCount)
+	} else {
+		log.Printf("[Debug] formatPhotoCaption - enhanced is nil")
+	}
+
 	// Get title
 	title := payload.ItemName
 	if title == "" && payload.Item != nil {
@@ -1741,9 +1753,14 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", quality))
 	}
 
-	// File size (ignore files smaller than 1MB - likely .strm files)
-	if enhanced != nil && enhanced.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+	// File size - show all sizes but mark .strm files
+	if enhanced != nil {
+		if enhanced.FileSize > 1024*1024 {
+			builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		} else if enhanced.FileSize > 0 {
+			// Small file size indicates .strm or similar reference file
+			builder.WriteString(fmt.Sprintf("📋 引用文件：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		}
 	}
 
 	// File count
@@ -1787,9 +1804,12 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", agg.Quality))
 	}
 
-	// File size (ignore files smaller than 1MB - likely .strm files)
+	// File size - show all sizes but mark .strm files
 	if agg.FileSize > 1024*1024 {
 		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
+	} else if agg.FileSize > 0 {
+		// Small file size indicates .strm or similar reference file
+		builder.WriteString(fmt.Sprintf("📋 引用文件：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
