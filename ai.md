@@ -82,6 +82,28 @@ watchlist_add:{tmdbID}  # 加入片单
 
 ## 更新日志
 
+### 2026-02-26 - 修复入库通知数据造假和剧集刷屏问题
+- **严重问题**: 入库通知出现数据造假和逻辑漏洞
+- **问题1 - 质量造假**: 所有推送的质量显示为固定的 `WEB-DL 2160p`
+  - **原因**: `parseQualityFromPath` 函数硬编码返回 `"1080p"`
+  - **修复**: 无法解析时返回空字符串，严禁伪造数据
+- **问题2 - 文件大小为0**: 文件大小和数量显示为 `0 B` 和 `0个`
+  - **原因**: 创建聚合时没有从 enhancedInfo 复制 FileSize/FileCount
+  - **修复**: 添加文件大小和数量的复制逻辑
+- **问题3 - 剧集刷屏**: 队列合并代码未生效，每秒连发单集通知
+  - **原因**: `handleItemAdded` 要求 `SeriesName != ""` 才聚合，否则直发
+  - **修复**: 所有 Episode 类型强制进入聚合队列
+- **额外优化**:
+  - `detectQuality`: 4K 统一显示为 2160p，无法确定返回空字符串
+  - WEB-DL 前缀只在质量非空时添加
+  - 增强文件大小解析日志，支持小文件（如 strm）
+- **修改文件**:
+  - `internal/services/webhook.go`
+    - `handleItemAdded()`: 移除 SeriesName 非空判断
+    - `aggregateEpisode()`: 添加文件大小复制逻辑
+    - `parseQualityFromPath()`: 返回空字符串而非硬编码
+    - `detectQuality()`: 统一格式，返回空字符串
+
 ### 2026-02-26 - 剧集入库合并通知防刷屏机制
 - **问题**: 一次性入库整季剧集时，Telegram 会被单集通知疯狂刷屏
 - **解决方案**: 实现每个 Key 独立的 Debounce 防抖机制
