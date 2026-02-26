@@ -194,6 +194,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		cfg.EmbyAPIKey,
 		mediaNotificationSvc,
 		cfg.NotificationFormat,
+		cfg.TMDBAPIKey,
 	)
 	log.Println("  [6/10] Webhook service created")
 

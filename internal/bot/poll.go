@@ -405,76 +405,120 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		return
 	}
 
-	// Handle callback
-	resp, err := handler.Handle(ctx)
+	// Handle callback with timeout protection (10 seconds)
+	type handleResult struct {
+		resp *callback.Response
+		err  error
+	}
+	resultChan := make(chan handleResult, 1)
 
-	// Answer callback query
-	callbackMsg := ""
-	showAlert := false
-	if resp != nil {
-		if resp.ShowAlert && resp.Text != "" {
-			callbackMsg = resp.Text
-		} else {
-			callbackMsg = resp.CallbackMsg
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Callback] Panic recovered in handler: %v", r)
+				resultChan <- handleResult{
+					resp: &callback.Response{
+						Text:        "❌ 处理请求时发生错误",
+						CallbackMsg: "处理错误",
+						ShowAlert:   true,
+					},
+					err: fmt.Errorf("panic: %v", r),
+				}
+			}
+		}()
+		resp, err := handler.Handle(ctx)
+		resultChan <- handleResult{resp: resp, err: err}
+	}()
+
+	select {
+	case result := <-resultChan:
+		// Use the result from handler
+		if result.err != nil {
+			log.Printf("Handler error: %v", result.err)
+			callbackMsg := "操作失败"
+			if result.resp != nil && result.resp.CallbackMsg != "" {
+				callbackMsg = result.resp.CallbackMsg
+			}
+			if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, true); ansErr != nil {
+				log.Printf("[Callback] Failed to answer callback (error): %v", ansErr)
+			}
+			// Try to show error message if response exists
+			if result.resp != nil && result.resp.Text != "" {
+				keyboard := ConvertKeyboard(result.resp.Keyboard)
+				telegram.EditMessage(ctx.ChatID, ctx.MessageID, result.resp.Text, "Markdown", keyboard)
+			}
+			return
 		}
-		showAlert = resp.ShowAlert
-	}
-
-	if err != nil {
-		log.Printf("Handler error: %v", err)
-		if callbackMsg == "" {
-			callbackMsg = "操作失败"
+		resp := result.resp
+		// Answer callback query
+		callbackMsg := ""
+		showAlert := false
+		if resp != nil {
+			if resp.ShowAlert && resp.Text != "" {
+				callbackMsg = resp.Text
+			} else {
+				callbackMsg = resp.CallbackMsg
+			}
+			showAlert = resp.ShowAlert
 		}
-		showAlert = true
+
+		if showAlert && len(callbackMsg) > 200 {
+			callbackMsg = callbackMsg[:197] + "..."
+		}
+
+		if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); ansErr != nil {
+			log.Printf("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
+		}
+
+		// Send or edit message
+		if resp != nil {
+			handleCallbackResponse(ctx, resp, telegram)
+		}
+	case <-time.After(10 * time.Second):
+		log.Printf("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)
+		if ansErr := telegram.AnswerCallback(cb.ID, "处理超时，请重试", true); ansErr != nil {
+			log.Printf("[Callback] Failed to answer callback (timeout): %v", ansErr)
+		}
+		return
 	}
+}
 
-	if showAlert && len(callbackMsg) > 200 {
-		callbackMsg = callbackMsg[:197] + "..."
-	}
+// handleCallbackResponse sends or edits message based on response
+func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, telegram *services.TelegramClient) {
+	keyboard := ConvertKeyboard(resp.Keyboard)
 
-	if err := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); err != nil {
-		// Log but don't fail - callback may have expired (common with slow handlers)
-		// Telegram callbacks expire after a few seconds
-		log.Printf("[Callback] AnswerCallback error (callback may have expired): %v", err)
-	}
-
-	// Send or edit message
-	if resp != nil {
-		keyboard := ConvertKeyboard(resp.Keyboard)
-
-		// Check if we need to send a photo
-		if resp.Photo != "" {
-			// Delete the original message first
+	// Check if we need to send a photo
+	if resp.Photo != "" {
+		// Delete the original message first
+		if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
+			log.Printf("[Callback] DeleteMessage error: %v", delErr)
+		}
+		// Send photo with caption and keyboard
+		caption := resp.PhotoCaption
+		if caption == "" {
+			caption = resp.Text
+		}
+		if _, sendErr := telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard); sendErr != nil {
+			log.Printf("[Callback] SendPhoto error: %v", sendErr)
+		}
+	} else if resp.Text != "" {
+		if resp.DeleteMessage {
+			// Delete current message and send new one
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
 				log.Printf("[Callback] DeleteMessage error: %v", delErr)
 			}
-			// Send photo with caption and keyboard
-			caption := resp.PhotoCaption
-			if caption == "" {
-				caption = resp.Text
+			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
+				log.Printf("[Callback] SendMessage error: %v", sendErr)
 			}
-			if _, sendErr := telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard); sendErr != nil {
-				log.Printf("[Callback] SendPhoto error: %v", sendErr)
+		} else if resp.Edit {
+			// Edit existing message
+			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard); editErr != nil {
+				log.Printf("[Callback] EditMessage error: %v", editErr)
 			}
-		} else if resp.Text != "" {
-			if resp.DeleteMessage {
-				// Delete current message and send new one
-				if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
-					log.Printf("[Callback] DeleteMessage error: %v", delErr)
-				}
-				if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
-					log.Printf("[Callback] SendMessage error: %v", sendErr)
-				}
-			} else if resp.Edit {
-				// Edit existing message
-				if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard); editErr != nil {
-					log.Printf("[Callback] EditMessage error: %v", editErr)
-				}
-			} else {
-				// Send new message
-				if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
-					log.Printf("[Callback] SendMessage error: %v", sendErr)
-				}
+		} else {
+			// Send new message
+			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
+				log.Printf("[Callback] SendMessage error: %v", sendErr)
 			}
 		}
 	}

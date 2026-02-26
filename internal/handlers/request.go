@@ -52,6 +52,32 @@ func NewRequestHandler(
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	log.Printf("[RequestHandler] Handle called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
 
+	// Defensive check: ensure required services are available
+	if h.userMapping == nil {
+		log.Printf("[RequestHandler] ERROR: userMapping service is nil!")
+		return &callback.Response{
+			Text:        "❌ 服务配置错误",
+			CallbackMsg: "配置错误",
+			ShowAlert:   true,
+		}, nil
+	}
+	if h.sessMgr == nil {
+		log.Printf("[RequestHandler] ERROR: sessMgr service is nil!")
+		return &callback.Response{
+			Text:        "❌ 服务配置错误",
+			CallbackMsg: "配置错误",
+			ShowAlert:   true,
+		}, nil
+	}
+	if h.reviewService == nil {
+		log.Printf("[RequestHandler] ERROR: reviewService is nil!")
+		return &callback.Response{
+			Text:        "❌ 服务配置错误",
+			CallbackMsg: "配置错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	// Get media ID and type from params
 	mediaID, hasID := ctx.Callback.Params["id"]
 	mediaType, hasType := ctx.Callback.Params["type"]
@@ -75,9 +101,10 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	log.Printf("[RequestHandler] Parsed: tmdbID=%d, mediaType=%s, season=%d", tmdbID, mediaType, season)
 
-	// Get MoviePilot user ID from user mapping
+	// Get MoviePilot user ID from user mapping (with timeout protection)
+	log.Printf("[RequestHandler] Getting user mapping for userID=%d...", ctx.UserID)
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
-	log.Printf("[RequestHandler] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
+	log.Printf("[RequestHandler] User mapping result: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		// Build link instructions message with button
 		msg := services.NewMessageBuilder()
@@ -372,6 +399,18 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 
 // HandleForceSubscribe handles user choosing to subscribe despite existing media
 func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.Response, error) {
+	log.Printf("[HandleForceSubscribe] Called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
+
+	// Defensive checks
+	if h.userMapping == nil || h.sessMgr == nil || h.reviewService == nil {
+		log.Printf("[HandleForceSubscribe] ERROR: required service is nil!")
+		return &callback.Response{
+			Text:        "❌ 服务配置错误",
+			CallbackMsg: "配置错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	tmdbIDStr, hasID := ctx.Callback.Params["tmdb"]
 	mediaType, hasType := ctx.Callback.Params["type"]
 
@@ -394,8 +433,11 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
+	log.Printf("[HandleForceSubscribe] Parsed: tmdbID=%d, mediaType=%s", tmdbID, mediaType)
+
 	// Get MoviePilot user ID
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
+	log.Printf("[HandleForceSubscribe] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		return &callback.Response{
 			Text:        "❓ 请先使用 /link 命令绑定账号",

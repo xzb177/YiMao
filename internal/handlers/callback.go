@@ -58,6 +58,152 @@ func extractSeasons(info *services.MediaInfo) []session.Season {
 	return nil
 }
 
+// getPosterURL converts a poster path to a full TMDB image URL
+func getPosterURL(poster string) string {
+	if poster == "" {
+		return ""
+	}
+	if strings.HasPrefix(poster, "http") {
+		return poster
+	}
+	if strings.HasPrefix(poster, "/") {
+		return "https://image.tmdb.org/t/p/w500" + poster
+	}
+	return "https://image.tmdb.org/t/p/w500/" + poster
+}
+
+// buildPlainCaption builds a plain text caption for photo messages (Telegram doesn't support Markdown in photo captions)
+func buildPlainCaption(tmdbID int, title, firstAirDate string, voteAverage float64, genres []services.TMDBGenre, seasons, episodes int, overview string, mpNotAvailable bool) string {
+	var caption strings.Builder
+
+	// Title
+	caption.WriteString(fmt.Sprintf("📺 %s\n\n", title))
+
+	// Year and rating
+	if firstAirDate != "" && len(firstAirDate) >= 4 {
+		year := firstAirDate[:4]
+		caption.WriteString(fmt.Sprintf("📅 %s年", year))
+	}
+	if voteAverage > 0 {
+		if firstAirDate != "" && len(firstAirDate) >= 4 {
+			caption.WriteString("  •  ")
+		}
+		caption.WriteString(fmt.Sprintf("⭐ %.1f分", voteAverage))
+	}
+	if firstAirDate != "" || voteAverage > 0 {
+		caption.WriteString("\n")
+	}
+
+	// Genres
+	if len(genres) > 0 {
+		genreNames := make([]string, len(genres))
+		for i, g := range genres {
+			genreNames[i] = g.Name
+		}
+		caption.WriteString(fmt.Sprintf("🎭 %s\n", strings.Join(genreNames, "、")))
+	}
+
+	// Seasons and episodes
+	if seasons > 0 {
+		caption.WriteString(fmt.Sprintf("📺 共 %d 季 · %d 集\n", seasons, episodes))
+	}
+
+	caption.WriteString("\n")
+
+	// Overview (truncate if needed, keep under 1024 chars total for photo caption)
+	if overview != "" {
+		maxOverview := 200 // Reserve space for other content
+		if len(overview) > maxOverview {
+			overview = overview[:maxOverview] + "..."
+		}
+		caption.WriteString(fmt.Sprintf("📖 剧情简介\n%s\n\n", overview))
+	}
+
+	// TMDB ID
+	caption.WriteString(fmt.Sprintf("🆔 TMDB ID: %d", tmdbID))
+
+	// Warning if MoviePilot doesn't have this media
+	if mpNotAvailable {
+		caption.WriteString("\n\n⚠️ 资源库暂无\n当前资源库中暂无此剧集，求片后将尝试自动搜索")
+	}
+
+	result := caption.String()
+	// Telegram photo caption limit is 1024 characters
+	if len(result) > 1024 {
+		result = result[:1020] + "..."
+	}
+
+	return result
+}
+
+// buildPlainCaptionFromItem builds a plain text caption for photo messages from search item
+func buildPlainCaptionFromItem(item session.SearchItem, mpNotAvailable bool) string {
+	var caption strings.Builder
+
+	// Type icon and label
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	isTV := item.Type == "tv" || item.Type == "电视剧"
+	if isTV {
+		typeIcon = "📺"
+		typeLabel = "剧集"
+	}
+
+	// Title
+	caption.WriteString(fmt.Sprintf("%s %s\n\n", typeIcon, item.Title))
+
+	// Info section
+	if item.Year > 0 {
+		caption.WriteString(fmt.Sprintf("📅 %d年  ", item.Year))
+	}
+	if item.Rating > 0 {
+		caption.WriteString(fmt.Sprintf("⭐ %.1f分  ", item.Rating))
+	}
+	caption.WriteString(fmt.Sprintf("🏷️ %s\n\n", typeLabel))
+
+	// TV show seasons
+	if isTV && len(item.Seasons) > 0 {
+		caption.WriteString(fmt.Sprintf("📺 共 %d 季\n", len(item.Seasons)))
+		for i, s := range item.Seasons {
+			if i >= 3 {
+				caption.WriteString(fmt.Sprintf("   ... 还有 %d 季\n", len(item.Seasons)-3))
+				break
+			}
+			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
+			if s.Name != "" {
+				seasonName = s.Name
+			}
+			caption.WriteString(fmt.Sprintf("   • %s (%d集)\n", seasonName, s.EpisodeCount))
+		}
+		caption.WriteString("\n")
+	}
+
+	// Overview
+	if item.Overview != "" {
+		maxOverview := 300
+		overview := item.Overview
+		if len(overview) > maxOverview {
+			overview = overview[:maxOverview] + "..."
+		}
+		caption.WriteString(fmt.Sprintf("📖 剧情简介\n%s\n\n", overview))
+	}
+
+	caption.WriteString(fmt.Sprintf("🆔 TMDB ID: %s", item.ID))
+
+	// Warning if MoviePilot doesn't have this media
+	if mpNotAvailable {
+		caption.WriteString("\n\n⚠️ 资源库暂无\n当前资源库中暂无此影片，求片后将尝试自动搜索")
+	}
+
+	result := caption.String()
+	// Telegram photo caption limit is 1024 characters
+	if len(result) > 1024 {
+		result = result[:1020] + "..."
+	}
+
+	return result
+}
+
 // StartHandler handles start menu callbacks
 type StartHandler struct {
 	cfg         *config.Config
@@ -368,7 +514,8 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	// For TV shows, fetch full details with seasons
 	if media.MediaType == "tv" && h.tmdb != nil {
 		// From TMDB directly, assume MoviePilot availability is unknown (default to false to show warning)
-		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false)
+		posterURL := getPosterURL(media.PosterPath)
+		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false, posterURL)
 	}
 
 	msg := services.NewMessageBuilder()
@@ -444,13 +591,13 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 }
 
 // buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
-func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, mpNotAvailable bool) *callback.Response {
+func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
 	// Fetch TV details with seasons from TMDB
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
 		log.Printf("[DetailHandler] Failed to get TV details from TMDB: %v", err)
 		// Fallback to simple detail
-		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable)
+		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable, posterURL)
 	}
 
 	msg := services.NewMessageBuilder()
@@ -554,6 +701,21 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		}
 	}
 
+	// Check for poster URL to display photo
+	if posterURL != "" {
+		// For photo captions, we need plain text (no Markdown formatting)
+		// Build a simple plain text caption
+		caption := buildPlainCaption(tvDetails.ID, title, tvDetails.FirstAirDate, tvDetails.VoteAverage,
+			tvDetails.Genres, tvDetails.NumberOfSeasons, tvDetails.NumberOfEpisodes,
+			tvDetails.Overview, mpNotAvailable)
+		return &callback.Response{
+			Photo:        posterURL,
+			PhotoCaption: caption,
+			Edit:         false,
+			Keyboard:     convertKeyboard(kb.Build()),
+		}
+	}
+
 	return &callback.Response{
 		Text:     msg.Build(),
 		Edit:     true,
@@ -562,7 +724,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
-func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool) *callback.Response {
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
 	msg := services.NewMessageBuilder()
 	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
 	msg.Newline()
@@ -590,6 +752,21 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 
 	// Second row: navigation
 	kb.AddButton("⬅️ 返回列表", "start")
+
+	// Check for poster URL to display photo
+	if posterURL != "" {
+		// Build plain text caption for photo
+		caption := fmt.Sprintf("📺 %s\n\n暂无法获取季数信息，请尝试直接订阅全季", title)
+		if mpNotAvailable {
+			caption += "\n\n⚠️ 资源库暂无\n当前资源库中暂无此剧集，求片后将尝试自动搜索"
+		}
+		return &callback.Response{
+			Photo:        posterURL,
+			PhotoCaption: caption,
+			Edit:         false,
+			Keyboard:     convertKeyboard(kb.Build()),
+		}
+	}
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -674,7 +851,6 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType string, sess *session.Session) *callback.Response {
 	// Try to get full media info from MoviePilot first
 	mediaID, _ := strconv.Atoi(item.ID)
-	mpNotAvailable := false // Track if MoviePilot has the media
 	if mediaID > 0 && h.moviepilot != nil {
 		// Determine media type
 		mpType := services.MediaTypeMovie
@@ -690,21 +866,23 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
 		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
-		// Check if error is "not found" to warn user
-		if err != nil && strings.Contains(err.Error(), "not found") {
-			mpNotAvailable = true
-		}
+		// Don't mark as unavailable - the search found this media, so it exists
+		// The error might be due to type mismatch or API issue, but the media is in the system
+		log.Printf("[DetailHandler] Media found in search but GetMediaInfo failed, treating as available (error: %v)", err)
+
+		// Get poster URL from search item
+		posterURL := getPosterURL(item.Poster)
 
 		// For TV shows, fallback to TMDB for season info
 		if isTV && h.tmdb != nil {
 			log.Printf("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
-			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, mpNotAvailable)
+			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, false, posterURL) // Treat as available
 		}
 	}
 
 	// Fallback to basic detail view from session data
 	_, _, query, _ := sess.GetSearchResults()
-	return h.buildBasicDetailFromSearch(item, mediaType, query, mpNotAvailable)
+	return h.buildBasicDetailFromSearch(item, mediaType, query, false) // Treat as available
 }
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
@@ -991,9 +1169,11 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 	}
 
 	if photoURL != "" {
+		// Build plain text caption for photo (Telegram doesn't support Markdown in photo captions)
+		caption := buildPlainCaptionFromItem(item, mpNotAvailable)
 		return &callback.Response{
 			Photo:        photoURL,
-			PhotoCaption: msg.Build(),
+			PhotoCaption: caption,
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
 		}

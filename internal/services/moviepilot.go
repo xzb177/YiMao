@@ -290,7 +290,33 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 
 	// Check if the media actually exists (title should not be empty)
 	if info.Title == "" && info.ID == 0 {
-		return nil, fmt.Errorf("media not found in MoviePilot")
+		// Try with opposite type (fallback)
+		log.Printf("[MoviePilot] Media not found with type %s, trying opposite type", typeStr)
+		oppTypeStr := "电视剧"
+		if mediaType == MediaTypeTV {
+			oppTypeStr = "电影"
+		}
+		endpoint = fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s",
+			url.QueryEscape(oppTypeStr), mediaID, url.QueryEscape(oppTypeStr))
+
+		body, err = c.makeRequest("GET", endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("media not found in MoviePilot: %w", err)
+		}
+
+		var info2 MediaInfo
+		if err := json.Unmarshal(body, &info2); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		// Check if media exists with opposite type
+		if info2.Title != "" || info2.ID != 0 {
+			log.Printf("[MoviePilot] Found media with opposite type %s", oppTypeStr)
+			info2.Type = mediaType // Keep original type
+			return &info2, nil
+		}
+
+		return nil, fmt.Errorf("media not found in MoviePilot (tried both types)")
 	}
 
 	// Set the media type from our parameter (more reliable than parsing response)
