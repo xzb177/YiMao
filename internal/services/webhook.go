@@ -856,11 +856,11 @@ func buildEpisodeRangeString(episodes []int) string {
 	return strings.Join(ranges, ", ")
 }
 
-// formatAggregatedEpisodeMessage formats aggregated episode notification
+// formatAggregatedEpisodeMessage formats aggregated episode notification (极简呼吸感排版)
 func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Build title
+	// Build title with year, season and episode range
 	var title string
 	if agg.Year > 1900 && agg.Year < 2100 {
 		title = fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange)
@@ -868,40 +868,47 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 		title = fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange)
 	}
 
-	// Image URL as first line (for Telegram auto-render)
-	if agg.EnhancedInfo != nil && agg.EnhancedInfo.ImageURL != "" {
-		builder.WriteString(agg.EnhancedInfo.ImageURL)
-		builder.WriteString("\n")
-	}
-
-	// Header
-	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
-	builder.WriteString("───────────────────\n\n")
+	// Header line - complete title with year/season/episode
+	builder.WriteString("✅ 入库成功：")
+	builder.WriteString(title)
+	builder.WriteString("\n")
+	builder.WriteString("──────\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", title))
+	builder.WriteString("\n")
+	builder.WriteString("🎬 名称：")
+	builder.WriteString(title)
+	builder.WriteString("\n")
 
-	// Category - use enhanced info or default to 国产剧
-	category := "国产剧"
+	// Category line
+	category := "剧集"
 	if agg.EnhancedInfo != nil {
 		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
+	builder.WriteString("\n")
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(category)
+	builder.WriteString("\n")
 
-	// Quality
+	// Quality line
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", agg.Quality))
+		builder.WriteString("\n")
+		builder.WriteString("💎 质量：")
+		builder.WriteString(agg.Quality)
+		builder.WriteString("\n")
 	}
 
-	// File size
-	if agg.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
-	}
+	// File size line - always show, unified format
+	builder.WriteString("\n")
+	builder.WriteString("📦 总大小：")
+	builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
+	builder.WriteString("\n")
 
-	// File count
-	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
-	}
+	// File count line
+	builder.WriteString("\n")
+	builder.WriteString("📁 文件数量：")
+	builder.WriteString(fmt.Sprintf("%d", agg.FileCount))
+	builder.WriteString(" 个")
 
 	return builder.String()
 }
@@ -1120,10 +1127,12 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 	}
 
 	info := &EmbyEnhancedInfo{}
+	var seriesInfo *EmbyEnhancedInfo  // 保存 seriesInfo 用于后续图片回退
 
 	// First, query the Series to get Genres (episodes don't have genres)
 	if seriesID != "" {
-		seriesInfo, err := s.getSeriesInfo(seriesID)
+		var err error
+		seriesInfo, err = s.getSeriesInfo(seriesID)
 		if err == nil && seriesInfo != nil {
 			// Copy genres from series
 			info.Genres = seriesInfo.Genres
@@ -1131,6 +1140,11 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 			// Copy TMDB ID from series for image lookup
 			if seriesInfo.TMDBID != "" {
 				info.TMDBID = seriesInfo.TMDBID
+			}
+			// 尝试使用 seriesInfo 中的图片（getSeriesInfo 已优先获取横幅图）
+			if seriesInfo.ImageURL != "" {
+				info.ImageURL = seriesInfo.ImageURL
+				log.Printf("[Debug] Using image from seriesInfo: %s", info.ImageURL)
 			}
 		} else {
 			log.Printf("[Debug] Failed to get series info: %v", err)
@@ -1169,16 +1183,18 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 		log.Printf("[Debug] Failed to get episode info: %v", err)
 	}
 
-	// Try to get image using parent backdrop info from webhook payload
-	if parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
+	// Try to get image using parent backdrop info from webhook payload (优先级最高)
+	if info.ImageURL == "" && parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
 		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
 			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0])
 		log.Printf("[Debug] Using parent backdrop from webhook: %s", info.ImageURL)
-	} else if seriesPrimaryImageTag != "" && seriesID != "" {
-		// Fallback to series primary image
+	}
+
+	// 最后的回退：如果还没有图片，尝试使用 seriesPrimaryImageTag（竖版海报）
+	if info.ImageURL == "" && seriesPrimaryImageTag != "" && seriesID != "" {
 		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
 			s.embyURL, seriesID, seriesPrimaryImageTag)
-		log.Printf("[Debug] Using series primary image: %s", info.ImageURL)
+		log.Printf("[Debug] Using series primary image fallback: %s", info.ImageURL)
 	}
 
 	// If no image yet, try TMDB using the TMDB ID we collected
@@ -1192,13 +1208,14 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 	return info, nil
 }
 
-// getSeriesInfo fetches series information from Emby API
+// getSeriesInfo fetches series information from Emby API (including backdrop image)
 func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby not configured")
 	}
 
-	url := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=Genres,ProviderIds,Overview,ProductionYear,CommunityRating",
+	// 请求包含 BackdropImageTags 以获取横幅图
+	url := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=Genres,ProviderIds,Overview,ProductionYear,CommunityRating,BackdropImageTags,ImageTags",
 		s.embyURL, s.embyAPIKey, seriesID)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -1254,6 +1271,25 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
 		if tid, ok := providerIds["tmdb"].(string); ok {
 			info.TMDBID = tid
+		}
+	}
+
+	// 优先获取横幅图（Backdrop）
+	if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
+		if tag, ok := backdropImageTags[0].(string); ok {
+			info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
+				s.embyURL, seriesID, tag)
+			log.Printf("[Debug] Series backdrop image: %s", info.ImageURL)
+		}
+	}
+	// 回退到竖版海报（Primary）
+	if info.ImageURL == "" {
+		if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
+			if tag, ok := imageTags["Primary"].(string); ok {
+				info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
+					s.embyURL, seriesID, tag)
+				log.Printf("[Debug] Series primary image: %s", info.ImageURL)
+			}
 		}
 	}
 
@@ -2050,11 +2086,11 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	return builder.String()
 }
 
-// formatEpisodePhotoCaption formats a caption for episode photo notifications
+// formatEpisodePhotoCaption formats a caption for episode photo notifications (极简呼吸感排版)
 func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Build title string for 🎬 名称 line (with full details)
+	// Build title string with year, season and episode range
 	var title string
 	if agg.Year > 1900 && agg.Year < 2100 {
 		title = fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange)
@@ -2062,37 +2098,47 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 		title = fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange)
 	}
 
-	// Header line - only series name, no year/season/episode info
+	// Header line - complete title with year/season/episode
 	builder.WriteString("✅ 入库成功：")
-	builder.WriteString(agg.SeriesName)
+	builder.WriteString(title)
 	builder.WriteString("\n")
-	builder.WriteString("───────────────────\n\n")
+	builder.WriteString("──────\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", title))
+	builder.WriteString("\n")
+	builder.WriteString("🎬 名称：")
+	builder.WriteString(title)
+	builder.WriteString("\n")
 
-	// Category line - use detailed category from enhanced info
+	// Category line
 	category := "剧集"
 	if agg.EnhancedInfo != nil {
 		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", category))
+	builder.WriteString("\n")
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(category)
+	builder.WriteString("\n")
 
 	// Quality line
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", agg.Quality))
+		builder.WriteString("\n")
+		builder.WriteString("💎 质量：")
+		builder.WriteString(agg.Quality)
+		builder.WriteString("\n")
 	}
 
-	// File size - UNCONDITIONALLY display, no if conditions
-	if agg.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
-	} else {
-		// Small file size or .strm files - always show
-		builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
-	}
+	// File size line - always show, unified format (no "引用文件" distinction)
+	builder.WriteString("\n")
+	builder.WriteString("📦 总大小：")
+	builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
+	builder.WriteString("\n")
 
-	// File count - UNCONDITIONALLY display, no if conditions
-	builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", agg.FileCount))
+	// File count line
+	builder.WriteString("\n")
+	builder.WriteString("📁 文件数量：")
+	builder.WriteString(fmt.Sprintf("%d", agg.FileCount))
+	builder.WriteString(" 个")
 
 	return builder.String()
 }
