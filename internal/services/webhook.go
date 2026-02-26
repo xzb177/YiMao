@@ -657,45 +657,47 @@ func buildEpisodeRangeString(episodes []int) string {
 func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Header
-	builder.WriteString("✅ 入库成功：")
+	// Build title
+	var title string
 	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+		title = fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange)
 	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+		title = fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange)
 	}
-	builder.WriteString("\n")
+
+	// Image URL as first line (for Telegram auto-render)
+	if agg.EnhancedInfo != nil && agg.EnhancedInfo.ImageURL != "" {
+		builder.WriteString(agg.EnhancedInfo.ImageURL)
+		builder.WriteString("\n")
+	}
+
+	// Header
+	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString("🎬 名称：")
-	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
-	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
-	}
-	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))
 
 	// Category - use enhanced info or default to 国产剧
 	category := "国产剧"
 	if agg.EnhancedInfo != nil {
 		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n\n", category))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", category))
 
 	// Quality
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n\n", agg.Quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", agg.Quality))
 	}
 
 	// File size
 	if agg.FileSize > 0 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(agg.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
 	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", agg.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d` 个", agg.FileCount))
 	}
 
 	return builder.String()
@@ -1457,6 +1459,14 @@ func (s *WebhookService) getBasicCategory(itemType string) string {
 	}
 }
 
+// getImageURL gets the image URL from payload or enhanced info
+func (s *WebhookService) getImageURL(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
+	if enhanced != nil && enhanced.ImageURL != "" {
+		return enhanced.ImageURL
+	}
+	return ""
+}
+
 // formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
 func (s *WebhookService) formatFileSizeDecimal(bytes int64) string {
 	const unit = 1000 // Use decimal for GB display
@@ -1570,63 +1580,47 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	// Get series name
 	seriesName := payload.SeriesName
 
-	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
-	builder.WriteString("✅ 入库成功：")
+	// Build title string
+	var titleStr string
 	if itemType == "Episode" && seriesName != "" {
 		season := payload.Season
 		episode := payload.Episode
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+			titleStr = fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode)
 		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+			titleStr = fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode)
 		}
 	} else if itemType == "Season" && seriesName != "" {
 		season := payload.Season
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+			titleStr = fmt.Sprintf("%s (%d) S%02d", seriesName, year, season)
 		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+			titleStr = fmt.Sprintf("%s S%02d", seriesName, season)
 		}
 	} else {
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+			titleStr = fmt.Sprintf("%s (%d)", title, year)
 		} else {
-			builder.WriteString(title)
+			titleStr = title
 		}
 	}
-	builder.WriteString("\n")
+
+	// Image URL as first line (for Telegram auto-render)
+	imageURL := s.getImageURL(payload, enhanced)
+	if imageURL != "" {
+		builder.WriteString(imageURL)
+		builder.WriteString("\n")
+	}
+
+	// Header line
+	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", titleStr))
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString("🎬 名称：")
-	if itemType == "Episode" && seriesName != "" {
-		season := payload.Season
-		episode := payload.Episode
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
-		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
-		}
-	} else if itemType == "Season" && seriesName != "" {
-		season := payload.Season
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
-		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
-		}
-	} else {
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
-		} else {
-			builder.WriteString(title)
-		}
-	}
-	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", titleStr))
 
 	// Category line
-	builder.WriteString("🏷️ 类别：")
-	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
-	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", s.getDetailedCategory(itemType, enhanced)))
 
 	// Quality line - use getFullQuality for proper WEB-DL format
 	quality := ""
@@ -1634,17 +1628,17 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		quality = s.getFullQuality(enhanced)
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", quality))
 	}
 
 	// File size (ignore files smaller than 1MB - likely .strm files)
 	if enhanced != nil && enhanced.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
 	// File count
 	if enhanced != nil && enhanced.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", enhanced.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d` 个", enhanced.FileCount))
 	}
 
 	return builder.String()
@@ -1654,47 +1648,47 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Header line - "✅ 入库成功：标题 (年份) S01 E01-E05"
-	builder.WriteString("✅ 入库成功：")
+	// Build title string
+	var title string
 	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+		title = fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange)
 	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+		title = fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange)
 	}
-	builder.WriteString("\n")
+
+	// Image URL as first line (for Telegram auto-render)
+	if agg.EnhancedInfo != nil && agg.EnhancedInfo.ImageURL != "" {
+		builder.WriteString(agg.EnhancedInfo.ImageURL)
+		builder.WriteString("\n")
+	}
+
+	// Header line
+	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString("🎬 名称：")
-	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
-	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
-	}
-	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))
 
 	// Category line - use detailed category from enhanced info
-	builder.WriteString("🏷️ 类别：")
+	category := "剧集"
 	if agg.EnhancedInfo != nil {
-		builder.WriteString(s.getDetailedCategory("Episode", agg.EnhancedInfo))
-	} else {
-		builder.WriteString("剧集")
+		category = s.getDetailedCategory("Episode", agg.EnhancedInfo)
 	}
-	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", category))
 
 	// Quality line
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n\n", agg.Quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", agg.Quality))
 	}
 
 	// File size (ignore files smaller than 1MB - likely .strm files)
 	if agg.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(agg.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(agg.FileSize)))
 	}
 
 	// File count
 	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", agg.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d` 个", agg.FileCount))
 	}
 
 	return builder.String()

@@ -333,15 +333,9 @@ func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *
 		message = s.formatSimpleMessage(item)
 	}
 
-	// Send with photo if available
-	if item.ImageURL != "" {
-		if _, err := s.telegram.SendPhoto(adminID, item.ImageURL, message, nil); err != nil {
-			log.Printf("[MediaNotification] Failed to send photo: %v", err)
-			s.telegram.SendMessage(adminID, message, "", nil)
-		}
-	} else {
-		s.telegram.SendMessage(adminID, message, "", nil)
-	}
+	// Send message (image URL embedded in text for auto-render)
+	// Use Markdown parseMode for code formatting with backticks
+	s.telegram.SendMessage(adminID, message, "Markdown", nil)
 }
 
 // formatSimpleMessage formats a simple instant notification message
@@ -446,29 +440,35 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 
 	var builder strings.Builder
 
+	// Image URL as first line (for Telegram auto-render)
+	if item.ImageURL != "" {
+		builder.WriteString(item.ImageURL)
+		builder.WriteString("\n")
+	}
+
 	// Header line
 	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
 	builder.WriteString("───────────────────\n\n")
 
 	// Name line
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n\n", title))
+	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))
 
 	// Category line
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n\n", s.getDetailedCategory(item)))
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：`%s`\n", s.getDetailedCategory(item)))
 
 	// Quality line
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
+		builder.WriteString(fmt.Sprintf("💎 质量：`%s`\n", quality))
 	}
 
 	// File size (ignore files smaller than 1MB)
 	if item.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(item.FileSize)))
+		builder.WriteString(fmt.Sprintf("📦 总大小：`%s`\n", s.formatFileSizeDecimal(item.FileSize)))
 	}
 
 	// File count
 	if item.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", item.FileCount))
+		builder.WriteString(fmt.Sprintf("📁 文件数量：`%d` 个", item.FileCount))
 	}
 
 	return builder.String()
