@@ -409,8 +409,7 @@ func (s *MediaNotificationService) formatSimpleMessage(item *MediaItem) string {
 	return builder.String()
 }
 
-// formatDetailedMessage formats a detailed notification message (new format)
-// 重新设计：参考 Slack Block Kit 风格，使用分层结构 + emoji 增强
+// formatDetailedMessage formats a detailed notification message
 func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string {
 	// Build title with year
 	var title string
@@ -420,13 +419,13 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 			title += fmt.Sprintf(" (%d)", item.Year)
 		}
 		if item.SeasonNumber > 0 {
-			title += fmt.Sprintf(" 第%d季", item.SeasonNumber)
+			title += fmt.Sprintf(" S%02d", item.SeasonNumber)
 		}
 		if item.EpisodeCount > 0 {
 			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
-				title += fmt.Sprintf(" 第%d-%d集", item.EpisodeStart, item.EpisodeEnd)
+				title += fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd)
 			} else if item.EpisodeCount == 1 {
-				title += fmt.Sprintf(" 第%d集", item.EpisodeStart)
+				title += fmt.Sprintf(" E%02d", item.EpisodeStart)
 			}
 		}
 	} else {
@@ -437,7 +436,7 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 	}
 
 	// Build quality string with better formatting
-	quality := "未知"
+	quality := ""
 	if item.Quality != "" {
 		quality = item.Quality
 		if item.IsWEBDL && !strings.Contains(strings.ToLower(quality), "web-dl") {
@@ -445,82 +444,32 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 		}
 	}
 
-	// Build rating string
-	rating := ""
-	if item.Rating > 0 {
-		rating = fmt.Sprintf("%.1f", item.Rating)
-	}
-
-	// Build genres string (max 2)
-	genresStr := ""
-	if len(item.Genres) > 0 {
-		count := len(item.Genres)
-		if count > 2 {
-			count = 2
-		}
-		genresStr = strings.Join(item.Genres[:count], " / ")
-	}
-
-	// Truncate overview to ~100 characters (matching reference repo style)
-	overview := ""
-	if item.Overview != "" {
-		// Runes for proper Chinese character handling
-		runes := []rune(item.Overview)
-		if len(runes) > 100 {
-			overview = string(runes[:100]) + "..."
-		} else {
-			overview = item.Overview
-		}
-	}
-
-	// Build file info
-	fileInfo := ""
-	if item.FileSize > 0 {
-		fileInfo = fmt.Sprintf("%s", s.formatFileSizeDecimal(item.FileSize))
-	} else if item.FileCount > 0 {
-		fileInfo = fmt.Sprintf("%d 个文件", item.FileCount)
-	}
-
-	// Format matching the reference repo style:
-	// 图片 + 标题 + 基本信息 + 简介
 	var builder strings.Builder
 
-	// Header with library name
-	builder.WriteString(fmt.Sprintf("🆕 新入库 %s\n", item.LibraryName))
-
-	// Title (bold effect with spacing)
-	builder.WriteString("───────────────────\n")
-	builder.WriteString(fmt.Sprintf("「 %s 」\n", title))
+	// Header line
+	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
 	builder.WriteString("───────────────────\n\n")
 
-	// Info row: quality, rating, genres
-	infoParts := []string{}
-	if quality != "未知" {
-		infoParts = append(infoParts, fmt.Sprintf("📺 %s", quality))
-	}
-	if rating != "" {
-		infoParts = append(infoParts, fmt.Sprintf("⭐ %s", rating))
-	}
-	if genresStr != "" {
-		infoParts = append(infoParts, fmt.Sprintf("🎭 %s", genresStr))
-	}
-	if fileInfo != "" {
-		infoParts = append(infoParts, fmt.Sprintf("📦 %s", fileInfo))
+	// Name line
+	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n\n", title))
+
+	// Category line
+	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n\n", s.getDetailedCategory(item)))
+
+	// Quality line
+	if quality != "" {
+		builder.WriteString(fmt.Sprintf("💎 质量：%s\n\n", quality))
 	}
 
-	if len(infoParts) > 0 {
-		builder.WriteString(strings.Join(infoParts, "  ·  "))
-		builder.WriteString("\n")
+	// File size (ignore files smaller than 1MB)
+	if item.FileSize > 1024*1024 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n\n", s.formatFileSizeDecimal(item.FileSize)))
 	}
 
-	// Overview/plot
-	if overview != "" {
-		builder.WriteString("\n📝 剧情简介\n")
-		builder.WriteString(overview)
+	// File count
+	if item.FileCount > 0 {
+		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个\n", item.FileCount))
 	}
-
-	// Timestamp at bottom
-	builder.WriteString(fmt.Sprintf("\n\n🕒 %s", item.AddedAt.Format("2006-01-02 15:04")))
 
 	return builder.String()
 }
