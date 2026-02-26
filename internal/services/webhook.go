@@ -250,8 +250,14 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 		itemName = payload.Item.Name
 	}
 
-	// For episodes, add to aggregation instead of sending immediately
-	if itemType == "Episode" && payload.SeriesName != "" {
+	// 彻底切断单集直发通道：所有剧集类型必须进入聚合队列
+	if itemType == "Episode" {
+		// 如果没有SeriesName，尝试从Item中获取
+		seriesName := payload.SeriesName
+		if seriesName == "" && payload.Item != nil {
+			seriesName = payload.Item.SeriesName
+		}
+		// 强制进入聚合，即使SeriesName为空也聚合
 		return s.aggregateEpisode(payload)
 	}
 
@@ -524,9 +530,20 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 					if len(payload.Item.Genres) > 0 {
 						enhancedInfo.Genres = payload.Item.Genres
 					}
+					// 复制文件大小和数量
+					for _, ms := range payload.Item.MediaSources {
+						enhancedInfo.FileSize = ms.Size
+						enhancedInfo.FileCount = 1
+						log.Printf("[Webhook] Copied file size from MediaSources: %d bytes", ms.Size)
+						break
+					}
+				} else {
+					// 更新现有 enhancedInfo 的质量信息
+					enhancedInfo.Quality = quality
+					enhancedInfo.IsWEBDL = isWEBDL
 				}
 
-				// Try to get image from TMDB using ProviderIds (both for new and existing enhanced info)
+				// Try to get image from TMDB using ProviderIds
 				if enhancedInfo.ImageURL == "" && payload.Item.ProviderIds != nil {
 					if tmdbID, ok := payload.Item.ProviderIds["tmdb"]; ok && tmdbID != "" {
 						log.Printf("[Webhook] Getting TMDB backdrop from webhook ProviderIds (episode): %s", tmdbID)
@@ -560,7 +577,9 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 		if enhancedInfo != nil {
 			agg.ImageURL = enhancedInfo.ImageURL
 			agg.Quality = enhancedInfo.Quality
-			if enhancedInfo.IsWEBDL {
+			agg.FileSize = enhancedInfo.FileSize  // 复制文件大小
+			agg.FileCount = enhancedInfo.FileCount // 复制文件数量
+			if enhancedInfo.IsWEBDL && enhancedInfo.Quality != "" {
 				agg.Quality = fmt.Sprintf("WEB-DL %s", enhancedInfo.Quality)
 			}
 		}
@@ -592,14 +611,16 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 	var thisFileSize int64
 	var thisFileCount int
 	if payload.Item != nil {
-		for _, ms := range payload.Item.MediaSources {
-			if ms.Size > 0 {
-				thisFileSize = ms.Size
-				thisFileCount = 1
-				break
-			}
+		log.Printf("[Debug] Payload.Item has %d MediaSources", len(payload.Item.MediaSources))
+		for i, ms := range payload.Item.MediaSources {
+			log.Printf("[Debug] MediaSource[%d]: Size=%d, Path=%s", i, ms.Size, ms.Path)
+			// 即使 Size 为 0 或很小（如 strm 文件），也要记录
+			thisFileSize = ms.Size
+			thisFileCount = 1
+			break  // 使用第一个 MediaSource
 		}
 	}
+	log.Printf("[Debug] Episode file size: %d bytes, count: %d", thisFileSize, thisFileCount)
 
 	if !alreadyAdded {
 		agg.Episodes = append(agg.Episodes, episode)
@@ -1501,17 +1522,17 @@ func (s *WebhookService) detectWEBDL(path string) bool {
 	return false
 }
 
-// detectQuality detects video quality from width
+// detectQuality detects video quality from width (从MediaSources的Width字段获取)
 func (s *WebhookService) detectQuality(width int) string {
 	switch {
 	case width >= 3800:
-		return "4K"
+		return "2160p"  // 4K统一显示为2160p
 	case width >= 1900:
 		return "1080p"
 	case width >= 1200:
 		return "720p"
 	default:
-		return "SD"
+		return ""  // 无法确定时返回空字符串，严禁伪造数据
 	}
 }
 
@@ -1534,9 +1555,9 @@ func (s *WebhookService) parseQualityFromPath(path string) string {
 		return "480p"
 	}
 
-	// Fallback to detecting from container or default
+	// 无法解析时返回空字符串，严禁伪造数据
 	log.Printf("[Quality] Could not parse quality from path: %s", path)
-	return "1080p"
+	return ""
 }
 
 // getFullQuality returns full quality string including WEB-DL info
