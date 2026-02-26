@@ -376,3 +376,15 @@ watchlist_add:{tmdbID}  # 加入片单
   - 修改 `aggregateEpisode` 函数使用新的 episode-aware 函数
 - **修改文件**:
   - `internal/services/webhook.go` - 结构体扩展、新增函数、聚合逻辑修复
+
+### 2025-02-26 - 入库通知引用文件显示优化
+- **问题**: 入库通知在质量行后就停止，没有显示文件大小和数量信息
+  - **原因**: 当文件小于 1MB（如 .strm 引用文件）时，代码直接跳过显示，导致通知看起来不完整
+- **修复**: 即使是引用文件也显示文件信息，使用不同标识区分
+  - 大于 1MB：显示 `📦 总大小：X.XXG`
+  - 小于 1MB：显示 `📋 引用文件：XXXB`（标识这是引用文件）
+- **调试增强**: 添加调试日志帮助排查 enhanced 信息获取问题
+  - `formatPhotoCaption` 开始时输出 Quality、FileSize、FileCount
+  - `getEmbyEnhancedInfoForEpisode` 输出 episode 信息和错误状态
+- **修改文件**:
+  - `internal/services/webhook.go` - formatPhotoCaption() 和 formatEpisodePhotoCaption() 函数优化
