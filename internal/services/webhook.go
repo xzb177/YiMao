@@ -50,6 +50,14 @@ type EmbyItem struct {
 	FileName    string `json:"FileName"`     // File name
 	ProviderIds map[string]string `json:"ProviderIds"` // TMDB, IMDb, TVDB IDs
 	MediaSources []EmbyMediaSource `json:"MediaSources"` // Media sources with file size
+	// Parent/ Series info for episodes
+	SeriesId             string `json:"SeriesId"`
+	ParentBackdropItemId string `json:"ParentBackdropItemId"`
+	ParentBackdropImageTags []string `json:"ParentBackdropImageTags"`
+	SeriesPrimaryImageTag string `json:"SeriesPrimaryImageTag"`
+	PrimaryImageAspectRatio float64 `json:"PrimaryImageAspectRatio"`
+	ImageTags            map[string]string `json:"ImageTags"`
+	BackdropImageTags    []string `json:"BackdropImageTags"`
 }
 
 // EmbyMediaSource represents a media source with file information
@@ -433,11 +441,30 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 	// Get existing or create new aggregation
 	agg, exists := s.epAggregation[aggregationKey]
 	if !exists {
-		// Try to get enhanced info
+		// Extract parent series info from webhook payload for better image and genre lookup
+		var seriesID string
+		var parentBackdropItemID string
+		var parentBackdropImageTags []string
+		var seriesPrimaryImageTag string
+
+		if payload.Item != nil {
+			seriesID = payload.Item.SeriesId
+			parentBackdropItemID = payload.Item.ParentBackdropItemId
+			parentBackdropImageTags = payload.Item.ParentBackdropImageTags
+			seriesPrimaryImageTag = payload.Item.SeriesPrimaryImageTag
+		}
+
+		// Try to get enhanced info using the new episode-aware function
 		var enhancedInfo *EmbyEnhancedInfo
 		for i := 0; i < 3; i++ {
 			var err error
-			enhancedInfo, err = s.getEmbyEnhancedInfo(payload.ItemID)
+			enhancedInfo, err = s.getEmbyEnhancedInfoForEpisode(
+				payload.ItemID,
+				seriesID,
+				parentBackdropItemID,
+				parentBackdropImageTags,
+				seriesPrimaryImageTag,
+			)
 			if err == nil {
 				break
 			}
@@ -880,6 +907,151 @@ type EmbyEnhancedInfo struct {
 	FileCount    int
 	IsWEBDL      bool   // Whether the source is WEB-DL
 	Container    string // Container format (mkv, mp4, etc.)
+	TMDBID       string // TMDB ID for fetching images
+}
+
+// getEmbyEnhancedInfoForEpisode fetches enhanced information from Emby API for episodes
+// It queries both the episode and its parent series to get genres and backdrop
+func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID string, parentBackdropItemID string, parentBackdropImageTags []string, seriesPrimaryImageTag string) (*EmbyEnhancedInfo, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby not configured")
+	}
+
+	info := &EmbyEnhancedInfo{}
+
+	// First, query the Series to get Genres (episodes don't have genres)
+	if seriesID != "" {
+		seriesInfo, err := s.getSeriesInfo(seriesID)
+		if err == nil && seriesInfo != nil {
+			// Copy genres from series
+			info.Genres = seriesInfo.Genres
+			log.Printf("[Debug] Got %d genres from series %s", len(info.Genres), seriesID)
+			// Copy TMDB ID from series for image lookup
+			if seriesInfo.TMDBID != "" {
+				info.TMDBID = seriesInfo.TMDBID
+			}
+		} else {
+			log.Printf("[Debug] Failed to get series info: %v", err)
+		}
+	}
+
+	// Query the episode for media info (quality, file size, etc.)
+	episodeInfo, err := s.getEmbyEnhancedInfo(itemID)
+	if err == nil && episodeInfo != nil {
+		info.Quality = episodeInfo.Quality
+		info.FileSize = episodeInfo.FileSize
+		info.FileCount = episodeInfo.FileCount
+		info.IsWEBDL = episodeInfo.IsWEBDL
+		info.Container = episodeInfo.Container
+		info.RunTimeTicks = episodeInfo.RunTimeTicks
+		// Use episode's title, year, rating, overview if series didn't provide them
+		if info.Title == "" {
+			info.Title = episodeInfo.Title
+		}
+		if info.Year == 0 {
+			info.Year = episodeInfo.Year
+		}
+		if info.Rating == 0 {
+			info.Rating = episodeInfo.Rating
+		}
+		if info.Overview == "" {
+			info.Overview = episodeInfo.Overview
+		}
+		// Copy TMDB ID from episode if series didn't have it
+		if info.TMDBID == "" && episodeInfo.TMDBID != "" {
+			info.TMDBID = episodeInfo.TMDBID
+		}
+	}
+
+	// Try to get image using parent backdrop info from webhook payload
+	if parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90",
+			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0])
+		log.Printf("[Debug] Using parent backdrop from webhook: %s", info.ImageURL)
+	} else if seriesPrimaryImageTag != "" && seriesID != "" {
+		// Fallback to series primary image
+		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95",
+			s.embyURL, seriesID, seriesPrimaryImageTag)
+		log.Printf("[Debug] Using series primary image: %s", info.ImageURL)
+	}
+
+	// If no image yet, try TMDB using the TMDB ID we collected
+	if info.ImageURL == "" && info.TMDBID != "" {
+		if backdropURL := s.getTMDBBackdrop(info.TMDBID); backdropURL != "" {
+			info.ImageURL = backdropURL
+			log.Printf("[Debug] Using TMDB backdrop for episode: %s", backdropURL)
+		}
+	}
+
+	return info, nil
+}
+
+// getSeriesInfo fetches series information from Emby API
+func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby not configured")
+	}
+
+	url := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=Genres,ProviderIds,Overview,ProductionYear,CommunityRating",
+		s.embyURL, s.embyAPIKey, seriesID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	info := &EmbyEnhancedInfo{}
+
+	// Extract basic info
+	if name, ok := result["Name"].(string); ok {
+		info.Title = name
+	}
+	if year, ok := result["ProductionYear"].(float64); ok {
+		info.Year = int(year)
+	}
+	if rating, ok := result["CommunityRating"].(float64); ok {
+		info.Rating = rating
+	}
+	if overview, ok := result["Overview"].(string); ok {
+		info.Overview = overview
+	}
+
+	// Extract genres
+	if genres, ok := result["Genres"].([]interface{}); ok {
+		for _, g := range genres {
+			if genreStr, ok := g.(string); ok {
+				info.Genres = append(info.Genres, genreStr)
+			}
+		}
+	}
+
+	// Extract TMDB ID
+	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
+		if tid, ok := providerIds["tmdb"].(string); ok {
+			info.TMDBID = tid
+		}
+	}
+
+	return info, nil
 }
 
 // getEmbyEnhancedInfo fetches enhanced information from Emby API
