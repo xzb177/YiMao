@@ -60,30 +60,48 @@ func NewUserMappingService(dataDir string) *UserMappingService {
 
 // load loads user mappings from file
 func (s *UserMappingService) load() error {
+	log.Printf("[UserMapping] load: acquiring lock...")
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	log.Printf("[UserMapping] load: lock acquired, reading file: %s", s.mappingsFile)
 
 	data, err := os.ReadFile(s.mappingsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
+			log.Printf("[UserMapping] File not exist, creating empty file")
 			// Create empty file - use saveLocked since we already hold the lock
 			_ = s.saveLocked()
+			s.mu.Unlock()
 			return nil
 		}
+		log.Printf("[UserMapping] ERROR reading file: %v", err)
+		s.mu.Unlock()
 		return err
 	}
+	log.Printf("[UserMapping] File read: %d bytes", len(data))
 
 	// Try new format first
 	var fileData struct {
-		UserMappings     map[string]int64  `json:"user_mappings"`
-		Usernames        map[string]string `json:"usernames"`
+		UserMappings    map[string]int64  `json:"user_mappings"`
+		Usernames       map[string]string `json:"usernames"`
 		ReverseMappings map[int64]string  `json:"reverse_mappings"`
 	}
 	if err := json.Unmarshal(data, &fileData); err == nil {
 		s.mappings = fileData.UserMappings
 		s.usernames = fileData.Usernames
 		s.reverseMap = fileData.ReverseMappings
-		log.Printf("[UserMapping] Loaded %d user mappings", len(s.mappings))
+		log.Printf("[UserMapping] Loaded %d user mappings (new format)", len(s.mappings))
+		s.mu.Unlock()
+		return nil
+	}
+
+	// Try alternative format with "mappings" key
+	var altData struct {
+		Mappings map[string]int64  `json:"mappings"`
+	}
+	if err := json.Unmarshal(data, &altData); err == nil && altData.Mappings != nil {
+		s.mappings = altData.Mappings
+		log.Printf("[UserMapping] Loaded %d user mappings (alt format with 'mappings' key)", len(s.mappings))
+		s.mu.Unlock()
 		return nil
 	}
 
@@ -92,10 +110,12 @@ func (s *UserMappingService) load() error {
 	if err := json.Unmarshal(data, &legacyData); err == nil {
 		s.mappings = legacyData
 		log.Printf("[UserMapping] Loaded %d user mappings (legacy format)", len(s.mappings))
+		s.mu.Unlock()
 		return nil
 	}
 
 	log.Printf("[UserMapping] Failed to load user mappings: %v", err)
+	s.mu.Unlock()
 	return nil
 }
 
@@ -107,11 +127,13 @@ func (s *UserMappingService) save() error {
 }
 
 // saveLocked saves user mappings to file (must be called with lock held)
+// Note: This will temporarily release the lock during file I/O
 func (s *UserMappingService) saveLocked() error {
+	// Copy data under lock
 	data := map[string]interface{}{
-		"user_mappings":  s.mappings,
-		"usernames":      s.usernames,
-		"reverse_mappings": s.reverseMap,
+		"user_mappings":     s.mappings,
+		"usernames":         s.usernames,
+		"reverse_mappings":  s.reverseMap,
 	}
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
@@ -121,7 +143,19 @@ func (s *UserMappingService) saveLocked() error {
 	s.dirty = false
 	s.lastSave = time.Now()
 
-	return os.WriteFile(s.mappingsFile, jsonData, 0644)
+	// Release lock during file I/O to avoid blocking other operations
+	s.mu.Unlock()
+	log.Printf("[UserMapping] Writing to file: %s (%d bytes)", s.mappingsFile, len(jsonData))
+	writeErr := os.WriteFile(s.mappingsFile, jsonData, 0644)
+	s.mu.Lock()
+
+	if writeErr != nil {
+		log.Printf("[UserMapping] ERROR writing file: %v", writeErr)
+	} else {
+		log.Printf("[UserMapping] File saved successfully")
+	}
+
+	return writeErr
 }
 
 // scheduleSave schedules a delayed save if data is dirty
@@ -161,8 +195,13 @@ func (s *UserMappingService) GetJellyseerrUserID(telegramID int64) (int64, bool)
 
 // GetMoviePilotUserID gets MoviePilot user ID for a Telegram user
 func (s *UserMappingService) GetMoviePilotUserID(telegramID int64) (int64, bool) {
+	log.Printf("[UserMapping] GetMoviePilotUserID: acquiring lock for telegramID=%d", telegramID)
 	s.mu.RLock()
-	defer s.mu.RUnlock()
+	log.Printf("[UserMapping] GetMoviePilotUserID: lock acquired for telegramID=%d", telegramID)
+	defer func() {
+		s.mu.RUnlock()
+		log.Printf("[UserMapping] GetMoviePilotUserID: lock released for telegramID=%d", telegramID)
+	}()
 
 	moviepilotID, exists := s.mappings[fmt.Sprintf("%d", telegramID)]
 	// Treat ID 0 as invalid/non-existent

@@ -159,6 +159,7 @@ type WebhookService struct {
 // EpisodeAggregation holds aggregated episode info
 type EpisodeAggregation struct {
 	SeriesName   string
+	SeriesID     string                  // Series ID for fetching images
 	Year         int
 	Season       int
 	Episodes     []int                   // episode numbers
@@ -465,8 +466,22 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 		return nil
 	}
 
+	// Get series name with fallback: payload.SeriesName -> Item.SeriesName -> Item.Name
+	seriesName := payload.SeriesName
+	if seriesName == "" && payload.Item != nil {
+		seriesName = payload.Item.SeriesName
+	}
+	if seriesName == "" && payload.Item != nil {
+		seriesName = payload.Item.Name
+	}
+
+	if seriesName == "" {
+		log.Printf("[入库聚合] 无法获取剧集名称，跳过")
+		return nil
+	}
+
 	// Create aggregation key: seriesName_season
-	aggregationKey := fmt.Sprintf("%s_S%02d", payload.SeriesName, season)
+	aggregationKey := fmt.Sprintf("%s_S%02d", seriesName, season)
 
 	s.epAggregationMu.Lock()
 
@@ -566,19 +581,20 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 
 		// Create new aggregation with independent timer
 		agg = &EpisodeAggregation{
-			SeriesName:   payload.SeriesName,
+			SeriesName:   seriesName,  // 使用已处理的 seriesName (带 fallback)
+			SeriesID:     seriesID,    // 保存 SeriesID 用于后续获取图片
 			Year:         year,
 			Season:       season,
 			Episodes:     []int{},
 			FirstAdded:   time.Now(),
 			EnhancedInfo: enhancedInfo,
 			LibraryName:  payload.Library,
+			FileSize:     0,  // 初始化为0，后续通过累加获取
 		}
 		if enhancedInfo != nil {
 			agg.ImageURL = enhancedInfo.ImageURL
 			agg.Quality = enhancedInfo.Quality
-			agg.FileSize = enhancedInfo.FileSize  // 复制文件大小
-			agg.FileCount = enhancedInfo.FileCount // 复制文件数量
+			// FileSize 初始化为0，后续在添加集数时累加，避免重复计算
 			if enhancedInfo.IsWEBDL && enhancedInfo.Quality != "" {
 				agg.Quality = fmt.Sprintf("WEB-DL %s", enhancedInfo.Quality)
 			}
@@ -591,7 +607,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			s.flushSingleAggregation(key)
 		})
 
-		log.Printf("[入库聚合] 创建新聚合: %s S%02d, 延迟 %v 后发送", payload.SeriesName, season, s.aggregationDelay)
+		log.Printf("[入库聚合] 创建新聚合: %s S%02d, 延迟 %v 后发送", seriesName, season, s.aggregationDelay)
 	}
 
 	// Lock this specific aggregation for episode addition
@@ -625,7 +641,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 	if !alreadyAdded {
 		agg.Episodes = append(agg.Episodes, episode)
 		agg.FileSize += thisFileSize
-		agg.FileCount += thisFileCount
+		// FileCount 不再累加，将在发送时使用 len(Episodes) 计算
 
 		// Reset timer when new episode arrives (debounce)
 		if agg.timer != nil {
@@ -637,10 +653,10 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 		})
 
 		log.Printf("[入库聚合] 添加集数: %s S%02dE%02d (当前共%d集, 总大小:%s), 重置定时器 %v",
-			payload.SeriesName, season, episode, len(agg.Episodes),
+			seriesName, season, episode, len(agg.Episodes),
 			s.formatFileSizeDecimal(agg.FileSize), s.aggregationDelay)
 	} else {
-		log.Printf("[入库聚合] 集数已存在: %s S%02dE%02d, 跳过", payload.SeriesName, season, episode)
+		log.Printf("[入库聚合] 集数已存在: %s S%02dE%02d, 跳过", seriesName, season, episode)
 	}
 
 	s.epAggregationMu.Unlock()
@@ -668,6 +684,11 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 
 	// Make a copy of the data we need
 	seriesName := agg.SeriesName
+	seriesID := agg.SeriesID  // 保存 SeriesID 用于图片获取
+	// Fallback: if seriesName is empty, try to get from EnhancedInfo
+	if seriesName == "" && agg.EnhancedInfo != nil && agg.EnhancedInfo.Title != "" {
+		seriesName = agg.EnhancedInfo.Title
+	}
 	season := agg.Season
 	episodes := make([]int, len(agg.Episodes))
 	copy(episodes, agg.Episodes)
@@ -675,7 +696,6 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 	quality := agg.Quality
 	imageURL := agg.ImageURL
 	fileSize := agg.FileSize
-	fileCount := agg.FileCount
 	enhancedInfo := agg.EnhancedInfo
 	libraryName := agg.LibraryName
 
@@ -689,8 +709,31 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 		return
 	}
 
+	// Final safety check: if still no series name, log and skip
+	if seriesName == "" {
+		log.Printf("[入库聚合] 错误：SeriesName 为空，跳过发送通知，key=%s", key)
+		return
+	}
+
 	// Sort episodes
 	sort.Ints(episodes)
+
+	// 图片获取：如果没有图片且有 SeriesID，尝试重新获取横幅图
+	if imageURL == "" && seriesID != "" {
+		log.Printf("[入库聚合] 尝试获取 Series 图片，seriesID=%s", seriesID)
+		// 先尝试从 Emby 获取 Series 的 backdrop
+		if seriesInfo, err := s.getSeriesInfo(seriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
+			imageURL = seriesInfo.ImageURL
+			log.Printf("[入库聚合] 从 Series 获取到图片: %s", imageURL)
+		}
+	}
+	// 如果仍然没有图片，尝试从 enhancedInfo 的 TMDB ID 获取
+	if imageURL == "" && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
+		if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
+			imageURL = backdropURL
+			log.Printf("[入库聚合] 从 TMDB 获取到 backdrop: %s", imageURL)
+		}
+	}
 
 	// Build episode range string
 	epRange := buildEpisodeRangeString(episodes)
@@ -706,7 +749,6 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 			Quality:      quality,
 			ImageURL:     imageURL,
 			FileSize:     fileSize,
-			FileCount:    fileCount,
 			EnhancedInfo: enhancedInfo,
 			LibraryName:  libraryName,
 		}, epRange)
@@ -719,7 +761,6 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 			Quality:      quality,
 			ImageURL:     imageURL,
 			FileSize:     fileSize,
-			FileCount:    fileCount,
 			EnhancedInfo: enhancedInfo,
 			LibraryName:  libraryName,
 		}, epRange)
@@ -737,7 +778,6 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 				Quality:      quality,
 				ImageURL:     imageURL,
 				FileSize:     fileSize,
-				FileCount:    fileCount,
 				EnhancedInfo: enhancedInfo,
 				LibraryName:  libraryName,
 			}, epRange)
@@ -757,7 +797,6 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 		Episodes:     episodes,
 		Quality:      quality,
 		FileSize:     fileSize,
-		FileCount:    fileCount,
 		EnhancedInfo: enhancedInfo,
 		LibraryName:  libraryName,
 	}, epRange)
@@ -898,16 +937,19 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 		builder.WriteString("\n")
 	}
 
-	// File size line - always show, unified format
-	builder.WriteString("\n")
-	builder.WriteString("📦 总大小：")
-	builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
-	builder.WriteString("\n")
+	// File size line - 只在有实际大小时显示
+	if agg.FileSize > 0 {
+		builder.WriteString("\n")
+		builder.WriteString("📦 总大小：")
+		builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
+		builder.WriteString("\n")
+	}
 
-	// File count line
+	// File count line - 使用 Episodes 列表长度而非 FileCount
+	fileCount := len(agg.Episodes)
 	builder.WriteString("\n")
 	builder.WriteString("📁 文件数量：")
-	builder.WriteString(fmt.Sprintf("%d", agg.FileCount))
+	builder.WriteString(fmt.Sprintf("%d", fileCount))
 	builder.WriteString(" 个")
 
 	return builder.String()
@@ -939,12 +981,17 @@ func (s *WebhookService) formatAggregatedEpisodeSimple(agg *EpisodeAggregation, 
 		builder.WriteString(fmt.Sprintf("💎 %s", agg.Quality))
 	}
 
-	// File size (using decimal GB)
+	// File size (using decimal GB, show "未知" if 0)
 	if agg.FileSize > 0 {
 		if agg.Quality != "" {
 			builder.WriteString(" · ")
 		}
 		builder.WriteString(fmt.Sprintf("📦 %s", s.formatFileSizeDecimal(agg.FileSize)))
+	} else {
+		if agg.Quality != "" {
+			builder.WriteString(" · ")
+		}
+		builder.WriteString("📦 未知")
 	}
 
 	builder.WriteString("\n")
@@ -2128,16 +2175,19 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 		builder.WriteString("\n")
 	}
 
-	// File size line - always show, unified format (no "引用文件" distinction)
-	builder.WriteString("\n")
-	builder.WriteString("📦 总大小：")
-	builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
-	builder.WriteString("\n")
+	// File size line - 只在有实际大小时显示
+	if agg.FileSize > 0 {
+		builder.WriteString("\n")
+		builder.WriteString("📦 总大小：")
+		builder.WriteString(s.formatFileSizeDecimal(agg.FileSize))
+		builder.WriteString("\n")
+	}
 
-	// File count line
+	// File count line - 使用 Episodes 列表长度而非 FileCount
+	fileCount := len(agg.Episodes)
 	builder.WriteString("\n")
 	builder.WriteString("📁 文件数量：")
-	builder.WriteString(fmt.Sprintf("%d", agg.FileCount))
+	builder.WriteString(fmt.Sprintf("%d", fileCount))
 	builder.WriteString(" 个")
 
 	return builder.String()

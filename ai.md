@@ -82,6 +82,49 @@ watchlist_add:{tmdbID}  # 加入片单
 
 ## 更新日志
 
+### 2026-02-27 - 入库通知最终优化：文件大小累加 + 横幅图片 + 智能隐藏
+- **修复1 - 文件大小重复累加**
+  - **现象**: 第一集的文件大小被计算两次
+  - **原因**: 创建聚合时从 `enhancedInfo.FileSize` 复制大小，添加第一集时又累加一次
+  - **修复**: 将 `agg.FileSize` 初始化为 0，所有集数（包括第一集）都通过 `agg.FileSize += thisFileSize` 统一累加
+- **修复2 - "未知"字样智能隐藏**
+  - **现象**: 文件大小为 0 时显示"未知"，影响美观
+  - **修复**: 当 `FileSize <= 0` 时，完全隐藏 `📦 总大小：...` 行（包括前后空行），不再输出"未知"
+- **修复3 - 横幅图片补回**
+  - **新增字段**: `EpisodeAggregation` 结构体添加 `SeriesID` 字段用于后续获取图片
+  - **智能获取**: 在 `flushSingleAggregation` 发送通知前，如果没有图片：
+    1. 先尝试从 Emby Series 获取 backdrop
+    2. 失败时回退到 TMDB backdrop
+    3. 全程容错处理，不会因图片获取失败而报错
+- **修改文件**:
+  - `internal/services/webhook.go`
+    - `EpisodeAggregation` 结构体：添加 `SeriesID` 字段
+    - `aggregateEpisode()`: FileSize 初始化为 0，保存 SeriesID
+    - `flushSingleAggregation()`: 添加图片重试获取逻辑（Series > TMDB）
+    - `formatAggregatedEpisodeMessage()`: FileSize 为 0 时隐藏整行
+    - `formatEpisodePhotoCaption()`: FileSize 为 0 时隐藏整行
+
+### 2026-02-27 - 入库通知三大致命Bug修复（真实Emby环境验证）
+- **问题1 - 文件数量显示0个**
+  - **现象**: 明明合并了几十集，文件数量却显示 0 个
+  - **原因**: 试图累加单集的 FileCount，但 Emby Episode payload 里根本没有这个值，默认是 0
+  - **修复**: 文件数量不再使用 FileCount，直接使用 `len(agg.Episodes)`（队列长度即为文件数量）
+- **问题2 - 剧集名称完全丢失**
+  - **现象**: 最终推送变成了 `✅ 入库成功： S01 E01...`，前面的名字没了
+  - **原因**: `payload.SeriesName` 可能为空，没有 fallback 机制
+  - **修复**: 添加多级 fallback：`payload.SeriesName` → `payload.Item.SeriesName` → `payload.Item.Name`
+  - **安全检查**: `flushSingleAggregation` 中 SeriesName 为空时记录日志并跳过
+- **问题3 - 文件大小显示0B**
+  - **现象**: 即使累加了文件大小，依然显示 0 B
+  - **修复**: 文件大小为 0 时显示"未知"而非 "0 B"，同时保留累加逻辑以备将来正确解析
+- **修改文件**:
+  - `internal/services/webhook.go`
+    - `aggregateEpisode()`: SeriesName 多级 fallback，移除 FileCount 累加
+    - `flushSingleAggregation()`: 添加 SeriesName fallback 和安全检查
+    - `formatAggregatedEpisodeMessage()`: 使用 `len(agg.Episodes)` 计算文件数量，大小为0显示"未知"
+    - `formatAggregatedEpisodeSimple()`: 大小为0显示"未知"
+    - `formatEpisodePhotoCaption()`: 使用 `len(agg.Episodes)` 计算文件数量，大小为0显示"未知"
+
 ### 2026-02-26 - 横幅图优先级优化 + 极简呼吸感排版
 - **图片优化**:
   - `getSeriesInfo` 添加 `BackdropImageTags` 字段请求，优先获取横幅图
