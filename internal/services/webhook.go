@@ -135,6 +135,7 @@ type WebhookService struct {
 	mediaNotificationSvc *MediaNotificationService
 	messageCache         *MessageCache
 	notificationFormat   string // "simple" or "detailed"
+	tmdbAPIKey           string // TMDB API key for fetching images
 	// Episode aggregation
 	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
 	epAggregationMu      sync.RWMutex
@@ -157,7 +158,7 @@ type EpisodeAggregation struct {
 }
 
 // NewWebhookService creates a new webhook service
-func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string) *WebhookService {
+func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
 	svc := &WebhookService{
 		telegram:             telegram,
 		moviepilot:           moviepilot,
@@ -170,6 +171,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		mediaNotificationSvc: mediaNotificationSvc,
 		messageCache:         NewMessageCache(5 * time.Minute),
 		notificationFormat:   notificationFormat,
+		tmdbAPIKey:           tmdbAPIKey,
 		epAggregation:        make(map[string]*EpisodeAggregation),
 	}
 
@@ -1045,7 +1047,10 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 
 // getTMDBBackdrop fetches backdrop URL from TMDB API (横屏图片)
 func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
-	apiKey := "a62307d3a16cd0a605de3857d9ed614e"
+	apiKey := s.tmdbAPIKey
+	if apiKey == "" {
+		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key
+	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
@@ -1084,7 +1089,10 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 
 // getTMDBPoster fetches poster URL from TMDB API (竖版海报)
 func (s *WebhookService) getTMDBPoster(tmdbID string) string {
-	apiKey := "a62307d3a16cd0a605de3857d9ed614e"
+	apiKey := s.tmdbAPIKey
+	if apiKey == "" {
+		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key
+	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
