@@ -82,6 +82,37 @@ watchlist_add:{tmdbID}  # 加入片单
 
 ## 更新日志
 
+### 2026-02-26 - 横幅图优先级优化 + 极简呼吸感排版
+- **图片优化**:
+  - `getSeriesInfo` 添加 `BackdropImageTags` 字段请求，优先获取横幅图
+  - 优化剧集图片回退逻辑：webhook backdrop > series backdrop > series primary > TMDB
+- **排版优化**:
+  - 重构为极简呼吸感排版，每项之间一个空行
+  - 分割线改为纯文本横杠 `──────`，移除 Unicode 字符
+  - 移除"引用文件"说法，统一使用"总大小"
+  - 标题行完整显示年份和季集数：`[剧集名称] ([年份]) S01 E01-E23`
+- **新格式示例**:
+  ```
+  ✅ 入库成功：神墓 (2024) S01 E01-E23
+  ──────
+
+  🎬 名称：神墓 (2024) S01 E01-E23
+
+  🏷️ 类别：国产剧
+
+  💎 质量：WEB-DL 1080p
+
+  📦 总大小：5.41G
+
+  📁 文件数量：23 个
+  ```
+- **修改文件**:
+  - `internal/services/webhook.go`
+    - `getSeriesInfo()`: 添加 BackdropImageTags 请求和图片获取逻辑
+    - `getEmbyEnhancedInfoForEpisode()`: 优化图片回退逻辑
+    - `formatAggregatedEpisodeMessage()`: 极简呼吸感排版
+    - `formatEpisodePhotoCaption()`: 极简呼吸感排版
+
 ### 2026-02-26 - 修复入库通知数据造假和剧集刷屏问题
 - **严重问题**: 入库通知出现数据造假和逻辑漏洞
 - **问题1 - 质量造假**: 所有推送的质量显示为固定的 `WEB-DL 2160p`
