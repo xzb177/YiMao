@@ -53,6 +53,7 @@ var validActions = map[Action]bool{
 	ActionHelp:         true,
 	ActionFeedback:     true,
 	ActionRandom:       true,
+	"my_feedback":      true,  // User feedback list
 
 	// Review system actions
 	"review_approve": true,
