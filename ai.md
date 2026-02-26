@@ -360,3 +360,19 @@ watchlist_add:{tmdbID}  # 加入片单
   - `internal/handlers/search.go` - handleSelect() 方法修复
   - `internal/services/webhook.go` - TMDB ID 提取修复（3处）
   - `internal/services/telegram.go` - SendPhoto() 方法优化
+
+### 2025-02-26 - 入库通知图片和类别显示修复
+- **问题1**: 剧集入库通知只显示"剧集"而非详细类别（如"日漫"、"国产剧"）
+  - **原因**: Emby webhook 中单集 (Episode) 的 Genres 为空，代码使用 Episode ID 查询 API 获取不到类别信息
+  - **修复**: 新增 `getEmbyEnhancedInfoForEpisode` 函数，额外查询 Series 获取 Genres
+- **问题2**: 剧集入库通知图片不显示
+  - **原因**: 代码使用 Episode ID 查询图片，但单集没有 backdrop 图片
+  - **修复**: 使用 webhook payload 中的 `ParentBackdropItemId` 和 `ParentBackdropImageTags` 构建图片 URL
+- **技术实现**:
+  - 扩展 `EmbyItem` 结构体，添加 SeriesId、ParentBackdropItemId、ParentBackdropImageTags、SeriesPrimaryImageTag 等字段
+  - 添加 `TMDBID` 字段到 `EmbyEnhancedInfo` 用于图片查找
+  - 新增 `getSeriesInfo` 函数专门查询 Series 信息
+  - 新增 `getEmbyEnhancedInfoForEpisode` 函数处理 Episode 类型的增强信息获取
+  - 修改 `aggregateEpisode` 函数使用新的 episode-aware 函数
+- **修改文件**:
+  - `internal/services/webhook.go` - 结构体扩展、新增函数、聚合逻辑修复
