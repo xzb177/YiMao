@@ -345,6 +345,7 @@ func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *
 }
 
 // formatSimpleMessage formats a simple instant notification message
+// 简洁格式：适合快速浏览，单屏显示
 func (s *MediaNotificationService) formatSimpleMessage(item *MediaItem) string {
 	var builder strings.Builder
 
@@ -359,89 +360,20 @@ func (s *MediaNotificationService) formatSimpleMessage(item *MediaItem) string {
 		emoji = "🎥"
 	}
 
-	builder.WriteString(fmt.Sprintf("%s 入库通知\n\n", emoji))
-
-	// Title
-	if item.SeriesName != "" {
-		builder.WriteString(fmt.Sprintf("《%s》", item.SeriesName))
-		if item.SeasonNumber > 0 {
-			builder.WriteString(fmt.Sprintf(" 第%d季", item.SeasonNumber))
-		}
-		if item.EpisodeCount > 0 {
-			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
-				builder.WriteString(fmt.Sprintf(" EP%02d-EP%02d", item.EpisodeStart, item.EpisodeEnd))
-			} else if item.EpisodeCount == 1 {
-				builder.WriteString(fmt.Sprintf(" EP%02d", item.EpisodeStart))
-			} else {
-				builder.WriteString(fmt.Sprintf(" 共%d集", item.EpisodeCount))
-			}
-		}
-		if item.IsCompleted {
-			builder.WriteString("（完结）")
-		}
-	} else {
-		builder.WriteString(fmt.Sprintf("《%s》", item.Title))
-		if item.Year > 1900 && item.Year < 2100 {
-			builder.WriteString(fmt.Sprintf(" (%d)", item.Year))
-		}
-	}
-
-	builder.WriteString("\n")
-
-	// Library
-	builder.WriteString(fmt.Sprintf("📁 库: %s", item.LibraryName))
-
-	// Quality
-	if item.Quality != "" {
-		builder.WriteString(fmt.Sprintf(" · 💎 %s", item.Quality))
-	}
-
-	// Rating
-	if item.Rating > 0 {
-		builder.WriteString(fmt.Sprintf(" · ⭐ %.1f", item.Rating))
-	}
-
-	builder.WriteString("\n")
-
-	// Genres (max 2)
-	if len(item.Genres) > 0 {
-		genreCount := 2
-		if len(item.Genres) < 2 {
-			genreCount = len(item.Genres)
-		}
-		builder.WriteString("🎭 ")
-		for i := 0; i < genreCount; i++ {
-			if i > 0 {
-				builder.WriteString("、")
-			}
-			builder.WriteString(item.Genres[i])
-		}
-		builder.WriteString("\n")
-	}
-
-	// Time
-	builder.WriteString(fmt.Sprintf("🕒 %s", item.AddedAt.Format("15:04")))
-
-	return builder.String()
-}
-
-// formatDetailedMessage formats a detailed notification message (new format)
-func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string {
 	// Build title
 	var title string
 	if item.SeriesName != "" {
 		title = item.SeriesName
-		if item.Year > 1900 && item.Year < 2100 {
-			title += fmt.Sprintf(" (%d)", item.Year)
-		}
 		if item.SeasonNumber > 0 {
-			title += fmt.Sprintf(" S%02d", item.SeasonNumber)
+			title += fmt.Sprintf(" S%d", item.SeasonNumber)
 		}
 		if item.EpisodeCount > 0 {
 			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
-				title += fmt.Sprintf(" E%02d-E%02d", item.EpisodeStart, item.EpisodeEnd)
+				title += fmt.Sprintf(" E%d-E%d", item.EpisodeStart, item.EpisodeEnd)
 			} else if item.EpisodeCount == 1 {
-				title += fmt.Sprintf(" E%02d", item.EpisodeStart)
+				title += fmt.Sprintf(" E%d", item.EpisodeStart)
+			} else {
+				title += fmt.Sprintf(" +%d集", item.EpisodeCount)
 			}
 		}
 	} else {
@@ -451,8 +383,61 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 		}
 	}
 
-	// Build quality string
-	quality := ""
+	// Header
+	builder.WriteString(fmt.Sprintf("%s 新入库", emoji))
+
+	// Info line
+	builder.WriteString("\n\n")
+	builder.WriteString(fmt.Sprintf("《 %s 》", title))
+
+	// Meta info line
+	metaInfo := []string{}
+	if item.Quality != "" {
+		metaInfo = append(metaInfo, item.Quality)
+	}
+	if item.Rating > 0 {
+		metaInfo = append(metaInfo, fmt.Sprintf("⭐%.1f", item.Rating))
+	}
+	if len(metaInfo) > 0 {
+		builder.WriteString("\n")
+		builder.WriteString(strings.Join(metaInfo, " · "))
+	}
+
+	// Time
+	builder.WriteString(fmt.Sprintf("\n🕒 %s", item.AddedAt.Format("15:04")))
+
+	return builder.String()
+}
+
+// formatDetailedMessage formats a detailed notification message (new format)
+// 重新设计：参考 Slack Block Kit 风格，使用分层结构 + emoji 增强
+func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string {
+	// Build title with year
+	var title string
+	if item.SeriesName != "" {
+		title = item.SeriesName
+		if item.Year > 1900 && item.Year < 2100 {
+			title += fmt.Sprintf(" (%d)", item.Year)
+		}
+		if item.SeasonNumber > 0 {
+			title += fmt.Sprintf(" 第%d季", item.SeasonNumber)
+		}
+		if item.EpisodeCount > 0 {
+			if item.EpisodeStart > 0 && item.EpisodeEnd > 0 {
+				title += fmt.Sprintf(" 第%d-%d集", item.EpisodeStart, item.EpisodeEnd)
+			} else if item.EpisodeCount == 1 {
+				title += fmt.Sprintf(" 第%d集", item.EpisodeStart)
+			}
+		}
+	} else {
+		title = item.Title
+		if item.Year > 1900 && item.Year < 2100 {
+			title += fmt.Sprintf(" (%d)", item.Year)
+		}
+	}
+
+	// Build quality string with better formatting
+	quality := "未知"
 	if item.Quality != "" {
 		quality = item.Quality
 		if item.IsWEBDL && !strings.Contains(strings.ToLower(quality), "web-dl") {
@@ -460,24 +445,84 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 		}
 	}
 
+	// Build rating string
+	rating := ""
+	if item.Rating > 0 {
+		rating = fmt.Sprintf("%.1f", item.Rating)
+	}
+
+	// Build genres string (max 2)
+	genresStr := ""
+	if len(item.Genres) > 0 {
+		count := len(item.Genres)
+		if count > 2 {
+			count = 2
+		}
+		genresStr = strings.Join(item.Genres[:count], " / ")
+	}
+
+	// Truncate overview to ~100 characters (matching reference repo style)
+	overview := ""
+	if item.Overview != "" {
+		// Runes for proper Chinese character handling
+		runes := []rune(item.Overview)
+		if len(runes) > 100 {
+			overview = string(runes[:100]) + "..."
+		} else {
+			overview = item.Overview
+		}
+	}
+
 	// Build file info
 	fileInfo := ""
 	if item.FileSize > 0 {
-		fileInfo += fmt.Sprintf("\n📦 总大小：%s", s.formatFileSizeDecimal(item.FileSize))
-	}
-	if item.FileCount > 0 {
-		fileInfo += fmt.Sprintf("\n📁 文件数量：%d 个", item.FileCount)
+		fileInfo = fmt.Sprintf("%s", s.formatFileSizeDecimal(item.FileSize))
+	} else if item.FileCount > 0 {
+		fileInfo = fmt.Sprintf("%d 个文件", item.FileCount)
 	}
 
-	// Build complete message - separator on same line as title
-	message := fmt.Sprintf("✅ 入库成功：%s ───────────\n🎬 名称：%s\n🏷️ 类别：%s\n💎 质量： %s%s",
-		title,
-		title,
-		s.getDetailedCategory(item),
-		quality,
-		fileInfo)
+	// Format matching the reference repo style:
+	// 图片 + 标题 + 基本信息 + 简介
+	var builder strings.Builder
 
-	return message
+	// Header with library name
+	builder.WriteString(fmt.Sprintf("🆕 新入库 %s\n", item.LibraryName))
+
+	// Title (bold effect with spacing)
+	builder.WriteString("───────────────────\n")
+	builder.WriteString(fmt.Sprintf("「 %s 」\n", title))
+	builder.WriteString("───────────────────\n\n")
+
+	// Info row: quality, rating, genres
+	infoParts := []string{}
+	if quality != "未知" {
+		infoParts = append(infoParts, fmt.Sprintf("📺 %s", quality))
+	}
+	if rating != "" {
+		infoParts = append(infoParts, fmt.Sprintf("⭐ %s", rating))
+	}
+	if genresStr != "" {
+		infoParts = append(infoParts, fmt.Sprintf("🎭 %s", genresStr))
+	}
+	if fileInfo != "" {
+		infoParts = append(infoParts, fmt.Sprintf("📦 %s", fileInfo))
+	}
+
+	if len(infoParts) > 0 {
+		builder.WriteString(strings.Join(infoParts, "  ·  "))
+		builder.WriteString("\n")
+	}
+
+	// Overview/plot
+	if overview != "" {
+		builder.WriteString("\n📝 剧情简介\n")
+		builder.WriteString(overview)
+	}
+
+	// Timestamp at bottom
+	builder.WriteString(fmt.Sprintf("\n\n🕒 %s", item.AddedAt.Format("2006-01-02 15:04")))
+
+	return builder.String()
 }
 
 // formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency

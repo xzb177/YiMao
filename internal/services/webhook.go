@@ -153,6 +153,7 @@ type EpisodeAggregation struct {
 	FileCount    int
 	ImageURL     string
 	EnhancedInfo *EmbyEnhancedInfo
+	LibraryName  string                  // Library name for category detection
 }
 
 // NewWebhookService creates a new webhook service
@@ -489,6 +490,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			Episodes:     []int{},
 			FirstAdded:   time.Now(),
 			EnhancedInfo: enhancedInfo,
+			LibraryName:  payload.Library,
 		}
 		if enhancedInfo != nil {
 			agg.ImageURL = enhancedInfo.ImageURL
@@ -1497,6 +1499,7 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 }
 
 // formatPhotoCaption formats a compact caption for photo notifications (Telegram limit: 1024 chars)
+// 参考仓库风格：横屏图片 + 分层信息展示
 func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
 	var builder strings.Builder
 
@@ -1530,89 +1533,112 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	// Get series name
 	seriesName := payload.SeriesName
 
-	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
-	builder.WriteString("✅ 入库成功：")
+	// Library name
+	libraryName := payload.Library
+	if libraryName == "" && payload.Item != nil {
+		libraryName = payload.Item.Path
+	}
+
+	// Build display title
+	var displayTitle string
 	if itemType == "Episode" && seriesName != "" {
 		season := payload.Season
 		episode := payload.Episode
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
+			displayTitle = fmt.Sprintf("%s (%d)", seriesName, year)
 		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
+			displayTitle = seriesName
 		}
+		displayTitle += fmt.Sprintf(" 第%d季 第%d集", season, episode)
 	} else if itemType == "Season" && seriesName != "" {
 		season := payload.Season
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
+			displayTitle = fmt.Sprintf("%s (%d) 第%d季", seriesName, year, season)
 		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
+			displayTitle = fmt.Sprintf("%s 第%d季", seriesName, season)
 		}
 	} else {
 		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
+			displayTitle = fmt.Sprintf("%s (%d)", title, year)
 		} else {
-			builder.WriteString(title)
+			displayTitle = title
 		}
 	}
-	builder.WriteString("\n")
+
+	// Header: 🆕 新入库 [库名]
+	builder.WriteString(fmt.Sprintf("🆕 新入库 %s\n", libraryName))
+
+	// Separator and title in "brackets" for emphasis
+	builder.WriteString("───────────────────\n")
+	builder.WriteString(fmt.Sprintf("「 %s 」\n", displayTitle))
 	builder.WriteString("───────────────────\n\n")
 
-	// Name line
-	builder.WriteString("🎬 名称：")
-	if itemType == "Episode" && seriesName != "" {
-		season := payload.Season
-		episode := payload.Episode
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d E%02d", seriesName, year, season, episode))
-		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d E%02d", seriesName, season, episode))
-		}
-	} else if itemType == "Season" && seriesName != "" {
-		season := payload.Season
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d) S%02d", seriesName, year, season))
-		} else {
-			builder.WriteString(fmt.Sprintf("%s S%02d", seriesName, season))
-		}
-	} else {
-		if year > 1900 && year < 2100 {
-			builder.WriteString(fmt.Sprintf("%s (%d)", title, year))
-		} else {
-			builder.WriteString(title)
-		}
-	}
-	builder.WriteString("\n\n")
+	// Build info parts
+	infoParts := []string{}
 
-	// Category line
-	builder.WriteString("🏷️ 类别：")
-	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
-	builder.WriteString("\n\n")
-
-	// Quality line - use getFullQuality for proper WEB-DL format
+	// Quality
 	quality := ""
 	if enhanced != nil && enhanced.Quality != "" {
 		quality = s.getFullQuality(enhanced)
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s", quality))
-		// Only add extra newline if we have more content coming (ignore .strm file sizes < 1MB)
-		hasValidSize := enhanced != nil && enhanced.FileSize > 1024*1024
-		if hasValidSize {
-			builder.WriteString("\n\n")
-		} else {
-			builder.WriteString("\n")
+		infoParts = append(infoParts, fmt.Sprintf("📺 %s", quality))
+	}
+
+	// Rating
+	rating := 0.0
+	if enhanced != nil && enhanced.Rating > 0 {
+		rating = enhanced.Rating
+	} else if payload.Item != nil && payload.Item.CommunityRating > 0 {
+		rating = payload.Item.CommunityRating
+	}
+	if rating > 0 {
+		infoParts = append(infoParts, fmt.Sprintf("⭐ %.1f", rating))
+	}
+
+	// Genres (max 2)
+	genres := []string{}
+	if enhanced != nil && len(enhanced.Genres) > 0 {
+		genres = enhanced.Genres
+	}
+	if len(genres) > 0 {
+		count := len(genres)
+		if count > 2 {
+			count = 2
 		}
+		genreStr := strings.Join(genres[:count], "/")
+		infoParts = append(infoParts, fmt.Sprintf("🎭 %s", genreStr))
 	}
 
-	// File size (ignore files smaller than 1MB - likely .strm files)
+	// File info (only for real files > 1MB)
 	if enhanced != nil && enhanced.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
+		infoParts = append(infoParts, fmt.Sprintf("📦 %s", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
-	// File count
-	if enhanced != nil && enhanced.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", enhanced.FileCount))
+	// Print info row
+	if len(infoParts) > 0 {
+		builder.WriteString(strings.Join(infoParts, "  ·  "))
+		builder.WriteString("\n")
 	}
+
+	// Overview/plot (truncated to ~80 chars to fit within 1024 limit)
+	overview := ""
+	if enhanced != nil && enhanced.Overview != "" {
+		overview = enhanced.Overview
+	} else if payload.Item != nil && payload.Item.Overview != "" {
+		overview = payload.Item.Overview
+	}
+	if overview != "" {
+		runes := []rune(overview)
+		if len(runes) > 80 {
+			overview = string(runes[:80]) + "..."
+		}
+		builder.WriteString("\n📝 剧情简介\n")
+		builder.WriteString(overview)
+	}
+
+	// Timestamp
+	builder.WriteString(fmt.Sprintf("\n\n🕒 %s", time.Now().Format("2006-01-02 15:04")))
 
 	return builder.String()
 }
@@ -1621,54 +1647,72 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
 
-	// Header line - "✅ 入库成功：标题 (年份) [季集信息]"
-	builder.WriteString("✅ 入库成功：")
+	// Build display title
+	var displayTitle string
 	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
+		displayTitle = fmt.Sprintf("%s (%d)", agg.SeriesName, agg.Year)
 	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
+		displayTitle = agg.SeriesName
 	}
-	builder.WriteString("\n")
+	displayTitle += fmt.Sprintf(" 第%d季 %s", agg.Season, epRange)
+
+	// Header: 🆕 新入库
+	builder.WriteString("🆕 新入库 剧集库\n")
+
+	// Separator and title in "brackets" for emphasis
+	builder.WriteString("───────────────────\n")
+	builder.WriteString(fmt.Sprintf("「 %s 」\n", displayTitle))
 	builder.WriteString("───────────────────\n\n")
 
-	// Name line
-	builder.WriteString("🎬 名称：")
-	if agg.Year > 1900 && agg.Year < 2100 {
-		builder.WriteString(fmt.Sprintf("%s (%d) S%02d %s", agg.SeriesName, agg.Year, agg.Season, epRange))
-	} else {
-		builder.WriteString(fmt.Sprintf("%s S%02d %s", agg.SeriesName, agg.Season, epRange))
-	}
-	builder.WriteString("\n\n")
+	// Build info parts
+	infoParts := []string{}
 
-	// Category line - use detailed category from enhanced info
-	builder.WriteString("🏷️ 类别：")
-	if agg.EnhancedInfo != nil {
-		builder.WriteString(s.getDetailedCategory("Episode", agg.EnhancedInfo))
-	} else {
-		builder.WriteString("剧集")
-	}
-	builder.WriteString("\n\n")
-
-	// Quality line
+	// Quality
 	if agg.Quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量： %s", agg.Quality))
-		// Only add extra newline if we have more content coming (ignore .strm file sizes < 1MB)
-		if agg.FileSize > 1024*1024 {
-			builder.WriteString("\n\n")
-		} else {
-			builder.WriteString("\n")
+		infoParts = append(infoParts, fmt.Sprintf("📺 %s", agg.Quality))
+	}
+
+	// Rating from enhanced info
+	if agg.EnhancedInfo != nil && agg.EnhancedInfo.Rating > 0 {
+		infoParts = append(infoParts, fmt.Sprintf("⭐ %.1f", agg.EnhancedInfo.Rating))
+	}
+
+	// Genres (max 2)
+	if agg.EnhancedInfo != nil && len(agg.EnhancedInfo.Genres) > 0 {
+		count := len(agg.EnhancedInfo.Genres)
+		if count > 2 {
+			count = 2
 		}
+		genreStr := strings.Join(agg.EnhancedInfo.Genres[:count], "/")
+		infoParts = append(infoParts, fmt.Sprintf("🎭 %s", genreStr))
 	}
 
-	// File size (ignore files smaller than 1MB - likely .strm files)
+	// File info (only for real files > 1MB)
 	if agg.FileSize > 1024*1024 {
-		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(agg.FileSize)))
+		infoParts = append(infoParts, fmt.Sprintf("📦 %s", s.formatFileSizeDecimal(agg.FileSize)))
+	} else if agg.FileCount > 0 {
+		infoParts = append(infoParts, fmt.Sprintf("📁 %d个文件", agg.FileCount))
 	}
 
-	// File count
-	if agg.FileCount > 0 {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d 个", agg.FileCount))
+	// Print info row
+	if len(infoParts) > 0 {
+		builder.WriteString(strings.Join(infoParts, "  ·  "))
+		builder.WriteString("\n")
 	}
+
+	// Overview/plot (truncated to ~80 chars)
+	if agg.EnhancedInfo != nil && agg.EnhancedInfo.Overview != "" {
+		overview := agg.EnhancedInfo.Overview
+		runes := []rune(overview)
+		if len(runes) > 80 {
+			overview = string(runes[:80]) + "..."
+		}
+		builder.WriteString("\n📝 剧情简介\n")
+		builder.WriteString(overview)
+	}
+
+	// Timestamp
+	builder.WriteString(fmt.Sprintf("\n\n🕒 %s", time.Now().Format("2006-01-02 15:04")))
 
 	return builder.String()
 }
