@@ -129,6 +129,7 @@ type Dependencies struct {
 	Preferences       *services.PreferencesService
 	IssueService      *services.IssueService
 	AdminService      *services.AdminService
+	AdminHandler      *handlers.AdminHandler
 	QuotaService      *services.QuotaService
 	ReviewService     *services.ReviewService
 	MediaNotification *services.MediaNotificationService
@@ -347,6 +348,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		Preferences:      services.Preferences,
 		IssueService:     services.IssueService,
 		AdminService:     services.AdminService,
+		AdminHandler:     adminHandler,
 		QuotaService:     services.QuotaService,
 		ReviewService:    services.ReviewService,
 		MediaNotification: services.MediaNotification,
@@ -402,6 +404,7 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		UserMapping:    deps.UserMapping,
 		BindingRequest: deps.BindingRequest,
 		AdminService:   deps.AdminService,
+		AdminHandler:   deps.AdminHandler,
 		QuotaService:   deps.QuotaService,
 		SearchHistory:  deps.SearchHistory,
 		TMDB:           deps.TMDBClient,

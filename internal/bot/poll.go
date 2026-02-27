@@ -23,6 +23,7 @@ type Dependencies struct {
 	UserMapping     *services.UserMappingService
 	BindingRequest  *services.BindingRequestService
 	AdminService    *services.AdminService
+	AdminHandler    *handlers.AdminHandler
 	QuotaService    *services.QuotaService
 	SearchHistory   *services.SearchHistoryService
 	TMDB            *services.TMDBClient
@@ -38,6 +39,7 @@ type PollDeps struct {
 	UserMapping     *services.UserMappingService
 	BindingRequest  *services.BindingRequestService
 	AdminService    *services.AdminService
+	AdminHandler    *handlers.AdminHandler // For admin management flows
 	QuotaService    *services.QuotaService
 	SearchHistory   *services.SearchHistoryService
 	TMDB            *services.TMDBClient
@@ -64,6 +66,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		UserMapping:    deps.UserMapping,
 		BindingRequest: deps.BindingRequest,
 		AdminService:   deps.AdminService,
+		AdminHandler:   deps.AdminHandler,
 		QuotaService:   deps.QuotaService,
 		SearchHistory:  deps.SearchHistory,
 		TMDB:           deps.TMDB,
@@ -123,7 +126,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		return
 	}
 
-	// Check if user is in feedback process
+	// Check if user is feedback process
 	log.Printf("[Poll] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
 	if deps.FeedbackHandler != nil {
 		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
@@ -133,6 +136,28 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 				log.Printf("[Poll] Failed to handle feedback: %v", err)
 			}
 			return
+		}
+	}
+
+	// Check if user is in "waiting for add admin" state
+	if deps.AdminHandler != nil {
+		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
+			if _, exists := sess.Get("waiting_for_add_admin"); exists {
+				log.Printf("[Poll] User %d is in add admin state", msg.From.ID)
+				msg.Text = sanitizedText // Update with sanitized text
+				if resp, err := deps.AdminHandler.HandleAdminAddMessage(msg.From.ID, msg.Chat.ID, msg); resp != nil {
+					if err != nil {
+						log.Printf("[Poll] HandleAdminAddMessage error: %v", err)
+					}
+					// Send the response as a new message
+					keyboard := ConvertKeyboard(resp.Keyboard)
+					if resp.Text != "" {
+						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", keyboard)
+					}
+				}
+				return
+			}
 		}
 	}
 
@@ -520,6 +545,11 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
 				log.Printf("[Callback] SendMessage error: %v", sendErr)
 			}
+		}
+	} else if resp.Keyboard != nil && resp.Text == "" {
+		// 仅更新键盘按钮，不修改文本 (状态融合按钮的原地刷新)
+		if _, editErr := telegram.EditMessageReplyMarkup(ctx.ChatID, ctx.MessageID, keyboard); editErr != nil {
+			log.Printf("[Callback] EditMessageReplyMarkup error: %v", editErr)
 		}
 	}
 }

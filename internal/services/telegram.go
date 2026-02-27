@@ -105,6 +105,23 @@ func (c *TelegramClient) DeleteMessage(chatID int64, messageID int64) error {
 	return c.makeSimpleRequest(apiURL, payload)
 }
 
+// EditMessageReplyMarkup edits only the reply markup of an existing message
+// 用于状态融合按钮的原地刷新 - 不修改消息文本，只更新按钮
+func (c *TelegramClient) EditMessageReplyMarkup(chatID int64, messageID int64, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	apiURL := fmt.Sprintf("%s/editMessageReplyMarkup", c.baseURL)
+
+	payload := map[string]interface{}{
+		"chat_id":    chatID,
+		"message_id": messageID,
+	}
+
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+
+	return c.makeRequest(apiURL, payload)
+}
+
 // AnswerCallback answers a callback query
 func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAlert bool) error {
 	apiURL := fmt.Sprintf("%s/answerCallbackQuery", c.baseURL)

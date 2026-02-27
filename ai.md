@@ -2,6 +2,108 @@
 
 ---
 
+## 2026-02-28
+
+### feat: 多管理员权限控制模块 ✅ 已部署
+- **需求**: 实现完整的超级管理员/普通管理员两级权限体系
+- **核心功能**:
+  1. **权限分级**:
+     - 👑 超级管理员（Root）- 可管理其他管理员，拥有所有权限
+     - 普通管理员 - 可审批求片，不能管理管理员
+  2. **管理员设置子菜单**（仅 Root 可见）:
+     ```
+     [ 📋 查看管理员列表 ]
+     [ ➕ 添加管理员 ] [ ➖ 移除管理员 ]
+     [ ⬅️ 返回上级菜单 ]
+     ```
+  3. **添加管理员流程**:
+     - 点击后进入 `waiting_for_add_admin` 状态
+     - 支持输入 Telegram 数字 ID
+     - 自动校验是否已存在
+     - 添加成功后自动重置状态
+  4. **移除管理员流程**:
+     - 列出所有可移除的管理员（排除 Root）
+     - 点击对应按钮即可移除
+     - 移除后自动刷新列表
+
+#### 数据结构变更
+- `AdminInfo` 结构体：新增 `Role` 字段（AdminRoleRoot / AdminRoleNormal）
+- `AdminService` 新增方法：
+  - `IsRootAdmin(userID)` - 检查是否为超级管理员
+  - `GetRootAdminID()` - 获取超级管理员 ID
+  - `GetAllAdminInfo()` - 获取所有管理员详细信息
+  - `SetRootAdmin()` - 设置超级管理员
+
+#### 新增 Callback Actions
+- `admin_mgmt` - 管理员设置子菜单
+- `admin_list` - 查看管理员列表
+- `admin_add_start` - 开始添加管理员流程
+- `admin_remove_list` - 显示可移除的管理员列表
+- `admin_remove_confirm:id:xxx` - 确认移除指定管理员
+
+#### 会话状态机
+- `waiting_for_add_admin` - 等待输入管理员 ID 的状态
+- 使用 Session.Set/Get/Delete 管理状态
+
+#### 权限控制
+- 管理员菜单中显示当前角色标识
+- 【👮‍♂️ 管理员设置】按钮仅对 Root 可见
+- 所有管理员管理操作都检查 Root 权限
+
+#### 修改文件
+- `internal/services/admin.go` - 扩展支持 Role 字段，新增 Root 管理方法
+- `internal/handlers/admin.go` - 新增 5 个管理员管理处理函数
+- `internal/bot/poll.go` - 添加管理员添加消息处理逻辑
+- `internal/callback/types.go` - 添加新 action 白名单
+- `cmd/bot/main.go` - 添加 AdminHandler 到依赖注入链
+
+#### 数据迁移
+- 首次加载时自动将旧格式迁移到新格式
+- 第一个管理员自动成为 Root
+
+---
+
+### refactor: 管理员通知设置 UI 现代化重构 ✅ 已部署
+- **设计理念**: 采用"现代化 Telegram Bot"标准，状态融合按钮模式
+- **核心升级**:
+  1. **极简文本引导**: 移除冗余的状态罗列，仅保留简短提示
+  2. **状态融合按钮**: 状态直接写在按钮文本上，点击后原地刷新
+  3. **原地刷新机制**: 使用 `EditMessageReplyMarkup` 仅更新按钮，不发新消息
+  4. **防抖提示**: 每次操作调用 `AnswerCallbackQuery` 显示 Toast 提示
+
+#### 按钮矩阵布局（严格遵守）
+```
+[第一行：核心功能开关]
+[ 📺 单集推送: ❌ 关闭 ] [ 📰 每日汇总: ✅ 开启 ]
+
+[第二行：偏好设置]
+[ 📝 格式: 详细 🔄 ] [ ⏰ 汇总时间: 23:50 ✏️ ]
+
+[第三行：全局控制]
+[ 🔕 停用所有通知 ]
+
+[第四行：导航返回]
+[ ⬅️ 返回管理员菜单 ]
+```
+
+#### 新增 Callback Actions
+- `admin_notif_toggle_single_v2` - 单集推送切换（仅刷新按钮）
+- `admin_notif_toggle_daily_v2` - 每日汇总切换（仅刷新按钮）
+- `admin_notif_toggle_format` - 格式循环切换（详细↔简洁）
+- `admin_notif_disable_all` - 停用所有通知
+
+#### 新增方法
+- `buildNotifSettingsKeyboard()` - 构建通知设置按钮键盘（用于原地刷新）
+- `EditMessageReplyMarkup()` - Telegram API 调用，仅更新消息按钮
+
+#### 修改文件
+- `internal/handlers/admin.go` - 重写 `handleNotifSettings`，新增 4 个 V2 处理方法
+- `internal/bot/poll.go` - 更新 `handleCallbackResponse` 支持仅更新键盘
+- `internal/services/telegram.go` - 新增 `EditMessageReplyMarkup` 方法
+- `internal/callback/types.go` - 添加新 action 白名单
+
+---
+
 ## 2026-02-27
 
 ### refactor: 我的请求列表 UI 彻底重构 - 分页 + 极致排版 ✅ 已部署

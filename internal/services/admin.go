@@ -9,14 +9,32 @@ import (
 	"sync"
 )
 
+// AdminRole represents the role of an admin user
+type AdminRole string
+
+const (
+	// AdminRoleRoot is the super admin who can manage other admins
+	AdminRoleRoot AdminRole = "root"
+	// AdminRoleNormal is a regular admin who can approve requests
+	AdminRoleNormal AdminRole = "normal"
+)
+
+// AdminInfo represents an admin user with role
+type AdminInfo struct {
+	UserID int64    `json:"user_id"`
+	Name   string   `json:"name"`
+	Role   AdminRole `json:"role"`
+}
+
 // AdminService manages admin users and notifications
 type AdminService struct {
 	adminsFile string
-	admins     map[string]string // userID -> name
+	admins     map[int64]*AdminInfo // userID -> AdminInfo
+	rootUserID  int64               // The first/root admin
 	mu         sync.RWMutex
 }
 
-// Admin represents an admin user
+// Admin represents an admin user (legacy format for backward compatibility)
 type Admin struct {
 	UserID string `json:"user_id"`
 	Name   string `json:"name"`
@@ -28,7 +46,7 @@ func NewAdminService(dataDir string) *AdminService {
 
 	service := &AdminService{
 		adminsFile: adminsFile,
-		admins:     make(map[string]string),
+		admins:     make(map[int64]*AdminInfo),
 	}
 
 	service.load()
@@ -49,18 +67,48 @@ func (s *AdminService) load() error {
 		return err
 	}
 
+	// Try new format first with AdminInfo
 	var fileData struct {
+		Admins  map[int64]*AdminInfo `json:"admins"`
+		RootID  int64                `json:"root_id"`
+	}
+
+	if err := json.Unmarshal(data, &fileData); err == nil && len(fileData.Admins) > 0 {
+		s.admins = fileData.Admins
+		s.rootUserID = fileData.RootID
+		log.Printf("[AdminService] Loaded %d admins (new format), root=%d", len(s.admins), s.rootUserID)
+		return nil
+	}
+
+	// Try legacy format: {"admins": {"123": "Name"}}
+	var legacyData struct {
 		Admins map[string]string `json:"admins"`
 	}
 
-	if err := json.Unmarshal(data, &fileData); err != nil {
-		// Try legacy format from .env
-		return s.loadFromEnv()
+	if err := json.Unmarshal(data, &legacyData); err == nil && len(legacyData.Admins) > 0 {
+		s.admins = make(map[int64]*AdminInfo)
+		firstID := int64(0)
+		for idStr, name := range legacyData.Admins {
+			id, _ := strconv.ParseInt(idStr, 10, 64)
+			s.admins[id] = &AdminInfo{
+				UserID: id,
+				Name:   name,
+				Role:   AdminRoleNormal, // Default to normal
+			}
+			if firstID == 0 {
+				firstID = id
+			}
+		}
+		// First admin becomes root
+		if firstID > 0 {
+			s.rootUserID = firstID
+			s.admins[firstID].Role = AdminRoleRoot
+		}
+		s.save() // Save in new format
+		log.Printf("[AdminService] Migrated %d admins from legacy format, root=%d", len(s.admins), s.rootUserID)
+		return nil
 	}
 
-	s.admins = fileData.Admins
-
-	log.Printf("[AdminService] Loaded %d admins", len(s.admins))
 	return nil
 }
 
@@ -74,7 +122,8 @@ func (s *AdminService) loadFromEnv() error {
 // save saves admins to file
 func (s *AdminService) save() error {
 	data, err := json.MarshalIndent(map[string]interface{}{
-		"admins": s.admins,
+		"admins":   s.admins,
+		"root_id":  s.rootUserID,
 	}, "", "  ")
 	if err != nil {
 		return err
@@ -88,31 +137,90 @@ func (s *AdminService) IsAdmin(userID int64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	_, exists := s.admins[strconv.FormatInt(userID, 10)]
+	_, exists := s.admins[userID]
 	return exists
+}
+
+// IsRootAdmin checks if a user is the root/super admin
+func (s *AdminService) IsRootAdmin(userID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if admin, exists := s.admins[userID]; exists {
+		return admin.Role == AdminRoleRoot
+	}
+	return false
+}
+
+// GetRootAdminID returns the root admin's user ID
+func (s *AdminService) GetRootAdminID() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return s.rootUserID
+}
+
+// SetRootAdmin sets a user as the root admin
+func (s *AdminService) SetRootAdmin(userID int64, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if existing, exists := s.admins[userID]; exists {
+		existing.Role = AdminRoleRoot
+	} else {
+		s.admins[userID] = &AdminInfo{
+			UserID: userID,
+			Name:   name,
+			Role:   AdminRoleRoot,
+		}
+	}
+	s.rootUserID = userID
+
+	log.Printf("[AdminService] Set root admin: %s (%d)", name, userID)
+	return s.save()
 }
 
 // AddAdmin adds an admin
 func (s *AdminService) AddAdmin(userID int64, name string) error {
+	return s.AddAdminWithRole(userID, name, AdminRoleNormal)
+}
+
+// AddAdminWithRole adds an admin with a specific role
+func (s *AdminService) AddAdminWithRole(userID int64, name string, role AdminRole) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	userKey := strconv.FormatInt(userID, 10)
-	s.admins[userKey] = name
+	if existing, exists := s.admins[userID]; exists {
+		// Don't change role if already exists
+		existing.Name = name
+	} else {
+		s.admins[userID] = &AdminInfo{
+			UserID: userID,
+			Name:   name,
+			Role:   role,
+		}
+		// If this is the first admin, make them root
+		if len(s.admins) == 1 {
+			s.admins[userID].Role = AdminRoleRoot
+			s.rootUserID = userID
+		}
+	}
 
-	log.Printf("[AdminService] Added admin: %s (%s)", name, userKey)
+	log.Printf("[AdminService] Added admin: %s (%d, role=%s)", name, userID, role)
 	return s.save()
 }
 
-// RemoveAdmin removes an admin
+// RemoveAdmin removes an admin (cannot remove root admin)
 func (s *AdminService) RemoveAdmin(userID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	userKey := strconv.FormatInt(userID, 10)
-	if _, exists := s.admins[userKey]; exists {
-		delete(s.admins, userKey)
-		log.Printf("[AdminService] Removed admin: %s", userKey)
+	if admin, exists := s.admins[userID]; exists {
+		if admin.Role == AdminRoleRoot {
+			return fmt.Errorf("cannot remove root admin")
+		}
+		delete(s.admins, userID)
+		log.Printf("[AdminService] Removed admin: %d", userID)
 		return s.save()
 	}
 
@@ -125,11 +233,41 @@ func (s *AdminService) GetAllAdmins() map[string]string {
 	defer s.mu.RUnlock()
 
 	result := make(map[string]string)
-	for k, v := range s.admins {
-		result[k] = v
+	for _, admin := range s.admins {
+		roleMark := ""
+		if admin.Role == AdminRoleRoot {
+			roleMark = "👑 "
+		}
+		result[strconv.FormatInt(admin.UserID, 10)] = roleMark + admin.Name
 	}
 
 	return result
+}
+
+// GetAllAdminInfo returns all admin info with details
+func (s *AdminService) GetAllAdminInfo() []*AdminInfo {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*AdminInfo, 0, len(s.admins))
+	for _, admin := range s.admins {
+		// Return a copy to avoid race conditions
+		adminCopy := *admin
+		result = append(result, &adminCopy)
+	}
+
+	return result
+}
+
+// GetAdminName returns the admin's name
+func (s *AdminService) GetAdminName(userID int64) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if admin, exists := s.admins[userID]; exists {
+		return admin.Name
+	}
+	return ""
 }
 
 // GetAdminIDs returns all admin user IDs as int64
@@ -138,10 +276,8 @@ func (s *AdminService) GetAdminIDs() []int64 {
 	defer s.mu.RUnlock()
 
 	var ids []int64
-	for idStr := range s.admins {
-		if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
-			ids = append(ids, id)
-		}
+	for id := range s.admins {
+		ids = append(ids, id)
 	}
 
 	return ids

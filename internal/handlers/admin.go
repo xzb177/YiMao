@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
+	"emby-telegram-bot/pkg/types"
 )
 
 // AdminHandler handles admin-related callbacks
@@ -73,6 +75,16 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleAdminMenu(ctx)
 	case "admin_notif_settings":
 		return h.handleNotifSettings(ctx)
+	// 新的 V2 回调处理 - 状态融合按钮
+	case "admin_notif_toggle_single_v2":
+		return h.handleNotifToggleSingleV2(ctx)
+	case "admin_notif_toggle_daily_v2":
+		return h.handleNotifToggleDailyV2(ctx)
+	case "admin_notif_toggle_format":
+		return h.handleNotifToggleFormat(ctx)
+	case "admin_notif_disable_all":
+		return h.handleNotifDisableAll(ctx)
+	// 保留旧的回调处理（向后兼容）
 	case "admin_notif_toggle_instant":
 		return h.handleNotifToggleInstant(ctx)
 	case "admin_notif_toggle_daily":
@@ -85,6 +97,17 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleNotifFormatSimple(ctx)
 	case "admin_notif_format_detailed":
 		return h.handleNotifFormatDetailed(ctx)
+	// 管理员管理回调 - 仅 Root 可用
+	case "admin_mgmt":
+		return h.handleAdminMgmt(ctx)
+	case "admin_list":
+		return h.handleAdminList(ctx)
+	case "admin_add_start":
+		return h.handleAdminAddStart(ctx)
+	case "admin_remove_list":
+		return h.handleAdminRemoveList(ctx)
+	case "admin_remove_confirm":
+		return h.handleAdminRemoveConfirm(ctx)
 	default:
 		return nil, nil
 	}
@@ -470,6 +493,9 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 		}, nil
 	}
 
+	// Check if user is root admin for special menu
+	isRoot := h.adminService.IsRootAdmin(ctx.UserID)
+
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔧 管理员菜单").Newline()
 	msg.Newline()
@@ -514,11 +540,26 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 		log.Printf("[AdminHandler] Added notification settings button")
 	}
 
+	// Admin management - only for root admin
+	if isRoot {
+		adminCount := h.adminService.GetAdminCount()
+		roleText := "普通管理员"
+		if isRoot {
+			roleText = "👑 超级管理员"
+		}
+		msg.Bold(fmt.Sprintf("👮‍♂️ 管理员管理 (%s)", roleText)).Newline()
+		msg.Textf("   当前共有 %d 位管理员", adminCount).Newline()
+		msg.Newline()
+
+		kb.AddButton("👮‍♂️ 管理员设置", "admin_mgmt")
+		kb.NewRow()
+	}
+
 	// Return button
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	resultText := msg.Build()
-	log.Printf("[AdminHandler] Returning admin menu with %d chars text", len(resultText))
+	log.Printf("[AdminHandler] Returning admin menu with %d chars text, isRoot=%v", len(resultText), isRoot)
 
 	return &callback.Response{
 		Text:     resultText,
@@ -527,7 +568,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	}, nil
 }
 
-// handleNotifSettings handles notification settings callback
+// handleNotifSettings handles notification settings callback - 现代化 UI 重构
 func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
@@ -544,94 +585,51 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	}
 
 	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	pendingCount := h.mediaNotificationSvc.GetPendingItemsCount(ctx.UserID)
 
+	// 极简文本引导
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔔 媒体库通知设置").Newline()
+	msg.Bold("⚙️ 媒体库通知设置").Newline()
 	msg.Newline()
-
-	// Overall status
-	statusIcon := "✅"
-	statusText := "已启用"
-	if !settings.Enabled {
-		statusIcon = "❌"
-		statusText = "已禁用"
-	}
-	msg.Text(fmt.Sprintf("%s 总体状态: %s", statusIcon, statusText)).Newline()
-
-	// Instant notification status
-	instantIcon := "⚪"
-	if settings.InstantEnabled {
-		instantIcon = "🔵"
-	}
-	msg.Text(fmt.Sprintf("%s 单集推送: %s", instantIcon, h.getBoolText(settings.InstantEnabled))).Newline()
-
-	// Daily summary status
-	dailyIcon := "⚪"
-	if settings.DailySummaryEnabled {
-		dailyIcon = "🔵"
-	}
-	msg.Text(fmt.Sprintf("%s 每日汇总: %s", dailyIcon, h.getBoolText(settings.DailySummaryEnabled))).Newline()
-	msg.Text(fmt.Sprintf("⏰ 汇总时间: %s", settings.DailyTime)).Newline()
-
-	// Current format
-	formatIcon := "📝"
-	formatText := "简洁"
-	if settings.Format == services.FormatDetailed {
-		formatIcon = "📋"
-		formatText = "详细"
-	}
-	msg.Text(fmt.Sprintf("%s 通知格式: %s", formatIcon, formatText)).Newline()
-
-	// Pending items for daily summary
-	if pendingCount > 0 {
-		msg.Text(fmt.Sprintf("📦 今日待汇总: %d 项", pendingCount)).Newline()
-	}
-
-	msg.Newline()
+	msg.Text("点击下方按钮切换对应功能的开关状态").Newline()
 
 	kb := services.NewKeyboardBuilder()
 
-	// Instant notification toggle
-	instantBtnText := "✅ 启用单集推送"
+	// 第一行：核心功能开关 - 状态融合按钮
+	// 格式：[ 📺 单集推送: ❌ 关闭 ] 或 [ 📺 单集推送: ✅ 开启 ]
+	instantStatus := "关闭"
+	instantIcon := "❌"
 	if settings.InstantEnabled {
-		instantBtnText = "❌ 关闭单集推送"
+		instantStatus = "开启"
+		instantIcon = "✅"
 	}
-	kb.AddButton(instantBtnText, "admin_notif_toggle_instant")
+	kb.AddButton(fmt.Sprintf("📺 单集推送: %s %s", instantIcon, instantStatus), "admin_notif_toggle_single_v2")
 
-	// Daily summary toggle
-	dailyBtnText := "✅ 启用每日汇总"
+	dailyStatus := "关闭"
+	dailyIcon := "❌"
 	if settings.DailySummaryEnabled {
-		dailyBtnText = "❌ 关闭每日汇总"
+		dailyStatus = "开启"
+		dailyIcon = "✅"
 	}
-	kb.AddButton(dailyBtnText, "admin_notif_toggle_daily")
+	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
 	kb.NewRow()
 
-	// Format selection
-	formatSimpleIcon := "⚪"
-	formatDetailedIcon := "⚪"
-	if settings.Format == services.FormatSimple {
-		formatSimpleIcon = "🔵"
-	} else {
-		formatDetailedIcon = "🔵"
+	// 第二行：偏好设置
+	// 格式按钮：循环切换"详细"和"简洁"
+	formatText := "简洁"
+	if settings.Format == services.FormatDetailed {
+		formatText = "详细"
 	}
-	kb.AddButton(fmt.Sprintf("%s 简洁格式", formatSimpleIcon), "admin_notif_format_simple")
-	kb.AddButton(fmt.Sprintf("%s 详细格式", formatDetailedIcon), "admin_notif_format_detailed")
+	kb.AddButton(fmt.Sprintf("📝 格式: %s 🔄", formatText), "admin_notif_toggle_format")
+
+	// 时间按钮
+	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", settings.DailyTime), "admin_notif_settime")
 	kb.NewRow()
 
-	// Time selection
-	kb.AddButton("⏰ 设置汇总时间", "admin_notif_settime")
+	// 第三行：全局控制
+	kb.AddButton("🔕 停用所有通知", "admin_notif_disable_all")
 	kb.NewRow()
 
-	// Toggle overall enable/disable
-	toggleText := "❌ 禁用通知"
-	if !settings.Enabled {
-		toggleText = "✅ 启用通知"
-	}
-	kb.AddButton(toggleText, "admin_notif_toggle")
-	kb.NewRow()
-
-	// Return buttons
+	// 第四行：导航返回
 	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
 
 	return &callback.Response{
@@ -639,6 +637,194 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// handleNotifToggleSingleV2 处理单集推送切换 - 仅更新按钮，不发新消息
+func (h *AdminHandler) handleNotifToggleSingleV2(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	newState := !settings.InstantEnabled
+	h.mediaNotificationSvc.SetInstantEnabled(ctx.UserID, newState)
+
+	// 获取更新后的设置，构建新的按钮
+	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	kb := h.buildNotifSettingsKeyboard(updatedSettings)
+
+	// 防抖提示
+	callbackMsg := "单集推送已关闭"
+	if newState {
+		callbackMsg = "单集推送已开启"
+	}
+
+	return &callback.Response{
+		Keyboard:     convertKeyboard(kb),
+		CallbackMsg:  callbackMsg,
+	}, nil
+}
+
+// handleNotifToggleDailyV2 处理每日汇总切换 - 仅更新按钮
+func (h *AdminHandler) handleNotifToggleDailyV2(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	newState := !settings.DailySummaryEnabled
+	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, newState)
+
+	// 获取更新后的设置，构建新的按钮
+	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	kb := h.buildNotifSettingsKeyboard(updatedSettings)
+
+	// 防抖提示
+	callbackMsg := "每日汇总已关闭"
+	if newState {
+		callbackMsg = "每日汇总已开启"
+	}
+
+	return &callback.Response{
+		Keyboard:     convertKeyboard(kb),
+		CallbackMsg:  callbackMsg,
+	}, nil
+}
+
+// handleNotifToggleFormat 处理格式切换 - 在"详细"和"简洁"之间循环
+func (h *AdminHandler) handleNotifToggleFormat(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	// 循环切换格式
+	var newFormat services.NotificationFormat
+	if settings.Format == services.FormatDetailed {
+		newFormat = services.FormatSimple
+	} else {
+		newFormat = services.FormatDetailed
+	}
+	h.mediaNotificationSvc.SetFormat(ctx.UserID, newFormat)
+
+	// 获取更新后的设置，构建新的按钮
+	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	kb := h.buildNotifSettingsKeyboard(updatedSettings)
+
+	// 防抖提示
+	callbackMsg := "已切换到简洁格式"
+	if newFormat == services.FormatDetailed {
+		callbackMsg = "已切换到详细格式"
+	}
+
+	return &callback.Response{
+		Keyboard:     convertKeyboard(kb),
+		CallbackMsg:  callbackMsg,
+	}, nil
+}
+
+// handleNotifDisableAll 停用所有通知
+func (h *AdminHandler) handleNotifDisableAll(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 关闭所有开关 - 使用 SetSettings 方法
+	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	settings.InstantEnabled = false
+	settings.DailySummaryEnabled = false
+	settings.Enabled = false
+	h.mediaNotificationSvc.SetSettings(settings)
+
+	// 获取更新后的设置，构建新的按钮
+	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+	kb := h.buildNotifSettingsKeyboard(updatedSettings)
+
+	return &callback.Response{
+		Keyboard:     convertKeyboard(kb),
+		CallbackMsg:  "已停用所有通知",
+	}, nil
+}
+
+// buildNotifSettingsKeyboard 构建通知设置的按钮键盘（用于原地刷新）
+func (h *AdminHandler) buildNotifSettingsKeyboard(settings *services.AdminNotificationSettings) *types.TelegramInlineKeyboard {
+	kb := services.NewKeyboardBuilder()
+
+	// 第一行：核心功能开关 - 状态融合按钮
+	instantStatus := "关闭"
+	instantIcon := "❌"
+	if settings.InstantEnabled {
+		instantStatus = "开启"
+		instantIcon = "✅"
+	}
+	kb.AddButton(fmt.Sprintf("📺 单集推送: %s %s", instantIcon, instantStatus), "admin_notif_toggle_single_v2")
+
+	dailyStatus := "关闭"
+	dailyIcon := "❌"
+	if settings.DailySummaryEnabled {
+		dailyStatus = "开启"
+		dailyIcon = "✅"
+	}
+	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
+	kb.NewRow()
+
+	// 第二行：偏好设置
+	formatText := "简洁"
+	if settings.Format == services.FormatDetailed {
+		formatText = "详细"
+	}
+	kb.AddButton(fmt.Sprintf("📝 格式: %s 🔄", formatText), "admin_notif_toggle_format")
+	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", settings.DailyTime), "admin_notif_settime")
+	kb.NewRow()
+
+	// 第三行：全局控制
+	kb.AddButton("🔕 停用所有通知", "admin_notif_disable_all")
+	kb.NewRow()
+
+	// 第四行：导航返回
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return kb.Build()
 }
 
 // handleNotifToggleInstant handles toggling instant notifications
@@ -847,4 +1033,368 @@ func (h *AdminHandler) getBoolText(v bool) string {
 		return "开启"
 	}
 	return "关闭"
+}
+
+// ============================================================
+// 管理员管理模块 (仅超级管理员可用)
+// ============================================================
+
+// handleAdminMgmt handles the admin management submenu
+func (h *AdminHandler) handleAdminMgmt(ctx *callback.Context) (*callback.Response, error) {
+	// Only root admin can access this
+	if !h.adminService.IsRootAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "此功能仅限超级管理员使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("👮‍♂️ 管理员设置").Newline()
+	msg.Newline()
+	msg.Text("管理机器人管理员权限").Newline()
+	msg.Newline()
+	msg.Italic("💡 提示：超级管理员（👑）无法被移除").Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// 第一行：查看列表
+	kb.AddButton("📋 查看管理员列表", "admin_list")
+	kb.NewRow()
+
+	// 第二行：添加和移除
+	kb.AddButton("➕ 添加管理员", "admin_add_start")
+	kb.AddButton("➖ 移除管理员", "admin_remove_list")
+	kb.NewRow()
+
+	// 第三行：返回
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleAdminList displays all admins
+func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Response, error) {
+	// Only root admin can access this
+	if !h.adminService.IsRootAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "此功能仅限超级管理员使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	admins := h.adminService.GetAllAdminInfo()
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("📋 管理员列表").Newline()
+	msg.Newline()
+
+	if len(admins) == 0 {
+		msg.Text("暂无管理员").Newline()
+	} else {
+		for i, admin := range admins {
+			roleMark := "👑 "
+			if admin.Role != services.AdminRoleRoot {
+				roleMark = "  "
+			}
+			name := admin.Name
+			if name == "" {
+				name = "未命名"
+			}
+			msg.Textf("%d. %s`%s` (%d)", i+1, roleMark, name, admin.UserID).Newline()
+		}
+		msg.Newline()
+		msg.Italic(fmt.Sprintf("共 %d 位管理员", len(admins))).Newline()
+	}
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleAdminAddStart starts the add admin flow
+func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Response, error) {
+	// Only root admin can access this
+	if !h.adminService.IsRootAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "此功能仅限超级管理员使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Set session state
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("waiting_for_add_admin", true)
+	sess.Set("previous_menu", "admin_mgmt")
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("➕ 添加管理员").Newline()
+	msg.Newline()
+	msg.Text("请通过以下任一方式添加新管理员：").Newline()
+	msg.Newline()
+	msg.Text("1️⃣ 直接输入新管理员的 Telegram 数字 ID").Newline()
+	msg.Text("2️⃣ 将他的一条消息转发给我").Newline()
+	msg.Newline()
+	msg.Italic("💡 转发消息时，我会自动提取发送者的 ID").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 取消", "admin_mgmt")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleAdminRemoveList displays list of admins that can be removed
+func (h *AdminHandler) handleAdminRemoveList(ctx *callback.Context) (*callback.Response, error) {
+	// Only root admin can access this
+	if !h.adminService.IsRootAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "此功能仅限超级管理员使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	admins := h.adminService.GetAllAdminInfo()
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("➖ 移除管理员").Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	removableCount := 0
+	for _, admin := range admins {
+		// Skip root admin
+		if admin.Role == services.AdminRoleRoot {
+			continue
+		}
+
+		removableCount++
+		name := admin.Name
+		if name == "" {
+			name = "未命名"
+		}
+
+		// Create remove button for each admin
+		btnText := fmt.Sprintf("❌ %s (%d)", name, admin.UserID)
+		callbackData := fmt.Sprintf("admin_remove_confirm:id:%d", admin.UserID)
+		kb.AddButton(btnText, callbackData)
+		kb.NewRow()
+	}
+
+	if removableCount == 0 {
+		msg.Text("当前没有可移除的管理员").Newline()
+		msg.Newline()
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+	} else {
+		msg.Textf("选择要移除的管理员（共 %d 位）:", removableCount).Newline()
+		msg.Newline()
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+	}
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleAdminRemoveConfirm confirms and removes an admin
+func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callback.Response, error) {
+	// Only root admin can access this
+	if !h.adminService.IsRootAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "此功能仅限超级管理员使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Parse admin ID from params
+	idStr := ctx.Callback.Params["id"]
+	if idStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的管理员 ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	adminID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的管理员 ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Check if trying to remove root admin
+	if h.adminService.IsRootAdmin(adminID) {
+		return &callback.Response{
+			CallbackMsg: "无法移除超级管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get admin name before removing
+	name := h.adminService.GetAdminName(adminID)
+
+	// Remove admin
+	if err := h.adminService.RemoveAdmin(adminID); err != nil {
+		return &callback.Response{
+			CallbackMsg: fmt.Sprintf("移除失败: %v", err),
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Refresh the remove list
+	admins := h.adminService.GetAllAdminInfo()
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("➕ 移除成功").Newline()
+	msg.Newline()
+	msg.Textf("已移除管理员: %s (%d)", name, adminID).Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// Show remaining removable admins
+	removableCount := 0
+	for _, admin := range admins {
+		if admin.Role == services.AdminRoleRoot {
+			continue
+		}
+		removableCount++
+		adminName := admin.Name
+		if adminName == "" {
+			adminName = "未命名"
+		}
+		btnText := fmt.Sprintf("❌ %s (%d)", adminName, admin.UserID)
+		callbackData := fmt.Sprintf("admin_remove_confirm:id:%d", admin.UserID)
+		kb.AddButton(btnText, callbackData)
+		kb.NewRow()
+	}
+
+	if removableCount == 0 {
+		msg.Text("当前没有可移除的管理员").Newline()
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+	} else {
+		msg.Textf("剩余可移除: %d 位", removableCount).Newline()
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+	}
+
+	return &callback.Response{
+		Text:        msg.Build(),
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
+		CallbackMsg: fmt.Sprintf("已移除 %s", name),
+	}, nil
+}
+
+// HandleAdminAddMessage handles incoming message when waiting for admin ID
+// This is called from the poll handler when in "waiting_for_add_admin" state
+func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message *types.TelegramMessage) (*callback.Response, error) {
+	// Verify user is in the correct state
+	sess := h.sessMgr.GetOrCreate(userID)
+	if sess == nil || !h.sessMgr.IsValid(userID) {
+		return nil, nil // Invalid session
+	}
+
+	// Check if we have the state flag
+	if _, exists := sess.Get("waiting_for_add_admin"); !exists {
+		return nil, nil // Not in add admin state
+	}
+
+	var targetID int64
+	var targetName string
+	var source string
+
+	// Currently only support manual ID input
+	// (Forward message support requires extending TelegramMessage structure)
+	trimmed := strings.TrimSpace(message.Text)
+	parsedID, err := strconv.ParseInt(trimmed, 10, 64)
+	if err != nil {
+		msg := services.NewMessageBuilder()
+		msg.Bold("❌ 无效的 ID").Newline()
+		msg.Newline()
+		msg.Text("请输入有效的 Telegram 数字 ID").Newline()
+		msg.Newline()
+		msg.Italic("💡 提示：ID 是一串纯数字").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 取消", "admin_mgmt")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	targetID = parsedID
+	source = "手动输入"
+
+	// Clear the waiting state
+	sess.Delete("waiting_for_add_admin")
+
+	// Check if already an admin
+	if h.adminService.IsAdmin(targetID) {
+		role := "普通管理员"
+		if h.adminService.IsRootAdmin(targetID) {
+			role = "超级管理员"
+		}
+
+		msg := services.NewMessageBuilder()
+		msg.Bold("⚠️ 已是管理员").Newline()
+		msg.Newline()
+		msg.Textf("用户 `%d` 已经是 %s", targetID, role).Newline()
+		msg.Newline()
+		msg.Italic("如需修改权限，请联系开发者").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Add the admin
+	if targetName == "" {
+		targetName = fmt.Sprintf("Admin_%d", targetID)
+	}
+	if err := h.adminService.AddAdmin(targetID, targetName); err != nil {
+		log.Printf("[AdminHandler] Failed to add admin: %v", err)
+		return &callback.Response{
+			Text: fmt.Sprintf("❌ 添加失败: %v", err),
+		}, nil
+	}
+
+	// Success message
+	msg := services.NewMessageBuilder()
+	msg.Bold("✅ 添加成功").Newline()
+	msg.Newline()
+	msg.Textf("来源: %s", source).Newline()
+	msg.Textf("ID: `%d`", targetID).Newline()
+	msg.Textf("昵称: %s", targetName).Newline()
+	msg.Newline()
+	msg.Italic("新管理员可以访问管理员菜单进行审批操作").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
