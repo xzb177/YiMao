@@ -4,6 +4,30 @@
 
 ## 2026-02-27
 
+### refactor: 我的请求列表 UI 彻底重构 - 分页 + 极致排版 ✅ 已部署
+- **问题**: 请求列表一次性输出 100+ 条，严重刷屏，排版松散，易触发消息长度上限
+- **核心升级**:
+  1. **一行流极致压缩排版**: `序号. [状态Emoji] 影片名 (年份) [媒体类型Emoji] [额外信息]`
+     - 状态 Emoji: ⏳排队中 🔍搜索中 ⬇️下载中 ✅已完成 ❌失败
+     - 媒体类型: 🎬电影 📺剧集
+  2. **分页功能**: 每页 10 条，底部导航 `[⬅️ 上一页] [2/5] [下一页 ➡️]`
+  3. **数字操作按钮**: `[1]` `[2]`...`[10]` 每行 5 个（Telegram 限制），点击弹出子菜单
+     - `🔄 重新搜索` - 触发 MoviePilot 重新搜索
+     - `⬅️ 返回列表`
+  4. **平滑刷新**: 使用 `EditMessageText` 原地更新，不刷屏
+- **新增 Callback Actions**:
+  - `myreqs_page` - 分页切换
+  - `myreqs_item` - 项目操作（info/reshare/cancel）
+- **新增 MoviePilot 方法**: `ReshareSubscription(id)` - 触发重新搜索
+- **修改文件**:
+  - `internal/handlers/menu.go` - MyRequestsHandler 完全重写 (+300 行)
+  - `internal/callback/types.go` - 添加新 Action 常量
+  - `internal/services/moviepilot.go` - 添加 ReshareSubscription 方法
+  - `cmd/bot/main.go` - 注册新 callback handlers
+- **修复**: 按钮布局问题 - 每行最多 5 个按钮，分两行显示 `[1][2][3][4][5]` / `[6][7][8][9][10]`
+
+---
+
 ### fix: TMDB 跨库撞车严重 Bug - mediaType 参数强制修复 ✅ 已部署
 - **问题**: 动漫入库时，TMDB fallback 返回了毫无关联的法国老电影的竖屏海报
 - **根本原因**:

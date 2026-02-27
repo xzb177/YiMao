@@ -31,6 +31,10 @@ const (
 	ActionAI           Action = "ai"
 	ActionHot          Action = "hot"
 	ActionNew          Action = "new"
+
+	// My Requests pagination actions
+	ActionMyReqsPage  Action = "myreqs_page"
+	ActionMyReqsItem  Action = "myreqs_item"
 )
 
 // validActions is the whitelist of allowed callback actions
@@ -53,7 +57,11 @@ var validActions = map[Action]bool{
 	ActionHelp:         true,
 	ActionFeedback:     true,
 	ActionRandom:       true,
-	"my_feedback":      true,  // User feedback list
+	"my_feedback":      true, // User feedback list
+
+	// My Requests pagination actions
+	ActionMyReqsPage: true,
+	ActionMyReqsItem: true,
 
 	// Review system actions
 	"review_approve": true,
@@ -80,8 +88,8 @@ var validActions = map[Action]bool{
 	"admin_notif_format_detailed": true,
 
 	// Request related actions
-	"force_subscribe":  true,
-	"cancel_request":   true,
+	"force_subscribe": true,
+	"cancel_request":  true,
 }
 
 // isValidAction checks if an action is in the whitelist

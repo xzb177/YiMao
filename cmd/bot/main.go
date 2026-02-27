@@ -331,6 +331,10 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
 	registry.RegisterFunc("cancel_request", requestHandler.HandleCancelRequest)
 
+	// My Requests pagination callbacks
+	registry.RegisterFunc(callback.ActionMyReqsPage, myRequestsHandler.HandlePage)
+	registry.RegisterFunc(callback.ActionMyReqsItem, myRequestsHandler.HandleItemAction)
+
 	log.Println("✅ Callback handlers registered")
 
 	// Build full dependencies

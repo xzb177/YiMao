@@ -694,6 +694,25 @@ func (c *MoviePilotClient) GetSubscriptionStatus(requestID int) (*SubscribeStatu
 	return &status, nil
 }
 
+// ReshareSubscription triggers a reshare for a subscription
+func (c *MoviePilotClient) ReshareSubscription(subscriptionID string) error {
+	// MoviePilot API uses PUT /api/v1/subscription/{id} to update
+	// To trigger reshare, we set the state to "R" (Recycled)
+	endpoint := fmt.Sprintf("/api/v1/subscription/%s", subscriptionID)
+
+	payload := map[string]interface{}{
+		"state": "R", // StateRecycled - triggers reshare
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	_, err = c.makeRequest("PUT", endpoint, data)
+	return err
+}
+
 // SubscribeStatus represents the detailed status of a subscription
 type SubscribeStatus struct {
 	ID             int    `json:"id"`
