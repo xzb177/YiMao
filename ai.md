@@ -786,6 +786,7 @@ watchlist_add:{tmdbID}  # 加入片单
   - `internal/handlers/search.go` - 添加调试日志
 - **部署**: `docker compose up -d --build` ✅ 已部署
 - **状态**: ✅ 问题已解决
+- **提交**: `e505a95` - 已推送到远程仓库
 
 ## 2026-02-27
 
