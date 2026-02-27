@@ -299,7 +299,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		return
 	}
 
-	log.Printf("[审核] 通知 %d 位管理员: %s", len(adminIDs), review.MediaTitle)
+	log.Printf("[审核] 通知 %d 位管理员: %s, 令牌: %s", len(adminIDs), review.MediaTitle, review.ApproveToken)
 
 	mediaTypeLabel := "电影"
 	if review.MediaType == services.MediaTypeTV {
@@ -346,12 +346,12 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 
 	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
 
-	// Add action buttons
+	// Add action buttons with approve token
 	for _, adminID := range adminIDs {
 		keyboard := &types.TelegramInlineKeyboard{
 			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 				{
-					{Text: "✅ 批准", CallbackData: fmt.Sprintf("review_approve:id:%s", review.RequestID)},
+					{Text: "✅ 批准", CallbackData: fmt.Sprintf("review_approve:id:%s:token:%s", review.RequestID, review.ApproveToken)},
 					{Text: "❌ 拒绝", CallbackData: fmt.Sprintf("review_reject:id:%s", review.RequestID)},
 				},
 			},

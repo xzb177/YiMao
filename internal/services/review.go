@@ -1,9 +1,11 @@
 package services
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"sync"
 	"time"
@@ -30,6 +32,7 @@ type ReviewRequest struct {
 	RejectionReason string   `json:"rejection_reason,omitempty"`
 	EmbyExists     bool      `json:"emby_exists,omitempty"` // Media already exists in Emby
 	EmbyInfo       *EmbySearchResult `json:"emby_info,omitempty"`   // Emby media info if exists
+	ApproveToken   string    `json:"approve_token,omitempty"`   // One-time token for approve action
 
 	// MoviePilot subscription info
 	SubscriptionID    int    `json:"subscription_id,omitempty"`    // MoviePilot subscription ID
@@ -119,6 +122,9 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 		review.Priority = "normal"
 	}
 
+	// Generate approve token - one-time use token to prevent duplicate approvals
+	review.ApproveToken = generateApproveToken()
+
 	s.reviews[review.RequestID] = review
 
 	// Map priority to Chinese for logging
@@ -132,10 +138,33 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 		priorityText = review.Priority
 	}
 
-	log.Printf("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s",
-		review.RequestID, review.TelegramID, priorityText, review.MediaTitle)
+	log.Printf("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s, 令牌: %s",
+		review.RequestID, review.TelegramID, priorityText, review.MediaTitle, review.ApproveToken)
 
 	return s.saveLocked()
+}
+
+// generateApproveToken generates a unique token for approve action
+func generateApproveToken() string {
+	return fmt.Sprintf("%d_%s", time.Now().UnixNano(), randomString(8))
+}
+
+// randomString generates a cryptographically random string of given length
+func randomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, length)
+	max := big.NewInt(int64(len(charset)))
+
+	for i := range b {
+		n, err := rand.Int(rand.Reader, max)
+		if err != nil {
+			// Fallback to time-based if crypto fails
+			b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+			continue
+		}
+		b[i] = charset[n.Int64()]
+	}
+	return string(b)
 }
 
 // GetRequest retrieves a review request by ID
@@ -195,8 +224,8 @@ func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	return userReviews
 }
 
-// Approve approves a review request
-func (s *ReviewService) Approve(requestID string, reviewedBy int64) (*ReviewRequest, error) {
+// Approve approves a review request with token verification
+func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string) (*ReviewRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -205,11 +234,30 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64) (*ReviewRequ
 		return nil, fmt.Errorf("review request not found: %s", requestID)
 	}
 
+	// Check if request is still pending
+	if review.Status != "pending" {
+		// Return the review without error so caller can handle duplicate approval gracefully
+		if review.Status == "approved" {
+			log.Printf("[ReviewService] 请求已被批准: %s, 由: %d", requestID, review.ReviewedBy)
+			return review, fmt.Errorf("already_approved")
+		}
+		return nil, fmt.Errorf("请求状态为 %s, 无法批准", review.Status)
+	}
+
+	// Verify token to prevent duplicate approvals
+	if review.ApproveToken == "" || review.ApproveToken != token {
+		log.Printf("[ReviewService] 无效的批准令牌: 期望=%s, 实际=%s", review.ApproveToken, token)
+		return nil, fmt.Errorf("invalid or expired approve token")
+	}
+
+	// Clear the token after use (one-time use)
+	review.ApproveToken = ""
+
 	review.Status = "approved"
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
 
-	log.Printf("[ReviewService] Approved review request: %s", requestID)
+	log.Printf("[ReviewService] Approved review request: %s by admin: %d", requestID, reviewedBy)
 
 	return review, s.saveLocked()
 }

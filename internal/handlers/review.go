@@ -66,10 +66,22 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	requestID := ctx.Callback.Params["id"]
+	token := ctx.Callback.Params["token"]
 
-	// Approve the review
-	review, err := h.reviewService.Approve(requestID, ctx.UserID)
+	// Approve the review with token verification
+	review, err := h.reviewService.Approve(requestID, ctx.UserID, token)
 	if err != nil {
+		// Check if it's a duplicate approval (already approved by another admin)
+		if err.Error() == "already_approved" {
+			// Get the current review state
+			log.Printf("[ReviewHandler] 请求已被其他管理员批准: %s", requestID)
+			return &callback.Response{
+				Text:        "✅ 此请求已被其他管理员批准",
+				CallbackMsg: "已被批准",
+				ShowAlert:   true,
+				Edit:        true,
+			}, nil
+		}
 		return &callback.Response{
 			Text:        fmt.Sprintf("❌ 操作失败: %v", err),
 			CallbackMsg: "失败",
