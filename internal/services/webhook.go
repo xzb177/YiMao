@@ -2110,6 +2110,7 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string, enh
 }
 
 // formatPhotoCaption formats a compact caption for photo notifications (Telegram limit: 1024 chars)
+// 【更新】统一使用极简呼吸感排版，与 formatEpisodePhotoCaption 保持一致
 func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
 	var builder strings.Builder
 
@@ -2154,60 +2155,58 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 		year = enhanced.Year
 	}
 
-	// Build nameOnly (年份+剧集名，不包含季集数，用于"🎬 名称"行)
+	// Build nameOnly (年份+名称，用于"🎬 名称"行)
 	var nameOnly string
-	if year > 1900 && year < 2100 && seriesName != "" {
-		nameOnly = fmt.Sprintf("%s (%d)", seriesName, year)
-	} else if seriesName != "" {
-		nameOnly = seriesName
+	if year > 1900 && year < 2100 {
+		nameOnly = fmt.Sprintf("%s (%d)", title, year)
 	} else {
 		nameOnly = title
 	}
 
-	// Build display name (for ✅ 入库成功 line)
-	successName := title
-	if itemType == "Episode" && seriesName != "" {
-		successName = seriesName
-	} else if itemType == "Season" && seriesName != "" {
-		successName = seriesName
-	} else if itemType == "Series" {
-		successName = title
-	}
-
-	// Header line - only name, no year/season info
+	// Header line
 	builder.WriteString("✅ 入库成功：")
-	builder.WriteString(successName)
+	builder.WriteString(title)
 	builder.WriteString("\n")
-	builder.WriteString("───────────────────\n\n")
+	builder.WriteString("──────\n")
 
-	// Name line - only series name (with year), no season/episode
-	builder.WriteString(fmt.Sprintf("🎬 名称：%s\n", nameOnly))
+	// Name line
+	builder.WriteString("\n")
+	builder.WriteString("🎬 名称：")
+	builder.WriteString(nameOnly)
+	builder.WriteString("\n")
 
 	// Category line
-	builder.WriteString(fmt.Sprintf("🏷️ 类别：%s\n", s.getDetailedCategory(itemType, enhanced)))
+	builder.WriteString("\n")
+	builder.WriteString("🏷️ 类别：")
+	builder.WriteString(s.getDetailedCategory(itemType, enhanced))
+	builder.WriteString("\n")
 
-	// Quality line - use getFullQuality for proper WEB-DL format
+	// Quality line
 	quality := ""
 	if enhanced != nil && enhanced.Quality != "" {
-		quality = s.getFullQuality(enhanced)
+		quality = enhanced.Quality
 	}
 	if quality != "" {
-		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
+		builder.WriteString("\n")
+		builder.WriteString("💎 质量：")
+		builder.WriteString(quality)
+		builder.WriteString("\n")
 	}
 
-	// File size - UNCONDITIONALLY display, no if conditions
-	if enhanced != nil {
-		if enhanced.FileSize > 1024*1024 {
-			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		} else {
-			// Small file size or .strm files - always show
-			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		}
+	// File size line - 只在有实际大小时显示
+	if enhanced != nil && enhanced.FileSize > 0 {
+		builder.WriteString("\n")
+		builder.WriteString("📦 总大小：")
+		builder.WriteString(s.formatFileSizeDecimal(enhanced.FileSize))
+		builder.WriteString("\n")
 	}
 
-	// File count - UNCONDITIONALLY display, no if conditions
-	if enhanced != nil {
-		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个", enhanced.FileCount))
+	// File count line - 只在有实际数量时显示
+	if enhanced != nil && enhanced.FileCount > 0 {
+		builder.WriteString("\n")
+		builder.WriteString("📁 文件数量：")
+		builder.WriteString(fmt.Sprintf("%d", enhanced.FileCount))
+		builder.WriteString(" 个")
 	}
 
 	return builder.String()
