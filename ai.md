@@ -4,6 +4,30 @@
 
 ## 2026-02-28
 
+### feat: 每日汇总自定义时间输入功能 ✅ 已部署
+- **问题**: 「每日汇总时间回调没反应」- 原时间选择只支持预设时间
+- **解决方案**: 新增自定义时间输入功能，支持任意 HH:MM 格式
+- **新增功能**:
+  - ✏️ 自定义时间按钮 - 在时间选择界面新增入口
+  - 文本输入处理 - 支持 HH:MM 格式（00:00-23:59）
+  - 完整验证逻辑 - 格式校验、范围校验、友好错误提示
+  - 取消支持 - `/cancel` 或「取消」退出输入流程
+- **使用方式**:
+  1. 管理员菜单 → 通知设置 → 设置汇总时间
+  2. 点击「✏️ 自定义时间」
+  3. 输入时间（如 23:00、08:30）
+  4. 确认设置成功并返回设置菜单
+- **修改文件**:
+  - `internal/callback/types.go` - 添加 `admin_notif_custom_time` 到白名单
+  - `cmd/bot/main.go` - 注册自定义时间回调
+  - `internal/bot/poll.go` - 添加 `waiting_for_time_input` 状态处理
+  - `internal/handlers/admin.go` - 实现 `handleNotifCustomTime` 和 `HandleNotifCustomTimeInput`
+- **Git 提交**: `c10ef3a`
+
+---
+
+## 2026-02-28
+
 ### fix: 修复回调注册 + 入库通知集成个人设置开关 ✅ 已部署
 - **回调注册问题**: 新增的 V2 通知回调和管理员管理回调已在 main.go 中注册
 - **入库通知集成**: 修改 flushSingleAggregation 使用 mediaNotificationSvc
