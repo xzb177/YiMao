@@ -249,6 +249,8 @@ func (s *MediaNotificationService) processItems() {
 }
 
 // handleItem handles a single media item
+// 入库通知只推送到群组，不推送给管理员个人
+// 此函数仅用于将项目添加到每日汇总列表，不发送即时通知
 func (s *MediaNotificationService) handleItem(item *MediaItem) {
 	adminIDs := s.adminService.GetAdminIDs()
 	today := time.Now().Format("2006-01-02")
@@ -306,19 +308,17 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			}
 		}
 
-		// Always add to pending items for daily summary
-		adminKey := strconv.FormatInt(adminID, 10)
-		if s.pendingItems[adminKey] == nil {
-			s.pendingItems[adminKey] = make(map[string][]*MediaItem)
+		// Always add to pending items for daily summary (if enabled)
+		if settings.DailySummaryEnabled {
+			adminKey := strconv.FormatInt(adminID, 10)
+			if s.pendingItems[adminKey] == nil {
+				s.pendingItems[adminKey] = make(map[string][]*MediaItem)
+			}
+			s.pendingItems[adminKey][today] = append(s.pendingItems[adminKey][today], item)
 		}
-		s.pendingItems[adminKey][today] = append(s.pendingItems[adminKey][today], item)
 
-		// Send instant notification if enabled (unlock before sending to avoid deadlock)
-		if settings.InstantEnabled {
-			s.mu.Unlock()
-			s.sendInstantNotification(adminID, item, settings.Format)
-			s.mu.Lock()
-		}
+		// 【修改】不再发送即时通知给管理员个人，只发送到群组
+		// 即时通知由 webhook.go 中的函数统一发送到群组
 	}
 }
 

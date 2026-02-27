@@ -847,92 +847,23 @@ func (s *WebhookService) flushEpisodeAggregation() {
 	}
 }
 
-// sendAggregatedEpisodeToAdmins sends aggregated episode notification to admins based on their settings
+// sendAggregatedEpisodeToAdmins sends aggregated episode notification to group chat only
+// 入库通知只推送到群组，不推送给管理员个人
 func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year int, season int, episodes []int, epRange string, quality, imageURL string, fileSize int64, enhancedInfo *EmbyEnhancedInfo, libraryName string) {
-	if s.mediaNotificationSvc == nil {
-		// Fallback to old behavior: send to group chat
-		if s.chatID != 0 && s.chatID < -100 {
-			message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
-				SeriesName:   seriesName,
-				Year:         year,
-				Season:       season,
-				Episodes:     episodes,
-				Quality:      quality,
-				ImageURL:     imageURL,
-				FileSize:     fileSize,
-				EnhancedInfo: enhancedInfo,
-				LibraryName:  libraryName,
-			}, epRange)
+	// 只发送到群组，不发送给管理员个人
+	if s.chatID != 0 && s.chatID < -100 {
+		message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
+			SeriesName:   seriesName,
+			Year:         year,
+			Season:       season,
+			Episodes:     episodes,
+			Quality:      quality,
+			ImageURL:     imageURL,
+			FileSize:     fileSize,
+			EnhancedInfo: enhancedInfo,
+			LibraryName:  libraryName,
+		}, epRange)
 
-			if imageURL != "" {
-				photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
-					SeriesName:   seriesName,
-					Year:         year,
-					Season:       season,
-					Episodes:     episodes,
-					Quality:      quality,
-					ImageURL:     imageURL,
-					FileSize:     fileSize,
-					EnhancedInfo: enhancedInfo,
-					LibraryName:  libraryName,
-				}, epRange)
-				s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
-			} else {
-				s.sendWithCache(s.chatID, message)
-			}
-		}
-		return
-	}
-
-	// Get all admin IDs
-	adminIDs := s.adminService.GetAdminIDs()
-	if len(adminIDs) == 0 {
-		return
-	}
-
-	// Check each admin's settings and send accordingly
-	for _, adminID := range adminIDs {
-		settings := s.mediaNotificationSvc.GetSettings(adminID)
-
-		// Skip if completely disabled
-		if !settings.Enabled {
-			continue
-		}
-
-		// Skip if instant notifications are disabled
-		if !settings.InstantEnabled {
-			continue
-		}
-
-		// Build message based on admin's format preference
-		var message string
-		if settings.Format == FormatSimple {
-			message = s.formatAggregatedEpisodeSimple(&EpisodeAggregation{
-				SeriesName:   seriesName,
-				Year:         year,
-				Season:       season,
-				Episodes:     episodes,
-				Quality:      quality,
-				ImageURL:     imageURL,
-				FileSize:     fileSize,
-				EnhancedInfo: enhancedInfo,
-				LibraryName:  libraryName,
-			}, epRange)
-		} else {
-			message = s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
-				SeriesName:   seriesName,
-				Year:         year,
-				Season:       season,
-				Episodes:     episodes,
-				Quality:      quality,
-				ImageURL:     imageURL,
-				FileSize:     fileSize,
-				EnhancedInfo: enhancedInfo,
-				LibraryName:  libraryName,
-			}, epRange)
-		}
-
-		// Send notification
 		if imageURL != "" {
 			photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
 				SeriesName:   seriesName,
@@ -945,9 +876,9 @@ func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year i
 				EnhancedInfo: enhancedInfo,
 				LibraryName:  libraryName,
 			}, epRange)
-			s.sendNotificationWithPhotoToAdmin(adminID, photoCaption, imageURL, enhancedInfo)
+			s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
 		} else {
-			s.telegram.SendMessage(adminID, message, "Markdown", nil)
+			s.sendWithCache(s.chatID, message)
 		}
 	}
 }
