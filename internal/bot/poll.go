@@ -158,6 +158,25 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 				}
 				return
 			}
+
+			// Check if user is in "waiting for custom time input" state
+			if _, exists := sess.Get("waiting_for_time_input"); exists {
+				log.Printf("[Poll] User %d is in custom time input state", msg.From.ID)
+				msg.Text = sanitizedText // Update with sanitized text
+				if resp, err := deps.AdminHandler.HandleNotifCustomTimeInput(msg.From.ID, msg.Chat.ID, msg.Text); resp != nil {
+					if err != nil {
+						log.Printf("[Poll] HandleNotifCustomTimeInput error: %v", err)
+					}
+					// Send the response as a new message
+					keyboard := ConvertKeyboard(resp.Keyboard)
+					if resp.Text != "" {
+						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", keyboard)
+					}
+					// Clear the waiting state on success
+					sess.Delete("waiting_for_time_input")
+					return
+				}
+			}
 		}
 	}
 

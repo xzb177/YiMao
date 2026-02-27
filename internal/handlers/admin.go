@@ -97,6 +97,8 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleNotifFormatSimple(ctx)
 	case "admin_notif_format_detailed":
 		return h.handleNotifFormatDetailed(ctx)
+	case "admin_notif_custom_time":
+		return h.handleNotifCustomTime(ctx)
 	// 管理员管理回调 - 仅 Root 可用
 	case "admin_mgmt":
 		return h.handleAdminMgmt(ctx)
@@ -945,22 +947,24 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 			h.mediaNotificationSvc.SetDailyTime(ctx.UserID, timeStr)
 			return &callback.Response{
 				Text:        fmt.Sprintf("✅ 汇总时间已设为 %s", timeStr),
-				CallbackMsg: "时间已设置",
+				CallbackMsg:  "时间已设置",
 				Edit:        true,
 			}, nil
 		}
 	}
 
-	// Show time selection keyboard
+	// Show time selection keyboard with custom input option
 	msg := services.NewMessageBuilder()
 	msg.Bold("⏰ 设置每日汇总时间").Newline()
 	msg.Newline()
-	msg.Text("请选择汇总发送时间：").Newline()
+	msg.Text("请选择预设时间或输入自定义时间（格式：HH:MM）").Newline()
+	msg.Newline()
+	msg.Italic("💡 例如：23:00、08:30").Newline()
 
 	kb := services.NewKeyboardBuilder()
 
 	// Common time options
-	times := []string{"08:00", "12:00", "18:00", "20:00", "21:00", "22:00", "23:00"}
+	times := []string{"08:00", "12:00", "18:00", "20:00", "21:00", "22:00", "23:00", "23:59"}
 	for i, t := range times {
 		kb.AddButton(t, fmt.Sprintf("admin_notif_settime:time:%s", t))
 		if i%2 == 1 && i < len(times)-1 {
@@ -968,7 +972,50 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 		}
 	}
 	kb.NewRow()
+	kb.AddButton("✏️ 自定义时间", "admin_notif_custom_time")
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleNotifCustomTime handles custom time input
+func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.mediaNotificationSvc == nil {
+		return &callback.Response{
+			CallbackMsg: "通知服务未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Set session state for custom time input
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("waiting_for_time_input", true)
+	sess.Set("previous_menu", "admin_notif_settings")
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("⏰ 输入自定义时间").Newline()
+	msg.Newline()
+	msg.Text("请输入汇总发送时间").Newline()
+	msg.Newline()
+	msg.Italic("💡 格式：HH:MM，例如：23:00、08:30").Newline()
+	msg.Italic("💡 范围：00:00 - 23:59").Newline()
+	msg.Newline()
+	msg.Italic("❌ 输入 /cancel 或「取消」可退出").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 取消", "admin_notif_settings")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -1033,6 +1080,87 @@ func (h *AdminHandler) getBoolText(v bool) string {
 		return "开启"
 	}
 	return "关闭"
+}
+
+// HandleNotifCustomTimeInput handles custom time input for daily summary
+func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, text string) (*callback.Response, error) {
+	// Trim and validate input
+	trimmed := strings.TrimSpace(text)
+
+	// Check for cancel commands
+	if strings.ToLower(trimmed) == "/cancel" || trimmed == "取消" {
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+		msg := services.NewMessageBuilder()
+		msg.Bold("⏰ 设置每日汇总时间").Newline()
+		msg.Newline()
+		msg.Text("已取消").Newline()
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Validate time format (HH:MM)
+	if len(trimmed) != 5 || trimmed[2] != ':' {
+		msg := services.NewMessageBuilder()
+		msg.Bold("❌ 无效的时间格式").Newline()
+		msg.Newline()
+		msg.Text("请使用 HH:MM 格式，例如：23:00、08:30").Newline()
+		msg.Newline()
+		msg.Italic("💡 范围：00:00 - 23:59").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Validate hour and minute
+	hourStr := trimmed[:2]
+	minuteStr := trimmed[3:]
+	hour, err1 := strconv.Atoi(hourStr)
+	minute, err2 := strconv.Atoi(minuteStr)
+
+	if err1 != nil || err2 != nil || hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		msg := services.NewMessageBuilder()
+		msg.Bold("❌ 无效的时间").Newline()
+		msg.Newline()
+		msg.Textf("小时：00-23，分钟：00-59").Newline()
+		msg.Newline()
+		msg.Italic(fmt.Sprintf("您的输入：%s", trimmed)).Newline()
+		msg.Newline()
+		msg.Italic("💡 正确格式：23:00、08:30").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Set the time
+	timeStr := fmt.Sprintf("%02d:%02d", hour, minute)
+	h.mediaNotificationSvc.SetDailyTime(userID, timeStr)
+
+	// Show success and return to settings menu
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+	msg := services.NewMessageBuilder()
+	msg.Bold("✅ 时间设置成功").Newline()
+	msg.Newline()
+	msg.Textf("每日汇总将在 %s 发送", timeStr).Newline()
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
 
 // ============================================================

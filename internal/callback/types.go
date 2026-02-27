@@ -92,11 +92,12 @@ var validActions = map[Action]bool{
 	"admin_notif_toggle_format":    true,
 	"admin_notif_disable_all":      true,
 	// 管理员管理回调 - 仅超级管理员可用
-	"admin_mgmt":           true,
-	"admin_list":           true,
-	"admin_add_start":      true,
-	"admin_remove_list":    true,
-	"admin_remove_confirm": true,
+	"admin_mgmt":              true,
+	"admin_list":              true,
+	"admin_add_start":         true,
+	"admin_remove_list":       true,
+	"admin_remove_confirm":    true,
+	"admin_notif_custom_time": true, // 自定义每日汇总时间输入
 
 	// Request related actions
 	"force_subscribe": true,
