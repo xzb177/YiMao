@@ -176,6 +176,22 @@ func HandleWebhookMessage(
 
 	// 私聊中处理所有功能
 
+	// 【关键修复】首先检查用户是否处于反馈流程中
+	log.Printf("[Webhook] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
+	if deps.FeedbackHandler != nil {
+		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
+		log.Printf("[Webhook] User %d in feedback process: %v", msg.From.ID, inFeedback)
+		if inFeedback {
+			// 用户正在反馈流程中，处理反馈文本并返回
+			if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
+				log.Printf("[Webhook] Failed to handle feedback: %v", err)
+			}
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "OK")
+			return
+		}
+	}
+
 	// Handle commands
 	if strings.HasPrefix(msg.Text, "/") {
 		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping)
@@ -185,6 +201,7 @@ func HandleWebhookMessage(
 	}
 
 	// Handle search queries (non-command text)
+	// 只有在非反馈状态下才执行搜索
 	if len(msg.Text) > 1 {
 		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}

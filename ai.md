@@ -2,6 +2,42 @@
 
 ---
 
+## 2026-02-27
+
+### fix: 反馈功能完整修复 - FeedbackHandler 依赖传递遗漏
+- **问题**: 用户反馈流程中输入文本被当成搜索关键词处理
+- **根本原因**:
+  1. `webhook.go` 的 `HandleWebhookMessage` 缺少状态检查 ✅ 已修复
+  2. `cmd/bot/main.go` 的 `toBotDeps()` 未传递 `FeedbackHandler` ✅ 已修复
+  3. `cmd/bot/main.go` 的 `initRegistry()` 返回的 `deps` 未包含 `FeedbackHandler` ✅ 已修复
+- **日志证据**: `[Poll] Checking feedback process for user xxx, FeedbackHandler=false`
+- **文件**: `cmd/bot/main.go` - toBotDeps() 和 initRegistry() 函数
+
+### fix: ReviewService 删除订阅时的 404 错误日志优化
+- **问题**: 启动时重新订阅会先尝试删除旧订阅，如果订阅已不存在（404），会打印错误日志污染日志
+- **修复**: 改进 `MoviePilotClient.DeleteRequest()` 方法，当收到 404 时不视为错误（目标已达成）
+- **文件**: `internal/services/moviepilot.go` - DeleteRequest() 方法
+
+
+### fix: 严重会话状态路由Bug修复 - 反馈文本被误判为搜索
+- **问题**: 用户在反馈流程中输入文本描述时，机器人错误地将其当作搜索关键词执行搜索
+- **现象**: 点击"🐛 画质问题"后输入"画质不行"，回复"☹️ 未找到相关内容"
+- **原因**: `webhook.go` 的 `HandleWebhookMessage` 函数完全没有检查用户会话状态
+- **修复**: 在 `HandleWebhookMessage` 中添加状态检查逻辑，与 `poll.go` 保持一致
+  - 首先检查 `IsInFeedbackProcess()`
+  - 如果处于反馈状态，调用 `HandleFeedbackText()` 并提前返回
+  - 只有在非反馈状态下才执行搜索
+- **文件**: `internal/bot/webhook.go` - HandleWebhookMessage() 方法
+
+
+### fix: 详情页反馈按钮回调错误修复
+- **问题**: 点击详情页「🐛 反馈」按钮报错：`Bad Request: there is no text in the message to edit`
+- **原因**: 详情页使用 `sendPhoto` 发送图片消息，但 FeedbackHandler 的 `handleStart` 返回 `Edit: true`，尝试用 `editMessageText` 编辑图片消息失败
+- **修复**: 将 `handleStart` 中的 `Edit: true` 改为 `Edit: false`，改为发送新消息而非编辑原消息
+- **文件**: `internal/handlers/feedback.go` - handleStart() 方法
+
+---
+
 ## ⚠️ 重要警告：媒体库入库通知功能
 
 **核心文件**: `internal/services/webhook.go`

@@ -140,7 +140,7 @@ func (h *FeedbackHandler) handleStart(ctx *callback.Context) (*callback.Response
 
 	return &callback.Response{
 		Text:     msg.Build(),
-		Edit:     true,
+		Edit:     false,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }

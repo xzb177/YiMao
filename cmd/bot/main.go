@@ -345,6 +345,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		Notification:     services.Notification,
 		Scheduler:        services.Scheduler,
 		SearchHistory:    services.SearchHistory,
+		FeedbackHandler:  feedbackHandler,
 	}
 
 	return registry, deps
@@ -395,5 +396,6 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		SearchHistory:  deps.SearchHistory,
 		TMDB:           deps.TMDBClient,
 		IssueService:   deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
 	}
 }

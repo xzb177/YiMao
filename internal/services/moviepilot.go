@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"emby-telegram-bot/pkg/validation"
@@ -596,9 +597,14 @@ func (c *MoviePilotClient) GetRequest(requestID int) (*Request, error) {
 }
 
 // DeleteRequest deletes a request
+// Returns nil error if subscription doesn't exist (404), since the goal is achieved
 func (c *MoviePilotClient) DeleteRequest(requestID int) error {
 	endpoint := fmt.Sprintf("/api/v1/subscription/%d", requestID)
 	_, err := c.makeRequest("DELETE", endpoint, nil)
+	// If subscription doesn't exist (404), that's fine - goal achieved
+	if err != nil && strings.Contains(err.Error(), "status 404") {
+		return nil
+	}
 	return err
 }
 
