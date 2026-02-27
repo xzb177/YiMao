@@ -260,8 +260,11 @@ func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse,
 
 	var response []SearchResult
 	if err := json.Unmarshal(body, &response); err != nil {
+		log.Printf("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+
+	log.Printf("[MoviePilot] SearchMedia: found %d results for query=%s", len(response), query)
 
 	return &SearchResponse{
 		Results: response,

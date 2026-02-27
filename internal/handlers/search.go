@@ -176,6 +176,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	query = strings.TrimSpace(query)
 	if query == "" {
 		// Show search history
+		log.Printf("[SearchHandler] Query is empty, showing search history")
 		return h.showSearchHistory(userID, chatID)
 	}
 
@@ -193,13 +194,22 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	}
 
 	// Check for empty results
-	if results == nil || len(results.Results) == 0 {
+	if results == nil {
+		log.Printf("[SearchHandler] Search results is nil for query: %s", query)
+		h.sendNoResultsMessage(chatID, query)
+		return nil
+	}
+
+	log.Printf("[SearchHandler] Search results count: %d for query: %s", len(results.Results), query)
+
+	if len(results.Results) == 0 {
 		log.Printf("[SearchHandler] No results found for query: %s", query)
 		h.sendNoResultsMessage(chatID, query)
 		return nil
 	}
 
 	// Send results
+	log.Printf("[SearchHandler] Calling sendSearchResults with %d results", len(results.Results))
 	h.sendSearchResults(userID, chatID, query, results)
 	return nil
 }

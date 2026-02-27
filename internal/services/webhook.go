@@ -441,7 +441,7 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		if enhancedPayload != nil && enhancedPayload.ImageURL != "" {
 			// For photo notifications, use a more compact format to fit within 1024 char limit
 			photoCaption := s.formatPhotoCaption(payload, enhancedPayload)
-			s.sendNotificationWithPhoto(photoCaption, enhancedPayload.ImageURL)
+			s.sendNotificationWithPhoto(photoCaption, enhancedPayload.ImageURL, enhancedPayload)
 		} else {
 			s.sendWithCache(s.chatID, message)
 		}
@@ -800,7 +800,7 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 				EnhancedInfo: enhancedInfo,
 				LibraryName:  libraryName,
 			}, epRange)
-			s.sendNotificationWithPhoto(photoCaption, imageURL)
+			s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
 		} else {
 			s.sendWithCache(s.chatID, message)
 		}
@@ -886,7 +886,7 @@ func (s *WebhookService) flushEpisodeAggregation() {
 
 			// 使用现有的多行排版文本作为 caption 发送图片
 			if photoURL != "" {
-				s.sendNotificationWithPhoto(message, photoURL)
+				s.sendNotificationWithPhoto(message, photoURL, agg.EnhancedInfo)
 			} else {
 				// 实在获取不到图片，回退到纯文本
 				log.Printf("[入库聚合] 无法获取图片，使用纯文本发送")
@@ -2022,7 +2022,8 @@ func (s *WebhookService) truncateCaption(caption string) string {
 }
 
 // sendNotificationWithPhoto sends notification with photo
-func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
+// enhancedInfo is used for TMDB fallback when Emby image download fails
+func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string, enhancedInfo *EmbyEnhancedInfo) {
 	if s.chatID == 0 {
 		return
 	}
@@ -2054,8 +2055,27 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string) {
 	}
 
 	if err != nil {
-		log.Printf("[Webhook] Failed to send photo, falling back to text message: %v", err)
-		// Fallback to text message
+		log.Printf("[Webhook] Failed to send photo: %v", err)
+
+		// 【重要】Emby 图片失败时，尝试 TMDB fallback
+		if strings.Contains(photoURL, s.embyURL) && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
+			log.Printf("[Webhook] Emby image failed, trying TMDB fallback with ID: %s", enhancedInfo.TMDBID)
+			if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
+				log.Printf("[Webhook] Using TMDB backdrop: %s", backdropURL)
+				_, tmdbErr := s.telegram.SendPhoto(s.chatID, backdropURL, caption, nil)
+				if tmdbErr == nil {
+					// TMDB 成功，添加到缓存并返回
+					if s.messageCache != nil {
+						s.messageCache.Add(s.chatID, message)
+					}
+					return
+				}
+				log.Printf("[Webhook] TMDB fallback also failed: %v", tmdbErr)
+			}
+		}
+
+		// 最后回退到纯文本消息
+		log.Printf("[Webhook] All image attempts failed, falling back to text message")
 		s.sendWithCache(s.chatID, message)
 		return
 	}
@@ -2716,14 +2736,35 @@ func (s *WebhookService) GetEmbyMediaInfo(itemID string) (map[string]interface{}
 	return result, nil
 }
 
-// SearchEmbyMedia searches for media in Emby library
+// SearchEmbyMedia searches for media in Emby library using fuzzy search
+// Emby's SearchTerm parameter natively supports fuzzy matching - we trust its results
+// CRITICAL: We filter by mediaType to prevent false matches between movies and series with the same name
 func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType MediaType) (*EmbySearchResult, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby URL or API key not configured")
 	}
 
-	// Build search URL with proper URL encoding
-	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10", url.QueryEscape(title))
+	// Build IncludeItemTypes based on mediaType to avoid false positives
+	// e.g., user requests TV series "X", but movie "X" exists - should NOT block the request
+	var includeItemTypes string
+	switch mediaType {
+	case MediaTypeMovie:
+		includeItemTypes = "Movie"
+	case MediaTypeTV:
+		includeItemTypes = "Series"
+	default:
+		// Fallback: search both if mediaType is unknown (should not happen in normal flow)
+		includeItemTypes = "Movie,Series"
+		log.Printf("[SearchEmby] WARNING: Unknown mediaType %q, searching both Movie and Series", mediaType)
+	}
+
+	// Build search URL with fuzzy search parameters
+	// SearchTerm: Emby's native fuzzy search - finds partial matches
+	// IncludeItemTypes: Filter by media type (Movie or Series) to prevent false matches
+	// Recursive: Search all library folders
+	// Limit: Get up to 20 results to find the best match
+	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
+		url.QueryEscape(title), includeItemTypes)
 	fullURL := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyAPIKey, searchParams)
 
 	req, err := http.NewRequest("GET", fullURL, nil)
@@ -2755,44 +2796,96 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	// Emby API returns an object with Items array
 	var response struct {
 		Items []map[string]interface{} `json:"Items"`
+		TotalRecordCount int            `json:"TotalRecordCount"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
 	}
 
-	// Find best match
+	log.Printf("[SearchEmby] Query: %s, Found: %d results", title, len(response.Items))
+
+	// Find best match using scoring system
+	// We trust Emby's fuzzy search and score the results to find the best match
+	type scoredResult struct {
+		score  float64
+		result *EmbySearchResult
+		year   int
+	}
+	var candidates []scoredResult
+
 	for _, item := range response.Items {
-		itemTitle := ""
-		if name, ok := item["Name"].(string); ok {
-			itemTitle = name
-		}
-		itemYear := 0
-		if y, ok := item["ProductionYear"].(float64); ok {
-			itemYear = int(y)
+		// Convert to search result
+		result, err := s.convertToSearchResult(item)
+		if err != nil {
+			log.Printf("[SearchEmby] Failed to convert item: %v", err)
+			continue
 		}
 
-		// Match by title and year
-		if strings.Contains(strings.ToLower(itemTitle), strings.ToLower(title)) || strings.Contains(strings.ToLower(title), strings.ToLower(itemTitle)) {
-			// Check year if provided
-			if year > 0 && itemYear > 0 {
-				if itemYear-year >= -1 && itemYear-year <= 1 { // Allow 1 year difference
-					result, err := s.convertToSearchResult(item)
-					if err != nil {
-						return nil, err
-					}
-					return result, nil
-				}
-			} else {
-				result, err := s.convertToSearchResult(item)
-				if err != nil {
-					return nil, err
-				}
-				return result, nil
+		itemTitle := result.Title
+		itemYear := result.Year
+
+		// Calculate match score
+		score := 0.0
+
+		// 1. Title similarity score (most important)
+		titleLower := strings.ToLower(title)
+		itemTitleLower := strings.ToLower(itemTitle)
+
+		// Exact match gets highest score
+		if itemTitleLower == titleLower {
+			score += 100
+		} else if strings.Contains(itemTitleLower, titleLower) {
+			// Item title contains search term (e.g., "怪奇迷案限时破" contains "怪奇迷案")
+			// Score based on how much of the search term is covered
+			ratio := float64(len(title)) / float64(len(itemTitle))
+			score += 50 + ratio*30
+		} else if strings.Contains(titleLower, itemTitleLower) {
+			// Search term contains item title (reverse match)
+			score += 40
+		} else {
+			// Fuzzy match from Emby - give base score
+			score += 10
+		}
+
+		// 2. Year matching (if year provided)
+		if year > 0 && itemYear > 0 {
+			yearDiff := itemYear - year
+			if yearDiff == 0 {
+				score += 30 // Exact year match
+			} else if yearDiff >= -2 && yearDiff <= 2 {
+				score += 15 // Close year (±2 years)
+			} else if yearDiff >= -5 && yearDiff <= 5 {
+				score += 5  // Somewhat close
+			}
+		}
+
+		candidates = append(candidates, scoredResult{
+			score:  score,
+			result: result,
+			year:   itemYear,
+		})
+
+		log.Printf("[SearchEmby] - %s (%d) score=%.1f", itemTitle, itemYear, score)
+	}
+
+	// Return highest scored result
+	if len(candidates) == 0 {
+		return nil, nil // No match found
+	}
+
+	// Sort by score descending
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].score > candidates[i].score {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
 			}
 		}
 	}
 
-	return nil, nil // No match found
+	best := candidates[0]
+	log.Printf("[SearchEmby] Best match: %s (%d) score=%.1f", best.result.Title, best.year, best.score)
+
+	return best.result, nil
 }
 
 // EmbySearchResult represents a search result from Emby

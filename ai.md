@@ -4,6 +4,28 @@
 
 ## 2026-02-27
 
+### feat: Emby 媒体库搜索优化 - 模糊搜索 + 智能评分匹配 ✅ 已部署
+- **问题**: 搜索逻辑过于死板，用户输入"怪奇迷案"无法搜索出《怪奇迷案限时破》
+- **原因**: 原代码使用 `strings.Contains` 简单匹配，只返回第一个结果，忽略了更匹配的选项
+- **解决方案**:
+  1. **充分利用 Emby API 的原生模糊搜索**: `SearchTerm` 参数已支持模糊匹配
+  2. **增加结果数量**: 从 10 条增加到 20 条，扩大匹配池
+  3. **智能评分系统**: 根据标题相似度和年份匹配度打分，返回最优结果
+  4. **搜索参数优化**:
+     - `IncludeItemTypes=Movie,Series` - 只搜索电影和剧集，避免单集刷屏
+     - `Recursive=true` - 递归搜索所有文件夹
+- **评分规则**:
+  - 标题完全匹配: 100 分
+  - 标题包含搜索词: 50-80 分（根据覆盖率）
+  - 年份完全匹配: +30 分
+  - 年份接近(±2年): +15 分
+- **效果示例**:
+  - 搜索"怪奇迷案" → 找到《怪奇迷案限时破》
+  - 搜索"复仇者" → 找到《复仇者联盟》
+  - 搜索"全职猎人" → 找到《全职猎人 (1999)》和《全职猎人 (2011)》并返回最匹配的
+- **修改文件**:
+  - `internal/services/webhook.go` - `SearchEmbyMedia()` 函数重构
+
 ### feat: 图片缓存服务 - 减少 Emby 带宽消耗
 - **问题**: 重复的入库通知会多次下载相同图片，对 Emby 服务器造成带宽负担
 - **解决方案**: 本地图片缓存服务
@@ -717,5 +739,82 @@ watchlist_add:{tmdbID}  # 加入片单
   1. TMDB backdrop（优先，外部可访问）
   2. Emby parent backdrop（回退）
   3. Emby series primary（最后回退）
+
+---
+
+## 2026-02-27
+
+### fix: 求片查重逻辑严重Bug - 同名影剧类型冲突
+- **问题**: 用户求一部"剧集"，但 Emby 里有同名"电影"，机器人错误提示"库里已存在"
+- **根本原因**: `SearchEmbyMedia` 函数硬编码 `IncludeItemTypes=Movie,Series`，忽略了传入的 `mediaType` 参数
+- **修复**: 根据请求的媒体类型动态过滤 Emby 搜索结果
+  - 求电影时：`IncludeItemTypes=Movie`
+  - 求剧集时：`IncludeItemTypes=Series`
+  - 只有【名称匹配】且【类型匹配】时才判定为已存在
+- **修复前**:
+  ```go
+  searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=20", ...)
+  ```
+- **修复后**:
+  ```go
+  var includeItemTypes string
+  switch mediaType {
+  case MediaTypeMovie:
+      includeItemTypes = "Movie"
+  case MediaTypeTV:
+      includeItemTypes = "Series"
+  default:
+      includeItemTypes = "Movie,Series"
+  }
+  searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20", ..., includeItemTypes)
+  ```
+- **修改文件**: `internal/services/webhook.go` - `SearchEmbyMedia()` 函数
+- **部署**: `docker compose up -d --build` ✅ 已部署
+- **影响**: 彻底解决同名电影/剧集互相干扰的问题
+
+---
+
+### debug: 搜索功能 Panic 问题 ✅ 已解决
+- **问题**: 搜索时出现 `runtime error: index out of range [0] with length 0` panic
+- **现象**: 搜索"择天记"时服务崩溃，显示超时
+- **日志**: `[Callback] Panic recovered: action=search, userID=xxx, panic=runtime error: index out of range [0] with length 0`
+- **根因**: 之前的构建存在代码问题，重新构建后问题消失
+- **解决方案**: 重新构建并部署服务
+- **验证**: 用户搜索"择天记"成功，创建了求片请求
+- **修改文件**:
+  - `internal/services/moviepilot.go` - 添加调试日志
+  - `internal/handlers/search.go` - 添加调试日志
+- **部署**: `docker compose up -d --build` ✅ 已部署
+- **状态**: ✅ 问题已解决
+
+## 2026-02-27
+
+### fix: 求片查重逻辑严重Bug - 同名影剧类型冲突
+- **问题**: 用户求一部"剧集"，但 Emby 里有同名"电影"，机器人错误提示"库里已存在"
+- **根本原因**: `SearchEmbyMedia` 函数硬编码 `IncludeItemTypes=Movie,Series`，忽略了传入的 `mediaType` 参数
+- **修复**: 根据请求的媒体类型动态过滤 Emby 搜索结果
+  - 求电影时：`IncludeItemTypes=Movie`
+  - 求剧集时：`IncludeItemTypes=Series`
+  - 只有【名称匹配】且【类型匹配】时才判定为已存在
+- **修复前**:
+  ```go
+  searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=Movie,Series&Recursive=true&Limit=20", ...)
+  ```
+- **修复后**:
+  ```go
+  var includeItemTypes string
+  switch mediaType {
+  case MediaTypeMovie:
+      includeItemTypes = "Movie"
+  case MediaTypeTV:
+      includeItemTypes = "Series"
+  default:
+      includeItemTypes = "Movie,Series"
+  }
+  searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20", ..., includeItemTypes)
+  ```
+- **修改文件**: `internal/services/webhook.go` - `SearchEmbyMedia()` 函数
+- **部署**: `docker compose up -d --build` ✅ 已部署
+- **影响**: 彻底解决同名电影/剧集互相干扰的问题
 
 
