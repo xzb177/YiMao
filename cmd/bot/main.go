@@ -142,9 +142,12 @@ type Dependencies struct {
 
 // initServices initializes all services
 func initServices(cfg *config.Config, chatID int64) *Dependencies {
-	log.Println("  [1/10] Creating basic clients and services...")
+	log.Println("  [1/11] Creating basic clients and services...")
 	log.Println("    - TelegramClient...")
 	telegramClient := services.NewTelegramClient(cfg.TelegramBotToken)
+	log.Println("    - ImageCache...")
+	imageCache := services.NewImageCache(cfg.DataDir, 7*24*time.Hour) // 7天缓存
+	telegramClient.SetImageCache(imageCache)
 	log.Println("    - MoviePilotClient...")
 	moviepilotClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
 	log.Println("    - SessionManager...")
@@ -165,11 +168,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	reviewService := services.NewReviewService(cfg.DataDir)
 	log.Println("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
-	log.Println("  [2/10] Basic services created")
+	log.Println("  [2/11] Basic services created")
 
 	// Initialize Media Notification Service
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService)
-	log.Println("  [3/10] Media notification service initialized")
+	log.Println("  [3/11] Media notification service initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)
 	adminsMap := adminService.GetAllAdmins()
@@ -180,9 +183,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		}
 	}
 	quotaService.SetAdminIDs(adminIDs)
-	log.Println("  [4/10] Admin IDs configured")
+	log.Println("  [4/11] Admin IDs configured")
 
-	log.Println("  [5/10] Creating webhook service...")
+	log.Println("  [5/11] Creating webhook service...")
 	webhookService := services.NewWebhookService(
 		telegramClient,
 		moviepilotClient,
@@ -196,19 +199,19 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		cfg.NotificationFormat,
 		cfg.TMDBAPIKey,
 	)
-	log.Println("  [6/10] Webhook service created")
+	log.Println("  [6/11] Webhook service created")
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
-	log.Println("  [7/10] TMDB client created")
+	log.Println("  [7/11] TMDB client created")
 
 	// Initialize Notification Service
-	log.Println("  [8/10] Creating notification service...")
+	log.Println("  [8/11] Creating notification service...")
 	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
-	log.Println("  [9/10] Notification service created")
+	log.Println("  [9/11] Notification service created")
 
 	// Initialize Scheduler for daily recommendations
-	log.Println("  [10/10] Creating scheduler...")
+	log.Println("  [10/11] Creating scheduler...")
 	scheduler := services.NewScheduler(notificationService, moviepilotClient, adminService, userMappingService)
 	scheduler.SetDailyTime(9, 0) // 9 AM daily
 	scheduler.Start()
@@ -224,6 +227,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			bindingRequestService.CleanupExpiredRequests()
 		}
 	}()
+
+	// Start image cache cleanup routine (每天清理一次过期缓存)
+	imageCache.StartCleanupRoutine(24 * time.Hour)
 
 	log.Println("✅ Services initialized")
 

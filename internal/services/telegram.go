@@ -23,6 +23,7 @@ type TelegramClient struct {
 	botToken   string
 	httpClient *http.Client
 	baseURL    string
+	imageCache *ImageCache // 图片缓存服务
 }
 
 // NewTelegramClient creates a new Telegram client
@@ -48,6 +49,12 @@ func NewTelegramClient(botToken string) *TelegramClient {
 			},
 		},
 	}
+}
+
+// SetImageCache 设置图片缓存服务
+func (c *TelegramClient) SetImageCache(cache *ImageCache) {
+	c.imageCache = cache
+	log.Printf("[Telegram] ImageCache attached")
 }
 
 // SendMessage sends a message to a chat
@@ -132,43 +139,73 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 // SendPhotoWithAuth sends a photo with caption, using custom headers for image download
 // This is needed for Emby images that require X-Emby-Token authentication
 // 实现图片代理上传：机器人下载 Emby 图片后，通过 multipart/form-data 上传到 Telegram
+// 支持本地缓存：相同图片优先从缓存读取，减少 Emby 带宽消耗
 func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	log.Printf("[Telegram] [代理上传] 正在下载 Emby 图片: %s", photoURL)
+	// 优先使用缓存（如果有）
+	var imageData []byte
+	var fromCache bool
 
-	// Create request with custom headers
-	req, err := http.NewRequest("GET", photoURL, nil)
-	if err != nil {
-		log.Printf("[Telegram] Failed to create request: %v", err)
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	if c.imageCache != nil {
+		if cached := c.imageCache.Get(photoURL); cached != nil {
+			imageData = cached
+			fromCache = true
+			log.Printf("[Telegram] [缓存命中] 使用本地缓存图片: %d bytes", len(imageData))
+		}
 	}
 
-	// Add User-Agent to avoid being blocked
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	// 缓存未命中，下载图片
+	if imageData == nil {
+		log.Printf("[Telegram] [代理上传] 正在下载 Emby 图片: %s", photoURL)
 
-	// Add custom headers (e.g., X-Emby-Token)
-	for key, value := range headers {
-		req.Header.Set(key, value)
+		req, err := http.NewRequest("GET", photoURL, nil)
+		if err != nil {
+			log.Printf("[Telegram] Failed to create request: %v", err)
+			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		}
+
+		// Add User-Agent to avoid being blocked
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+
+		// Add custom headers (e.g., X-Emby-Token)
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+
+		// Download the image
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			log.Printf("[Telegram] [代理上传] 下载失败: %v", err)
+			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			log.Printf("[Telegram] [代理上传] 下载状态码异常: %d", resp.StatusCode)
+			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		}
+
+		// 读取图片数据
+		imageData, err = io.ReadAll(resp.Body)
+		if err != nil {
+			log.Printf("[Telegram] [代理上传] 读取图片数据失败: %v", err)
+			return nil, err
+		}
+
+		log.Printf("[Telegram] [代理上传] 下载成功，大小: %d bytes", len(imageData))
+
+		// 保存到缓存（异步）
+		if c.imageCache != nil {
+			go func() {
+				if err := c.imageCache.Set(photoURL, imageData); err != nil {
+					log.Printf("[Telegram] [缓存保存] 失败: %v", err)
+				}
+			}()
+		}
 	}
-
-	// Download the image (代理下载)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		log.Printf("[Telegram] [代理上传] 下载失败: %v", err)
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[Telegram] [代理上传] 下载状态码异常: %d", resp.StatusCode)
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
-	}
-
-	log.Printf("[Telegram] [代理上传] 下载成功，大小: %d bytes", resp.ContentLength)
 
 	// Create multipart form for Telegram upload
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
-	// Read image data into memory
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
@@ -186,8 +223,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		return nil, err
 	}
 
-	_, err = io.Copy(part, resp.Body)
-	if err != nil {
+	if _, err := part.Write(imageData); err != nil {
 		return nil, err
 	}
 
@@ -217,9 +253,9 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 	body, _ := io.ReadAll(resp2.Body)
 
 	var result struct {
-		OK      bool                  `json:"ok"`
-		Result  *types.TelegramMessage `json:"result"`
-		Error   *types.TelegramError  `json:"error"`
+		OK      bool                     `json:"ok"`
+		Result  *types.TelegramMessage  `json:"result"`
+		Error   *types.TelegramError    `json:"error"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -234,7 +270,11 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[Telegram] [代理上传] 成功发送图片到 Telegram")
+	logPrefix := "[代理上传]"
+	if fromCache {
+		logPrefix = "[缓存上传]"
+	}
+	log.Printf("[Telegram] %s 成功发送图片到 Telegram", logPrefix)
 	return result.Result, nil
 }
 
