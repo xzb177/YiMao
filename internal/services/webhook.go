@@ -154,6 +154,17 @@ type WebhookService struct {
 	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
 	epAggregationMu      sync.RWMutex
 	aggregationDelay     time.Duration                  // 聚合延迟时间 (默认60秒)
+	// 文件信息缓存 - 避免频繁调用 Emby API
+	fileInfoCache        map[string]*cachedFileInfo      // key: itemID
+	fileInfoCacheMu      sync.RWMutex
+	fileInfoCacheTTL     time.Duration                  // 缓存过期时间 (默认1小时)
+}
+
+// cachedFileInfo 缓存的文件信息
+type cachedFileInfo struct {
+	fileSize   int64
+	fileCount  int
+	cachedAt   time.Time
 }
 
 // EpisodeAggregation holds aggregated episode info
@@ -191,9 +202,32 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		tmdbAPIKey:         tmdbAPIKey,
 		epAggregation:      make(map[string]*EpisodeAggregation),
 		aggregationDelay:   60 * time.Second,  // 默认60秒聚合延迟
+		fileInfoCache:      make(map[string]*cachedFileInfo),
+		fileInfoCacheTTL:   1 * time.Hour,     // 缓存1小时
 	}
 
+	// 启动缓存清理协程
+	go svc.cleanupFileInfoCache()
+
 	return svc
+}
+
+// cleanupFileInfoCache 定期清理过期的文件信息缓存
+func (s *WebhookService) cleanupFileInfoCache() {
+	ticker := time.NewTicker(30 * time.Minute) // 每30分钟清理一次
+	defer ticker.Stop()
+
+	for range ticker.C {
+		s.fileInfoCacheMu.Lock()
+		now := time.Now()
+		for itemID, cached := range s.fileInfoCache {
+			if now.Sub(cached.cachedAt) > s.fileInfoCacheTTL {
+				delete(s.fileInfoCache, itemID)
+				log.Printf("[EmbyAPI] Cleaned expired cache for %s", itemID)
+			}
+		}
+		s.fileInfoCacheMu.Unlock()
+	}
 }
 
 // HandleEmbyWebhook handles an incoming Emby webhook
@@ -422,6 +456,22 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 			}
 			if payload.Item.CommunityRating > 0 && enhancedPayload.Rating == 0 {
 				enhancedPayload.Rating = payload.Item.CommunityRating
+			}
+		}
+	}
+
+	// 【黑科技】增强文件信息获取：如果文件大小或数量缺失，直接调用 Emby API
+	if enhancedPayload != nil && (enhancedPayload.FileSize == 0 || enhancedPayload.FileCount == 0) {
+		if payload.ItemID != "" {
+			if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(payload.ItemID); err == nil {
+				if apiSize > 0 && enhancedPayload.FileSize == 0 {
+					enhancedPayload.FileSize = apiSize
+					log.Printf("[Webhook] Enhanced file size from Emby API: %d bytes", apiSize)
+				}
+				if apiCount > 0 && enhancedPayload.FileCount == 0 {
+					enhancedPayload.FileCount = apiCount
+					log.Printf("[Webhook] Enhanced file count from Emby API: %d", apiCount)
+				}
 			}
 		}
 	}
@@ -663,6 +713,15 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			thisFileSize = ms.Size
 			thisFileCount = 1
 			break  // 使用第一个 MediaSource
+		}
+
+		// 【黑科技】如果文件大小为 0 或很小（strm 文件），调用 Emby API 获取真实大小
+		if thisFileSize == 0 && payload.ItemID != "" {
+			if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(payload.ItemID); err == nil && apiSize > 0 {
+				thisFileSize = apiSize
+				thisFileCount = apiCount
+				log.Printf("[入库聚合] 从 Emby API 获取到真实文件大小: %d bytes, %d files", apiSize, apiCount)
+			}
 		}
 	}
 	log.Printf("[Debug] Episode file size: %d bytes, count: %d", thisFileSize, thisFileCount)
@@ -1732,6 +1791,124 @@ func (s *WebhookService) getFullQuality(info *EmbyEnhancedInfo) string {
 	}
 
 	return quality
+}
+
+// inferFileCount 从路径中智能推断文件数量
+// 支持检测：CD1/CD2, Part1/Part2, Disc1/Disc2, x264/x265 多文件等
+func (s *WebhookService) inferFileCount(path string) int {
+	if path == "" {
+		return 1
+	}
+
+	pathLower := strings.ToLower(path)
+	count := 1
+
+	// 检测多CD/Part/Disc标记
+	multiFilePatterns := []struct {
+		pattern string
+		multiplier int
+	}{
+		{"cd1", 2}, {"cd2", 2}, {"cd3", 3}, {"cd4", 4},
+		{"part1", 2}, {"part2", 2}, {"part3", 3},
+		{"disc1", 2}, {"disc2", 2}, {"disc3", 3},
+		{"disk1", 2}, {"disk2", 2},
+	}
+
+	for _, p := range multiFilePatterns {
+		if strings.Contains(pathLower, p.pattern) {
+			if p.multiplier > count {
+				count = p.multiplier
+			}
+		}
+	}
+
+	// 检测双音轨/双语言标记 (通常表示双版本)
+	if strings.Contains(pathLower, "dual") || strings.Contains(pathLower, "diy") {
+		// 不增加文件数，但可以标记
+	}
+
+	return count
+}
+
+// fetchMediaSourcesFromEmby 直接从 Emby API 获取完整的 MediaSources 信息
+// 带缓存机制，避免频繁调用对 Emby 服务器造成负担
+func (s *WebhookService) fetchMediaSourcesFromEmby(itemID string) (fileSize int64, fileCount int, err error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return 0, 0, fmt.Errorf("Emby URL or API key not configured")
+	}
+
+	// 【缓存检查】先查看缓存
+	s.fileInfoCacheMu.RLock()
+	if cached, exists := s.fileInfoCache[itemID]; exists {
+		// 检查缓存是否过期
+		if time.Since(cached.cachedAt) < s.fileInfoCacheTTL {
+			s.fileInfoCacheMu.RUnlock()
+			log.Printf("[EmbyAPI] Cache hit for %s: size=%d, files=%d", itemID, cached.fileSize, cached.fileCount)
+			return cached.fileSize, cached.fileCount, nil
+		}
+	}
+	s.fileInfoCacheMu.RUnlock()
+
+	// 【API调用】缓存未命中，调用 Emby API
+	log.Printf("[EmbyAPI] Cache miss, fetching from API for %s", itemID)
+
+	// 调用 Emby API 获取完整的 Items 信息
+	url := fmt.Sprintf("%s/Users/%s/Items/%s", s.embyURL, "e56c0bc56c984ba6a95c67222d5c69f1", itemID)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, 0, err
+	}
+
+	// 提取 MediaSources 信息
+	totalSize := int64(0)
+	totalFiles := 0
+
+	if mediaSources, ok := result["MediaSources"].([]interface{}); ok {
+		for _, ms := range mediaSources {
+			if source, ok := ms.(map[string]interface{}); ok {
+				// 获取文件大小
+				if size, ok := source["Size"].(float64); ok {
+					totalSize += int64(size)
+				}
+
+				// 获取路径用于推断文件数量
+				if path, ok := source["Path"].(string); ok {
+					totalFiles += s.inferFileCount(path)
+				}
+			}
+		}
+	}
+
+	log.Printf("[EmbyAPI] Fetched media info for %s: size=%d, files=%d", itemID, totalSize, totalFiles)
+
+	// 【缓存存储】将结果存入缓存
+	s.fileInfoCacheMu.Lock()
+	s.fileInfoCache[itemID] = &cachedFileInfo{
+		fileSize:  totalSize,
+		fileCount: totalFiles,
+		cachedAt:  time.Now(),
+	}
+	s.fileInfoCacheMu.Unlock()
+
+	return totalSize, totalFiles, nil
 }
 
 // formatEmbyNotificationEnhanced formats an enhanced Emby notification (new detailed format)
