@@ -4,6 +4,32 @@
 
 ## 2026-02-28
 
+### fix: 入库通知只推送到群组，不再发送给管理员个人 ✅ 已部署
+- **问题**: 入库通知同时推送给群组和管理员私聊，造成重复通知
+- **解决方案**:
+  - `webhook.go`: 简化 `sendAggregatedEpisodeToAdmins` 函数，只发送到群组
+  - `media_notification.go`: `handleItem` 不再发送即时通知给管理员
+- **修改文件**:
+  - `internal/services/webhook.go` - 删除管理员私聊通知逻辑
+  - `internal/services/media_notification.go` - 移除即时通知发送代码
+- **Git 提交**: `b550d13`
+
+### feat: 增强电影格式检测，支持显示完整发布格式 ✅ 已部署
+- **问题**: 电影格式只显示分辨率（如 "1080p"），不显示发布格式
+- **解决方案**:
+  - 新增 `Format` 字段存储发布格式
+  - 新增 `parseReleaseFormat` 函数检测常见格式
+  - 更新 `getFullQuality` 函数显示完整格式
+- **支持格式**: BluRay.REMUX, WEB-DL, WEBRip, BluRay, HDTV, DVDRip, HDRip, WEB
+- **显示效果**: `BluRay 1080p`、`WEB-DL 2160p` 等
+- **修改文件**:
+  - `internal/services/webhook.go` - 新增格式解析和显示逻辑
+- **Git 提交**: `2b66541`
+
+---
+
+## 2026-02-28
+
 ### feat: 每日汇总自定义时间输入功能 ✅ 已部署
 - **问题**: 「每日汇总时间回调没反应」- 原时间选择只支持预设时间
 - **解决方案**: 新增自定义时间输入功能，支持任意 HH:MM 格式
