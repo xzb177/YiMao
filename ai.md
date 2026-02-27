@@ -4,6 +4,25 @@
 
 ## 2026-02-28
 
+### feat: 添加请求批准令牌机制防止重复提交 ✅ 已部署
+- **问题**: 多位管理员同时批准同一求片请求会导致重复向 MoviePilot 提交订阅
+- **解决方案**: 一次性令牌机制
+  - `ReviewRequest` 新增 `ApproveToken` 字段
+  - 创建请求时生成唯一的一次性令牌（时间戳 + 随机字符串）
+  - 批准时验证令牌，验证通过后立即清空（一次性使用）
+  - 批准按钮回调数据格式变为 `review_approve:id:xxx:token:yyy`
+  - `Approve()` 方法增加状态检查，已批准则返回 special error
+- **安全改进**: 使用 `crypto/rand` 生成安全的随机字符串
+- **修改文件**:
+  - `internal/services/review.go` - 令牌生成与验证逻辑
+  - `internal/handlers/review.go` - 令牌参数传递与重复批准处理
+  - `internal/handlers/request.go` - 通知消息按钮包含令牌
+- **Git 提交**: `c42073c`
+
+---
+
+## 2026-02-28
+
 ### feat: 文件信息获取优化 - Emby API 补充 + 缓存机制 ✅ 已部署
 - **问题**: 入库通知中文件大小和数量有时获取不到（如 strm 引用文件）
 - **解决方案**: 多层降级策略 + 缓存机制
