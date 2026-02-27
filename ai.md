@@ -4,6 +4,41 @@
 
 ## 2026-02-27
 
+### fix: TMDB 跨库撞车严重 Bug - mediaType 参数强制修复 ✅ 已部署
+- **问题**: 动漫入库时，TMDB fallback 返回了毫无关联的法国老电影的竖屏海报
+- **根本原因**:
+  1. `getTMDBBackdrop()` 只传 `TMDBID`，没有传媒体类型
+  2. TMDB API 把 TV 的 ID 当作 Movie 去请求了！
+  3. 使用了错误的 API 端点（基础详情端点而非 `/images` 端点）
+  4. 会 fallback 到竖屏 poster（竖版海报）
+- **解决方案**:
+  1. **函数签名修改**: `getTMDBBackdrop(tmdbID string, mediaType string)`
+  2. **API 端点修正**: 使用 `/{mediaType}/{id}/images` 端点
+  3. **添加语言参数**: `include_image_language=zh,null`
+  4. **绝对锁定横屏**: 只读取 `backdrops` 数组，无 backdrop 返回空字符串
+  5. **严禁 poster fallback**: 宁可纯文本也不发竖屏海报
+- **EmbyEnhancedInfo 结构体增强**: 添加 `Type` 字段传递媒体类型
+- **修改文件**: `internal/services/webhook.go`
+  - `getTMDBBackdrop()` - 完全重写，新增 mediaType 参数
+  - `EmbyEnhancedInfo` - 添加 Type 字段
+  - 8 处调用点全部更新，正确传入 `movie`/`tv`
+
+### refactor: 图片获取策略重构 - TMDB 为主，删除 Emby 图片代码 ✅ 已部署
+- **背景**: 简化图片获取逻辑，TMDB 作为唯一主要途径
+- **删除代码**:
+  - `flushEpisodeAggregation` - 删除 Emby Series 图片获取
+  - `getEmbyEnhancedInfoForEpisode` - 删除 Emby 图片优先级
+  - `getEmbyEnhancedInfo` - 删除 Emby backdrop/primary 获取
+  - `getSeriesInfo` - 删除 Series backdrop/primary 图片获取
+  - `sendNotificationWithPhoto` - 删除 Emby parent backdrop fallback
+- **新优先级**:
+  1. TMDB `/{mediaType}/{id}/images` → 获取横屏 backdrop
+  2. 无 backdrop → 返回空 → 使用纯文本 fallback
+- **效果**: 代码更简洁，避免 Emby 图片访问失败的问题
+- **修改文件**: `internal/services/webhook.go` (-138 行, +78 行)
+
+---
+
 ### fix: 入库通知图片稳定性增强 - TMDB 备胎优化 ✅ 已部署
 - **问题**: 部分入库通知没有图片，TMDB 备胎不稳定
 - **原因分析**:
