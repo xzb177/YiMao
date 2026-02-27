@@ -138,8 +138,9 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 
 // SendPhotoWithAuth sends a photo with caption, using custom headers for image download
 // This is needed for Emby images that require X-Emby-Token authentication
-// 实现图片代理上传：机器人下载 Emby 图片后，通过 multipart/form-data 上传到 Telegram
-// 支持本地缓存：相同图片优先从缓存读取，减少 Emby 带宽消耗
+// Also used for TMDB images to ensure reliable delivery (avoids Telegram URL fetch issues)
+// 实现图片代理上传：机器人下载图片后，通过 multipart/form-data 上传到 Telegram
+// 支持本地缓存：相同图片优先从缓存读取，减少带宽消耗
 func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	// 优先使用缓存（如果有）
 	var imageData []byte
@@ -155,7 +156,13 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 
 	// 缓存未命中，下载图片
 	if imageData == nil {
-		log.Printf("[Telegram] [代理上传] 正在下载 Emby 图片: %s", photoURL)
+		imageType := "外部"
+		if strings.Contains(photoURL, "emby") || strings.Contains(photoURL, "Emby") {
+			imageType = "Emby"
+		} else if strings.Contains(photoURL, "tmdb") || strings.Contains(photoURL, "themoviedb") {
+			imageType = "TMDB"
+		}
+		log.Printf("[Telegram] [代理上传] 正在下载 %s 图片: %s", imageType, photoURL)
 
 		req, err := http.NewRequest("GET", photoURL, nil)
 		if err != nil {

@@ -1556,13 +1556,14 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 
 // getTMDBBackdrop fetches backdrop URL from TMDB API (横屏图片)
 // 添加中文语言参数以获取更准确的图片
+// 【增强】如果 backdrop 为空，自动 fallback 到 poster
 func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
 		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 10 * time.Second} // 增加超时时间
 
 	// 添加中文语言参数，优先获取中文图片
 	// language=zh-CN: 返回中文内容
@@ -1577,10 +1578,12 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN&include_image_language=zh,null", tmdbID, apiKey)
 		resp, err = client.Get(tvURL)
 		if err != nil {
+			log.Printf("[TMDB] Movie and TV API both failed for ID %s: %v", tmdbID, err)
 			return ""
 		}
 		if resp.StatusCode != http.StatusOK {
 			resp.Body.Close()
+			log.Printf("[TMDB] TV API returned status %d for ID %s", resp.StatusCode, tmdbID)
 			return ""
 		}
 	}
@@ -1588,14 +1591,26 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[TMDB] Failed to decode response for ID %s: %v", tmdbID, err)
 		return ""
 	}
 
-	// Get backdrop path (横屏图片)
+	// 【优先级1】Get backdrop path (横屏图片)
 	if backdropPath, ok := result["backdrop_path"].(string); ok && backdropPath != "" {
-		return fmt.Sprintf("https://image.tmdb.org/t/p/original%s", backdropPath)
+		url := fmt.Sprintf("https://image.tmdb.org/t/p/original%s", backdropPath)
+		log.Printf("[TMDB] Got backdrop for ID %s: %s", tmdbID, backdropPath)
+		return url
 	}
 
+	// 【优先级2】Backdrop 为空时，尝试 poster (竖版海报)
+	log.Printf("[TMDB] Backdrop not found for ID %s, trying poster", tmdbID)
+	if posterPath, ok := result["poster_path"].(string); ok && posterPath != "" {
+		url := fmt.Sprintf("https://image.tmdb.org/t/p/w780%s", posterPath) // 使用 w780 尺寸
+		log.Printf("[TMDB] Using poster as fallback for ID %s: %s", tmdbID, posterPath)
+		return url
+	}
+
+	log.Printf("[TMDB] No backdrop or poster found for ID %s", tmdbID)
 	return ""
 }
 
@@ -2042,15 +2057,20 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string, enh
 	log.Printf("[Webhook] Sending photo caption (%d chars):\n%s", len(caption), caption)
 
 	var err error
-	// Check if this is an Emby URL that needs authentication
+	// 【图片发送策略】所有图片都使用代理上传，确保稳定性
+	// 原因：Telegram 有时无法直接获取 TMDB 图片（failed to get HTTP URL content）
 	if strings.Contains(photoURL, s.embyURL) && s.embyAPIKey != "" {
-		// Use authenticated download for Emby images
+		// Emby 图片 - 使用认证下载
 		headers := map[string]string{
 			"X-Emby-Token": s.embyAPIKey,
 		}
 		_, err = s.telegram.SendPhotoWithAuth(s.chatID, photoURL, caption, headers, nil)
+	} else if strings.Contains(photoURL, "tmdb.org") || strings.Contains(photoURL, "themoviedb.org") {
+		// 【重要】TMDB 图片也使用代理上传，避免 Telegram 无法获取
+		// 不需要认证 headers，但使用相同的下载上传机制
+		_, err = s.telegram.SendPhotoWithAuth(s.chatID, photoURL, caption, nil, nil)
 	} else {
-		// Use regular send for non-Emby images (TMDB, etc.)
+		// 其他图片源使用常规方法
 		_, err = s.telegram.SendPhoto(s.chatID, photoURL, caption, nil)
 	}
 
@@ -2061,8 +2081,9 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string, enh
 		if strings.Contains(photoURL, s.embyURL) && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
 			log.Printf("[Webhook] Emby image failed, trying TMDB fallback with ID: %s", enhancedInfo.TMDBID)
 			if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
-				log.Printf("[Webhook] Using TMDB backdrop: %s", backdropURL)
-				_, tmdbErr := s.telegram.SendPhoto(s.chatID, backdropURL, caption, nil)
+				log.Printf("[Webhook] Using TMDB backdrop (代理上传): %s", backdropURL)
+				// 【关键】TMDB 备胎也使用代理上传
+				_, tmdbErr := s.telegram.SendPhotoWithAuth(s.chatID, backdropURL, caption, nil, nil)
 				if tmdbErr == nil {
 					// TMDB 成功，添加到缓存并返回
 					if s.messageCache != nil {
@@ -2071,6 +2092,8 @@ func (s *WebhookService) sendNotificationWithPhoto(message, photoURL string, enh
 					return
 				}
 				log.Printf("[Webhook] TMDB fallback also failed: %v", tmdbErr)
+			} else {
+				log.Printf("[Webhook] TMDB backdrop is empty for ID: %s", enhancedInfo.TMDBID)
 			}
 		}
 

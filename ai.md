@@ -4,6 +4,21 @@
 
 ## 2026-02-27
 
+### fix: 入库通知图片稳定性增强 - TMDB 备胎优化 ✅ 已部署
+- **问题**: 部分入库通知没有图片，TMDB 备胎不稳定
+- **原因分析**:
+  1. Emby 图片返回 500（Cloudflare 拦截）
+  2. TMDB backdrop 有时为空
+  3. Telegram 无法直接获取 TMDB 图片（`failed to get HTTP URL content`）
+- **解决方案**:
+  1. **增强 TMDB 获取逻辑**: backdrop 为空时自动 fallback 到 poster
+  2. **TMDB 图片也使用代理上传**: 避免 Telegram 无法获取的问题
+  3. **增加超时时间**: 从 5 秒增加到 10 秒
+  4. **增强日志输出**: 清晰显示图片来源和失败原因
+- **修改文件**:
+  - `internal/services/webhook.go` - `getTMDBBackdrop()` 增强 poster 备胎，`sendNotificationWithPhoto()` TMDB 代理上传
+  - `internal/services/telegram.go` - `SendPhotoWithAuth()` 通用化日志
+
 ### feat: Emby 媒体库搜索优化 - 模糊搜索 + 智能评分匹配 ✅ 已部署
 - **问题**: 搜索逻辑过于死板，用户输入"怪奇迷案"无法搜索出《怪奇迷案限时破》
 - **原因**: 原代码使用 `strings.Contains` 简单匹配，只返回第一个结果，忽略了更匹配的选项
@@ -787,6 +802,9 @@ watchlist_add:{tmdbID}  # 加入片单
 - **部署**: `docker compose up -d --build` ✅ 已部署
 - **状态**: ✅ 问题已解决
 - **提交**: `e505a95` - 已推送到远程仓库
+
+---
+**2026-02-27 18:11** - 最新版本部署完成，服务正常运行 ✅
 
 ## 2026-02-27
 
