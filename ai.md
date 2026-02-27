@@ -23,6 +23,7 @@
 - **效果**: 现在普通搜索也能正确返回搜索结果列表
 - **修改文件**:
   - `internal/handlers/callback.go`
+- **Git 提交**: `48fef0f`
 
 ---
 
