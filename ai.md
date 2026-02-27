@@ -4,6 +4,39 @@
 
 ## 2026-02-27
 
+### feat: 图片处理双重保障机制 - Emby 代理上传 + TMDB 中文优化
+- **背景**: Emby 服务器与机器人不在同一内网，Telegram 无法直接访问 Emby 图片（Cloudflare 拦截）
+- **解决方案**: 双重保障逻辑，代码纯净无需豆瓣爬虫
+
+#### 第一步：Emby 图片代理上传（最优先）
+- **逻辑**: 机器人使用 `http.Client` 下载 Emby webhook 中的真实图片 URL（Primary/Backdrop）
+- **发送**: 调用 Telegram `SendPhotoWithAuth`，以 multipart/form-data 将内存中的图片字节流发给 Telegram
+- **伪装**: 添加 User-Agent 伪装防止被拦截
+- **修改**: `internal/services/telegram.go` - SendPhotoWithAuth() 添加 User-Agent 和更清晰的日志
+
+#### 第二步：TMDB 备胎优化
+- **修复**: TMDB API 添加中文语言参数
+- **参数**: `&language=zh-CN` 和 `&include_image_language=zh,null`
+- **效果**: 优先获取中文海报和横幅
+- **修改**: `internal/services/webhook.go`
+  - `getTMDBBackdrop()` - 添加中文参数
+  - `getTMDBPoster()` - 添加中文参数
+
+#### 第三步：图片优先级调整
+- **原逻辑**: TMDB → Emby（导致 Emby 图片无法显示）
+- **新逻辑**: Emby（代理上传）→ TMDB（备胎）
+- **修改位置**:
+  - `getEmbyEnhancedInfoForEpisode()` - 剧集增强信息获取
+  - `getEmbyEnhancedInfo()` - 电影增强信息获取
+  - `flushSingleAggregation()` - 入库聚合通知（两处）
+
+#### 保留逻辑（一字未动）
+- ✅ 首尾集数合并（如 E01-E12）
+- ✅ 隐藏 0B 大小
+- ✅ 空行排版
+
+---
+
 ### fix: 反馈功能完整修复 - FeedbackHandler 依赖传递遗漏 (commit: 06ca91b)
 - **问题**: 用户反馈流程中输入文本被当成搜索关键词处理
 - **现象**: 点击"🐛 画质问题"后输入"画质不行"，回复"☹️ 未找到相关内容"

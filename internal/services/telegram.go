@@ -131,8 +131,9 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 
 // SendPhotoWithAuth sends a photo with caption, using custom headers for image download
 // This is needed for Emby images that require X-Emby-Token authentication
+// 实现图片代理上传：机器人下载 Emby 图片后，通过 multipart/form-data 上传到 Telegram
 func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	log.Printf("[Telegram] Downloading photo with auth from: %s", photoURL)
+	log.Printf("[Telegram] [代理上传] 正在下载 Emby 图片: %s", photoURL)
 
 	// Create request with custom headers
 	req, err := http.NewRequest("GET", photoURL, nil)
@@ -141,30 +142,33 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
 	}
 
+	// Add User-Agent to avoid being blocked
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+
 	// Add custom headers (e.g., X-Emby-Token)
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 
-	// Download the image
+	// Download the image (代理下载)
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[Telegram] Failed to download photo: %v", err)
+		log.Printf("[Telegram] [代理上传] 下载失败: %v", err)
 		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[Telegram] Photo download status: %d", resp.StatusCode)
+		log.Printf("[Telegram] [代理上传] 下载状态码异常: %d", resp.StatusCode)
 		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
 	}
 
-	log.Printf("[Telegram] Photo downloaded, size: %d bytes", resp.ContentLength)
+	log.Printf("[Telegram] [代理上传] 下载成功，大小: %d bytes", resp.ContentLength)
 
-	// Create multipart form
+	// Create multipart form for Telegram upload
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
-	// Read image data
+	// Read image data into memory
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
@@ -176,7 +180,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		writer.WriteField("caption", caption)
 	}
 
-	// Add photo file
+	// Add photo file (从内存字节流上传)
 	part, err := writer.CreateFormFile("photo", "photo.jpg")
 	if err != nil {
 		return nil, err
@@ -195,7 +199,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 
 	writer.Close()
 
-	// Create request
+	// Create POST request to Telegram
 	req2, err := http.NewRequest("POST", apiURL, &buf)
 	if err != nil {
 		return nil, err
@@ -205,7 +209,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 
 	resp2, err := c.httpClient.Do(req2)
 	if err != nil {
-		log.Printf("[Telegram] Multipart request failed: %v", err)
+		log.Printf("[Telegram] [代理上传] 上传到 Telegram 失败: %v", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
 	defer resp2.Body.Close()
@@ -230,7 +234,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[Telegram] SendPhotoWithAuth successful")
+	log.Printf("[Telegram] [代理上传] 成功发送图片到 Telegram")
 	return result.Result, nil
 }
 

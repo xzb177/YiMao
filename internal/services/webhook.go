@@ -737,19 +737,20 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 	sort.Ints(episodes)
 
 	// 图片获取：如果没有图片且有 SeriesID，尝试重新获取横幅图
-	// 优先从 TMDB 获取横幅图片（外部可访问，质量高）
-	if imageURL == "" && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
-		if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
-			imageURL = backdropURL
-			log.Printf("[入库聚合] 从 TMDB 获取到 backdrop: %s", imageURL)
-		}
-	}
-	// 回退：TMDB 获取失败时，尝试从 Emby 获取 Series 的 backdrop
+	// 图片优先级：Emby（代理上传） → TMDB（备胎）
+	// 【优先级1】先尝试从 Emby 获取 Series 的 backdrop
 	if imageURL == "" && seriesID != "" {
-		log.Printf("[入库聚合] 尝试从 Emby Series 获取图片（回退方案），seriesID=%s", seriesID)
+		log.Printf("[入库聚合] 尝试从 Emby Series 获取图片，seriesID=%s", seriesID)
 		if seriesInfo, err := s.getSeriesInfo(seriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
 			imageURL = seriesInfo.ImageURL
 			log.Printf("[入库聚合] 从 Emby Series 获取到图片: %s", imageURL)
+		}
+	}
+	// 【优先级2】Emby 获取失败时，才尝试 TMDB 备胎
+	if imageURL == "" && enhancedInfo != nil && enhancedInfo.TMDBID != "" {
+		if backdropURL := s.getTMDBBackdrop(enhancedInfo.TMDBID); backdropURL != "" {
+			imageURL = backdropURL
+			log.Printf("[入库聚合] 从 TMDB 获取到 backdrop（备胎）: %s", imageURL)
 		}
 	}
 
@@ -857,29 +858,29 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		}
 
 		// Send notification only to group chats (chatID < -100)
-		// 强制使用图片发送：优先 TMDB（外部可访问），Emby 图片因 Cloudflare 无法被 Telegram 访问
+		// 图片优先级：Emby（代理上传）→ TMDB（备胎）
 		if s.chatID != 0 && s.chatID < -100 {
 			photoURL := ""
 
-			// 优先尝试从 TMDB 获取（外部可访问）
-			if agg.EnhancedInfo != nil && agg.EnhancedInfo.TMDBID != "" {
-				if backdropURL := s.getTMDBBackdrop(agg.EnhancedInfo.TMDBID); backdropURL != "" {
-					photoURL = backdropURL
-					log.Printf("[入库聚合] 从 TMDB 获取到 backdrop: %s", photoURL)
-				}
-			}
-
-			// TMDB 获取失败时，回退到 Emby（可能无法显示，但保留逻辑）
-			if photoURL == "" && agg.ImageURL != "" {
+			// 【优先级1】先尝试 Emby 图片（通过代理上传）
+			if agg.ImageURL != "" {
 				photoURL = agg.ImageURL
-				log.Printf("[入库聚合] 使用 Emby 图片（可能因 Cloudflare 无法显示）: %s", photoURL)
+				log.Printf("[入库聚合] 使用 Emby 图片（通过代理上传）: %s", photoURL)
 			}
 
-			// 如果还是没有，尝试从 Emby API 获取
+			// 【优先级2】如果没有，从 Emby API 获取 Series 图片
 			if photoURL == "" && agg.SeriesID != "" {
 				if seriesInfo, err := s.getSeriesInfo(agg.SeriesID); err == nil && seriesInfo != nil && seriesInfo.ImageURL != "" {
 					photoURL = seriesInfo.ImageURL
-					log.Printf("[入库聚合] 从 Emby API 获取到图片（可能因 Cloudflare 无法显示）: %s", photoURL)
+					log.Printf("[入库聚合] 从 Emby API 获取到图片: %s", photoURL)
+				}
+			}
+
+			// 【优先级3】Emby 都失败时，才尝试 TMDB 备胎
+			if photoURL == "" && agg.EnhancedInfo != nil && agg.EnhancedInfo.TMDBID != "" {
+				if backdropURL := s.getTMDBBackdrop(agg.EnhancedInfo.TMDBID); backdropURL != "" {
+					photoURL = backdropURL
+					log.Printf("[入库聚合] 从 TMDB 获取到 backdrop（备胎）: %s", photoURL)
 				}
 			}
 
@@ -1197,13 +1198,14 @@ type EmbyEnhancedInfo struct {
 
 // getEmbyEnhancedInfoForEpisode fetches enhanced information from Emby API for episodes
 // It queries both the episode and its parent series to get genres and backdrop
+// 图片优先级：Emby（代理上传） → TMDB（备胎）
 func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID string, parentBackdropItemID string, parentBackdropImageTags []string, seriesPrimaryImageTag string) (*EmbyEnhancedInfo, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby not configured")
 	}
 
 	info := &EmbyEnhancedInfo{}
-	var seriesInfo *EmbyEnhancedInfo  // 保存 seriesInfo 用于后续图片回退
+	var seriesInfo *EmbyEnhancedInfo
 
 	// First, query the Series to get Genres (episodes don't have genres)
 	if seriesID != "" {
@@ -1213,14 +1215,14 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 			// Copy genres from series
 			info.Genres = seriesInfo.Genres
 			log.Printf("[Debug] Got %d genres from series %s", len(info.Genres), seriesID)
-			// Copy TMDB ID from series for image lookup
+			// Copy TMDB ID from series for image lookup (作为备胎)
 			if seriesInfo.TMDBID != "" {
 				info.TMDBID = seriesInfo.TMDBID
 			}
-			// 尝试使用 seriesInfo 中的图片（getSeriesInfo 已优先获取横幅图）
+			// 【优先级1】使用 Emby 图片（通过代理上传，Telegram 可访问）
 			if seriesInfo.ImageURL != "" {
 				info.ImageURL = seriesInfo.ImageURL
-				log.Printf("[Debug] Using image from seriesInfo: %s", info.ImageURL)
+				log.Printf("[Debug] Using Emby image (priority): %s", info.ImageURL)
 			}
 		} else {
 			log.Printf("[Debug] Failed to get series info: %v", err)
@@ -1259,22 +1261,22 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 		log.Printf("[Debug] Failed to get episode info: %v", err)
 	}
 
-	// 优先从 TMDB 获取横幅图片（外部可访问，质量高）
-	if info.TMDBID != "" {
+	// 【优先级2】Emby 图片为空时，才尝试 TMDB 备胎
+	if info.ImageURL == "" && info.TMDBID != "" {
 		if backdropURL := s.getTMDBBackdrop(info.TMDBID); backdropURL != "" {
 			info.ImageURL = backdropURL
-			log.Printf("[Debug] Using TMDB backdrop for episode: %s", backdropURL)
+			log.Printf("[Debug] Using TMDB backdrop (fallback): %s", backdropURL)
 		}
 	}
 
-	// 回退方案1：尝试从 Emby 获取 parent backdrop
+	// 【优先级3】TMDB 也失败时，尝试从 Emby 获取 parent backdrop
 	if info.ImageURL == "" && parentBackdropItemID != "" && len(parentBackdropImageTags) > 0 {
 		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
 			s.embyURL, parentBackdropItemID, parentBackdropImageTags[0], s.embyAPIKey)
 		log.Printf("[Debug] Using Emby parent backdrop (fallback): %s", info.ImageURL)
 	}
 
-	// 回退方案2：尝试使用 seriesPrimaryImageTag（竖版海报）
+	// 【优先级4】最后尝试使用 seriesPrimaryImageTag（竖版海报）
 	if info.ImageURL == "" && seriesPrimaryImageTag != "" && seriesID != "" {
 		info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
 			s.embyURL, seriesID, seriesPrimaryImageTag, s.embyAPIKey)
@@ -1443,8 +1445,8 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 		}
 	}
 
-	// Extract image URL - try to get from TMDB first (publicly accessible)
-	// Check for TMDB ID in ProviderIds (Emby uses Tvdb/Tmdb)
+	// Extract image URL - 优先级：Emby（代理上传） → TMDB（备胎）
+	// Check for TMDB ID in ProviderIds (Emby uses Tvdb/Tmdb) - 作为备胎使用
 	var tmdbID string
 	if providerIds, ok := result["ProviderIds"].(map[string]interface{}); ok {
 		// Try lowercase "tmdb" first
@@ -1458,45 +1460,43 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 			tmdbID = tid
 		}
 	}
-
+	info.TMDBID = tmdbID // 保存 TMDB ID 供后续备用
 	log.Printf("[Debug] TMDB ID: %s", tmdbID)
 
-	// Get backdrop from TMDB if we have the ID (横屏图片)
-	if tmdbID != "" {
+	// 【优先级1】先尝试从 Emby 获取 backdrop（横屏）- 通过代理上传
+	if itemID, ok := result["Id"].(string); ok {
+		if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
+			if tag, ok := backdropImageTags[0].(string); ok {
+				info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
+					s.embyURL, itemID, tag, s.embyAPIKey)
+				log.Printf("[Debug] Using Emby backdrop (priority): %s", info.ImageURL)
+			}
+		}
+
+		// 【优先级2】Emby 没有 backdrop 时，尝试 primary（竖版海报）
+		if info.ImageURL == "" {
+			if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
+				if tag, ok := imageTags["Primary"].(string); ok {
+					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
+						s.embyURL, itemID, tag, s.embyAPIKey)
+					log.Printf("[Debug] Using Emby primary image (priority): %s", info.ImageURL)
+				}
+			}
+		}
+	}
+
+	// 【优先级3】Emby 图片为空时，才尝试 TMDB 备胎
+	if info.ImageURL == "" && tmdbID != "" {
 		if backdropURL := s.getTMDBBackdrop(tmdbID); backdropURL != "" {
 			info.ImageURL = backdropURL
-			log.Printf("[Debug] Using TMDB backdrop: %s", backdropURL)
+			log.Printf("[Debug] Using TMDB backdrop (fallback): %s", backdropURL)
 		} else {
 			log.Printf("[Debug] TMDB backdrop not found for ID: %s", tmdbID)
 		}
 	}
 
-	// Fallback to Emby images if TMDB failed
-	if info.ImageURL == "" {
-		if itemID, ok := result["Id"].(string); ok {
-			// Try backdrop first (横屏) - BackdropImageTags is an array
-			if backdropImageTags, ok := result["BackdropImageTags"].([]interface{}); ok && len(backdropImageTags) > 0 {
-				if tag, ok := backdropImageTags[0].(string); ok {
-					info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Backdrop/%s?fillWidth=800&quality=90&api_key=%s",
-						s.embyURL, itemID, tag, s.embyAPIKey)
-					log.Printf("[Debug] Using Emby backdrop: %s", info.ImageURL)
-				}
-			} else {
-				log.Printf("[Debug] No Emby BackdropImageTags found")
-			}
-			// Fallback to primary image
-			if info.ImageURL == "" {
-				if imageTags, ok := result["ImageTags"].(map[string]interface{}); ok {
-					if tag, ok := imageTags["Primary"].(string); ok {
-						info.ImageURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?maxWidth=600&quality=95&api_key=%s",
-							s.embyURL, itemID, tag, s.embyAPIKey)
-						log.Printf("[Debug] Using Emby primary image: %s", info.ImageURL)
-					}
-				}
-			}
-		}
-	} else {
-		log.Printf("[Debug] ImageURL set: %s", info.ImageURL)
+	if info.ImageURL != "" {
+		log.Printf("[Debug] Final ImageURL: %s", info.ImageURL)
 	}
 
 	// Extract media info for quality and file count
@@ -1555,6 +1555,7 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 }
 
 // getTMDBBackdrop fetches backdrop URL from TMDB API (横屏图片)
+// 添加中文语言参数以获取更准确的图片
 func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
@@ -1563,15 +1564,17 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	// Try TMDB 3 API for movie details
-	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s", tmdbID, apiKey)
+	// 添加中文语言参数，优先获取中文图片
+	// language=zh-CN: 返回中文内容
+	// include_image_language=zh,null: 优先中文图片，无中文时返回默认图片
+	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s&language=zh-CN&include_image_language=zh,null", tmdbID, apiKey)
 	resp, err := client.Get(url)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		if resp != nil {
 			resp.Body.Close()
 		}
-		// Try TV API
-		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s", tmdbID, apiKey)
+		// Try TV API with same language parameters
+		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN&include_image_language=zh,null", tmdbID, apiKey)
 		resp, err = client.Get(tvURL)
 		if err != nil {
 			return ""
@@ -1597,6 +1600,7 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string) string {
 }
 
 // getTMDBPoster fetches poster URL from TMDB API (竖版海报)
+// 添加中文语言参数以获取中文海报
 func (s *WebhookService) getTMDBPoster(tmdbID string) string {
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
@@ -1605,15 +1609,17 @@ func (s *WebhookService) getTMDBPoster(tmdbID string) string {
 
 	client := &http.Client{Timeout: 5 * time.Second}
 
-	// Try TMDB 3 API for movie details (use English for consistent poster)
-	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s", tmdbID, apiKey)
+	// 添加中文语言参数，优先获取中文海报
+	// language=zh-CN: 返回中文内容
+	// include_image_language=zh,null: 优先中文图片，无中文时返回默认图片
+	url := fmt.Sprintf("https://api.themoviedb.org/3/movie/%s?api_key=%s&language=zh-CN&include_image_language=zh,null", tmdbID, apiKey)
 	resp, err := client.Get(url)
 	if err != nil || resp.StatusCode != http.StatusOK {
 		if resp != nil {
 			resp.Body.Close()
 		}
-		// Try TV API
-		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s", tmdbID, apiKey)
+		// Try TV API with same language parameters
+		tvURL := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN&include_image_language=zh,null", tmdbID, apiKey)
 		resp, err = client.Get(tvURL)
 		if err != nil {
 			return ""
