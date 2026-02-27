@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
@@ -38,9 +39,9 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	action := ctx.Callback.Action
 
 	switch action {
-	case "review_approve":
+	case "review_approve", "rv_a":
 		return h.handleApprove(ctx)
-	case "review_reject":
+	case "review_reject", "rv_r":
 		return h.handleReject(ctx)
 	case "review_cancel":
 		return h.handleCancel(ctx)
@@ -54,6 +55,9 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 }
 
 // handleApprove handles approve callback
+// Supports two formats:
+// - Legacy: "review_approve:id:xxx:token:yyy"
+// - Short: "rv_a:TOKEN" (token uniquely identifies the request)
 func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response, error) {
 	// Check admin permission
 	if !h.adminService.IsAdmin(ctx.UserID) {
@@ -65,8 +69,41 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		}, nil
 	}
 
-	requestID := ctx.Callback.Params["id"]
-	token := ctx.Callback.Params["token"]
+	var token string
+	var requestID string
+
+	// Check format: legacy has "id" param, short format has token directly
+	if ctx.Callback.Action == "rv_a" {
+		// Short format: "rv_a:TOKEN" - token is after colon
+		parts := strings.Split(ctx.Callback.Raw, ":")
+		if len(parts) >= 2 {
+			token = parts[1]
+		}
+		// Find request by token
+		if token != "" {
+			// Need to find the request by token - ReviewService doesn't have this method yet
+			// For now, get all pending requests and find matching token
+			pending := h.reviewService.GetPendingRequests()
+			for _, req := range pending {
+				if req.ApproveToken == token {
+					requestID = req.RequestID
+					break
+				}
+			}
+		}
+	} else {
+		// Legacy format
+		requestID = ctx.Callback.Params["id"]
+		token = ctx.Callback.Params["token"]
+	}
+
+	if requestID == "" || token == "" {
+		return &callback.Response{
+			Text:        "❌ 无效的请求",
+			CallbackMsg: "无效",
+			ShowAlert:   true,
+		}, nil
+	}
 
 	// Approve the review with token verification
 	review, err := h.reviewService.Approve(requestID, ctx.UserID, token)
@@ -145,6 +182,9 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 }
 
 // handleReject handles reject callback
+// Supports two formats:
+// - Legacy: "review_reject:id:xxx"
+// - Short: "rv_r:TOKEN" (token uniquely identifies the request)
 func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response, error) {
 	// Check admin permission
 	if !h.adminService.IsAdmin(ctx.UserID) {
@@ -156,7 +196,38 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		}, nil
 	}
 
-	requestID := ctx.Callback.Params["id"]
+	var token string
+	var requestID string
+
+	// Check format
+	if ctx.Callback.Action == "rv_r" {
+		// Short format: "rv_r:TOKEN"
+		parts := strings.Split(ctx.Callback.Raw, ":")
+		if len(parts) >= 2 {
+			token = parts[1]
+		}
+		// Find request by token
+		if token != "" {
+			pending := h.reviewService.GetPendingRequests()
+			for _, req := range pending {
+				if req.ApproveToken == token {
+					requestID = req.RequestID
+					break
+				}
+			}
+		}
+	} else {
+		// Legacy format
+		requestID = ctx.Callback.Params["id"]
+	}
+
+	if requestID == "" {
+		return &callback.Response{
+			Text:        "❌ 无效的请求",
+			CallbackMsg: "无效",
+			ShowAlert:   true,
+		}, nil
+	}
 
 	// Reject the review (no reason provided in quick reject)
 	review, err := h.reviewService.Reject(requestID, ctx.UserID, "管理员拒绝了请求")

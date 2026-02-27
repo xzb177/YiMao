@@ -347,12 +347,13 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
 
 	// Add action buttons with approve token
+	// Use token as key to keep CallbackData under 64 bytes: "rv_a:TOKEN" or "rv_r:TOKEN"
 	for _, adminID := range adminIDs {
 		keyboard := &types.TelegramInlineKeyboard{
 			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 				{
-					{Text: "✅ 批准", CallbackData: fmt.Sprintf("review_approve:id:%s:token:%s", review.RequestID, review.ApproveToken)},
-					{Text: "❌ 拒绝", CallbackData: fmt.Sprintf("review_reject:id:%s", review.RequestID)},
+					{Text: "✅ 批准", CallbackData: fmt.Sprintf("rv_a:%s", review.ApproveToken)},
+					{Text: "❌ 拒绝", CallbackData: fmt.Sprintf("rv_r:%s", review.ApproveToken)},
 				},
 			},
 		}

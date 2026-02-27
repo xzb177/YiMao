@@ -69,6 +69,9 @@ var validActions = map[Action]bool{
 	"review_cancel":  true,
 	"my_reviews":     true,
 	"review_list":    true,
+	// Short format actions (to keep CallbackData under 64 bytes)
+	"rv_a": true, // approve by token
+	"rv_r": true, // reject by token
 
 	// Admin actions
 	"admin_approve":                true,
