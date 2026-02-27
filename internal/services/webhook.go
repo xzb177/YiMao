@@ -754,54 +754,8 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 	// Build episode range string
 	epRange := buildEpisodeRangeString(episodes)
 
-	// Build message based on notification format
-	var message string
-	if s.notificationFormat == "simple" {
-		message = s.formatAggregatedEpisodeSimple(&EpisodeAggregation{
-			SeriesName:   seriesName,
-			Year:         year,
-			Season:       season,
-			Episodes:     episodes,
-			Quality:      quality,
-			ImageURL:     imageURL,
-			FileSize:     fileSize,
-			EnhancedInfo: enhancedInfo,
-			LibraryName:  libraryName,
-		}, epRange)
-	} else {
-		message = s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
-			SeriesName:   seriesName,
-			Year:         year,
-			Season:       season,
-			Episodes:     episodes,
-			Quality:      quality,
-			ImageURL:     imageURL,
-			FileSize:     fileSize,
-			EnhancedInfo: enhancedInfo,
-			LibraryName:  libraryName,
-		}, epRange)
-	}
-
-	// Send notification only to group chats (chatID < -100)
-	if s.chatID != 0 && s.chatID < -100 {
-		if imageURL != "" {
-			// For photo notifications, use a more compact format to fit within 1024 char limit
-			photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
-				SeriesName:   seriesName,
-				Year:         year,
-				Season:       season,
-				Episodes:     episodes,
-				Quality:      quality,
-				ImageURL:     imageURL,
-				FileSize:     fileSize,
-				EnhancedInfo: enhancedInfo,
-				LibraryName:  libraryName,
-			}, epRange)
-			s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
-		} else {
-			s.sendWithCache(s.chatID, message)
-		}
-	}
+	// Send notification to admins based on their individual settings
+	s.sendAggregatedEpisodeToAdmins(seriesName, year, season, episodes, epRange, quality, imageURL, fileSize, enhancedInfo, libraryName)
 
 	log.Printf("[入库] %s S%02d %s (%d集, 总大小:%s)", seriesName, season, epRange, len(episodes), s.formatFileSizeDecimal(fileSize))
 
@@ -890,6 +844,122 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		s.addAggregatedEpisodeToSummary(agg, epRange)
 
 		delete(s.epAggregation, key)
+	}
+}
+
+// sendAggregatedEpisodeToAdmins sends aggregated episode notification to admins based on their settings
+func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year int, season int, episodes []int, epRange string, quality, imageURL string, fileSize int64, enhancedInfo *EmbyEnhancedInfo, libraryName string) {
+	if s.mediaNotificationSvc == nil {
+		// Fallback to old behavior: send to group chat
+		if s.chatID != 0 && s.chatID < -100 {
+			message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
+				SeriesName:   seriesName,
+				Year:         year,
+				Season:       season,
+				Episodes:     episodes,
+				Quality:      quality,
+				ImageURL:     imageURL,
+				FileSize:     fileSize,
+				EnhancedInfo: enhancedInfo,
+				LibraryName:  libraryName,
+			}, epRange)
+
+			if imageURL != "" {
+				photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
+					SeriesName:   seriesName,
+					Year:         year,
+					Season:       season,
+					Episodes:     episodes,
+					Quality:      quality,
+					ImageURL:     imageURL,
+					FileSize:     fileSize,
+					EnhancedInfo: enhancedInfo,
+					LibraryName:  libraryName,
+				}, epRange)
+				s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
+			} else {
+				s.sendWithCache(s.chatID, message)
+			}
+		}
+		return
+	}
+
+	// Get all admin IDs
+	adminIDs := s.adminService.GetAdminIDs()
+	if len(adminIDs) == 0 {
+		return
+	}
+
+	// Check each admin's settings and send accordingly
+	for _, adminID := range adminIDs {
+		settings := s.mediaNotificationSvc.GetSettings(adminID)
+
+		// Skip if completely disabled
+		if !settings.Enabled {
+			continue
+		}
+
+		// Skip if instant notifications are disabled
+		if !settings.InstantEnabled {
+			continue
+		}
+
+		// Build message based on admin's format preference
+		var message string
+		if settings.Format == FormatSimple {
+			message = s.formatAggregatedEpisodeSimple(&EpisodeAggregation{
+				SeriesName:   seriesName,
+				Year:         year,
+				Season:       season,
+				Episodes:     episodes,
+				Quality:      quality,
+				ImageURL:     imageURL,
+				FileSize:     fileSize,
+				EnhancedInfo: enhancedInfo,
+				LibraryName:  libraryName,
+			}, epRange)
+		} else {
+			message = s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
+				SeriesName:   seriesName,
+				Year:         year,
+				Season:       season,
+				Episodes:     episodes,
+				Quality:      quality,
+				ImageURL:     imageURL,
+				FileSize:     fileSize,
+				EnhancedInfo: enhancedInfo,
+				LibraryName:  libraryName,
+			}, epRange)
+		}
+
+		// Send notification
+		if imageURL != "" {
+			photoCaption := s.formatEpisodePhotoCaption(&EpisodeAggregation{
+				SeriesName:   seriesName,
+				Year:         year,
+				Season:       season,
+				Episodes:     episodes,
+				Quality:      quality,
+				ImageURL:     imageURL,
+				FileSize:     fileSize,
+				EnhancedInfo: enhancedInfo,
+				LibraryName:  libraryName,
+			}, epRange)
+			s.sendNotificationWithPhotoToAdmin(adminID, photoCaption, imageURL, enhancedInfo)
+		} else {
+			s.telegram.SendMessage(adminID, message, "Markdown", nil)
+		}
+	}
+}
+
+// sendNotificationWithPhotoToAdmin sends a photo notification to a specific admin
+func (s *WebhookService) sendNotificationWithPhotoToAdmin(adminID int64, caption string, imageURL string, enhancedInfo *EmbyEnhancedInfo) {
+	// Try to send as photo using Telegram's built-in URL download
+	_, err := s.telegram.SendPhotoFromURL(adminID, imageURL, caption, nil)
+	if err != nil {
+		log.Printf("[入库] Failed to send photo to admin %d: %v, falling back to text", adminID, err)
+		// Fallback to text-only message
+		s.telegram.SendMessage(adminID, caption, "", nil)
 	}
 }
 

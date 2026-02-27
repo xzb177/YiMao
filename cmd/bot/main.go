@@ -320,6 +320,17 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("admin_notif_settime", adminHandler.Handle)
 	registry.RegisterFunc("admin_notif_format_simple", adminHandler.Handle)
 	registry.RegisterFunc("admin_notif_format_detailed", adminHandler.Handle)
+	// V2 通知设置回调 - 状态融合按钮
+	registry.RegisterFunc("admin_notif_toggle_single_v2", adminHandler.Handle)
+	registry.RegisterFunc("admin_notif_toggle_daily_v2", adminHandler.Handle)
+	registry.RegisterFunc("admin_notif_toggle_format", adminHandler.Handle)
+	registry.RegisterFunc("admin_notif_disable_all", adminHandler.Handle)
+	// 管理员管理回调
+	registry.RegisterFunc("admin_mgmt", adminHandler.Handle)
+	registry.RegisterFunc("admin_list", adminHandler.Handle)
+	registry.RegisterFunc("admin_add_start", adminHandler.Handle)
+	registry.RegisterFunc("admin_remove_list", adminHandler.Handle)
+	registry.RegisterFunc("admin_remove_confirm", adminHandler.Handle)
 
 	// Review system callbacks
 	registry.RegisterFunc("review_approve", reviewHandler.Handle)
