@@ -304,14 +304,16 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		}
 		if path != "" {
 			quality := s.parseQualityFromPath(path)
+			format := s.parseReleaseFormat(path)
 			isWEBDL := s.detectWEBDL(path)
-			log.Printf("[Webhook] Parsed quality from webhook path: %s (WEB-DL: %v)", quality, isWEBDL)
+			log.Printf("[Webhook] Parsed quality from webhook path: %s, format: %s (WEB-DL: %v)", quality, format, isWEBDL)
 
 			if enhancedPayload == nil {
 				// Create minimal enhanced info from webhook payload
 				enhancedPayload = &EmbyEnhancedInfo{
 					Quality: quality,
-					IsWEBDL: isWEBDL,
+					Format:   format,
+					IsWEBDL:  isWEBDL,
 				}
 				// Copy available fields
 				if payload.Item.Name != "" {
@@ -398,8 +400,9 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 					// Try to parse quality from MediaSource path
 					if ms.Path != "" {
 						enhancedPayload.Quality = s.parseQualityFromPath(ms.Path)
+						enhancedPayload.Format = s.parseReleaseFormat(ms.Path)
 						enhancedPayload.IsWEBDL = s.detectWEBDL(ms.Path)
-						log.Printf("[Webhook] Parsed quality from MediaSource path: %s", enhancedPayload.Quality)
+						log.Printf("[Webhook] Parsed quality from MediaSource path: %s, format: %s", enhancedPayload.Quality, enhancedPayload.Format)
 					}
 					break
 				}
@@ -540,14 +543,16 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			}
 			if path != "" {
 				quality := s.parseQualityFromPath(path)
+				format := s.parseReleaseFormat(path)
 				isWEBDL := s.detectWEBDL(path)
-				log.Printf("[Webhook] Parsed quality from webhook path (episode): %s (WEB-DL: %v)", quality, isWEBDL)
+				log.Printf("[Webhook] Parsed quality from webhook path (episode): %s, format: %s (WEB-DL: %v)", quality, format, isWEBDL)
 
 				if enhancedInfo == nil {
 					// Create minimal enhanced info from webhook payload
 					enhancedInfo = &EmbyEnhancedInfo{
 						Quality: quality,
-						IsWEBDL: isWEBDL,
+						Format:   format,
+						IsWEBDL:  isWEBDL,
 					}
 					// Copy available fields
 					if payload.Item.Name != "" {
@@ -1179,13 +1184,14 @@ type EmbyEnhancedInfo struct {
 	Overview     string
 	RunTimeTicks int64
 	ImageURL     string
-	Quality      string
+	Quality      string    // Resolution (1080p, 2160p, etc.)
+	Format       string    // Release format (BluRay, WEB-DL, WEBRip, HDTV, etc.)
 	FileSize     int64
 	FileCount    int
-	IsWEBDL      bool   // Whether the source is WEB-DL
-	Container    string // Container format (mkv, mp4, etc.)
-	TMDBID       string // TMDB ID for fetching images
-	Type         string // Item type (Movie, Series, Episode) for TMDB API
+	IsWEBDL      bool      // Deprecated: kept for compatibility, use Format instead
+	Container    string    // Container format (mkv, mp4, etc.)
+	TMDBID       string    // TMDB ID for fetching images
+	Type         string    // Item type (Movie, Series, Episode) for TMDB API
 }
 
 // getEmbyEnhancedInfoForEpisode fetches enhanced information from Emby API for episodes
@@ -1475,9 +1481,10 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 					info.Container = container
 				}
 
-				// Detect WEB-DL from path or name
+				// Detect WEB-DL and Format from path or name
 				if path, ok := source["Path"].(string); ok {
 					info.IsWEBDL = s.detectWEBDL(path)
+					info.Format = s.parseReleaseFormat(path)
 				}
 
 				// Count media streams (video files)
@@ -1646,7 +1653,64 @@ func (s *WebhookService) parseQualityFromPath(path string) string {
 	return ""
 }
 
-// getFullQuality returns full quality string including WEB-DL info
+// parseReleaseFormat parses release format from file path
+// 支持格式: BluRay, WEB-DL, WEBRip, HDTV, DVDRip, HDRip, REMUX, etc.
+func (s *WebhookService) parseReleaseFormat(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	pathLower := strings.ToLower(path)
+	log.Printf("[Format] Parsing format from path: %s", path)
+
+	// 格式检测顺序很重要，更具体的格式应该优先检查
+
+	// REMUX / BluRay.REMUX
+	if strings.Contains(pathLower, "remux") {
+		return "BluRay.REMUX"
+	}
+
+	// WEB-DL (check before web-dl to avoid false positive)
+	if strings.Contains(pathLower, "web-dl") || strings.Contains(pathLower, "webdl") {
+		return "WEB-DL"
+	}
+
+	// WEBRip
+	if strings.Contains(pathLower, "webrip") || strings.Contains(pathLower, "web.rip") {
+		return "WEBRip"
+	}
+
+	// BluRay / BRrip / BDRip / BD
+	if strings.Contains(pathLower, "blu-ray") || strings.Contains(pathLower, "bluray") || strings.Contains(pathLower, "brrip") || strings.Contains(pathLower, "bdrip") {
+		return "BluRay"
+	}
+
+	// HDTV
+	if strings.Contains(pathLower, "hdtv") {
+		return "HDTV"
+	}
+
+	// DVDRip
+	if strings.Contains(pathLower, "dvdrip") {
+		return "DVDRip"
+	}
+
+	// HDRip
+	if strings.Contains(pathLower, "hdrip") {
+		return "HDRip"
+	}
+
+	// WEB (generic web source)
+	if strings.Contains(pathLower, "web.") || strings.Contains(pathLower, "[web]") {
+		return "WEB"
+	}
+
+	log.Printf("[Format] No known format found in path")
+	return ""
+}
+
+// getFullQuality returns full quality string including format info
+// 支持格式: "BluRay 1080p", "WEB-DL 2160p", "HDTV 720p", "BluRay.REMUX 2160p" 等
 func (s *WebhookService) getFullQuality(info *EmbyEnhancedInfo) string {
 	if info == nil {
 		return ""
@@ -1657,7 +1721,12 @@ func (s *WebhookService) getFullQuality(info *EmbyEnhancedInfo) string {
 		return ""
 	}
 
-	// Add WEB-DL prefix if applicable
+	// 优先使用新的 Format 字段
+	if info.Format != "" {
+		return fmt.Sprintf("%s %s", info.Format, quality)
+	}
+
+	// 兼容旧代码：如果没有 Format 但有 IsWEBDL 标记
 	if info.IsWEBDL {
 		return fmt.Sprintf("WEB-DL %s", quality)
 	}
