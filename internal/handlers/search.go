@@ -190,7 +190,8 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	results, err := h.moviepilot.SearchMedia(query, 1)
 	if err != nil {
 		log.Printf("[SearchHandler] Search failed: %v", err)
-		h.telegram.SendMessage(chatID, fmt.Sprintf("❌ 搜索失败: %v", err), "", nil)
+		// User-friendly message without technical details
+		h.telegram.SendMessage(chatID, "❌ 搜索服务暂时不可用，请稍后再试", "", nil)
 		return err
 	}
 

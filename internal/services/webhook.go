@@ -40,6 +40,7 @@ type EmbyWebhookPayload struct {
 
 // EmbyItem represents a nested item in Emby webhook
 type EmbyItem struct {
+	Id          string `json:"Id"`                 // Item ID
 	Name        string `json:"Name"`
 	Type        string `json:"Type"`
 	Year        *int   `json:"Year"`
@@ -319,7 +320,7 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 	var err error
 
 	for i := 0; i < 5; i++ {
-		enhancedPayload, err = s.getEmbyEnhancedInfo(payload.ItemID)
+		enhancedPayload, err = s.getEmbyEnhancedInfo(payload.getItemID())
 		if err == nil {
 			break
 		}
@@ -462,8 +463,8 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 
 	// 【黑科技】增强文件信息获取：如果文件大小或数量缺失，直接调用 Emby API
 	if enhancedPayload != nil && (enhancedPayload.FileSize == 0 || enhancedPayload.FileCount == 0) {
-		if payload.ItemID != "" {
-			if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(payload.ItemID); err == nil {
+		if itemID := payload.getItemID(); itemID != "" {
+			if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(itemID); err == nil {
 				if apiSize > 0 && enhancedPayload.FileSize == 0 {
 					enhancedPayload.FileSize = apiSize
 					log.Printf("[Webhook] Enhanced file size from Emby API: %d bytes", apiSize)
@@ -573,7 +574,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 		for i := 0; i < 3; i++ {
 			var err error
 			enhancedInfo, err = s.getEmbyEnhancedInfoForEpisode(
-				payload.ItemID,
+				payload.getItemID(),
 				seriesID,
 				parentBackdropItemID,
 				parentBackdropImageTags,
@@ -716,11 +717,13 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 		}
 
 		// 【黑科技】如果文件大小为 0 或很小（strm 文件），调用 Emby API 获取真实大小
-		if thisFileSize == 0 && payload.ItemID != "" {
-			if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(payload.ItemID); err == nil && apiSize > 0 {
-				thisFileSize = apiSize
-				thisFileCount = apiCount
-				log.Printf("[入库聚合] 从 Emby API 获取到真实文件大小: %d bytes, %d files", apiSize, apiCount)
+		if thisFileSize == 0 {
+			if itemID := payload.getItemID(); itemID != "" {
+				if apiSize, apiCount, err := s.fetchMediaSourcesFromEmby(itemID); err == nil && apiSize > 0 {
+					thisFileSize = apiSize
+					thisFileCount = apiCount
+					log.Printf("[入库聚合] 从 Emby API 获取到真实文件大小: %d bytes, %d files", apiSize, apiCount)
+				}
 			}
 		}
 	}
@@ -2172,6 +2175,17 @@ func (s *WebhookService) getImageURL(payload EmbyWebhookPayload, enhanced *EmbyE
 	return ""
 }
 
+// getItemID gets the ItemID from payload with fallback to Item.Id
+func (p *EmbyWebhookPayload) getItemID() string {
+	if p.ItemID != "" {
+		return p.ItemID
+	}
+	if p.Item != nil && p.Item.Id != "" {
+		return p.Item.Id
+	}
+	return ""
+}
+
 // formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
 func (s *WebhookService) formatFileSizeDecimal(bytes int64) string {
 	const unit = 1000 // Use decimal for GB display
@@ -3212,7 +3226,7 @@ func (s *WebhookService) convertToMediaItem(payload EmbyWebhookPayload, enhanced
 	}
 
 	item := &MediaItem{
-		ID:          payload.ItemID,
+		ID:          payload.getItemID(),
 		Title:       title,
 		LibraryName: payload.Library,
 		AddedAt:     time.Now(),

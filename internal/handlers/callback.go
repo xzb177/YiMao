@@ -399,9 +399,11 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		for _, item := range items {
 			if item.ID == mediaID {
 				// Push navigation entry before showing detail
-				// If query is like "trending", "hot", "new", "toprated", "random", it's from AI recommendation
 				if isAIRecommendationQuery(query) {
 					sess.PushNavEntry("ai_recommendation", query, query)
+				} else {
+					// For regular search, also record navigation history
+					sess.PushNavEntry("search", query, query)
 				}
 				// Use search result data - it already has all we need
 				log.Printf("[DetailHandler] Using search result info for: %s", item.Title)
@@ -633,9 +635,15 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		}
 	}
 
-	// Show number of seasons and episodes
-	if tvDetails.NumberOfSeasons > 0 {
-		msg.Text(fmt.Sprintf("📺 共 %d 季 · %d 集", tvDetails.NumberOfSeasons, tvDetails.NumberOfEpisodes)).Newline()
+	// Show number of seasons and episodes (count only regular seasons, exclude S0)
+	regularSeasonCount := 0
+	for _, s := range tvDetails.Seasons {
+		if s.SeasonNumber > 0 {
+			regularSeasonCount++
+		}
+	}
+	if regularSeasonCount > 0 {
+		msg.Text(fmt.Sprintf("📺 共 %d 季 · %d 集", regularSeasonCount, tvDetails.NumberOfEpisodes)).Newline()
 	}
 
 	msg.Newline()
@@ -676,16 +684,17 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	kb.NewRow()
 
 	// Second row: navigation buttons
-	kb.AddButton("⬅️ 返回列表", "start")
-	if len(tvDetails.Seasons) > 6 {
-		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(tvDetails.Seasons)), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
+	kb.AddButton("⬅️ 返回", "back")
+	if len(tvDetails.Seasons) > 9 {
+		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", regularSeasonCount), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
 	}
 	kb.NewRow()
 
 	// Show seasons in a clean grid layout (3 per row)
+	// Show all seasons (increased from 6 to 9)
 	displayCount := len(tvDetails.Seasons)
-	if displayCount > 6 {
-		displayCount = 6
+	if displayCount > 9 {
+		displayCount = 9
 	}
 	for i, s := range tvDetails.Seasons {
 		if i >= displayCount {
@@ -751,7 +760,7 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 	kb.NewRow()
 
 	// Second row: navigation
-	kb.AddButton("⬅️ 返回列表", "start")
+	kb.AddButton("⬅️ 返回", "back")
 
 	// Check for poster URL to display photo
 	if posterURL != "" {
@@ -924,6 +933,10 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	if isTV && h.tmdb != nil && info.ID > 0 {
 		// Try to get complete season info from TMDB
 		tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
+		if err != nil {
+			// Log TMDB error for debugging
+			log.Printf("[DetailHandler] TMDB API failed for ID %d: %v, falling back to MoviePilot", info.ID, err)
+		}
 		if err == nil && len(tmdbDetails.Seasons) > 0 {
 			// Use TMDB seasons for complete list
 			numberOfSeasons = tmdbDetails.NumberOfSeasons
@@ -940,10 +953,13 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 			// Fallback to MoviePilot seasons
 			numberOfSeasons = len(seasons)
 			log.Printf("[DetailHandler] Using MoviePilot seasons: %d seasons found", len(seasons))
+		} else {
+			log.Printf("[DetailHandler] No seasons found from TMDB or MoviePilot for ID %d", info.ID)
 		}
 	} else if isTV && len(seasons) > 0 {
 		// No TMDB client, use MoviePilot seasons
 		numberOfSeasons = len(seasons)
+		log.Printf("[DetailHandler] Using MoviePilot seasons (no TMDB client): %d seasons found", len(seasons))
 	}
 
 	if isTV && len(seasons) > 0 {
@@ -989,11 +1005,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.NewRow()
 
 		// Second row: navigation buttons
-		if isAIRecommendationQuery(query) {
-			kb.AddButton("⬅️ 返回", fmt.Sprintf("search:type:%s", query))
-		} else {
-			kb.AddButton("⬅️ 返回", "start")
-		}
+		// Use "back" callback for all cases - BackHandler will handle correctly
+		kb.AddButton("⬅️ 返回", "back")
 		if len(seasons) > 6 {
 			kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
 		}
@@ -1023,12 +1036,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
 		kb.NewRow()
-		// Back button - determine target based on query
-		if isAIRecommendationQuery(query) {
-			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
-		} else {
-			kb.AddButton("⬅️ 返回主菜单", "start")
-		}
+		// Back button - use "back" callback, BackHandler will handle correctly
+		kb.AddButton("⬅️ 返回", "back")
 	}
 
 	// Check for poster image first
@@ -1146,12 +1155,8 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", item.ID, item.Title))
 		kb.NewRow()
 
-		// Second row: navigation
-		if isAIRecommendationQuery(query) {
-			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
-		} else {
-			kb.AddButton("⬅️ 返回主菜单", "start")
-		}
+		// Second row: navigation - use "back" callback
+		kb.AddButton("⬅️ 返回", "back")
 		if len(item.Seasons) > 6 {
 			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
 		}
@@ -1177,12 +1182,8 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		kb.NewRow()
 
-		// Back button - determine target based on query
-		if isAIRecommendationQuery(query) {
-			kb.AddButton("⬅️ 返回列表", fmt.Sprintf("search:type:%s", query))
-		} else {
-			kb.AddButton("⬅️ 返回主菜单", "start")
-		}
+		// Back button - use "back" callback
+		kb.AddButton("⬅️ 返回", "back")
 	}
 
 	// Check for poster
@@ -1249,7 +1250,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s", tmdbID, mediaType))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -1404,29 +1405,35 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 
 	// Restore previous view
-	log.Printf("[BackHandler] Restoring view: source=%s", entry.Source)
+	log.Printf("[BackHandler] Restoring view: source=%s, query=%s", entry.Source, entry.Query)
 
 	// Based on source, restore appropriate view
 	switch entry.Source {
-	case "ai_trending", "trending":
+	case "ai_recommendation":
+		// Return to AI recommendation - trigger the search callback
 		return &callback.Response{
-			Text:        "🔄 加载中...",
-			CallbackMsg: "加载中",
-			ShowAlert:   true,
+			Text:         "",
+			CallbackMsg:  "",
+			ShowAlert:    false,
+			Keyboard:     nil,
 		}, nil
-	case "ai_hot", "hot":
-		return &callback.Response{
-			Text:        "🔄 加载中...",
-			CallbackMsg: "加载中",
-			ShowAlert:   true,
-		}, nil
-	case "ai_new", "new":
-		return &callback.Response{
-			Text:        "🔄 加载中...",
-			CallbackMsg: "加载中",
-			ShowAlert:   true,
-		}, nil
+
+	case "search":
+		// Return to regular search results
+		// Try to restore search results from session
+		return h.restoreSearchResults(sess, ctx)
+
 	default:
+		// For any other source, return to AI recommendation or start menu
+		if isAIRecommendationQuery(entry.Source) || isAIRecommendationQuery(entry.Query) {
+			return &callback.Response{
+				Text:         "",
+				CallbackMsg:  "",
+				ShowAlert:    false,
+				Keyboard:     nil,
+			}, nil
+		}
+
 		// Show start menu with full content for any other source
 		msg := services.NewMessageBuilder()
 		msg.Bold("👋 欢迎使用云海影视助手").Newline()
@@ -1448,6 +1455,89 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil
 	}
+}
+
+// restoreSearchResults restores the search results from session
+func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.Context) (*callback.Response, error) {
+	items, _, query, hasSearch := sess.GetSearchResults()
+
+	if !hasSearch || len(items) == 0 {
+		// Search results expired, show start menu
+		msg := services.NewMessageBuilder()
+		msg.Bold("👋 欢迎使用云海影视助手").Newline()
+		msg.Newline()
+		msg.Text("⏰ 搜索结果已过期，请重新搜索").Newline()
+		msg.Newline()
+		msg.Italic("💡 点击下方按钮开始探索").Newline()
+
+		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
+		isPrivateChat := ctx.ChatType == "private"
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+		}, nil
+	}
+
+	// Restore search results display
+	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n", query, len(items))
+
+	// Build keyboard with results
+	var keyboardRows [][]types.TelegramInlineKeyboardButton
+	var row []types.TelegramInlineKeyboardButton
+
+	for i, item := range items {
+		if i >= 8 {
+			break
+		}
+
+		year := ""
+		if item.Year > 0 {
+			year = fmt.Sprintf("%d", item.Year)
+		}
+
+		rating := ""
+		if item.Rating > 0 {
+			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
+		}
+
+		mediaType := "🎬 电影"
+		if item.Type == "tv" {
+			mediaType = "📺 剧集"
+		}
+		text += fmt.Sprintf("%d. %s (%s) %s%s\n", i+1, item.Title, year, mediaType, rating)
+
+		row = append(row, types.TelegramInlineKeyboardButton{
+			Text:         fmt.Sprintf("%d", i+1),
+			CallbackData: fmt.Sprintf("select:id:%s:type:%s", item.ID, item.Type),
+		})
+
+		if len(row) == 4 {
+			keyboardRows = append(keyboardRows, row)
+			row = []types.TelegramInlineKeyboardButton{}
+		}
+	}
+
+	if len(row) > 0 {
+		keyboardRows = append(keyboardRows, row)
+	}
+
+	// Navigation row
+	navRow := []types.TelegramInlineKeyboardButton{
+		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+	}
+	keyboardRows = append(keyboardRows, navRow)
+
+	keyboard := &types.TelegramInlineKeyboard{
+		InlineKeyboard: keyboardRows,
+	}
+
+	return &callback.Response{
+		Text:     text,
+		Edit:     true,
+		Keyboard: convertKeyboard(keyboard),
+	}, nil
 }
 
 // Helper function to convert keyboard types

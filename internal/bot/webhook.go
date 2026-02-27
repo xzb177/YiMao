@@ -282,8 +282,10 @@ func PerformSearch(
 
 	results, err := moviepilot.SearchMedia(query, 1)
 	if err != nil {
+		// Log full error for admin debugging (already done above)
 		log.Printf("[Search] Failed to search: %v", err)
-		text := fmt.Sprintf("❌ 搜索失败\n\n错误: %v", err)
+		// Send user-friendly message without technical details
+		text := "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}

@@ -120,7 +120,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			}, nil
 		}
 		return &callback.Response{
-			Text:        fmt.Sprintf("❌ 操作失败: %v", err),
+			Text:        "❌ 操作失败，请稍后再试",
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err
@@ -233,7 +233,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	review, err := h.reviewService.Reject(requestID, ctx.UserID, "管理员拒绝了请求")
 	if err != nil {
 		return &callback.Response{
-			Text:        fmt.Sprintf("❌ 操作失败: %v", err),
+			Text:        "❌ 操作失败，请稍后再试",
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err
@@ -278,7 +278,7 @@ func (h *ReviewHandler) handleCancel(ctx *callback.Context) (*callback.Response,
 	// Delete the review
 	if err := h.reviewService.DeleteRequest(requestID); err != nil {
 		return &callback.Response{
-			Text:        fmt.Sprintf("❌ 操作失败: %v", err),
+			Text:        "❌ 操作失败，请稍后再试",
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err

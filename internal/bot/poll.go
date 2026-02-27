@@ -267,7 +267,10 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	// Search in MoviePilot
 	results, err := moviepilot.SearchMedia(query, 1)
 	if err != nil {
-		telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 搜索失败: %v", err), "Markdown", nil)
+		// Log full error for admin debugging
+		log.Printf("[Poll] Search failed for query '%s': %v", query, err)
+		// Send user-friendly message without technical details
+		telegram.SendMessage(msg.Chat.ID, "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。", "Markdown", nil)
 		return
 	}
 

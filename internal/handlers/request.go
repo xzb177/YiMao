@@ -211,22 +211,19 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		log.Printf("[求片] 媒体库已存在: %s", existingMedia.Title)
 
 		// Build message showing media already exists
-		message := fmt.Sprintf("⚠️ 媒体库中已存在\n\n📺 %s", existingMedia.Title)
-		if existingMedia.Year > 0 {
-			message += fmt.Sprintf(" (%d)", existingMedia.Year)
+		// Use clearer messaging with media type and year
+		typeIcon := "🎬"
+		typeLabel := "电影"
+		if existingMedia.Type == "Series" || existingMedia.Type == "Episode" {
+			typeIcon = "📺"
+			typeLabel = "剧集"
 		}
 
-		// Add runtime info
-		if existingMedia.RunTime > 0 {
-			minutes := existingMedia.RunTime / 600000000
-			hours := minutes / 60
-			mins := minutes % 60
-			if hours > 0 {
-				message += fmt.Sprintf("\n⏱️ 时长: %d小时%d分", hours, mins)
-			} else {
-				message += fmt.Sprintf("\n⏱️ 时长: %d分钟", mins)
-			}
+		message := fmt.Sprintf("⚠️ 媒体库中已存在\n\n%s %s", typeIcon, existingMedia.Title)
+		if existingMedia.Year > 0 {
+			message += fmt.Sprintf(" (%d年)", existingMedia.Year)
 		}
+		message += fmt.Sprintf("\n🏷️ %s", typeLabel)
 
 		message += "\n\n是否仍要订阅？"
 

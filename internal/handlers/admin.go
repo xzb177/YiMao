@@ -1379,8 +1379,9 @@ func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callbac
 
 	// Remove admin
 	if err := h.adminService.RemoveAdmin(adminID); err != nil {
+		log.Printf("[AdminHandler] Failed to remove admin %d: %v", adminID, err)
 		return &callback.Response{
-			CallbackMsg: fmt.Sprintf("移除失败: %v", err),
+			CallbackMsg: "移除失败，请稍后再试",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -1504,7 +1505,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 	if err := h.adminService.AddAdmin(targetID, targetName); err != nil {
 		log.Printf("[AdminHandler] Failed to add admin: %v", err)
 		return &callback.Response{
-			Text: fmt.Sprintf("❌ 添加失败: %v", err),
+			Text: "❌ 添加失败，请稍后再试",
 		}, nil
 	}
 

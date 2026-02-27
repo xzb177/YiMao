@@ -2,6 +2,159 @@
 
 ---
 
+## 2026-02-27
+
+### fix: 普通搜索详情页返回列表功能修复 ✅ 已部署
+- **问题**: 用户通过搜索（非 AI 推荐）进入详情页后，点击"返回列表"直接返回主菜单，无法回到搜索结果
+- **原因**:
+  1. 普通搜索进入详情页时不记录导航历史（`PushNavEntry` 仅对 AI 推荐调用）
+  2. 详情页返回按钮对普通搜索直接设置 `start` 回调，跳过 `BackHandler`
+  3. `BackHandler` 不支持恢复搜索结果列表
+- **修复**:
+  1. `DetailHandler.Handle` - 为普通搜索也记录导航历史 (`source: "search"`)
+  2. 所有详情页构建函数统一使用 `back` 回调：
+     - `buildDetailFromMediaInfo` - TV/电影详情
+     - `buildDetailFromTMDBTV` - TMDB TV 详情
+     - `buildSimpleTVDetail` - 简单 TV 详情
+     - `buildSimpleDetail` - 简单详情
+     - `buildBasicDetailFromSearch` - 基础搜索详情
+  3. `BackHandler.Handle` - 新增 `search` 类型处理
+  4. 新增 `restoreSearchResults` 方法 - 从 Session 恢复搜索结果列表
+- **效果**: 现在普通搜索也能正确返回搜索结果列表
+- **修改文件**:
+  - `internal/handlers/callback.go`
+
+---
+
+## 2026-02-28
+
+### security: 错误脱敏 - 隐藏内部 IP 地址和技术细节 ✅ 已部署
+- **安全问题**: API 失败时直接暴露内部地址（`dial tcp 167.17.76.115:4500: connection refused`）
+- **修复要求**:
+  1. 后台记录原始错误：`log.Printf` 完整错误用于调试
+  2. 前端友好提示：用户只看到中文提示，不暴露技术细节
+- **修改文件**:
+  - `internal/bot/poll.go` - 搜索失败错误脱敏
+  - `internal/bot/webhook.go` - Webhook 搜索失败错误脱敏
+  - `internal/handlers/admin.go` - 管理员操作错误脱敏
+- **统一提示文案**:
+  - 搜索失败：`❌ 搜索失败：服务器暂时开小差了，请稍后再试。如果持续失败，请联系管理员。`
+  - 操作失败：`❌ 操作失败，请稍后再试`
+
+---
+
+## 2026-02-28
+
+### fix: 季数按钮丢失 + 数据不一致 ✅ 已部署
+- **问题1 - 季数按钮丢失**: 豪斯医生只显示 S0-S5，S6-S8 丢失
+  - 原因：displayCount 限制为 6，导致后面的季数被截断
+  - 修复：增加 displayCount 从 6 到 9，确保所有季数都能显示
+- **问题2 - 数据不一致**: 文字"8 季" vs 按钮"全部 9 季"
+  - 原因：`NumberOfSeasons` 不含特别篇，`Seasons` 数组含特别篇
+  - 修复：统一计算常规季数（排除 S0），确保文字和按钮一致
+- **修改文件**:
+  - `internal/handlers/callback.go` - 季数计算逻辑优化
+
+---
+
+## 2026-02-28
+
+### fix: 全面隐藏技术错误信息 - 502/网络/API错误 ✅ 已部署
+- **问题**: 多处错误直接暴露技术细节（502 Bad Gateway、内部地址等）
+- **修复位置**:
+  - `internal/handlers/search.go` - 搜索失败错误
+  - `internal/handlers/review.go` - 审核操作错误（3处）
+  - `internal/handlers/admin.go` - 管理员操作错误
+- **统一提示**: `❌ 操作失败，请稍后再试` / `❌ 搜索服务暂时不可用`
+- **效果**: 所有面向用户的错误信息都已隐藏技术细节
+- **修改文件**:
+  - `internal/handlers/search.go`
+  - `internal/handlers/review.go`
+  - `internal/handlers/admin.go`
+
+---
+
+## 2026-02-28
+
+### fix: 搜索失败错误信息暴露内部地址 ✅ 已部署
+- **问题**: 搜索失败时直接显示技术错误，暴露内部 IP 地址
+- **原错误**: `❌ 搜索失败: request failed: Get "http://167.17.76.115:4500/api/v1/media/search..."`
+- **修复**: 改为用户友好的提示
+- **新提示**: `❌ 搜索服务暂时不可用，请稍后再试`
+- **效果**: 隐藏技术细节，保护内部网络信息
+- **修改文件**:
+  - `internal/handlers/search.go` - 错误信息伪装
+
+---
+
+## 2026-02-28
+
+### fix: 媒体库已存在提示文案优化 ✅ 已部署
+- **问题**: "媒体库中已存在"提示只显示时长（44分钟），信息不够清晰
+- **原文案**:
+  ```
+  ⚠️ 媒体库中已存在
+
+  📺 豪斯医生 (2004)
+  ⏱️ 时长: 44分钟
+
+  是否仍要订阅？
+  ```
+- **问题分析**:
+  - 单集时长对判断是否重复没有意义
+  - 没有明确显示媒体类型（电影/剧集）
+  - 年份格式不够清晰
+- **新文案**:
+  ```
+  ⚠️ 媒体库中已存在
+
+  📺 豪斯医生 (2004年)
+  🏷️ 剧集
+
+  是否仍要订阅？
+  ```
+- **修改文件**:
+  - `internal/handlers/request.go` - 优化媒体库已存在提示文案
+
+---
+
+## 2026-02-28
+
+### fix: 季数按钮显示不完整 - 添加 TMDB 错误日志诊断 ✅ 已部署
+- **问题**: 季数按钮显示不完整，无法诊断原因
+- **排查**:
+  - TMDB API 测试正常（绝命毒师返回 5 季 + 特别篇）
+  - 代码逻辑正确（优先 TMDB，fallback 到 MoviePilot）
+  - 缺少错误日志，无法知道 TMDB 调用是否成功
+- **修复**:
+  - 在 `buildDetailFromMediaInfo` 函数添加详细的错误日志
+  - TMDB API 失败时会记录错误信息
+  - 各个 fallback 路径都有日志输出
+- **下一步**: 需要用户实际搜索剧集查看详情，根据日志诊断具体问题
+- **修改文件**:
+  - `internal/handlers/callback.go` - 添加 TMDB 错误日志
+
+---
+
+## 2026-02-28
+
+### fix: 入库通知文件大小为0 - EmbyItem 结构体缺少 Id 字段 ✅ 已部署
+- **问题**: 入库通知显示 `总大小:0 B`，日志显示 `Payload.Item has 0 MediaSources`
+- **根本原因**:
+  - `EmbyItem` 结构体缺少 `Id` 字段
+  - Emby webhook 的 `Id` 在 `Item` 对象内，不是顶层的 `ItemId`
+  - 代码使用 `payload.ItemID` 时没有 fallback 到 `payload.Item.Id`
+  - 导致 `fetchMediaSourcesFromEmby()` API 调用条件不满足，永远不会被调用
+- **解决方案**:
+  1. 在 `EmbyItem` 结构体添加 `Id string json:"Id"` 字段
+  2. 新增 `getItemID()` 辅助方法，自动 fallback 到 `Item.Id`
+  3. 所有使用 `payload.ItemID` 的地方替换为 `payload.getItemID()`
+- **修改文件**:
+  - `internal/services/webhook.go` - 添加 Id 字段 + getItemID() 方法 + 替换所有调用点
+- **Git 提交**: 待提交
+
+---
+
 ## 2026-02-28
 
 ### fix: TV 剧集季数显示不完整 - 使用 TMDB 数据获取完整季数 ✅ 已部署
