@@ -83,6 +83,7 @@ func NewSearchHandler(
 	tmdb *services.TMDBClient,
 ) *SearchHandler {
 	searchSvc := services.NewSearchService(moviepilot, sessMgr)
+	searchSvc.SetTMDBClient(tmdb)
 	return &SearchHandler{
 		sessMgr:        sessMgr,
 		telegram:       telegram,

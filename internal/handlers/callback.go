@@ -918,10 +918,39 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		msg.Newline()
 	}
 
-	// TV show seasons info
+	// TV show seasons info - prefer TMDB for complete season list
 	seasons := extractSeasons(info)
+	var numberOfSeasons int
+	if isTV && h.tmdb != nil && info.ID > 0 {
+		// Try to get complete season info from TMDB
+		tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
+		if err == nil && len(tmdbDetails.Seasons) > 0 {
+			// Use TMDB seasons for complete list
+			numberOfSeasons = tmdbDetails.NumberOfSeasons
+			seasons = make([]session.Season, len(tmdbDetails.Seasons))
+			for i, s := range tmdbDetails.Seasons {
+				seasons[i] = session.Season{
+					SeasonNumber: s.SeasonNumber,
+					EpisodeCount: s.EpisodeCount,
+					Name:         s.Name,
+				}
+			}
+			log.Printf("[DetailHandler] Using TMDB seasons: %d seasons found", len(seasons))
+		} else if len(seasons) > 0 {
+			// Fallback to MoviePilot seasons
+			numberOfSeasons = len(seasons)
+			log.Printf("[DetailHandler] Using MoviePilot seasons: %d seasons found", len(seasons))
+		}
+	} else if isTV && len(seasons) > 0 {
+		// No TMDB client, use MoviePilot seasons
+		numberOfSeasons = len(seasons)
+	}
+
 	if isTV && len(seasons) > 0 {
-		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(seasons))).Newline()
+		if numberOfSeasons == 0 {
+			numberOfSeasons = len(seasons)
+		}
+		msg.Bold(fmt.Sprintf("📺 共 %d 季", numberOfSeasons)).Newline()
 		for i, s := range seasons {
 			if i >= 3 {
 				msg.Textf("   ... 还有 %d 季", len(seasons)-3).Newline()
@@ -1123,14 +1152,14 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		} else {
 			kb.AddButton("⬅️ 返回主菜单", "start")
 		}
-		if len(item.Seasons) > 4 {
+		if len(item.Seasons) > 6 {
 			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
 		}
 		kb.NewRow()
 
-		// Season buttons (2 per row for compact display)
+		// Season buttons (3 per row for consistent layout)
 		for i, s := range item.Seasons {
-			if i >= 4 {
+			if i >= 6 {
 				break
 			}
 			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
@@ -1138,7 +1167,7 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 				seasonName = "特别篇"
 			}
 			kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%s:type:tv:season:%d", item.ID, s.SeasonNumber))
-			if (i+1)%2 == 0 {
+			if (i+1)%3 == 0 {
 				kb.NewRow()
 			}
 		}

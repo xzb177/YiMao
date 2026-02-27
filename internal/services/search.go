@@ -12,6 +12,7 @@ import (
 type SearchService struct {
 	moviepilot *MoviePilotClient
 	sessMgr    *session.Manager
+	tmdb       *TMDBClient
 }
 
 // NewSearchService creates a new search service
@@ -20,6 +21,11 @@ func NewSearchService(moviepilot *MoviePilotClient, sessMgr *session.Manager) *S
 		moviepilot: moviepilot,
 		sessMgr:    sessMgr,
 	}
+}
+
+// SetTMDBClient sets the TMDB client for fetching complete season info
+func (s *SearchService) SetTMDBClient(tmdb *TMDBClient) {
+	s.tmdb = tmdb
 }
 
 // ExtendedSearchResult represents an extended search result with session items
@@ -88,8 +94,26 @@ func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedS
 }
 
 // fetchSeasons fetches season information for a TV show
+// Prefers TMDB for complete season list, falls back to MoviePilot
 func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
-	// Get media info from MoviePilot
+	// Try TMDB first for complete season list
+	if s.tmdb != nil {
+		tmdbDetails, err := s.tmdb.GetTVDetailsWithSeasons(tmdbID)
+		if err == nil && len(tmdbDetails.Seasons) > 0 {
+			seasons := make([]session.Season, len(tmdbDetails.Seasons))
+			for i, season := range tmdbDetails.Seasons {
+				seasons[i] = session.Season{
+					SeasonNumber: season.SeasonNumber,
+					EpisodeCount: season.EpisodeCount,
+					Name:         season.Name,
+				}
+			}
+			log.Printf("[SearchService] Using TMDB seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
+			return seasons
+		}
+	}
+
+	// Fallback to MoviePilot
 	mediaInfo, err := s.moviepilot.GetMediaInfo(tmdbID, MediaTypeTV)
 	if err != nil {
 		log.Printf("[SearchService] Failed to get media info for seasons: %v", err)
@@ -106,6 +130,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 				Name:         s.Name,
 			}
 		}
+		log.Printf("[SearchService] Using MoviePilot seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
 		return seasons
 	}
 
@@ -126,6 +151,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 					})
 				}
 			}
+			log.Printf("[SearchService] Using MoviePilot seasons map for TMDB ID %d: %d seasons", tmdbID, len(seasons))
 			return seasons
 		}
 	}

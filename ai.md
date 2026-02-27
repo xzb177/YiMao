@@ -4,6 +4,30 @@
 
 ## 2026-02-28
 
+### fix: TV 剧集季数显示不完整 - 使用 TMDB 数据获取完整季数 ✅ 已部署
+- **问题**: 用户搜索《豪斯医生》显示只有 5 季，实际 TMDB 有 11 季（包括特别篇 S0）
+- **根本原因**:
+  - 代码优先使用 MoviePilot API 的 `SeasonInfo` 数据
+  - MoviePilot 只返回它有资源的季数，而不是完整季数列表
+  - 详情页显示季数按钮被限制为 4-6 个
+- **解决方案**:
+  1. **优先使用 TMDB 获取季数**: `fetchSeasons` 函数改为优先从 TMDB 获取完整季数列表
+  2. **详情页整合 TMDB 数据**: `buildDetailFromMediaInfo` 函数增加 TMDB 季数获取逻辑
+  3. **增加季数按钮显示限制**: 从 4 个改为 6 个，与 `buildDetailFromTMDBTV` 保持一致
+  4. **按钮布局统一**: 所有详情页统一使用 3 个季数按钮/行的布局
+- **修改文件**:
+  - `internal/handlers/callback.go` - 详情页季数显示逻辑优化
+  - `internal/services/search.go` - `fetchSeasons` 优先使用 TMDB，添加 `SetTMDBClient` 方法
+  - `internal/handlers/search.go` - 初始化时设置 TMDBClient
+- **效果**:
+  - 《豪斯医生》现在正确显示 11 个季（包括特别篇）
+  - 详情页显示前 6 个季按钮 + "全部 11 季"按钮
+  - 点击"全部季"可查看所有季数列表
+
+---
+
+## 2026-02-28
+
 ### fix: 缩短审核按钮 CallbackData 格式修复通知失败 ✅ 已部署
 - **问题**: CallbackData 超过 Telegram 64 字节限制导致 `BUTTON_DATA_INVALID` 错误，三位管理员无法收到审核通知
 - **原因**: 格式 `review_approve:id:review_5779291957_1772213066:token:1772213066884100338_xphusip8` 约 80+ 字符
