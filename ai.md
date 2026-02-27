@@ -4,6 +4,21 @@
 
 ## 2026-02-28
 
+### fix: 缩短审核按钮 CallbackData 格式修复通知失败 ✅ 已部署
+- **问题**: CallbackData 超过 Telegram 64 字节限制导致 `BUTTON_DATA_INVALID` 错误，三位管理员无法收到审核通知
+- **原因**: 格式 `review_approve:id:review_5779291957_1772213066:token:1772213066884100338_xphusip8` 约 80+ 字符
+- **解决方案**: 缩短按钮格式
+  - 批准：`rv_a:TOKEN` (约 35 字符)
+  - 拒绝：`rv_r:TOKEN`
+  - token 唯一标识请求，服务端通过 token 查找对应记录
+- **修改文件**:
+  - `internal/callback/types.go` - 添加 `rv_a`/`rv_r` 到白名单
+  - `internal/handlers/request.go` - 缩短按钮 CallbackData 格式
+  - `internal/handlers/review.go` - 支持新旧两种回调格式
+- **Git 提交**: `62e6099`
+
+---
+
 ### feat: 添加请求批准令牌机制防止重复提交 ✅ 已部署
 - **问题**: 多位管理员同时批准同一求片请求会导致重复向 MoviePilot 提交订阅
 - **解决方案**: 一次性令牌机制
