@@ -59,27 +59,39 @@ func HandleCommand(
 }
 
 // HandleLinkCommand handles /link command with optional username and password
+// Also supports direct credential input: "username password" (without /link prefix)
 func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping *services.UserMappingService) {
 	log.Printf("[LinkCommand] Processing /link command from user %d: %s", msg.From.ID, msg.Text)
 	parts := strings.Fields(msg.Text)
 	log.Printf("[LinkCommand] Parsed parts: %v (len=%d)", parts, len(parts))
 
-	if len(parts) == 1 {
+	// Check if user is already linked
+	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
+		log.Printf("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
+		text := fmt.Sprintf("✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号 (ID: %d)\n\n如需更换账号，请先联系管理员解绑", mpID)
+		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		return
+	}
+
+	// Determine if this is a /link command or direct credentials
+ startIndex := 0
+	if len(parts) > 0 && strings.HasPrefix(parts[0], "/link") {
+		startIndex = 1 // Skip "/link" prefix
+	}
+
+	// Extract username and password
+	if len(parts) <= startIndex {
 		log.Printf("[LinkCommand] No credentials provided, showing help")
-		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下命令绑定您的账号：\n\n/link 用户名 密码\n\n示例：\n/link johndoe mypassword123\n\n💡 您的凭据将直接发送到 MoviePilot 服务器进行验证，新用户将自动注册"
+		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下格式绑定：\n\n/link 用户名 密码\n\n或直接输入：\n用户名 密码\n\n示例：\n/link 2879681674 mypassword\n或：\n2879681674 mypassword"
 		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
 		return
 	}
 
-	if len(parts) < 3 {
-		log.Printf("[LinkCommand] Insufficient parameters: %d", len(parts))
-		text := "❌ 参数不足\n\n格式: /link 用户名 密码\n\n示例: /link johndoe mypassword123"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
-		return
+	username := parts[startIndex]
+	password := ""
+	if len(parts) > startIndex+1 {
+		password = strings.Join(parts[startIndex+1:], " ")
 	}
-
-	username := parts[1]
-	password := strings.Join(parts[2:], " ")
 	log.Printf("[LinkCommand] Username=%s, Password length=%d", username, len(password))
 
 	// Validate and sanitize inputs

@@ -187,11 +187,53 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		return
 	}
 
+	// Check if user is not linked and input looks like credentials (userID + password)
+	// Format: "number password" or "username password"
+	if deps.UserMapping != nil {
+		_, isLinked := deps.UserMapping.GetMoviePilotUserID(msg.From.ID)
+		if !isLinked && sanitizedText != "" && len(sanitizedText) > 1 {
+			parts := strings.Fields(sanitizedText)
+			// Check if format matches: ID (number) + password, or username + password
+			if len(parts) >= 2 {
+				// First part is a number (MoviePilot user ID) or username
+				firstPart := parts[0]
+
+				// Detect if this looks like credentials (not a typical search query)
+				// Criteria: first part is all digits, or total parts is exactly 2
+				isCredentialFormat := false
+				if len(parts) == 2 {
+					// Exactly 2 parts: likely username/id + password
+					isCredentialFormat = true
+				} else if len(firstPart) >= 4 && allDigits(firstPart) {
+					// First part is a long number (likely user ID)
+					isCredentialFormat = true
+				}
+
+				if isCredentialFormat {
+					log.Printf("[Poll] User %d not linked, detected credential format, attempting auto-link", msg.From.ID)
+					msg.Text = sanitizedText
+					HandleLinkCommand(deps.Telegram, msg, deps.BindingRequest, cfg, deps.UserMapping)
+					return
+				}
+			}
+		}
+	}
+
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
 		msg.Text = sanitizedText // Update with sanitized text
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 	}
+}
+
+// allDigits checks if a string contains only digits
+func allDigits(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // HandleGroupChatMessage handles messages in group chats
