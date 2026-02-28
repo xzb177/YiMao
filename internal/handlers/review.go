@@ -17,6 +17,7 @@ type ReviewHandler struct {
 	moviepilot     *services.MoviePilotClient
 	adminService   *services.AdminService
 	reviewService  *services.ReviewService
+	quotaService   *services.QuotaService
 }
 
 func NewReviewHandler(
@@ -25,6 +26,7 @@ func NewReviewHandler(
 	moviepilot *services.MoviePilotClient,
 	adminService *services.AdminService,
 	reviewService *services.ReviewService,
+	quotaService *services.QuotaService,
 ) *ReviewHandler {
 	return &ReviewHandler{
 		sessMgr:       sessMgr,
@@ -32,6 +34,7 @@ func NewReviewHandler(
 		moviepilot:    moviepilot,
 		adminService:  adminService,
 		reviewService: reviewService,
+		quotaService:  quotaService,
 	}
 }
 
@@ -160,6 +163,9 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	log.Printf("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
 
+	// Note: Quota was already deducted when user submitted the request
+	// No need to deduct again here
+
 	// Save subscription ID to review
 	if err := h.reviewService.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
 		log.Printf("[ReviewHandler] Failed to update subscription info: %v", err)
@@ -239,6 +245,18 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		}, err
 	}
 
+	// Restore quota since the request was rejected
+	mediaType := "movie"
+	if review.MediaType == services.MediaTypeTV {
+		mediaType = "tv"
+	}
+	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
+		log.Printf("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		// Don't fail the rejection, just log the error
+	} else {
+		log.Printf("[ReviewHandler] Quota restored for user %d, media type: %s", review.TelegramID, mediaType)
+	}
+
 	// Notify user about rejection
 	h.telegram.SendMessage(review.TelegramID,
 		fmt.Sprintf("❌ 你的求片请求已被拒绝\n\n📺 %s (%d)\n\n如果需要帮助，请联系管理员",
@@ -275,6 +293,18 @@ func (h *ReviewHandler) handleCancel(ctx *callback.Context) (*callback.Response,
 		}, nil
 	}
 
+	// Restore quota since the user is cancelling their own pending request
+	mediaType := "movie"
+	if review.MediaType == services.MediaTypeTV {
+		mediaType = "tv"
+	}
+	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
+		log.Printf("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		// Don't fail the cancellation, just log the error
+	} else {
+		log.Printf("[ReviewHandler] Quota restored for user %d on cancel, media type: %s", review.TelegramID, mediaType)
+	}
+
 	// Delete the review
 	if err := h.reviewService.DeleteRequest(requestID); err != nil {
 		return &callback.Response{
@@ -285,7 +315,7 @@ func (h *ReviewHandler) handleCancel(ctx *callback.Context) (*callback.Response,
 	}
 
 	return &callback.Response{
-		Text:        "✅ 请求已取消",
+		Text:        "✅ 请求已取消，配额已恢复",
 		CallbackMsg: "已取消",
 		ShowAlert:   true,
 		Edit:        true,

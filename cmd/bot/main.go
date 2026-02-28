@@ -274,7 +274,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
-	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService)
+	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
 
 	// Inject dependencies

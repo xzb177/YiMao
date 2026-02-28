@@ -138,6 +138,18 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
+	// Immediately deduct quota when user submits request
+	// This prevents users from submitting multiple requests before approval
+	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
+		log.Printf("[RequestHandler] Failed to deduct quota for user %d: %v", ctx.UserID, err)
+		return &callback.Response{
+			Text:        "❌ 配额扣减失败，请稍后再试",
+			CallbackMsg: "配额扣减失败",
+			ShowAlert:   true,
+		}, nil
+	}
+	log.Printf("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
+
 	// Get media info from session for better display
 	sess := h.sessMgr.Get(ctx.UserID)
 	if sess == nil {
