@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-02-28
+
+### deploy: 无缓存重新构建部署 ✅ 已部署
+- **问题**: 代码有未提交修改，Docker 镜像使用旧缓存导致新代码未生效
+- **解决**: 强制无缓存重新构建
+  - `docker compose down`
+  - `docker compose build --no-cache`
+  - `docker compose up -d`
+- **镜像变更**: `e233dadbe3ca` → `c2d9b047abc3`
+- **包含修改**:
+  - `cmd/bot/main.go` (+3 行)
+  - `internal/bot/poll.go` (+4 行)
+  - `internal/handlers/callback.go` (+11/-3 行)
+  - `internal/services/webhook.go` (+8 行)
+- **状态**: Up 14 seconds (healthy) ✅
+
+---
+
 ## 2026-02-27
 
 ### fix: 普通搜索详情页返回列表功能修复 ✅ 已部署

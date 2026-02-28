@@ -821,6 +821,10 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 	// Build episode range string
 	epRange := buildEpisodeRangeString(episodes)
 
+	// Debug logging before sending
+	log.Printf("[入库聚合] 准备发送通知: series=%s, quality=%q, fileSize=%d, imageURL=%s",
+		seriesName, quality, fileSize, imageURL)
+
 	// Send notification to admins based on their individual settings
 	s.sendAggregatedEpisodeToAdmins(seriesName, year, season, episodes, epRange, quality, imageURL, fileSize, enhancedInfo, libraryName)
 
@@ -2416,6 +2420,10 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 // formatEpisodePhotoCaption formats a caption for episode photo notifications (极简呼吸感排版)
 func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRange string) string {
 	var builder strings.Builder
+
+	// Debug logging
+	log.Printf("[入库聚合] formatEpisodePhotoCaption: quality=%q, fileSize=%d, imageURL=%s",
+		agg.Quality, agg.FileSize, agg.ImageURL)
 
 	// Build title string with year, season and episode range
 	var title string

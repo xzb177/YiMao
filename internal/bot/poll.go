@@ -519,7 +519,11 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 
 		// Send or edit message
 		if resp != nil {
+			log.Printf("[Callback] Response: Text=%d chars, Edit=%v, Photo=%v, Keyboard=%v",
+				len(resp.Text), resp.Edit, resp.Photo != "", resp.Keyboard != nil)
 			handleCallbackResponse(ctx, resp, telegram)
+		} else {
+			log.Printf("[Callback] Response is nil!")
 		}
 	case <-time.After(10 * time.Second):
 		log.Printf("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)

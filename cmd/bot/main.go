@@ -339,6 +339,9 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("review_cancel", reviewHandler.Handle)
 	registry.RegisterFunc("my_reviews", reviewHandler.Handle)
 	registry.RegisterFunc("review_list", reviewHandler.Handle)
+	// Short format callbacks (to keep CallbackData under 64 bytes)
+	registry.RegisterFunc("rv_a", reviewHandler.Handle)
+	registry.RegisterFunc("rv_r", reviewHandler.Handle)
 
 	// Emby library check callbacks
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)

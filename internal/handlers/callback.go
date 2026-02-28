@@ -1460,9 +1460,11 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 // restoreSearchResults restores the search results from session
 func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.Context) (*callback.Response, error) {
 	items, _, query, hasSearch := sess.GetSearchResults()
+	log.Printf("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, query=%s", hasSearch, len(items), query)
 
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu
+		log.Printf("[BackHandler] Search results expired or empty, showing start menu")
 		msg := services.NewMessageBuilder()
 		msg.Bold("👋 欢迎使用云海影视助手").Newline()
 		msg.Newline()
@@ -1533,10 +1535,13 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		InlineKeyboard: keyboardRows,
 	}
 
+	log.Printf("[BackHandler] Restoring search results: query=%s, items=%d", query, len(items))
+	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
-		Text:     text,
-		Edit:     true,
-		Keyboard: convertKeyboard(keyboard),
+		Text:         text,
+		Edit:         false,
+		DeleteMessage: true,
+		Keyboard:     convertKeyboard(keyboard),
 	}, nil
 }
 
