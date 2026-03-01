@@ -237,40 +237,11 @@ func allDigits(s string) bool {
 }
 
 // HandleGroupChatMessage handles messages in group chats
+// 群组中完全禁用交互功能，仅用于接收入库通知推送
 func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
-	query := validation.SanitizeMessageText(msg.Text)
-	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
-		strings.Contains(strings.ToLower(query), "@云海看板娘")
-
-	log.Printf("[PollGroupChat] ChatID=%d, Title=%s, Message from %s: isMention=%v", msg.Chat.ID, msg.Chat.Title, msg.From.FirstName, isMention)
-
-	// Only respond to mentions
-	if !isMention {
-		return
-	}
-
-	// Remove mention from query
-	query = strings.ReplaceAll(query, "@oceancloudying_bot", "")
-	query = strings.ReplaceAll(query, "@云海看板娘", "")
-	query = strings.TrimSpace(query)
-
-	// Sanitize the query after removing mentions
-	query = validation.SanitizeSearchQuery(query)
-
-	if query == "" {
-		telegram.SendMessage(msg.Chat.ID, "你好！请问有什么我可以帮助你的？", "", nil)
-		return
-	}
-
-	// Handle /ai command - send recommendation menu
-	if query == "/ai" {
-		sendRecommendationMenu(telegram, msg.Chat.ID)
-		return
-	}
-
-	// Treat as search query
-	msg.Text = query
-	HandlePollSearchQuery(msg, telegram, moviepilot, sessMgr, searchHistory, tmdb)
+	// 群组中不响应任何消息，只用于接收入库通知
+	log.Printf("[PollGroupChat] ChatID=%d, Title=%s: Message ignored (groups are notifications only)", msg.Chat.ID, msg.Chat.Title)
+	return
 }
 
 // sendRecommendationMenu sends the recommendation menu

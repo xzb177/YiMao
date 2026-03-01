@@ -211,6 +211,7 @@ func HandleWebhookMessage(
 }
 
 // HandleWebhookGroupChat handles group chat messages from webhook
+// 群组中完全禁用交互功能，仅用于接收入库通知推送
 func HandleWebhookGroupChat(
 	telegram *services.TelegramClient,
 	msg *types.TelegramMessage,
@@ -219,29 +220,9 @@ func HandleWebhookGroupChat(
 	searchHistory *services.SearchHistoryService,
 	tmdb *services.TMDBClient,
 ) {
-	query := msg.Text
-	isMention := strings.Contains(strings.ToLower(query), "@oceancloudying_bot") ||
-		strings.Contains(strings.ToLower(query), "@云海看板娘")
-
-	log.Printf("[WebhookGroupChat] isMention=%v", isMention)
-
-	// Only respond to mentions
-	if !isMention {
-		return
-	}
-
-	// Remove mention from query
-	query = strings.ReplaceAll(query, "@oceancloudying_bot", "")
-	query = strings.ReplaceAll(query, "@云海看板娘", "")
-	query = strings.TrimSpace(query)
-
-	if query == "" {
-		telegram.SendMessage(msg.Chat.ID, "你好！请问有什么我可以帮助你的？", "", nil)
-		return
-	}
-
-	// Treat as search query
-	PerformSearch(telegram, msg, sessMgr, moviepilot, tmdb, searchHistory)
+	// 群组中不响应任何消息，只用于接收入库通知
+	log.Printf("[WebhookGroupChat] ChatID=%d: Message ignored (groups are notifications only)", msg.Chat.ID)
+	return
 }
 
 // HandleWebhookTextQuery handles text queries from webhook
