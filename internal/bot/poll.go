@@ -177,6 +177,47 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 					return
 				}
 			}
+
+			// Check if admin is in "pending issue reply" state
+			if pendingIssueIDVal, exists := sess.Get("pending_issue_reply"); exists {
+				log.Printf("[Poll] Admin %d is in issue reply state", msg.From.ID)
+				// Parse issue ID
+				var issueID int64
+				if issueIDInt, ok := pendingIssueIDVal.(int64); ok {
+					issueID = issueIDInt
+				} else if issueIDStr, ok := pendingIssueIDVal.(string); ok {
+					fmt.Sscanf(issueIDStr, "%d", &issueID)
+				}
+
+				if issueID > 0 {
+					// Clear the pending state
+					sess.Delete("pending_issue_reply")
+
+					// Get admin name
+					adminName := "管理员"
+					if name, ok := sess.GetString("name"); ok && name != "" {
+						adminName = name
+					}
+
+					// Handle issue reply through IssueService
+					if deps.IssueService != nil {
+						_, err := deps.IssueService.AddReply(issueID, msg.From.ID, adminName, sanitizedText, "admin")
+						if err != nil {
+							deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 回复失败: %v", err), "", nil)
+						} else {
+							// Get issue details to notify user
+							issue, exists := deps.IssueService.GetIssue(issueID)
+							if exists && issue.UserID != msg.From.ID {
+								// Notify the user who reported the issue
+								notifyMsg := fmt.Sprintf("💬 管理员回复了您的问题\n\n🐛 问题 #%d: %s\n\n📝 回复: %s", issue.ID, issue.Title, sanitizedText)
+								deps.Telegram.SendMessage(issue.UserID, notifyMsg, "", nil)
+							}
+							deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("✅ 回复已发送\n\n问题 #%d", issueID), "", nil)
+						}
+					}
+				}
+				return
+			}
 		}
 	}
 

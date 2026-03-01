@@ -128,28 +128,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
-	// Check quota using quota service
-	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
-		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
-		return &callback.Response{
-			Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
-			CallbackMsg: "配额已用完",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Immediately deduct quota when user submits request
-	// This prevents users from submitting multiple requests before approval
-	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		log.Printf("[RequestHandler] Failed to deduct quota for user %d: %v", ctx.UserID, err)
-		return &callback.Response{
-			Text:        "❌ 配额扣减失败，请稍后再试",
-			CallbackMsg: "配额扣减失败",
-			ShowAlert:   true,
-		}, nil
-	}
-	log.Printf("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
-
 	// Get media info from session for better display
 	sess := h.sessMgr.Get(ctx.UserID)
 	if sess == nil {
@@ -257,6 +235,29 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			Edit:        false,
 		}, nil
 	}
+
+	// Media doesn't exist in library, deduct quota before creating request
+	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
+		log.Printf("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
+
+		// Check if it's a quota exceeded error
+		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
+			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
+			return &callback.Response{
+				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
+				CallbackMsg: "配额已用完",
+				ShowAlert:   true,
+			}, nil
+		}
+
+		// Other errors
+		return &callback.Response{
+			Text:        "❌ 配额操作失败，请稍后再试",
+			CallbackMsg: "操作失败",
+			ShowAlert:   true,
+		}, nil
+	}
+	log.Printf("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
 
 	log.Printf("[RequestHandler] Creating review request...")
 	// Create review request
@@ -456,15 +457,28 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
-	// Check quota
-	if !h.quotaService.CanRequest(ctx.UserID, mediaType) {
-		quotaText := h.quotaService.GetQuotaText(ctx.UserID)
+	// Deduct quota for force subscribe (user confirmed they want to subscribe despite existing media)
+	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
+		log.Printf("[HandleForceSubscribe] Quota check failed for user %d: %v", ctx.UserID, err)
+
+		// Check if it's a quota exceeded error
+		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
+			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
+			return &callback.Response{
+				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
+				CallbackMsg: "配额已用完",
+				ShowAlert:   true,
+			}, nil
+		}
+
+		// Other errors
 		return &callback.Response{
-			Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
-			CallbackMsg: "配额已用完",
+			Text:        "❌ 配额操作失败，请稍后再试",
+			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil
 	}
+	log.Printf("[HandleForceSubscribe] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
 
 	// Get session info
 	sess := h.sessMgr.Get(ctx.UserID)

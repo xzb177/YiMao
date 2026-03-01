@@ -2192,6 +2192,11 @@ func (p *EmbyWebhookPayload) getItemID() string {
 
 // formatFileSizeDecimal formats file size in decimal (GB not GiB) for consistency
 func (s *WebhookService) formatFileSizeDecimal(bytes int64) string {
+	// Handle unknown size (e.g., strm files, missing info)
+	if bytes == 0 {
+		return "未知大小"
+	}
+
 	const unit = 1000 // Use decimal for GB display
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
@@ -2210,6 +2215,11 @@ func (s *WebhookService) formatFileSizeDecimal(bytes int64) string {
 
 // formatFileSize formats file size in human readable format
 func (s *WebhookService) formatFileSize(bytes int64) string {
+	// Handle unknown size (e.g., strm files, missing info)
+	if bytes == 0 {
+		return "未知"
+	}
+
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)
