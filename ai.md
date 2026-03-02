@@ -4,6 +4,19 @@
 
 ## 2026-03-02
 
+### fix: AI推荐详情页返回按钮修复 - 图片消息编辑问题 ✅ 已部署
+- **问题**: 从AI推荐进入详情页后，点击返回按钮失败
+- **错误**: `Bad Request: there is no text in the message to edit`
+- **根本原因**:
+  - 详情页发送的是**图片消息**（使用 `SendPhotoWithAuth`）
+  - 返回时尝试用 `Edit=true` + `editMessageText` 编辑消息
+  - Telegram API 不允许用 `editMessageText` 编辑图片消息的文本内容
+- **解决方案**: 在 `BackHandler` 的 `ai_recommendation` 分支中
+  - 将 `Edit: true` 改为 `DeleteMessage: true`
+  - 删除图片消息后发送新的文本消息
+- **修改文件**: `internal/handlers/callback.go:1469`
+- **Git 提交**: `03531ac`
+
 ### fix: 热门推荐详情页返回按钮修复 ✅ 已部署
 - **问题**: 从热门推荐（AI 推荐）进入详情页后，点击返回按钮没有反应
 - **原因**: `BackHandler` 的 `ai_recommendation` case 返回空响应（Text="", Keyboard=nil）
