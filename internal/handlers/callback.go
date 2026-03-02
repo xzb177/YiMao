@@ -1410,8 +1410,8 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	// Based on source, restore appropriate view
 	switch entry.Source {
 	case "ai_recommendation":
-		// Return to AI recommendation - rebuild the recommendation page
-	// entry.Query contains the recommendation type (hot, trending, toprated, new, random)
+		// Return to AI recommendation - restore the recommendation results page
+		// entry.Query contains the recommendation type (hot, trending, toprated, new, random)
 		tType := entry.Query
 		if tType == "" {
 			tType = "hot" // Default to hot TV shows
@@ -1419,7 +1419,18 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 		log.Printf("[BackHandler] Returning to AI recommendation: %s", tType)
 
-		// Build the recommendation page message
+		// Check if we have cached search results to restore
+		items, page, query, hasSearch := sess.GetSearchResults()
+		log.Printf("[BackHandler] Checking search results: hasSearch=%v, query=%s, tType=%s", hasSearch, query, tType)
+
+		// If we have cached results AND they match the current type, restore them
+		if hasSearch && query == tType && len(items) > 0 {
+			log.Printf("[BackHandler] Restoring cached recommendation results: %d items", len(items))
+			return h.restoreRecommendationResults(sess, tType, items, page)
+		}
+
+		// No cached results, show loading message with reload button
+		log.Printf("[BackHandler] No cached results, showing reload prompt")
 		msg := services.NewMessageBuilder()
 		msg.Bold("🎬 精选推荐").Newline()
 		msg.Newline()
@@ -1450,9 +1461,9 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		msg.Italic(title).Newline()
 		msg.Text(subtitle).Newline()
 		msg.Newline()
-		msg.Italic("💫 正在加载推荐内容...")
+		msg.Italic("💫 点击下方按钮重新加载推荐")
 
-		// Add keyboard with type and back button
+		// Add keyboard with reload button
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔄 重新加载", fmt.Sprintf("search:type:%s", tType))
 		kb.NewRow()
@@ -1467,7 +1478,6 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		kb.AddButton("🎲 随机发现", "search:type:random")
 
 		// 从详情页图片返回，需要删除图片消息后发送文本
-		// 因为图片消息不能用 editMessageText 编辑
 		return &callback.Response{
 			Text:          msg.Build(),
 			Edit:          false,
@@ -1599,6 +1609,116 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		Edit:         false,
 		DeleteMessage: true,
 		Keyboard:     convertKeyboard(keyboard),
+	}, nil
+}
+
+// restoreRecommendationResults restores the AI recommendation results from session
+func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType string, items []session.SearchItem, page int) (*callback.Response, error) {
+	log.Printf("[BackHandler] restoreRecommendationResults: tType=%s, items=%d, page=%d", tType, len(items), page)
+
+	// Build title and subtitle based on type
+	title := ""
+	subtitle := ""
+	switch tType {
+	case "trending":
+		title = "🔥 本周热门"
+		subtitle = "大家都在看的好片"
+	case "hot":
+		title = "📺 热门剧集"
+		subtitle = "追剧必看热门番"
+	case "toprated":
+		title = "⭐ 必看神作"
+		subtitle = "高分经典，不容错过"
+	case "new":
+		title = "🆕 最新上映"
+		subtitle = "刚上线的新鲜内容"
+	case "random":
+		title = "🎲 随机探索"
+		subtitle = "发现未知的精彩"
+	default:
+		title = "🎬 精选推荐"
+		subtitle = "为您推荐优质内容"
+	}
+
+	// Build message with results
+	msg := services.NewMessageBuilder()
+	msg.Bold("🎬 精选推荐").Newline()
+	msg.Newline()
+	msg.Italic(title).Newline()
+	msg.Text(subtitle).Newline()
+	msg.Newline()
+
+	// Display count of results
+	displayCount := len(items)
+	if displayCount > 8 {
+		displayCount = 8
+	}
+	msg.Textf("找到 %d 条结果\n\n", len(items))
+
+	// Add items to message
+	for i, item := range items[:displayCount] {
+		year := ""
+		if item.Year > 0 {
+			year = fmt.Sprintf(" (%d)", item.Year)
+		}
+
+		rating := ""
+		if item.Rating > 0 {
+			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
+		}
+
+		mediaType := "🎬"
+		if item.Type == "tv" {
+			mediaType = "📺"
+		}
+
+		msg.Textf("%d. %s%s%s%s\n", i+1, item.Title, year, mediaType, rating)
+	}
+
+	// Build keyboard with results
+	var keyboardRows [][]types.TelegramInlineKeyboardButton
+	var row []types.TelegramInlineKeyboardButton
+
+	for i, item := range items {
+		if i >= 8 {
+			break
+		}
+
+		row = append(row, types.TelegramInlineKeyboardButton{
+			Text:         fmt.Sprintf("%d", i+1),
+			CallbackData: fmt.Sprintf("detail:id:%s:type:%s", item.ID, item.Type),
+		})
+
+		// New row every 4 items
+		if (i+1)%4 == 0 || i == displayCount-1 {
+			keyboardRows = append(keyboardRows, row)
+			row = []types.TelegramInlineKeyboardButton{}
+		}
+	}
+
+	// Add navigation row
+	navRow := []types.TelegramInlineKeyboardButton{
+		{Text: "🔄 换一批", CallbackData: fmt.Sprintf("search:type:%s", tType)},
+		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+	}
+	keyboardRows = append(keyboardRows, navRow)
+
+	// Add other recommendations row
+	otherRow := []types.TelegramInlineKeyboardButton{
+		{Text: "🤖 其他推荐", CallbackData: "ai"},
+	}
+	keyboardRows = append(keyboardRows, otherRow)
+
+	keyboard := &types.TelegramInlineKeyboard{
+		InlineKeyboard: keyboardRows,
+	}
+
+	log.Printf("[BackHandler] Restoring recommendation results: tType=%s, items=%d", tType, len(items))
+	return &callback.Response{
+		Text:          msg.Build(),
+		Edit:          false,
+		DeleteMessage: true,
+		Keyboard:      convertKeyboard(keyboard),
 	}, nil
 }
 
