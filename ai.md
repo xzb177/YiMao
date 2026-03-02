@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-02
+
+### fix: 求片回调超时与详情页图片显示问题 ✅ 已部署
+- **问题1**: 求片按钮点击后超时，提示 "query is too old and response timeout expired"
+- **问题2**: 详情页图片不显示，电影简介也不显示
+- **根本原因**:
+  1. Emby 搜索超时设置 20 秒，接近回调总超时 25 秒，Emby 响应变慢时导致超时
+  2. 详情页使用 `SendPhoto` → `SendPhotoByURL` 直接传递 TMDB 图片 URL 给 Telegram，但 Telegram 无法访问该 URL
+- **解决方案**:
+  1. **降低 Emby 搜索超时**: 20s → 5s，快速失败避免阻塞
+  2. **保留 Emby 重复检查功能**: 超时时自动跳过，继续求片流程
+  3. **图片改用代理上传**: 使用 `SendPhotoWithAuth` 方法，机器人先下载 TMDB 图片再上传到 Telegram
+- **修改文件**:
+  - `internal/services/webhook.go:3024` - Emby 搜索超时 20s → 5s
+  - `internal/bot/poll.go:606` - 使用 `SendPhotoWithAuth` 代理上传
+  - `internal/bot/webhook.go:135` - 同样使用代理上传方式
+  - `internal/handlers/request.go` - 恢复 Emby 检查功能，优化错误处理
+- **效果**:
+  - 求片按钮响应更快，Emby 慢时不阻塞
+  - 详情页图片正常显示，简介文字完整显示
+- **Git 提交**: `99560e1`
+
+---
+
 ## 2026-02-28
 
 ### feat: 配额系统深度整合 - 完整生命周期管理 ✅ 已部署
