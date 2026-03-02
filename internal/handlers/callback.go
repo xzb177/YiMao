@@ -1466,10 +1466,13 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		kb.NewRow()
 		kb.AddButton("🎲 随机发现", "search:type:random")
 
+		// 从详情页图片返回，需要删除图片消息后发送文本
+		// 因为图片消息不能用 editMessageText 编辑
 		return &callback.Response{
-			Text:     msg.Build(),
-			Edit:     true,
-			Keyboard: convertKeyboard(kb.Build()),
+			Text:          msg.Build(),
+			Edit:          false,
+			DeleteMessage: true,
+			Keyboard:      convertKeyboard(kb.Build()),
 		}, nil
 
 	case "search":
