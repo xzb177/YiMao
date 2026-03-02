@@ -1410,12 +1410,66 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	// Based on source, restore appropriate view
 	switch entry.Source {
 	case "ai_recommendation":
-		// Return to AI recommendation - trigger the search callback
+		// Return to AI recommendation - rebuild the recommendation page
+	// entry.Query contains the recommendation type (hot, trending, toprated, new, random)
+		tType := entry.Query
+		if tType == "" {
+			tType = "hot" // Default to hot TV shows
+		}
+
+		log.Printf("[BackHandler] Returning to AI recommendation: %s", tType)
+
+		// Build the recommendation page message
+		msg := services.NewMessageBuilder()
+		msg.Bold("🎬 精选推荐").Newline()
+		msg.Newline()
+
+		// Set title and subtitle based on type
+		title := ""
+		subtitle := ""
+		switch tType {
+		case "trending":
+			title = "🔥 本周热门"
+			subtitle = "大家都在看的好片"
+		case "hot":
+			title = "📺 热门剧集"
+			subtitle = "追剧必看热门番"
+		case "toprated":
+			title = "⭐ 必看神作"
+			subtitle = "高分经典，不容错过"
+		case "new":
+			title = "🆕 最新上映"
+			subtitle = "刚上线的新鲜内容"
+		case "random":
+			title = "🎲 随机探索"
+			subtitle = "发现未知的精彩"
+		default:
+			title = "🎬 精选推荐"
+			subtitle = "为您推荐优质内容"
+		}
+		msg.Italic(title).Newline()
+		msg.Text(subtitle).Newline()
+		msg.Newline()
+		msg.Italic("💫 正在加载推荐内容...")
+
+		// Add keyboard with type and back button
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🔄 重新加载", fmt.Sprintf("search:type:%s", tType))
+		kb.NewRow()
+		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.NewRow()
+		kb.AddButton("🔥 热门电影", "search:type:trending")
+		kb.AddButton("📺 热播剧集", "search:type:hot")
+		kb.NewRow()
+		kb.AddButton("⭐ 高分佳作", "search:type:toprated")
+		kb.AddButton("🆕 最新上线", "search:type:new")
+		kb.NewRow()
+		kb.AddButton("🎲 随机发现", "search:type:random")
+
 		return &callback.Response{
-			Text:         "",
-			CallbackMsg:  "",
-			ShowAlert:    false,
-			Keyboard:     nil,
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 
 	case "search":
