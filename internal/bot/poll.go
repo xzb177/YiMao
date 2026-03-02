@@ -579,7 +579,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		} else {
 			log.Printf("[Callback] Response is nil!")
 		}
-	case <-time.After(10 * time.Second):
+	case <-time.After(25 * time.Second):
 		log.Printf("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)
 		if ansErr := telegram.AnswerCallback(cb.ID, "处理超时，请重试", true); ansErr != nil {
 			log.Printf("[Callback] Failed to answer callback (timeout): %v", ansErr)
@@ -599,12 +599,18 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 			log.Printf("[Callback] DeleteMessage error: %v", delErr)
 		}
 		// Send photo with caption and keyboard
+		// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
 		caption := resp.PhotoCaption
 		if caption == "" {
 			caption = resp.Text
 		}
-		if _, sendErr := telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard); sendErr != nil {
-			log.Printf("[Callback] SendPhoto error: %v", sendErr)
+		log.Printf("[Callback] Sending photo via proxy upload: %s", resp.Photo)
+		if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
+			log.Printf("[Callback] SendPhotoWithAuth error: %v, trying URL method", sendErr)
+			// Fallback to URL method if proxy upload fails
+			if _, fallbackErr := telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard); fallbackErr != nil {
+				log.Printf("[Callback] SendPhoto fallback also failed: %v", fallbackErr)
+			}
 		}
 	} else if resp.Text != "" {
 		if resp.DeleteMessage {

@@ -3021,7 +3021,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
 	client := &http.Client{
-		Timeout:   10 * time.Second,
+		Timeout:   5 * time.Second, // 降低超时避免阻塞求片流程，5秒足够正常响应
 		Transport: tr,
 	}
 	resp, err := client.Do(req)

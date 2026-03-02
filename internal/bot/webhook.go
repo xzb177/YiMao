@@ -128,11 +128,17 @@ func HandleWebhookCallback(
 			// Delete the original message first
 			telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
 			// Send photo with caption and keyboard
+			// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
 			caption := resp.PhotoCaption
 			if caption == "" {
 				caption = resp.Text
 			}
-			telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
+			log.Printf("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
+			if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
+				log.Printf("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
+				// Fallback to URL method if proxy upload fails
+				telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
+			}
 		} else if resp.Text != "" {
 			if resp.Edit {
 				// Edit existing message

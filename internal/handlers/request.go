@@ -187,21 +187,21 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 
 	// Check if media already exists in Emby library
+	// 使用较短的超时 (5秒) 避免阻塞求片流程
 	embyType := services.MediaTypeMovie
 	if mediaType == "tv" {
 		embyType = services.MediaTypeTV
 	}
 
-	log.Printf("[RequestHandler] Searching Emby for: %s (%d) %s", mediaTitle, mediaYear, embyType)
+	log.Printf("[RequestHandler] Checking Emby for: %s (%d) %s (5s timeout)", mediaTitle, mediaYear, embyType)
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err != nil {
-		log.Printf("[RequestHandler] Emby search failed (continuing): %v", err)
-		// Continue with request creation even if search fails
+		log.Printf("[RequestHandler] Emby search timeout/failed (continuing): %v", err)
+		// 继续创建请求 - Emby 慢时不阻塞求片
 	} else if existingMedia != nil {
 		log.Printf("[求片] 媒体库已存在: %s", existingMedia.Title)
 
 		// Build message showing media already exists
-		// Use clearer messaging with media type and year
 		typeIcon := "🎬"
 		typeLabel := "电影"
 		if existingMedia.Type == "Series" || existingMedia.Type == "Episode" {
@@ -236,7 +236,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
-	// Media doesn't exist in library, deduct quota before creating request
+	// Media doesn't exist in library (or check timed out), deduct quota before creating request
 	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
 		log.Printf("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
 
@@ -527,7 +527,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		userName = name
 	}
 
-	// Check Emby library for existing media
+	// Check Emby library for existing media (for admin info)
 	var embyInfo *services.EmbySearchResult
 	embyType := services.MediaTypeMovie
 	if mediaType == "tv" {
@@ -537,7 +537,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err == nil && existingMedia != nil {
 		embyInfo = existingMedia
-		log.Printf("[RequestHandler] Media found in Emby for force subscribe: %s", existingMedia.Title)
+		log.Printf("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)
 	}
 
 	// Create review request
