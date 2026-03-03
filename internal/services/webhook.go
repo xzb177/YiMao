@@ -920,7 +920,26 @@ func (s *WebhookService) flushEpisodeAggregation() {
 
 // sendAggregatedEpisodeToAdmins sends aggregated episode notification to group chat only
 // 入库通知只推送到群组，不推送给管理员个人
+// 只有在至少一个管理员启用通知时才发送
 func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year int, season int, episodes []int, epRange string, quality, imageURL string, fileSize int64, enhancedInfo *EmbyEnhancedInfo, libraryName string) {
+	// 检查是否有至少一个管理员启用了入库通知
+	if s.mediaNotificationSvc != nil {
+		adminIDs := s.adminService.GetAdminIDs()
+		hasEnabledAdmin := false
+		for _, adminID := range adminIDs {
+			settings := s.mediaNotificationSvc.GetSettings(adminID)
+			if settings.Enabled {
+				hasEnabledAdmin = true
+				break
+			}
+		}
+		// 如果没有管理员启用通知，则不发送
+		if !hasEnabledAdmin {
+			log.Printf("[入库] 所有管理员已禁用通知，跳过发送")
+			return
+		}
+	}
+
 	// 只发送到群组，不发送给管理员个人
 	if s.chatID != 0 && s.chatID < -100 {
 		message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
@@ -2497,24 +2516,29 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		return
 	}
 
-	// Get media type
+	// Get library name (path fallback is unreliable, use empty string instead)
+	libraryName := payload.Library
+	if libraryName == "" && payload.Item != nil && payload.Item.Path != "" {
+		// Try to extract library name from path instead of using full path
+		// Path format: /library_name/...
+		path := payload.Item.Path
+		if strings.HasPrefix(path, "/") {
+			parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+			if len(parts) > 0 && parts[0] != "" {
+				libraryName = parts[0]
+			}
+		}
+	}
+
+	// Get media type - enhanced detection with multiple fallbacks
 	mediaType := MediaTypeMovie
 	itemType := payload.ItemType
 	if itemType == "" && payload.Item != nil {
 		itemType = payload.Item.Type
 	}
 
-	// Detect media type
-	if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
-		mediaType = MediaTypeSeries
-	}
-
-	// Check if anime
+	// Check if anime first (before other detection)
 	isAnime := false
-	libraryName := payload.Library
-	if libraryName == "" && payload.Item != nil {
-		libraryName = payload.Item.Path
-	}
 	if libraryName != "" {
 		lowerLib := strings.ToLower(libraryName)
 		animeKeywords := []string{"anim", "动画", "anime", "卡通", "漫画"}
@@ -2526,6 +2550,22 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		}
 	}
 
+	// Detect media type with multiple signals
+	// 1. Check ItemType field
+	if itemType == "Episode" || itemType == "Series" || itemType == "Season" {
+		mediaType = MediaTypeSeries
+	}
+
+	// 2. Check SeriesName - strong indicator of series/anime
+	if payload.SeriesName != "" {
+		if isAnime {
+			mediaType = MediaTypeAnime
+		} else {
+			mediaType = MediaTypeSeries
+		}
+	}
+
+	// 3. Override with anime library detection
 	if isAnime {
 		mediaType = MediaTypeAnime
 	}

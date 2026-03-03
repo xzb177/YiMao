@@ -175,8 +175,8 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 	return &AdminNotificationSettings{
 		AdminID:           adminID,
 		DailyTime:         "23:50",
-		Enabled:           true,
-		InstantEnabled:    true,  // Default to instant notifications
+		Enabled:           false,  // Default to disabled - require explicit opt-in
+		InstantEnabled:    false,  // Default to disabled - require explicit opt-in
 		DailySummaryEnabled: false, // Default to disabled
 		Libraries:         []string{},
 		Format:           FormatDetailed,
@@ -651,10 +651,10 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 		"电影库": "🎥",
 	}
 
-	// Build tree structure
+	// Build tree structure - improved clarity
 	for _, category := range categoryOrder {
-		items, exists := categoryGroups[category]
-		if !exists || len(items) == 0 {
+		categoryItems, exists := categoryGroups[category]
+		if !exists || len(categoryItems) == 0 {
 			continue
 		}
 
@@ -663,8 +663,12 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 
 		// Group by library name within category
 		libGroups := make(map[string][]*MediaItem)
-		for _, item := range items {
-			libGroups[item.LibraryName] = append(libGroups[item.LibraryName], item)
+		for _, item := range categoryItems {
+			libName := item.LibraryName
+			if libName == "" {
+				libName = "其他"
+			}
+			libGroups[libName] = append(libGroups[libName], item)
 		}
 
 		// Sort library names
@@ -674,21 +678,44 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 		}
 		sort.Strings(libNames)
 
-		// Print items per library
+		// Print items per library - improved tree structure
 		for i, libName := range libNames {
 			libItems := libGroups[libName]
-			prefix := "│   ├─"
-			if i == len(libNames)-1 {
-				prefix = "│   └─"
+			isLastLib := i == len(libNames)-1
+
+			// Library branch prefix
+			libPrefix := "│   ├─"
+			if isLastLib {
+				libPrefix = "│   └─"
+			}
+
+			// Count items for this library
+			itemCount := len(libItems)
+
+			// Show library name with item count if multiple items
+			if itemCount > 1 {
+				builder.WriteString(fmt.Sprintf("%s %s (%d部)\n", libPrefix, libName, itemCount))
+			} else {
+				builder.WriteString(fmt.Sprintf("%s %s\n", libPrefix, libName))
+			}
+
+			// Print items under this library
+			itemPrefix := "│   │   ├─"
+			if isLastLib {
+				itemPrefix = "│       ├─"
 			}
 
 			for j, item := range libItems {
-				if j == 0 {
-					builder.WriteString(fmt.Sprintf("%s %s", prefix, s.formatItemForSummary(item)))
-				} else {
-					builder.WriteString(fmt.Sprintf("│   │   └─ %s", s.formatItemForSummary(item)))
+				isLastItem := j == itemCount-1
+				currentPrefix := itemPrefix
+				if isLastItem {
+					if isLastLib {
+						currentPrefix = "│       └─"
+					} else {
+						currentPrefix = "│   │   └─"
+					}
 				}
-				builder.WriteString("\n")
+				builder.WriteString(fmt.Sprintf("%s %s\n", currentPrefix, s.formatItemForSummary(item)))
 			}
 		}
 		builder.WriteString("│\n")
@@ -739,9 +766,20 @@ func (s *MediaNotificationService) formatItemForSummary(item *MediaItem) string 
 			title += "（完结）"
 		}
 	} else {
+		// Movie or standalone item
 		title = item.Title
-		if item.Year > 1900 && item.Year < 2100 {
-			title += fmt.Sprintf(" (%d)", item.Year)
+		if title == "" {
+			// No title available - use year with prefix or generic text
+			if item.Year > 1900 && item.Year < 2100 {
+				title = fmt.Sprintf("[%d年电影]", item.Year)
+			} else {
+				title = "[未命名电影]"
+			}
+		} else {
+			// Has title - add year if available
+			if item.Year > 1900 && item.Year < 2100 {
+				title += fmt.Sprintf(" (%d)", item.Year)
+			}
 		}
 	}
 

@@ -776,7 +776,13 @@ func (h *AdminHandler) handleNotifDisableAll(ctx *callback.Context) (*callback.R
 	settings.InstantEnabled = false
 	settings.DailySummaryEnabled = false
 	settings.Enabled = false
-	h.mediaNotificationSvc.SetSettings(settings)
+	if err := h.mediaNotificationSvc.SetSettings(settings); err != nil {
+		log.Printf("[AdminHandler] Failed to disable all notifications: %v", err)
+		return &callback.Response{
+			CallbackMsg: "设置保存失败，请重试",
+			ShowAlert:   true,
+		}, nil
+	}
 
 	// 获取更新后的设置，构建新的按钮
 	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
