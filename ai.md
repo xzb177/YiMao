@@ -4,7 +4,32 @@
 
 ## 2026-03-04
 
-### fix: TELEGRAM_CHAT_ID 为空时启动失败 ✅ 待部署
+### fix: Telegram API 消息格式化错误 - 机器人无响应 ✅ 已部署
+- **问题**: 点击按钮后机器人无任何响应
+- **错误信息**:
+  - `Bad Request: can't parse entities: Can't find end of the entity starting at byte offset 392`
+- **根本原因**:
+  1. `MessageBuilder` 使用 Markdown 格式（`*粗体*`、`_斜体_`）
+  2. 发送消息时使用 `parseMode: "Markdown"`
+  3. 文本中包含特殊字符导致 Telegram 无法正确解析格式化实体
+- **解决方案**:
+  1. `MessageBuilder` 默认 parseMode 改为 HTML
+  2. 所有发送消息时统一使用 HTML 或空字符串（自动检测）
+  3. 替换所有 `"Markdown"` 为 `"HTML"` 或 `""`
+- **修改文件**:
+  - `internal/services/telegram.go` - MessageBuilder 默认模式改为 HTML
+  - `internal/bot/poll.go` - EditMessage 使用空字符串
+  - `internal/services/media_notification.go` - 使用空字符串
+  - `internal/handlers/admin.go` - 使用 HTML
+  - `internal/handlers/feedback.go` - 使用 HTML
+  - `internal/services/notification.go` - 使用 HTML/空字符串
+- **效果**:
+  - 消息正常显示，无格式化错误
+  - 机器人响应恢复正常
+
+---
+
+### fix: TELEGRAM_CHAT_ID 为空时启动失败 ✅ 已部署
 - **问题**: 将 `TELEGRAM_CHAT_ID` 设为空后，服务启动失败
 - **错误信息**:
   - `Warning: failed to load admins: invalid admin file format`

@@ -345,7 +345,7 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 			kb := services.NewKeyboardBuilder()
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
-			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			log.Printf("[AdminHandler] Notified user %d about issue #%d being fixed", issue.UserID, issue.ID)
 		}
 	}
@@ -407,7 +407,7 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 			kb := services.NewKeyboardBuilder()
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
-			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			log.Printf("[AdminHandler] Notified user %d about issue #%d being processed", issue.UserID, issue.ID)
 		}
 	}
@@ -469,7 +469,7 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 			kb := services.NewKeyboardBuilder()
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
-			h.telegram.SendMessage(issue.UserID, msg.Build(), "Markdown", kb.Build())
+			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			log.Printf("[AdminHandler] Notified user %d about issue #%d being closed", issue.UserID, issue.ID)
 		}
 	}

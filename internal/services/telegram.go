@@ -745,7 +745,7 @@ type MessageBuilder struct {
 // NewMessageBuilder creates a new message builder
 func NewMessageBuilder() *MessageBuilder {
 	return &MessageBuilder{
-		parseMode: "Markdown", // Default
+		parseMode: "HTML", // Use HTML for more reliable formatting
 	}
 }
 

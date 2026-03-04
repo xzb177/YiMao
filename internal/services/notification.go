@@ -160,7 +160,7 @@ func (s *NotificationService) processNotifications(updates []StatusUpdate) {
 
 		// Send notification
 		message := s.formatStatusMessage(update)
-		_, err := s.telegram.SendMessage(telegramID, message, "Markdown", nil)
+		_, err := s.telegram.SendMessage(telegramID, message, "", nil)
 		if err != nil {
 			log.Printf("[Notification] Failed to send notification to user %d: %v", telegramID, err)
 			continue
@@ -236,7 +236,7 @@ func (s *NotificationService) SendDownloadCompleted(telegramID int64, mediaTitle
 	msg.Textf("%s %s (%s)", mediaEmoji, mediaTitle, mediaYear).Newline()
 	msg.Italic("🎬 已下载完成，可以观看了！").Newline()
 
-	_, err := s.telegram.SendMessage(telegramID, msg.Build(), "Markdown", nil)
+	_, err := s.telegram.SendMessage(telegramID, msg.Build(), "HTML", nil)
 	return err
 }
 
@@ -270,7 +270,7 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 
 	// Send to all users
 	for _, telegramID := range telegramIDs {
-		if _, err := s.telegram.SendMessage(telegramID, msg.Build(), "Markdown", nil); err != nil {
+		if _, err := s.telegram.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
 			log.Printf("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err)
 		}
 	}

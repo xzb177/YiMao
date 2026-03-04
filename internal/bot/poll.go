@@ -546,7 +546,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			// Try to show error message if response exists
 			if result.resp != nil && result.resp.Text != "" {
 				keyboard := ConvertKeyboard(result.resp.Keyboard)
-				telegram.EditMessage(ctx.ChatID, ctx.MessageID, result.resp.Text, "Markdown", keyboard)
+				telegram.EditMessage(ctx.ChatID, ctx.MessageID, result.resp.Text, "", keyboard)
 			}
 			return
 		}
@@ -623,7 +623,7 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 			}
 		} else if resp.Edit {
 			// Edit existing message
-			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard); editErr != nil {
+			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "", keyboard); editErr != nil {
 				log.Printf("[Callback] EditMessage error: %v", editErr)
 			}
 		} else {

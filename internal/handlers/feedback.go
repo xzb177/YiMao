@@ -199,7 +199,7 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	kb.AddButton("❌ 取消反馈", "cancel")
 
 	// Send message (don't edit, send new message for user to reply)
-	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "Markdown", kb.Build())
+	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
 
 	// Update original message to show waiting state
 	return &callback.Response{
@@ -286,7 +286,7 @@ func (h *FeedbackHandler) HandleFeedbackText(userID int64, chatID int64, text st
 	)
 	if err != nil {
 		log.Printf("[FeedbackHandler] Failed to create issue: %v", err)
-		h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "Markdown", nil)
+		h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil)
 		return err
 	}
 
@@ -302,7 +302,7 @@ func (h *FeedbackHandler) HandleFeedbackText(userID int64, chatID int64, text st
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
-	h.telegram.SendMessage(chatID, confirmMsg.Build(), "Markdown", kb.Build())
+	h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", kb.Build())
 
 	// Notify admins
 	go h.notifyAdmins(issue, typeLabel)
@@ -355,7 +355,7 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 
 	// Send to all admins with error handling
 	for _, adminID := range adminIDs {
-		if _, err := h.telegram.SendMessage(adminID, message, "Markdown", kb.Build()); err != nil {
+		if _, err := h.telegram.SendMessage(adminID, message, "HTML", kb.Build()); err != nil {
 			log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
 		}
 	}

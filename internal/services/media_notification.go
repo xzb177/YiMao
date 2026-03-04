@@ -334,8 +334,8 @@ func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *
 	}
 
 	// Send message (image URL embedded in text for auto-render)
-	// Use Markdown parseMode for code formatting with backticks
-	s.telegram.SendMessage(adminID, message, "Markdown", nil)
+	// Use empty parseMode for auto-detection (avoids Markdown parsing errors)
+	s.telegram.SendMessage(adminID, message, "", nil)
 }
 
 // formatSimpleMessage formats a simple instant notification message
