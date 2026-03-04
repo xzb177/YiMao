@@ -4,6 +4,32 @@
 
 ## 2026-03-04
 
+### fix: 新用户部署问题全面修复 ✅
+- **背景**: 全面检查新用户部署可能遇到的潜在问题
+- **严重问题修复**:
+  1. **Go 版本不存在**: `go 1.24.0` → `go 1.23.0`
+  2. **install.sh 缺少 docker compose 检查**: 添加 v1/v2 兼容检测
+  3. **docker-compose.yml 冗余数据挂载**: 移除单独挂载，统一使用 `./data:/app/data`
+  4. **EMBY_USER_ID 配置未使用**: 从 docker-compose.yml 和 .env.example 中移除
+  5. **TELEGRAM_CHAT_ID 配置缺失**: 在 .env.example 中添加
+- **中等问题修复**:
+  6. **日志配置优化**: 添加 `compress: "true"` 节省磁盘空间
+  7. **健康检查优化**: 增加启动等待时间 5s→10s
+  8. **install.sh 命令提示**: 添加查看状态命令
+- **修改文件**:
+  - `go.mod` - Go 版本
+  - `Dockerfile` - Go 版本、健康检查
+  - `docker-compose.yml` - 移除冗余挂载、移除 EMBY_USER_ID、日志压缩
+  - `.env.example` - 添加 TELEGRAM_CHAT_ID、移除 EMBY_USER_ID
+  - `install.sh` - docker compose 检测、兼容 v1/v2
+- **效果**:
+  - 解决构建失败问题
+  - 提升老系统兼容性
+  - 统一数据存储路径
+  - 配置项与代码实际使用一致
+
+---
+
 ### fix: PORT 环境变量无效 - docker-compose 硬编码覆盖 ✅
 - **问题**: 用户在 `.env` 设置 `PORT=18081`，服务仍绑定 8080 端口
 - **错误信息**:

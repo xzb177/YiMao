@@ -1,5 +1,5 @@
 # Multi-stage build for Emby Telegram Bot (Enterprise Edition)
-FROM golang:1.24-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git
@@ -35,9 +35,9 @@ ENV TZ=Asia/Shanghai
 # Expose port
 EXPOSE 8080
 
-# Health check (BusyBox wget uses --spider instead of -s)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-  CMD wget -q --spider http://localhost:8080/health || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD wget -q --spider http://localhost:${PORT:-8080}/health || exit 1
 
 # Run the application
 CMD ["./emby-telegram-bot"]

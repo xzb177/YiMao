@@ -35,6 +35,18 @@ if ! command_exists docker; then
     error "Docker 未安装，请先安装 Docker"
 fi
 
+# 检查 docker compose (支持 v1 和 v2 语法)
+DOCKER_COMPOSE_CMD=""
+if docker compose version >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker compose"
+    info "检测到 Docker Compose v2"
+elif command_exists docker-compose; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+    info "检测到 Docker Compose v1"
+else
+    error "Docker Compose 未安装，请先安装 Docker Compose"
+fi
+
 if ! command_exists git; then
     error "Git 未安装，请先安装 Git"
 fi
@@ -96,13 +108,14 @@ init_json_file "data/search_history.json" '{"histories":{}}'
 
 # 启动服务
 info "启动 Docker 服务..."
-docker compose up -d --build
+$DOCKER_COMPOSE_CMD up -d --build
 
 info ""
 info "=========================================="
 info "安装完成！"
 info "=========================================="
 info "查看日志: docker logs -f emby-telegram-bot"
-info "停止服务: docker compose down"
-info "重启服务: docker compose restart"
+info "停止服务: $DOCKER_COMPOSE_CMD down"
+info "重启服务: $DOCKER_COMPOSE_CMD restart"
+info "查看状态: $DOCKER_COMPOSE_CMD ps"
 info "=========================================="

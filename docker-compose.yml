@@ -15,7 +15,6 @@ services:
       # Emby Configuration
       - EMBY_URL=${EMBY_URL}
       - EMBY_API_KEY=${EMBY_API_KEY}
-      - EMBY_USER_ID=${EMBY_USER_ID}
 
       # MoviePilot Configuration
       - MOVIEPILOT_URL=${MOVIEPILOT_URL}
@@ -43,10 +42,6 @@ services:
     # Volume for persistent data (preferences, quotas, cache, etc.)
     volumes:
       - ./data:/app/data
-      - ./preferences.json:/app/preferences.json
-      - ./user_quotas.json:/app/user_quotas.json
-      - ./user_mappings.json:/app/user_mappings.json
-      - ./binding_requests.json:/app/binding_requests.json
 
     # Logging configuration
     logging:
@@ -54,6 +49,7 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+        compress: "true"
 
     # Resource limits (optional)
     # deploy:
