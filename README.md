@@ -2,6 +2,8 @@
 
 一个用于 Emby/MoviePilot 的 Telegram 机器人，解决媒体库求片和管理问题。
 
+> **🚀 一键部署安装** `curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash`
+
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
