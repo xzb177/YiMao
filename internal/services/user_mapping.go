@@ -20,6 +20,8 @@ type UserMappingService struct {
 	dirty        bool              // Track if data needs saving
 	savePending  bool             // Prevent multiple concurrent saves
 	lastSave     time.Time        // Last save time
+	saveTimer    *time.Timer      // Single timer for delayed saves
+	saveMu       sync.Mutex       // Protects saveTimer creation
 }
 
 // BindingRequest represents a pending binding request
@@ -69,7 +71,11 @@ func (s *UserMappingService) load() error {
 		if os.IsNotExist(err) {
 			log.Printf("[UserMapping] File not exist, creating empty file")
 			// Create empty file - use saveLocked since we already hold the lock
-			_ = s.saveLocked()
+			if saveErr := s.saveLocked(); saveErr != nil {
+				log.Printf("[UserMapping] ERROR creating file: %v", saveErr)
+				s.mu.Unlock()
+				return saveErr
+			}
 			s.mu.Unlock()
 			return nil
 		}
@@ -163,15 +169,19 @@ func (s *UserMappingService) saveLocked() error {
 func (s *UserMappingService) scheduleSave() {
 	s.mu.Lock()
 	s.dirty = true
-	shouldSave := s.lastSave.IsZero() || time.Since(s.lastSave) > saveDelay
 	s.mu.Unlock()
 
-	if !shouldSave {
-		return
+	// Use a mutex-protected timer to prevent goroutine proliferation
+	s.saveMu.Lock()
+	defer s.saveMu.Unlock()
+
+	// Stop existing timer if any (this is safe even if timer already fired)
+	if s.saveTimer != nil {
+		s.saveTimer.Stop()
 	}
 
-	go func() {
-		time.Sleep(saveDelay)
+	// Create new timer for delayed save
+	s.saveTimer = time.AfterFunc(saveDelay, func() {
 		s.mu.Lock()
 		if s.dirty && !s.savePending {
 			s.savePending = true
@@ -181,7 +191,7 @@ func (s *UserMappingService) scheduleSave() {
 			s.savePending = false
 		}
 		s.mu.Unlock()
-	}()
+	})
 }
 
 // ForceSave immediately saves the data to disk

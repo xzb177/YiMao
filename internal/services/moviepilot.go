@@ -35,9 +35,14 @@ func (fy *FlexibleYear) UnmarshalJSON(b []byte) error {
 			*fy = 0
 			return nil
 		}
-		// Parse year from string
+		// Parse year from string - validate it's actually a number
 		var y int
-		fmt.Sscanf(s, "%d", &y)
+		n, err := fmt.Sscanf(s, "%d", &y)
+		if err != nil || n != 1 || y < 1800 || y > 2100 {
+			// Invalid year - return 0 instead of panic
+			*fy = 0
+			return nil
+		}
 		*fy = FlexibleYear(y)
 		return nil
 	}
@@ -45,6 +50,11 @@ func (fy *FlexibleYear) UnmarshalJSON(b []byte) error {
 	var i int
 	if err := json.Unmarshal(b, &i); err != nil {
 		return err
+	}
+	// Validate year range
+	if i < 1800 || i > 2100 {
+		*fy = 0
+		return nil
 	}
 	*fy = FlexibleYear(i)
 	return nil
@@ -563,6 +573,11 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		if user == nil {
 			return nil, fmt.Errorf("user not found: %d", userID)
 		}
+	}
+
+	// Double-check user is not nil (shouldn't happen, but defensive)
+	if user == nil {
+		return nil, fmt.Errorf("user not found: %d", userID)
 	}
 
 	// MoviePilot uses /api/v1/subscribe/ endpoint

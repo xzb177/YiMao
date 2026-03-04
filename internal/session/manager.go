@@ -243,15 +243,18 @@ func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(5 * time.Minute) // Reduced from 10 to 5 minutes
 	defer ticker.Stop()
 
-	for range ticker.C {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					log.Printf("[Session] Panic in cleanup: %v", r)
-				}
+	for {
+		select {
+		case <-ticker.C:
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[Session] Panic in cleanup: %v, recovering...", r)
+					}
+				}()
+				m.Cleanup()
 			}()
-			m.Cleanup()
-		}()
+		}
 	}
 }
 
