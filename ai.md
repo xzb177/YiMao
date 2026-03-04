@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-03-04
+
+### fix: UserMappingService 死锁问题 - 无法求片/搜索 ✅ 已部署
+- **问题**: 用户无法搜索影片和发起求片请求
+- **现象**:
+  - 日志显示 `GetMoviePilotUserID: acquiring lock` 但没有 `lock acquired`
+  - 所有需要检查用户绑定的操作都被阻塞
+  - 重启服务后暂时恢复，但问题会在用户绑定账号后再次出现
+- **根本原因**:
+  - `UserMappingService.save()` 和 `saveLocked()` 存在嵌套锁问题
+  - `save()` 持有写锁后调用 `saveLocked()`，`saveLocked()` 又尝试释放/重新获取锁
+  - `AddMapping()` 中的异步保存逻辑与主 goroutine 的锁操作可能冲突
+- **解决方案**:
+  1. 重构 `save()` 函数：移除嵌套锁，改为"复制数据→释放锁→写文件"
+  2. 简化 `scheduleSave()` 函数：添加早期返回，确保所有路径释放锁
+  3. 重构 `AddMapping()` 函数：使用统一的 `scheduleSave()` 方法
+- **修改文件**:
+  - `internal/services/user_mapping.go:122-183` - save/scheduleSave 函数重构
+  - `internal/services/user_mapping.go:233-253` - AddMapping 函数简化
+- **代码变更**:
+  ```diff
+  - func (s *UserMappingService) save() error {
+  -     s.mu.Lock()
+  -     defer s.mu.Unlock()
+  -     return s.saveLocked()  // 嵌套锁问题
+  + func (s *UserMappingService) save() error {
+  +     s.mu.Lock()
+  +     // 复制数据
+  +     s.mu.Unlock()
+  +     // 写文件（无锁）
+  ```
+- **效果**:
+  - 用户绑定账号后不再触发死锁
+  - 搜索和求片功能恢复正常
+- **日志证据**:
+  ```
+  修复前：[UserMapping] GetMoviePilotUserID: acquiring lock (无后续)
+  修复后：[UserMapping] GetMoviePilotUserID: acquiring lock
+          [UserMapping] GetMoviePilotUserID: lock acquired
+          [UserMapping] GetMoviePilotUserID: lock released
+  ```
+
+---
+
 ## 2026-03-03
 
 ### fix: 入库通知默认值问题 - 未配置管理员仍收到通知 ✅ 已部署

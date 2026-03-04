@@ -122,33 +122,24 @@ func (s *UserMappingService) load() error {
 // save saves user mappings to file
 func (s *UserMappingService) save() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.saveLocked()
-}
-
-// saveLocked saves user mappings to file (must be called with lock held)
-// Note: This will temporarily release the lock during file I/O
-func (s *UserMappingService) saveLocked() error {
 	// Copy data under lock
 	data := map[string]interface{}{
-		"user_mappings":     s.mappings,
-		"usernames":         s.usernames,
-		"reverse_mappings":  s.reverseMap,
+		"user_mappings":    s.mappings,
+		"usernames":        s.usernames,
+		"reverse_mappings": s.reverseMap,
 	}
+	s.dirty = false
+	s.lastSave = time.Now()
+	s.mu.Unlock()
+
+	// Marshal and write file without holding lock
 	jsonData, err := json.MarshalIndent(data, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	s.dirty = false
-	s.lastSave = time.Now()
-
-	// Release lock during file I/O to avoid blocking other operations
-	s.mu.Unlock()
 	log.Printf("[UserMapping] Writing to file: %s (%d bytes)", s.mappingsFile, len(jsonData))
 	writeErr := os.WriteFile(s.mappingsFile, jsonData, 0644)
-	s.mu.Lock()
-
 	if writeErr != nil {
 		log.Printf("[UserMapping] ERROR writing file: %v", writeErr)
 	} else {
@@ -158,28 +149,39 @@ func (s *UserMappingService) saveLocked() error {
 	return writeErr
 }
 
+// saveLocked saves user mappings to file (must be called with lock held)
+// Deprecated: Use save() instead
+func (s *UserMappingService) saveLocked() error {
+	// This method is kept for compatibility but delegates to save()
+	// We need to release the lock first since save() will acquire it
+	s.mu.Unlock()
+	defer s.mu.Lock()
+	return s.save()
+}
+
 // scheduleSave schedules a delayed save if data is dirty
 func (s *UserMappingService) scheduleSave() {
 	s.mu.Lock()
 	s.dirty = true
+	shouldSave := s.lastSave.IsZero() || time.Since(s.lastSave) > saveDelay
 	s.mu.Unlock()
 
-	// Check if we should save immediately or schedule
-	if s.lastSave.IsZero() || time.Since(s.lastSave) > saveDelay {
-		go func() {
-			time.Sleep(saveDelay)
-			s.mu.Lock()
-			if s.dirty && !s.savePending {
-				s.savePending = true
-				s.mu.Unlock()
-				s.save()
-				s.mu.Lock()
-				s.savePending = false
-			} else {
-				s.mu.Unlock()
-			}
-		}()
+	if !shouldSave {
+		return
 	}
+
+	go func() {
+		time.Sleep(saveDelay)
+		s.mu.Lock()
+		if s.dirty && !s.savePending {
+			s.savePending = true
+			s.mu.Unlock()
+			_ = s.save()
+			s.mu.Lock()
+			s.savePending = false
+		}
+		s.mu.Unlock()
+	}()
 }
 
 // ForceSave immediately saves the data to disk
@@ -243,21 +245,8 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 		s.usernames[telegramKey] = jellyseerrUsername
 	}
 
-	// Mark dirty and trigger async save (without holding the lock)
-	s.dirty = true
-	go func() {
-		time.Sleep(saveDelay)
-		s.mu.Lock()
-		if s.dirty && !s.savePending {
-			s.savePending = true
-			s.mu.Unlock()
-			s.save()
-			s.mu.Lock()
-			s.savePending = false
-		} else {
-			s.mu.Unlock()
-		}
-	}()
+	// Trigger async save without holding lock
+	s.scheduleSave()
 
 	return nil
 }
