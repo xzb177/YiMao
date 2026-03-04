@@ -678,9 +678,17 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		requestButtonText = "🔄 尝试求片"
 	}
 
+	// Check if we'll be sending a photo (posterURL exists)
+	willSendPhoto := posterURL != ""
+
 	// First row: main action buttons (subscribe + feedback)
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
+	// For photo messages, use simplified format without title to avoid 64-byte limit
+	if willSendPhoto {
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tvDetails.ID))
+	} else {
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
+	}
 	kb.NewRow()
 
 	// Second row: navigation buttons
@@ -754,9 +762,17 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 		requestButtonText = "🔄 尝试求片"
 	}
 
+	// Check if we'll be sending a photo (posterURL exists)
+	willSendPhoto := posterURL != ""
+
 	// First row: main action buttons
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tmdbID, title))
+	// For photo messages, use simplified format without title to avoid 64-byte limit
+	if willSendPhoto {
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tmdbID))
+	} else {
+		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tmdbID, title))
+	}
 	kb.NewRow()
 
 	// Second row: navigation
@@ -1149,10 +1165,21 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		requestButtonText = "🔄 尝试求片"
 	}
 
+	// Check if we'll be sending a photo (poster exists)
+	willSendPhoto := false
+	if item.Poster != "" {
+		willSendPhoto = true
+	}
+
 	if isTV && len(item.Seasons) > 0 {
 		// First row: main action buttons (subscribe + feedback)
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", item.ID, item.Title))
+		// For photo messages, use simplified format without title to avoid 64-byte limit
+		if willSendPhoto {
+			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv", item.ID))
+		} else {
+			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", item.ID, item.Title))
+		}
 		kb.NewRow()
 
 		// Second row: navigation - use "back" callback
@@ -1179,7 +1206,12 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 	} else {
 		// Non-TV (movie or other): request + feedback + back
 		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
+		// For photo messages, use simplified format without title to avoid 64-byte limit
+		if willSendPhoto {
+			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s", item.ID, item.Type))
+		} else {
+			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
+		}
 		kb.NewRow()
 
 		// Back button - use "back" callback

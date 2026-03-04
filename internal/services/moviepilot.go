@@ -380,12 +380,31 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 		return nil, fmt.Errorf("subscription failed: %s", response.Message)
 	}
 
+	// 立即触发订阅搜索，确保订阅能开始下载
+	subID := response.Data.ID
+	go c.triggerSubscriptionSearch(subID)
+
 	return &Request{
 		ID:        response.Data.ID,
 		MediaID:   tmdbID,
 		MediaType: mediaType,
 		Status:    "pending",
 	}, nil
+}
+
+// triggerSubscriptionSearch 触发订阅搜索，确保订阅能开始下载
+func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
+	// 等待一小段时间确保订阅已保存
+	time.Sleep(500 * time.Millisecond)
+
+	// 调用 MoviePilot 的订阅搜索 API
+	endpoint := "/api/v1/subscribe/search"
+	_, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		log.Printf("[MoviePilot] 触发订阅搜索失败: %v", err)
+		return
+	}
+	log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
 }
 
 // RequestMediaBySearchResult creates a subscription from a search result
