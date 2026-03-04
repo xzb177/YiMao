@@ -4,6 +4,24 @@
 
 ## 2026-03-04
 
+### fix: PORT 环境变量无效 - docker-compose 硬编码覆盖 ✅
+- **问题**: 用户在 `.env` 设置 `PORT=18081`，服务仍绑定 8080 端口
+- **错误信息**:
+  - `Server failed: listen tcp 0.0.0.0:8080: bind: address already in use`
+- **根本原因**:
+  - `docker-compose.yml` 中硬编码了 `PORT=8080`
+  - docker-compose 的 environment 显式值会覆盖 `.env` 文件中的值
+- **解决方案**:
+  - 将 `PORT=8080` 改为 `PORT=${PORT:-8080}`
+  - 支持从 `.env` 读取，未设置时默认 8080
+- **修改文件**:
+  - `docker-compose.yml` - PORT 配置行
+- **效果**:
+  - 用户可自由修改 `.env` 中的 PORT
+  - 解决与 qBittorrent 等服务的端口冲突
+
+---
+
 ### fix: Telegram API 消息格式化错误 - 机器人无响应 ✅ 已部署
 - **问题**: 点击按钮后机器人无任何响应
 - **错误信息**:

@@ -10,7 +10,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
 
       # Server Configuration
-      - PORT=8080
+      - PORT=${PORT:-8080}
 
       # Emby Configuration
       - EMBY_URL=${EMBY_URL}
