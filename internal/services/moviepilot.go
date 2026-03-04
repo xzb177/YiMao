@@ -100,18 +100,22 @@ func NewMoviePilotClient(baseURL, apiKey string) *MoviePilotClient {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-				// Set connection timeouts
+				// 连接池配置
+				MaxIdleConns:          100,              // 最大空闲连接数
+				MaxIdleConnsPerHost:   20,               // 每个主机的最大空闲连接数 (提升从10)
+				MaxConnsPerHost:       0,                // 0 表示不限制 (新增)
+				IdleConnTimeout:       90 * time.Second, // 空闲连接超时
+				// 连接超时配置
 				DialContext: (&net.Dialer{
 					Timeout:   10 * time.Second,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
-				// Force HTTP/2
-				ForceAttemptHTTP2: true,
-				// TLS handshake timeout
-				TLSHandshakeTimeout: 10 * time.Second,
+				// HTTP/2 和 TLS 配置
+				ForceAttemptHTTP2:     true,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ResponseHeaderTimeout: 30 * time.Second, // 新增：响应头超时
+				// 期望继续使用 100 Continue 状态
+				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
 	}
@@ -259,22 +263,27 @@ func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse,
 		return nil, fmt.Errorf("search query cannot be empty")
 	}
 
+	// Validate page number
+	if page < 1 {
+		page = 1
+	}
+
 	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
 	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=20", encodedQuery, page)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
 	var response []SearchResult
 	if err := json.Unmarshal(body, &response); err != nil {
 		log.Printf("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
-	log.Printf("[MoviePilot] SearchMedia: found %d results for query=%s", len(response), query)
+	log.Printf("[MoviePilot] SearchMedia: found %d results for query=%s (page %d)", len(response), query, page)
 
 	return &SearchResponse{
 		Results: response,
@@ -407,14 +416,27 @@ func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	// 等待一小段时间确保订阅已保存
 	time.Sleep(500 * time.Millisecond)
 
-	// 调用 MoviePilot 的订阅搜索 API
+	// 调用 MoviePilot 的订阅搜索 API，带重试机制
 	endpoint := "/api/v1/subscribe/search"
-	_, err := c.makeRequest("GET", endpoint, nil)
-	if err != nil {
-		log.Printf("[MoviePilot] 触发订阅搜索失败: %v", err)
-		return
+	maxRetries := 3
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		_, err := c.makeRequest("GET", endpoint, nil)
+		if err == nil {
+			log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d (尝试 %d/%d)", subID, attempt, maxRetries)
+			return
+		}
+		lastErr = err
+		log.Printf("[MoviePilot] 触发订阅搜索失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
+
+		// 最后一次失败后不再等待
+		if attempt < maxRetries {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
 	}
-	log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
+
+	log.Printf("[MoviePilot] 触发订阅搜索最终失败，订阅 ID: %d: %v", subID, lastErr)
 }
 
 // RequestMediaBySearchResult creates a subscription from a search result
@@ -640,6 +662,7 @@ func (c *MoviePilotClient) DeleteRequest(requestID int) error {
 	_, err := c.makeRequest("DELETE", endpoint, nil)
 	// If subscription doesn't exist (404), that's fine - goal achieved
 	if err != nil && strings.Contains(err.Error(), "status 404") {
+		log.Printf("[MoviePilot] Subscription %d not found (already deleted)", requestID)
 		return nil
 	}
 	return err

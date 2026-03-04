@@ -4,6 +4,32 @@
 
 ## 2026-03-04
 
+### fix: 代码审查发现的严重问题修复 ✅
+- **背景**: 全面代码审查发现的潜在 bug 和并发安全问题
+- **严重问题修复**:
+  1. **FlexibleYear.UnmarshalJSON 静默接受无效数据**
+     - 添加年份范围验证 (1800-2100)
+     - 字符串解析失败时返回 0 而非静默接受
+  2. **UserMappingService.load() 错误被忽略**
+     - 创建文件失败时正确返回错误
+  3. **GetUserRequests nil 指针风险**
+     - 添加 user == nil 检查防止 panic
+  4. **Session.cleanupLoop panic 后无法恢复**
+     - 使用 select 确保循环在 panic 后继续运行
+  5. **scheduleSave goroutine 泄漏**
+     - 使用单个 time.AfterFunc 替代每次创建 goroutine
+     - 防止快速连续调用时创建多个 goroutine
+- **修改文件**:
+  - `internal/services/moviepilot.go` - FlexibleYear 验证、nil 检查
+  - `internal/services/user_mapping.go` - 错误处理、scheduleSave 重构
+  - `internal/session/manager.go` - cleanupLoop 恢复机制
+- **效果**:
+  - 提高数据解析安全性
+  - 防止 panic 导致服务崩溃
+  - 减少资源泄漏
+
+---
+
 ### fix: 新用户部署问题全面修复 ✅
 - **背景**: 全面检查新用户部署可能遇到的潜在问题
 - **严重问题修复**:

@@ -451,9 +451,10 @@ func (s *Session) CacheAIItem(item *AIRecommendationItem) {
 	item.CachedAt = time.Now()
 	cache[item.TmdbID] = item
 
-	// Clean old cache entries (keep only last 50)
-	if len(cache) > 50 {
-		// Remove oldest entries
+	// LRU eviction: clean old cache entries when exceeding limit
+	const maxAICacheSize = 50
+	if len(cache) > maxAICacheSize {
+		// Find and remove the oldest entry (true LRU)
 		var oldestKey int
 		var oldestTime time.Time
 		for k, v := range cache {
@@ -462,7 +463,9 @@ func (s *Session) CacheAIItem(item *AIRecommendationItem) {
 				oldestKey = k
 			}
 		}
-		delete(cache, oldestKey)
+		if oldestKey != 0 {
+			delete(cache, oldestKey)
+		}
 	}
 }
 
@@ -535,17 +538,34 @@ func (s *Session) Size() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	size := 100 // Base overhead
+	// Base overhead for Session struct
+	size := 200 // Base struct overhead (userID, timestamps, maps, etc.)
+
+	// Calculate Data map size
 	for k, v := range s.Data {
 		size += len(k) + 16 // Key + pointer overhead
-		if str, ok := v.(string); ok {
-			size += len(str)
-		} else if items, ok := v.([]SearchItem); ok {
-			size += len(items) * 200 // Approximate per item
+		switch val := v.(type) {
+		case string:
+			size += len(val)
+		case int:
+			size += 8
+		case int64:
+			size += 8
+		case bool:
+			size += 1
+		case map[int]*AIRecommendationItem:
+			size += len(val) * 200 // Approximate per AI item
+		case map[string]interface{}:
+			size += len(val) * 100 // Approximate per entry
+		case []SearchItem:
+			size += len(val) * 250 // Approximate per search item
+		default:
+			size += 50 // Fallback for unknown types
 		}
 	}
 
-	size += len(s.navStack) * 100
+	// NavStack size
+	size += len(s.navStack) * 100 // Approximate per nav entry
 
 	return size
 }
