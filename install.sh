@@ -84,7 +84,7 @@ init_json_file() {
     fi
 }
 
-init_json_file "data/admins.json" '{"admins":[]}'
+init_json_file "data/admins.json" '{"admins":{},"root_id":0}'
 init_json_file "data/user_mappings.json" '{"user_mappings":{},"usernames":{},"reverse_mappings":{}}'
 init_json_file "data/user_quotas.json" '{"quotas":{}}'
 init_json_file "data/preferences.json" '{"preferences":{}}'

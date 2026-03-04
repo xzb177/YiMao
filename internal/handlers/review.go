@@ -82,15 +82,23 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if len(parts) >= 2 {
 			token = parts[1]
 		}
-		// Find request by token
+		// Find request by token (searches ALL requests, not just pending)
 		if token != "" {
-			// Need to find the request by token - ReviewService doesn't have this method yet
-			// For now, get all pending requests and find matching token
-			pending := h.reviewService.GetPendingRequests()
-			for _, req := range pending {
-				if req.ApproveToken == token {
-					requestID = req.RequestID
-					break
+			if review, found := h.reviewService.GetRequestByToken(token); found {
+				requestID = review.RequestID
+				// Check if already processed
+				if review.Status != "pending" {
+					statusText := "已批准"
+					if review.Status == "rejected" {
+						statusText = "已拒绝"
+					}
+					log.Printf("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
+					return &callback.Response{
+						Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
+						CallbackMsg: "已被处理",
+						ShowAlert:   true,
+						Edit:        true,
+					}, nil
 				}
 			}
 		}
@@ -212,13 +220,23 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		if len(parts) >= 2 {
 			token = parts[1]
 		}
-		// Find request by token
+		// Find request by token (searches ALL requests, not just pending)
 		if token != "" {
-			pending := h.reviewService.GetPendingRequests()
-			for _, req := range pending {
-				if req.ApproveToken == token {
-					requestID = req.RequestID
-					break
+			if review, found := h.reviewService.GetRequestByToken(token); found {
+				requestID = review.RequestID
+				// Check if already processed
+				if review.Status != "pending" {
+					statusText := "已批准"
+					if review.Status == "rejected" {
+						statusText = "已拒绝"
+					}
+					log.Printf("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
+					return &callback.Response{
+						Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
+						CallbackMsg: "已被处理",
+						ShowAlert:   true,
+						Edit:        true,
+					}, nil
 				}
 			}
 		}

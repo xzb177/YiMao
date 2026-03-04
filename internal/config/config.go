@@ -185,7 +185,8 @@ func (c *Config) loadAdmins() error {
 	var newFormat struct {
 		Admins map[string]string `json:"admins"`
 	}
-	if err := json.Unmarshal(data, &newFormat); err == nil && len(newFormat.Admins) > 0 {
+	if err := json.Unmarshal(data, &newFormat); err == nil {
+		// Accept empty admin map (valid format, just no admins yet)
 		c.Admins = make(map[int64]string)
 		for idStr, name := range newFormat.Admins {
 			var id int64

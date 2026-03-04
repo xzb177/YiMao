@@ -4,6 +4,82 @@
 
 ## 2026-03-04
 
+### fix: TELEGRAM_CHAT_ID 为空时启动失败 ✅ 待部署
+- **问题**: 将 `TELEGRAM_CHAT_ID` 设为空后，服务启动失败
+- **错误信息**:
+  - `Warning: failed to load admins: invalid admin file format`
+  - `❌ Invalid Telegram Chat ID '': strconv.ParseInt: parsing "": invalid syntax`
+- **根本原因**:
+  1. `install.sh` 创建的 `admins.json` 为 `{"admins":[]}`，`config.go` 解析要求 `len > 0`
+  2. `main.go` 强制解析 Chat ID，空字符串导致 `ParseInt` 失败
+- **解决方案**:
+  1. `install.sh` 改为创建 `{"admins":{},"root_id":0}`
+  2. `config.go` 移除 `len > 0` 检查，接受空管理员列表
+  3. `main.go` Chat ID 改为可选，空时使用默认值 0
+- **修改文件**:
+  - `install.sh` - admins.json 初始格式
+  - `internal/config/config.go` - loadAdmins 空数组检查
+  - `cmd/bot/main.go` - Chat ID 可选解析
+- **效果**:
+  - 空的 `TELEGRAM_CHAT_ID` 不再阻止启动
+  - 管理员文件格式更健壮
+
+---
+
+### config: 关闭群组入库通知推送 ✅ 已部署
+- **需求**: 关闭群组的入库通知推送
+- **原因**: 管理员个人通知已关闭，但群组仍在接收推送
+- **推送机制说明**:
+  - **管理员个人通知**: 通过 `media_notifications.json` 配置，已关闭
+  - **群组通知**: 通过 `.env` 中 `TELEGRAM_CHAT_ID` 配置，直接推送到群组
+- **解决方案**:
+  - 将 `.env` 中的 `TELEGRAM_CHAT_ID` 设为空
+  - 重启 docker 服务
+- **修改文件**:
+  - `.env` - `TELEGRAM_CHAT_ID=` (空值)
+- **效果**:
+  - 群组不再接收入库通知
+  - 日志显示 `[入库] 所有管理员已禁用通知，跳过发送`
+- **日志证据**:
+  ```
+  修复前：[入库聚合] 准备发送通知 → 群组收到推送
+  修复后：[入库] 所有管理员已禁用通知，跳过发送
+  ```
+
+---
+
+### fix: 多管理员请求同步 - 批准后显示"无效的请求" ✅ 已部署
+- **问题**: 管理员A批准请求后，管理员B点击仍显示"❌ 无效的请求"
+- **根本原因**:
+  - `handleApprove/handleReject` 只从 `GetPendingRequests()` 查找 token
+  - 请求被批准后状态变为 `approved`，不在待审核列表中
+  - 管理员B的按钮 token 找不到对应请求，返回空 requestID
+- **解决方案**:
+  1. 在 `ReviewService` 添加 `GetRequestByToken()` 方法，从所有请求中查找
+  2. 修改 handler 使用新方法并检查请求状态
+  3. 如果请求已被处理，返回友好提示 "✅ 此请求已被已批准/已拒绝"
+- **修改文件**:
+  - `internal/services/review.go:179-190` - 添加 GetRequestByToken 方法
+  - `internal/handlers/review.go:85-103` - handleApprove 使用新方法
+  - `internal/handlers/review.go:223-241` - handleReject 使用新方法
+- **代码变更**:
+  ```diff
+  + // GetRequestByToken 搜索所有请求（不只是 pending）
+  + func (s *ReviewService) GetRequestByToken(token string) (*ReviewRequest, bool) {
+  +     for _, review := range s.reviews {
+  +         if review.ApproveToken == token {
+  +             return review, true
+  +         }
+  +     }
+  +     return nil, false
+  + }
+  ```
+- **效果**:
+  - 管理员B点击已处理的请求会显示 "✅ 此请求已被已批准"
+  - 不再显示 "❌ 无效的请求"
+
+---
+
 ### fix: UserMappingService 死锁问题 - 无法求片/搜索 ✅ 已部署
 - **问题**: 用户无法搜索影片和发起求片请求
 - **现象**:

@@ -176,6 +176,20 @@ func (s *ReviewService) GetRequest(requestID string) (*ReviewRequest, bool) {
 	return review, exists
 }
 
+// GetRequestByToken retrieves a review request by approve token
+// Searches all requests (not just pending) to handle duplicate approval attempts
+func (s *ReviewService) GetRequestByToken(token string) (*ReviewRequest, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, review := range s.reviews {
+		if review.ApproveToken == token {
+			return review, true
+		}
+	}
+	return nil, false
+}
+
 // GetPendingRequests returns all pending review requests sorted by created time
 func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	s.mu.RLock()

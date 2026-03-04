@@ -33,13 +33,19 @@ func main() {
 	log.Printf("   MoviePilot: %s", cfg.MoviePilotURL)
 	log.Printf("   Data directory: %s", cfg.DataDir)
 
-	// Parse chat ID
+	// Parse chat ID (optional - empty means no group notifications)
 	log.Println("🔍 Parsing chat ID...")
-	chatID, err := strconv.ParseInt(cfg.TelegramChatID, 10, 64)
-	if err != nil {
-		log.Fatalf("❌ Invalid Telegram Chat ID '%s': %v", cfg.TelegramChatID, err)
+	chatID := int64(0)
+	if cfg.TelegramChatID != "" {
+		var err error
+		chatID, err = strconv.ParseInt(cfg.TelegramChatID, 10, 64)
+		if err != nil {
+			log.Fatalf("❌ Invalid Telegram Chat ID '%s': %v", cfg.TelegramChatID, err)
+		}
+		log.Printf("✅ Chat ID parsed: %d", chatID)
+	} else {
+		log.Println("ℹ️  No group chat ID configured (group notifications disabled)")
 	}
-	log.Printf("✅ Chat ID parsed: %d", chatID)
 
 	// Initialize services
 	log.Println("🔧 Initializing services...")
