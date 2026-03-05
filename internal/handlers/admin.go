@@ -565,6 +565,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 
 	return &callback.Response{
 		Text:     resultText,
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -636,6 +637,7 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -951,10 +953,22 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 		// Validate time format (HH:MM)
 		if len(timeStr) == 5 && timeStr[2] == ':' {
 			h.mediaNotificationSvc.SetDailyTime(ctx.UserID, timeStr)
+
+			// Build response with keyboard to continue
+			msg := services.NewMessageBuilder()
+			msg.Bold("✅ 汇总时间已设为 ").Text(timeStr).Newline()
+			msg.Newline()
+			msg.Italic("💡 您可以继续调整其他设置").Newline()
+
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+
 			return &callback.Response{
-				Text:        fmt.Sprintf("✅ 汇总时间已设为 %s", timeStr),
-				CallbackMsg:  "时间已设置",
-				Edit:        true,
+				Text:     msg.Build(),
+				ParseMode: msg.ParseMode(),
+				CallbackMsg: "时间已设置",
+				Edit:     true,
+				Keyboard: convertKeyboard(kb.Build()),
 			}, nil
 		}
 	}
@@ -984,6 +998,7 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1025,6 +1040,7 @@ func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.R
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1104,6 +1120,7 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 
 		return &callback.Response{
 			Text:     msg.Build(),
+			ParseMode: msg.ParseMode(),
 			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
@@ -1122,6 +1139,7 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 
 		return &callback.Response{
 			Text:     msg.Build(),
+			ParseMode: msg.ParseMode(),
 			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
@@ -1147,6 +1165,7 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 
 		return &callback.Response{
 			Text:     msg.Build(),
+			ParseMode: msg.ParseMode(),
 			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
@@ -1165,6 +1184,7 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }
@@ -1206,6 +1226,7 @@ func (h *AdminHandler) handleAdminMgmt(ctx *callback.Context) (*callback.Respons
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1239,7 +1260,7 @@ func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Respons
 			if name == "" {
 				name = "未命名"
 			}
-			msg.Textf("%d. %s`%s` (%d)", i+1, roleMark, name, admin.UserID).Newline()
+			msg.Code(fmt.Sprintf("%d. %s%s (%d)", i+1, roleMark, name, admin.UserID)).Newline()
 		}
 		msg.Newline()
 		msg.Italic(fmt.Sprintf("共 %d 位管理员", len(admins))).Newline()
@@ -1250,6 +1271,7 @@ func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Respons
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1285,6 +1307,7 @@ func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Res
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1340,6 +1363,7 @@ func (h *AdminHandler) handleAdminRemoveList(ctx *callback.Context) (*callback.R
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
@@ -1430,6 +1454,7 @@ func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callbac
 
 	return &callback.Response{
 		Text:        msg.Build(),
+		ParseMode:   msg.ParseMode(),
 		Edit:        true,
 		Keyboard:    convertKeyboard(kb.Build()),
 		CallbackMsg: fmt.Sprintf("已移除 %s", name),
@@ -1471,6 +1496,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 
 		return &callback.Response{
 			Text:     msg.Build(),
+			ParseMode: msg.ParseMode(),
 			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
@@ -1491,7 +1517,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 		msg := services.NewMessageBuilder()
 		msg.Bold("⚠️ 已是管理员").Newline()
 		msg.Newline()
-		msg.Textf("用户 `%d` 已经是 %s", targetID, role).Newline()
+		msg.Textf("用户 ").Code(fmt.Sprintf("%d", targetID)).Textf(" 已经是 %s", role).Newline()
 		msg.Newline()
 		msg.Italic("如需修改权限，请联系开发者").Newline()
 
@@ -1500,6 +1526,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 
 		return &callback.Response{
 			Text:     msg.Build(),
+			ParseMode: msg.ParseMode(),
 			Keyboard: convertKeyboard(kb.Build()),
 		}, nil
 	}
@@ -1520,7 +1547,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 	msg.Bold("✅ 添加成功").Newline()
 	msg.Newline()
 	msg.Textf("来源: %s", source).Newline()
-	msg.Textf("ID: `%d`", targetID).Newline()
+	msg.Textf("ID: ").Code(fmt.Sprintf("%d", targetID)).Newline()
 	msg.Textf("昵称: %s", targetName).Newline()
 	msg.Newline()
 	msg.Italic("新管理员可以访问管理员菜单进行审批操作").Newline()
@@ -1530,6 +1557,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 
 	return &callback.Response{
 		Text:     msg.Build(),
+		ParseMode: msg.ParseMode(),
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }

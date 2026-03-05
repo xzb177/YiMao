@@ -305,7 +305,7 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
-	telegram.SendMessage(chatID, msg.Build(), "", kb.Build())
+	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), kb.Build())
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
@@ -324,12 +324,12 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 		// Log full error for admin debugging
 		log.Printf("[Poll] Search failed for query '%s': %v", query, err)
 		// Send user-friendly message without technical details
-		telegram.SendMessage(msg.Chat.ID, "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。", "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。", "", nil)
 		return
 	}
 
 	if len(results.Results) == 0 {
-		telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "", nil)
 		return
 	}
 
@@ -592,6 +592,12 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, telegram *services.TelegramClient) {
 	keyboard := ConvertKeyboard(resp.Keyboard)
 
+	// Use HTML as default parse mode if not specified
+	parseMode := resp.ParseMode
+	if parseMode == "" {
+		parseMode = "HTML"
+	}
+
 	// Check if we need to send a photo
 	if resp.Photo != "" {
 		// Delete the original message first
@@ -618,17 +624,17 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
 				log.Printf("[Callback] DeleteMessage error: %v", delErr)
 			}
-			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
+			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
 				log.Printf("[Callback] SendMessage error: %v", sendErr)
 			}
 		} else if resp.Edit {
 			// Edit existing message
-			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "", keyboard); editErr != nil {
+			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard); editErr != nil {
 				log.Printf("[Callback] EditMessage error: %v", editErr)
 			}
 		} else {
 			// Send new message
-			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard); sendErr != nil {
+			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
 				log.Printf("[Callback] SendMessage error: %v", sendErr)
 			}
 		}

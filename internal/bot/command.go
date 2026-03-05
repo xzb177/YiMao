@@ -37,19 +37,19 @@ func HandleCommand(
 	case "/help":
 		SendHelpMessage(telegram, msg.Chat.ID)
 	case "/id":
-		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: `%d`\n聊天类型: %s\n用户 ID: `%d`", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
+		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
 	case "/search":
 		text := "🔍 请输入影片名称进行搜索"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/ai":
 		sendRecommendationMenu(telegram, msg.Chat.ID)
 	case "/requests":
 		text := "📋 请使用 /start 菜单中的 我的请求 功能"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/watchlist":
 		text := "📎 请使用 /start 菜单中的 我的片单 功能"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":
@@ -69,7 +69,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
 		log.Printf("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
 		text := fmt.Sprintf("✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号 (ID: %d)\n\n如需更换账号，请先联系管理员解绑", mpID)
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -83,7 +83,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if len(parts) <= startIndex {
 		log.Printf("[LinkCommand] No credentials provided, showing help")
 		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下格式绑定：\n\n/link 用户名 密码\n\n或直接输入：\n用户名 密码\n\n示例：\n/link 2879681674 mypassword\n或：\n2879681674 mypassword"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -99,7 +99,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if err != nil {
 		log.Printf("[LinkCommand] Invalid username: %v", err)
 		text := "❌ 用户名格式无效"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -107,7 +107,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if err != nil {
 		log.Printf("[LinkCommand] Invalid password: %v", err)
 		text := "❌ 密码格式无效"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -120,7 +120,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if err != nil {
 		log.Printf("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
 		text := "❌ 绑定失败：用户名或密码错误"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -128,7 +128,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if userID == 0 {
 		log.Printf("[LinkCommand] Authentication returned invalid userID 0 for %s", sanitizedUsername)
 		text := "❌ 绑定失败：无法获取用户ID，请稍后重试"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
@@ -139,13 +139,13 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
 		log.Printf("[LinkCommand] Failed to save mapping: %v", err)
 		text := "❌ 绑定失败：无法保存映射"
-		telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
 	log.Printf("[LinkCommand] AddMapping completed, sending success message")
 	text := "✅ 绑定成功\n\n您现在可以使用求片功能了"
-	if _, err := telegram.SendMessage(msg.Chat.ID, text, "Markdown", nil); err != nil {
+	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
 		log.Printf("[LinkCommand] Failed to send success message: %v", err)
 	}
 }
@@ -165,7 +165,7 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 
 	// Always show AI menu for /start command (user explicitly using command)
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
-	telegram.SendMessage(chatID, msg.Build(), "Markdown", keyboard)
+	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), keyboard)
 }
 
 // SendHelpMessage sends the help message
@@ -200,7 +200,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 
 	msg.Italic("💬 遇到问题？联系管理员获取帮助").Newline()
 
-	telegram.SendMessage(chatID, msg.Build(), "Markdown", nil)
+	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), nil)
 }
 
 // HandleQuotaCommand handles /quota command
@@ -216,5 +216,5 @@ func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMe
 	userID := msg.From.ID
 	quotaText := quotaService.GetQuotaText(userID)
 	log.Printf("[QuotaCommand] Sending quota text to user %d", userID)
-	telegram.SendMessage(msg.Chat.ID, quotaText, "Markdown", nil)
+	telegram.SendMessage(msg.Chat.ID, quotaText, "", nil)
 }

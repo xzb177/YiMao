@@ -2,6 +2,80 @@
 
 ---
 
+## 2026-03-05
+
+### fix: 管理按钮回调响应缺失 ParseMode ✅
+- **背景**: 管理员菜单中的时间设置按钮等回调没有响应
+- **根本原因**:
+  - `AdminHandler` 中使用 `MessageBuilder` 生成消息（HTML 模式）
+  - 但返回的 `Response` 结构体缺少 `ParseMode` 字段
+  - 导致 Telegram API 无法正确解析 HTML 标签
+  - 同时部分回调成功后没有返回键盘，用户无法继续操作
+- **解决方案**:
+  - 所有使用 `MessageBuilder` 的响应添加 `ParseMode: msg.ParseMode()`
+  - 时间设置成功后返回包含"返回设置"按钮的键盘
+  - 修复 `handleNotifSetTime` - 点击时间按钮后返回成功界面+键盘
+  - 修复 `HandleNotifCustomTimeInput` - 自定义时间输入响应
+  - 修复所有管理员管理函数的响应格式
+  - 修复管理员列表显示使用 `Code()` 代替 Markdown 反引号
+- **修改文件**:
+  - `internal/handlers/admin.go` - 所有响应添加 ParseMode 字段
+- **效果**:
+  - 管理按钮回调正常响应
+  - 消息格式正确显示（粗体、斜体等）
+  - 操作后可以继续使用按钮导航
+
+### fix: Telegram API "message not modified" 错误静默处理 ✅
+- **背景**: 尝试编辑消息但内容未变化时产生大量错误日志
+- **错误信息**: `错误请求：消息未被修改：指定的新消息内容和回复标记与当前消息的内容和回复标记完全相同`
+- **原因**:
+  - 当调用 `editMessageText` 或 `editMessageReplyMarkup` 时
+  - 如果消息内容/键盘与当前完全相同，Telegram API 返回 400 错误
+  - 这是 Telegram API 的正常行为，不是真正的错误
+- **解决方案**:
+  - 在 `makeRequest` 和 `makeSimpleRequest` 中检测此特定错误
+  - 错误代码 400 + 消息包含 "message not modified"/"消息未修改"
+  - 静默返回 nil，不记录错误日志
+- **修改文件**:
+  - `internal/services/telegram.go` - makeRequest/makeSimpleRequest 函数
+- **效果**:
+  - 消除重复的错误日志
+  - 日志更清晰，只记录真正需要关注的错误
+
+### fix: HTML标签解析问题修复 ✅
+- **背景**: `MessageBuilder` 使用 HTML 模式生成消息，但发送时使用 Markdown 解析
+- **问题现象**:
+  - 欢迎消息显示原始 HTML 标签 (`<b>`, `<i>`) 而非格式化文本
+  - /start, /help, /link 等命令响应消息格式异常
+- **根本原因**:
+  - `MessageBuilder` 默认 `parseMode = "HTML"`
+  - `Bold()` 生成 `<b>text</b>`，`Italic()` 生成 `<i>text</i>`
+  - 但 `SendStartMenu` 等函数硬编码 `SendMessage(..., "Markdown", ...)`
+  - Telegram API 将 HTML 标签当作纯文本显示
+- **解决方案**:
+  - 所有使用 `MessageBuilder` 的地方改用 `msg.ParseMode()` 获取正确的模式
+  - 简单文本消息使用空字符串 `""` (不解析，纯文本)
+  - `/id` 命令改用 HTML `<code>` 标签替代 Markdown 反引号
+- **修改文件**:
+  - `internal/bot/command.go` - 所有 `SendMessage` 调用使用正确的 parseMode
+  - `internal/bot/poll.go` - 搜索失败消息使用空字符串
+- **效果**:
+  - 欢迎消息正常显示粗体和斜体格式
+  - 所有命令响应消息格式正确
+
+### check: 请求分页功能确认 ✅
+- **检查内容**: 验证请求分页功能完整性
+- **结果**:
+  - 分页逻辑在 `internal/handlers/menu.go` 中已完整实现
+  - `MyRequestsHandler` 包含完整的分页功能:
+    - `HandlePage` 处理分页回调
+    - `handleRequestsWithPage` 计算分页参数
+    - `buildRequestsKeyboard` 构建分页导航按钮
+    - 每页显示 10 条记录 (`requestsPerPage = 10`)
+  - 功能正常，无需修复
+
+---
+
 ## 2026-03-04
 
 ### fix: 代码审查发现的严重问题修复 ✅

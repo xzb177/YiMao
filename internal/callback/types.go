@@ -160,6 +160,7 @@ type Response struct {
 	Photo        string  // Photo URL to send (will send as new message, not edit)
 	PhotoCaption string  // Caption for the photo
 	DeleteMessage bool   // If true, delete the current message before sending new one
+	ParseMode    string  // Parse mode for formatting (HTML, Markdown, or empty for none)
 }
 
 // Keyboard represents an inline keyboard

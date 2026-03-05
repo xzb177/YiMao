@@ -123,6 +123,12 @@ func HandleWebhookCallback(
 	if resp != nil {
 		keyboard := ConvertKeyboard(resp.Keyboard)
 
+		// Use HTML as default parse mode if not specified
+		parseMode := resp.ParseMode
+		if parseMode == "" {
+			parseMode = "HTML"
+		}
+
 		// Check if we need to send a photo
 		if resp.Photo != "" {
 			// Delete the original message first
@@ -142,10 +148,10 @@ func HandleWebhookCallback(
 		} else if resp.Text != "" {
 			if resp.Edit {
 				// Edit existing message
-				telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "Markdown", keyboard)
+				telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard)
 			} else {
 				// Send new message
-				telegram.SendMessage(ctx.ChatID, resp.Text, "", keyboard)
+				telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
 			}
 		}
 	}
