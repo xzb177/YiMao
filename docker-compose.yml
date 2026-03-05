@@ -4,6 +4,9 @@ services:
     container_name: emby-telegram-bot
     restart: unless-stopped
 
+    # Run as specified user (default: root for compatibility)
+    user: "${PUID:-0}:${PGID:-0}"
+
     environment:
       # Telegram Bot Configuration
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
@@ -35,6 +38,10 @@ services:
 
       # Timezone
       - TZ=Asia/Shanghai
+
+      # User ID/Group ID for file permissions
+      - PUID=${PUID:-0}
+      - PGID=${PGID:-0}
 
     # Use host network for better network access
     network_mode: "host"

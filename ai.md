@@ -1831,6 +1831,40 @@ watchlist_add:{tmdbID}  # 加入片单
 
 ---
 
+## 2026-03-05
+
+### fix: 容器用户权限配置问题 ✅
+- **问题**: `install.sh` 设置 data 目录为当前用户权限，但 docker-compose.yml 未设置容器运行用户
+  - 虽然容器默认以 root 运行可以写入，但配置不明确且安全性差
+  - 用户不清楚容器以什么用户运行
+  - 缺乏显式声明，未来可能引入权限问题
+- **修复**:
+  - `docker-compose.yml` 添加 `user: "${PUID:-0}:${PGID:-0}"` 配置
+  - 默认值 `0:0` 即 root 用户，保证兼容性
+  - 用户可通过环境变量自定义运行用户
+  - `.env.example` 添加 PUID/PGID 配置说明
+  - `install.sh` 自动检测并设置当前用户的 UID/GID
+- **修复前**: 容器隐式以 root 运行，配置不明确
+- **修复后**:
+  ```yaml
+  # docker-compose.yml
+  user: "${PUID:-0}:${PGID:-0}"
+  environment:
+    - PUID=${PUID:-0}
+    - PGID=${PGID:-0}
+  ```
+- **修改文件**:
+  - `docker-compose.yml` - 添加 user 配置和 PUID/PGID 环境变量
+  - `.env.example` - 添加 PUID/PGID 配置说明和注释
+  - `install.sh` - 自动设置当前用户的 UID/GID 到 .env 文件
+- **效果**:
+  - 容器运行用户显式声明，配置更明确
+  - 新用户安装时自动配置正确的 UID/GID
+  - 支持用户自定义运行用户（非 root）
+  - 避免 future 权限问题
+
+---
+
 ## 2026-03-05 新服务器部署测试总结
 
 ### 测试范围

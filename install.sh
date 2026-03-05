@@ -69,12 +69,22 @@ if [ ! -f .env ]; then
     info "创建配置文件 .env ..."
     cp .env.example .env
 
+    # 自动设置 PUID/PGID 为当前用户
+    CURRENT_UID=$(id -u)
+    CURRENT_GID=$(id -g)
+    echo "" >> .env
+    echo "# 自动设置的用户权限" >> .env
+    echo "PUID=$CURRENT_UID" >> .env
+    echo "PGID=$CURRENT_GID" >> .env
+
     echo ""
     warn "请编辑 .env 文件，填写以下必需配置："
     echo "  - TELEGRAM_BOT_TOKEN (从 @BotFather 获取)"
     echo "  - MOVIEPILOT_URL (MoviePilot 地址)"
     echo "  - MOVIEPILOT_API_KEY (MoviePilot API Key)"
     echo "  - ADMINS (管理员 Telegram ID，从 @userinfobot 获取)"
+    echo ""
+    info "已自动配置 PUID=$CURRENT_UID PGID=$CURRENT_GID"
     echo ""
     read -p "按回车键继续，或按 Ctrl+C 取消..." </dev/tty
 else
@@ -84,7 +94,15 @@ fi
 # 创建数据目录和初始化文件
 info "初始化数据目录..."
 sudo mkdir -p data
-sudo chown -R $(whoami):$(whoami) data
+
+# 获取当前用户 UID/GID
+CURRENT_UID=$(id -u)
+CURRENT_GID=$(id -g)
+CURRENT_USER=$(whoami)
+
+sudo chown -R $CURRENT_USER:$CURRENT_USER data
+
+info "数据目录权限：$CURRENT_USER (UID:$CURRENT_UID, GID:$CURRENT_GID)"
 
 # 初始化 JSON 文件（如果不存在）
 init_json_file() {
