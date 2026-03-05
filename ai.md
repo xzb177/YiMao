@@ -1758,6 +1758,39 @@ watchlist_add:{tmdbID}  # 加入片单
 
 ## 2026-03-05
 
+### fix: 环境变量配置不一致问题 ✅
+- **背景**: 新用户部署测试发现配置不一致问题
+- **问题1**: `CLAUDE_API_KEY` vs `ANTHROPIC_API_KEY` 不一致
+  - ai/integration.go 使用 `CLAUDE_API_KEY`
+  - config.go 使用 `ANTHROPIC_API_KEY`
+  - 两者不兼容，导致 AI 功能可能无法启用
+- **问题2**: `ADMINS` 环境变量过时
+  - .env.example 中有 `ADMINS` 配置
+  - 但代码已改用 admins.json，不再从环境变量加载
+  - 新用户可能误以为需要配置此变量
+- **问题3**: `API_KEY` 环境变量未使用
+  - .env.example 中有 `API_KEY` 配置
+  - 但 config.go 的 EnableAPIAuth 并未从环境变量加载此值
+  - 属于无效配置
+- **修复**:
+  1. config.go 添加 `getEnvFirst()` 函数，支持多个环境变量名回退
+  2. config.go 同时支持 `CLAUDE_API_KEY` 和 `ANTHROPIC_API_KEY`
+  3. .env.example 更新管理员配置说明，改为使用 /link 命令
+  4. .env.example 移除未使用的 API_KEY 配置
+  5. docker-compose.yml 移除未使用的 ADMINS 和 API_KEY
+  6. install.sh 更新管理员配置提示
+- **修改文件**:
+  - `internal/config/config.go` - 添加 getEnvFirst()，支持 CLAUDE_API_KEY
+  - `.env.example` - 更新管理员/AI 配置说明，移除 API_KEY
+  - `docker-compose.yml` - 移除未使用的环境变量
+  - `install.sh` - 更新管理员配置提示
+- **效果**:
+  - AI API Key 配置更灵活，支持两种写法
+  - 配置文件与代码实际使用一致
+  - 减少新用户配置困惑
+
+---
+
 ### fix: /link 命令死锁问题 - 新用户绑定账号无响应 ✅
 - **问题**: 新用户使用 `/link admin password` 绑定账号后无响应
   - 日志显示 `Authentication successful, userID=1`
