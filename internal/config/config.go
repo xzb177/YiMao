@@ -82,7 +82,8 @@ func Load() (*Config, error) {
 		EmbyURL:             getEnv("EMBY_URL", ""),
 		EmbyAPIKey:          getEnv("EMBY_API_KEY", ""),
 		TMDBAPIKey:          getEnv("TMDB_API_KEY", ""),
-		AnthropicAPIKey:     getEnv("ANTHROPIC_API_KEY", ""),
+		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
+		AnthropicAPIKey:     getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
 		ZhipuAPIKey:         getEnv("ZHIPU_API_KEY", ""),
 		OpenAIAPIKey:        getEnv("OPENAI_API_KEY", ""),
 		ServerPort:          getEnv("PORT", "8080"),
@@ -255,6 +256,16 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+
+// getEnvFirst tries multiple environment variable names in order, returns first non-empty value
+func getEnvFirst(keys ...string) string {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func getEnvInt(key string, defaultValue int) int {

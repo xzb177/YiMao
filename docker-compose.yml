@@ -28,13 +28,9 @@ services:
 
       # AI Configuration (Optional)
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      # Claude/Anthropic API Key - supports both CLAUDE_API_KEY and ANTHROPIC_API_KEY
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
-
-      # Admin Configuration
-      - ADMINS=${ADMINS}
-
-      # API Security
-      - API_KEY=${API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
       # Timezone
       - TZ=Asia/Shanghai
