@@ -2,8 +2,19 @@ name: 艾冒运维助手
 engine: claude-code
 
 # 引擎配置
-model: claude-opus-4-20250514
+model: claude-opus-4-6
 skipPermissions: true
+
+# 超时配置（秒）
+timeout: 300  # 5分钟
+
+# 会话历史保留天数 - 减少上下文提升速度
+sessionTtlDays: 7
+
+# 系统提示 - 让响应更简洁
+systemPrompt: |
+  你是艾冒运维助手。响应要简洁直接，避免冗余。
+  对于简单操作，用最少的文字确认结果。
 
 channels:
   telegram:
