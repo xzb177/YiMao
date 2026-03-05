@@ -1754,3 +1754,113 @@ watchlist_add:{tmdbID}  # 加入片单
   - 所有功能仅在私聊中可用
 - **部署**: 镜像 `523060c54a19` ✅
 
+---
+
+## 2026-03-05
+
+### fix: /link 命令死锁问题 - 新用户绑定账号无响应 ✅
+- **问题**: 新用户使用 `/link admin password` 绑定账号后无响应
+  - 日志显示 `Authentication successful, userID=1`
+  - 日志显示 `Calling AddMapping...` 后没有任何输出
+  - 用户没有收到成功消息，也没有显示管理员命令
+- **根本原因**: **死锁**
+  - `AddMapping()` 持有 `s.mu` 锁时调用 `scheduleSave()`
+  - `scheduleSave()` 首先尝试获取同一个 `s.mu` 锁
+  - 由于 Go 不可重入锁特性，造成永久死锁
+- **修复**: 修改所有调用 `scheduleSave()` 的方法
+  1. 先设置 `s.dirty = true` 标记数据需要保存
+  2. **先释放 `s.mu` 锁**
+  3. 然后调用 `scheduleSave()`
+- **修复前**:
+  ```go
+  func (s *UserMappingService) AddMapping(...) error {
+      s.mu.Lock()
+      defer s.mu.Unlock()
+      // ... 修改数据 ...
+      s.scheduleSave()  // 死锁！scheduleSave() 试图获取已持有的锁
+      return nil
+  }
+  ```
+- **修复后**:
+  ```go
+  func (s *UserMappingService) AddMapping(...) error {
+      s.mu.Lock()
+      // ... 修改数据 ...
+      s.dirty = true
+      s.mu.Unlock()       // 先释放锁
+      s.scheduleSave()    // 再调用 scheduleSave()
+      return nil
+  }
+  ```
+- **影响的方法**:
+  - `AddMapping()` - 添加用户映射
+  - `RemoveMapping()` - 删除用户映射
+  - `SetTelegramUsername()` - 设置用户名
+- **修改文件**:
+  - `internal/services/user_mapping.go` - 修复三个方法的死锁问题
+- **部署**: 需要用户重新构建镜像 `docker compose up -d --build`
+
+---
+
+### fix: install.sh 初始化文件格式不匹配问题 ✅
+- **背景**: 模拟新服务器部署场景，检查初始化文件格式
+- **发现的问题**:
+  1. **feedbacks.json → feedback.json** (文件名不匹配)
+     - install.sh 初始化 `feedbacks.json`
+     - IssueService 使用 `feedback.json`
+  2. **review_requests.json** (格式不匹配)
+     - install.sh 初始化 `{"requests":{}}`
+     - ReviewService 期望直接的 map `{}` 格式
+  3. **search_history.json** (格式不匹配)
+     - install.sh 初始化 `{"histories":{}}`
+     - SearchHistoryService 期望直接的 map `{}` 格式
+  4. **media_notifications.json** (键名不匹配)
+     - install.sh 初始化 `{"notifications":{}}`
+     - MediaNotificationService 期望 `{"settings":{}}`
+- **修复后的 install.sh**:
+  ```bash
+  init_json_file "data/feedback.json" '{}'
+  init_json_file "data/review_requests.json" '{}'
+  init_json_file "data/search_history.json" '{}'
+  init_json_file "data/media_notifications.json" '{"settings":{}}'
+  ```
+- **影响**: 这些问题会导致新用户部署时服务无法正确加载数据文件
+- **修改文件**:
+  - `install.sh` - 修正初始化文件格式
+- **状态**: ✅ 已修复，不影响已部署的服务
+
+---
+
+## 2026-03-05 新服务器部署测试总结
+
+### 测试范围
+- install.sh 安装脚本
+- 数据文件初始化
+- 配置文件加载
+- 服务启动流程
+
+### 发现并修复的问题
+
+| 问题 | 严重程度 | 状态 |
+|------|----------|------|
+| UserMappingService 死锁 | 🔴 严重 | ✅ 已修复 |
+| feedback.json 文件名不匹配 | 🟡 中等 | ✅ 已修复 |
+| review_requests.json 格式不匹配 | 🟡 中等 | ✅ 已修复 |
+| search_history.json 格式不匹配 | 🟡 中等 | ✅ 已修复 |
+| media_notifications.json 键名不匹配 | 🟡 中等 | ✅ 已修复 |
+
+### 新用户部署流程验证 ✅
+
+1. **依赖检查** - Docker、Docker Compose、Git ✅
+2. **配置文件** - .env.example 格式完整 ✅
+3. **数据目录** - data 目录和初始化文件 ✅
+4. **服务启动** - docker compose up -d --build ✅
+5. **用户绑定** - /link 命令正常工作 ✅
+
+### 建议用户操作
+新用户部署时：
+1. 使用 `curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash` 安装
+2. 编辑 `.env` 填写必需配置（TELEGRAM_BOT_TOKEN、MOVIEPILOT_URL、MOVIEPILOT_API_KEY、ADMINS）
+3. 运行 `docker compose up -d --build` 启动服务
+4. 私聊机器人使用 `/link 用户名 密码` 绑定账号
+

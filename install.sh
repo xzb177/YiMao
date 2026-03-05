@@ -101,10 +101,10 @@ init_json_file "data/user_mappings.json" '{"user_mappings":{},"usernames":{},"re
 init_json_file "data/user_quotas.json" '{"quotas":{}}'
 init_json_file "data/preferences.json" '{"preferences":{}}'
 init_json_file "data/binding_requests.json" '{}'
-init_json_file "data/media_notifications.json" '{"notifications":{}}'
-init_json_file "data/feedbacks.json" '{"feedbacks":{}}'
-init_json_file "data/review_requests.json" '{"requests":{}}'
-init_json_file "data/search_history.json" '{"histories":{}}'
+init_json_file "data/media_notifications.json" '{"settings":{}}'
+init_json_file "data/feedback.json" '{}'
+init_json_file "data/review_requests.json" '{}'
+init_json_file "data/search_history.json" '{}'
 
 # 启动服务
 info "启动 Docker 服务..."

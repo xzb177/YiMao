@@ -234,16 +234,22 @@ func (s *UserMappingService) GetTelegramUsername(telegramID int64) string {
 // SetTelegramUsername sets the Telegram username for a user
 func (s *UserMappingService) SetTelegramUsername(telegramID int64, username string) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	s.usernames[fmt.Sprintf("%d", telegramID)] = username
+
+	// Mark as dirty before releasing lock
+	s.dirty = true
+
+	// Release lock before calling scheduleSave to avoid deadlock
+	s.mu.Unlock()
+
+	// Trigger async save without holding lock
 	s.scheduleSave()
 }
 
 // AddMapping adds a user mapping
 func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, jellyseerrUsername string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	telegramKey := fmt.Sprintf("%d", telegramID)
 	s.mappings[telegramKey] = jellyseerrID
@@ -254,6 +260,12 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 	if jellyseerrUsername != "" {
 		s.usernames[telegramKey] = jellyseerrUsername
 	}
+
+	// Mark as dirty before releasing lock
+	s.dirty = true
+
+	// Release lock before calling scheduleSave to avoid deadlock
+	s.mu.Unlock()
 
 	// Trigger async save without holding lock
 	s.scheduleSave()
@@ -269,6 +281,7 @@ func (s *UserMappingService) RemoveMapping(telegramID int64) error {
 	telegramKey := fmt.Sprintf("%d", telegramID)
 	moviePilotID, exists := s.mappings[telegramKey]
 	if !exists {
+		s.mu.Unlock()
 		return fmt.Errorf("no mapping found for telegram ID %d", telegramID)
 	}
 
@@ -278,7 +291,15 @@ func (s *UserMappingService) RemoveMapping(telegramID int64) error {
 	delete(s.mappings, telegramKey)
 	delete(s.usernames, telegramKey)
 
+	// Mark as dirty before releasing lock
+	s.dirty = true
+
+	// Release lock before calling scheduleSave to avoid deadlock
+	s.mu.Unlock()
+
+	// Trigger async save without holding lock
 	s.scheduleSave()
+
 	return nil
 }
 
