@@ -89,6 +89,9 @@ docker compose up -d
 ## 常用操作
 
 ```bash
+# 一键更新（推荐）
+./update.sh
+
 # 查看日志
 docker logs -f emby-telegram-bot
 
@@ -98,7 +101,7 @@ docker compose restart
 # 停止服务
 docker compose down
 
-# 更新代码
+# 手动更新代码
 git pull && docker compose up -d --build
 ```
 
