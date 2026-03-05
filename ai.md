@@ -2030,3 +2030,32 @@ watchlist_add:{tmdbID}  # 加入片单
 - **内容**: 将一键更新脚本列为推荐的更新方式
 - **效果**: 用户可以直接看到最便捷的更新方法
 
+
+### git: 推送到远程仓库 ✅
+- **提交**: fa8bc5b - docs: 更新README添加一键更新脚本用法
+- **范围**: README.md, ai.md
+- **结果**: 成功推送到 origin/master
+
+
+### fix: 修复群组 ChatID 配置问题 ✅
+- **背景**: .env 中使用 `GROUP_ID` 但代码读取 `TELEGRAM_CHAT_ID`，导致通知功能无法工作
+- **修复**: 在 .env 中同时设置 `TELEGRAM_CHAT_ID=-100230696041`
+- **验证**: 
+  - ChatID 现在正确解析为 `-100230696041`
+  - 服务日志显示 `✅ Chat ID parsed: -100230696041`
+- **启用通知**: 管理员需在 Telegram 机器人中：
+  1. 进入管理员菜单
+  2. 点击"🔔 通知设置"
+  3. 启用"📺 单集推送"（即时通知）
+  4. 启用"📰 每日汇总"（定时汇总）
+
+
+### test: 启用入库通知 ✅
+- **操作**: 修改 data/media_notifications.json 启用所有通知
+- **设置**:
+  - `enabled: true` - 总开关
+  - `instant_enabled: true` - 单集即时推送
+  - `daily_summary_enabled: true` - 每日汇总
+  - `daily_time: "23:50"` - 汇总发送时间
+- **群组ID**: -100230696041
+
