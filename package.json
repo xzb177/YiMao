@@ -1,0 +1,16 @@
+{
+  "name": "yimao-ops-bot",
+  "version": "1.0.0",
+  "description": "YiMao Emby Telegram Bot 运维助手",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "keywords": ["telegram", "bot", "emby", "ops", "golem"],
+  "author": "YiMao Team",
+  "license": "MIT",
+  "dependencies": {
+    "grammy": "^1.41.1"
+  }
+}

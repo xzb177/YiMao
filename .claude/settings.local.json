@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(kill -9 1511551 && sleep 2 && ps aux | grep \"[g]olembot\")",
+      "Bash(kill -9 1516408 && sleep 1 && lsof -i :3000)",
+      "Bash(grep -n \"type === 'done'\" /root/.nvm/versions/node/v22.22.0/lib/node_modules/golembot/dist/index.js)",
+      "Bash(xargs -r kill -9)"
+    ]
+  }
+}

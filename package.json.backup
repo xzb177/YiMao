@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "grammy": "^1.41.1"
+  }
+}

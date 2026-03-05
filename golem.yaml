@@ -1,0 +1,13 @@
+name: 艾冒运维助手
+engine: claude-code
+
+# 引擎配置
+model: claude-opus-4-20250514
+skipPermissions: true
+
+channels:
+  telegram:
+    botToken: ${TELEGRAM_BOT_TOKEN}
+
+gateway:
+  port: 3000
