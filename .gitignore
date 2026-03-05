@@ -32,3 +32,4 @@ Thumbs.db
 .aider*
 openclaw
 data/conversations.db
+data/image_cache/
