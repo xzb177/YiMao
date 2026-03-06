@@ -910,6 +910,7 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 
 	kb.NewRow()
 	kb.AddButton("💫 情绪选片", "start_mood")
+	kb.AddButton("🎯 不纠结", "start_quickpick")
 
 	kb.NewRow()
 	kb.AddButton("📋 我的请求", "start_requests")

@@ -246,6 +246,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleMood(ctx)
 	case callback.ActionMoodPick:
 		return h.HandleMoodPick(ctx)
+	case callback.ActionQuickPick:
+		return h.HandleQuickPick(ctx)
 	case callback.ActionHot:
 		return h.HandleHot(ctx)
 	case callback.ActionNew:
@@ -266,6 +268,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	if isPrivateChat {
 		msg.Text("🎬 精选推荐：浏览热门与高分").Newline()
 		msg.Text("💫 情绪选片：按心情一键找片").Newline()
+		msg.Text("🎯 不纠结：直接给你三种风格候选").Newline()
 	}
 
 	msg.Text("📋 我的请求：查看求片进度").Newline()
@@ -437,6 +440,48 @@ func (h *StartHandler) HandleMoodPick(ctx *callback.Context) (*callback.Response
 		Edit:        true,
 		Keyboard:    convertKeyboard(kb.Build()),
 		CallbackMsg: "已记住你的口味",
+	}, nil
+}
+
+func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Response, error) {
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			Text:        "⚠️ 不纠结仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	prefMood, _ := sess.GetString("pref_mood_last")
+
+	steadyType := "toprated"
+	stimType := "trending"
+	nicheType := "random"
+	if prefMood == "relax" || prefMood == "healing" {
+		steadyType = "new"
+		stimType = "hot"
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🎯 不纠结 · 三选一").Newline()
+	msg.Newline()
+	msg.Text("给你三条完全不同的路：").Newline()
+	msg.Text("A 稳妥高口碑  B 刺激高热度  C 冷门盲盒").Newline()
+	msg.Italic("选一个直接开刷，不浪费时间").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🅰️ 稳妥", fmt.Sprintf("search:type:%s", steadyType))
+	kb.AddButton("🅱️ 刺激", fmt.Sprintf("search:type:%s", stimType))
+	kb.NewRow()
+	kb.AddButton("🅲 冷门盲盒", fmt.Sprintf("search:type:%s", nicheType))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }
 

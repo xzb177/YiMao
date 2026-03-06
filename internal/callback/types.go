@@ -31,6 +31,7 @@ const (
 	ActionAI           Action = "ai"
 	ActionMood         Action = "mood"
 	ActionMoodPick     Action = "moodpick"
+	ActionQuickPick    Action = "quickpick"
 	ActionHot          Action = "hot"
 	ActionNew          Action = "new"
 
@@ -47,6 +48,7 @@ var validActions = map[Action]bool{
 	ActionAI:           true,
 	ActionMood:         true,
 	ActionMoodPick:     true,
+	ActionQuickPick:    true,
 	ActionHot:          true,
 	ActionNew:          true,
 	ActionDetail:       true,
