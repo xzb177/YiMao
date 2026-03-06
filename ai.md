@@ -2216,3 +2216,37 @@ watchlist_add:{tmdbID}  # 加入片单
 - **问题**: 代码使用 admin_notif_toggle_single 但白名单中是 admin_notif_toggle_single_v2
 - **修复**: 统一使用 admin_notif_toggle_single_v2
 - **文件**: internal/handlers/admin.go
+
+
+## 2026-03-06 (续)
+
+### deploy: 远程更新部署成功 ✅
+- **备份**: `backup_20260306_213058/` (本地未提交更改已备份)
+- **拉取**: 7个新提交 (b2a4aae..efe604a)
+- **新功能**:
+  - **情绪选片** (`feat(ui)`): 基于心情的发现入口，沉浸式启动布局
+  - **情绪记忆** (`feat(persona)`): 记住用户最近情绪偏好，主菜单显示"观影人格"
+  - **不纠结模式** (`feat(discovery)`): 快速三选一 (稳妥高口碑/刺激高热度/冷门盲盒)
+  - **CI/CD** (`chore(ci)`): GitHub Actions pipeline + local Make targets
+  - **文档完善**: 状态徽章、安全策略、快速开始、贡献指南
+- **修改文件**:
+  - `internal/handlers/callback.go` - 情绪选片/不纠结/记忆功能
+  - `internal/bot/command.go` - 新命令入口
+  - `internal/callback/types.go` - 新回调类型
+  - `.github/workflows/ci.yml` - CI pipeline
+  - `Makefile` - 本地构建目标
+  - `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `SECURITY.md` - 文档
+- **服务状态**: ✅ healthy
+
+### fix: 修复情绪选片/不纠结按钮回调未注册 ✅
+- **问题**: 点击"💫 情绪选片"和"🎯 不纠结"按钮无响应
+- **日志**: `No handler for action: quickpick`
+- **根本原因**: `main.go` 中缺少 `ActionMood`/`ActionMoodPick`/`ActionQuickPick` 的 Handler 注册
+- **修复**: 在 `cmd/bot/main.go` 第300行后添加：
+  ```go
+  registry.RegisterFunc(callback.ActionMood, startHandler.Handle)
+  registry.RegisterFunc(callback.ActionMoodPick, startHandler.Handle)
+  registry.RegisterFunc(callback.ActionQuickPick, startHandler.Handle)
+  ```
+- **状态**: ✅ 已修复并重新部署
+
