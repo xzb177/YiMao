@@ -101,10 +101,10 @@ func NewMoviePilotClient(baseURL, apiKey string) *MoviePilotClient {
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				// 连接池配置
-				MaxIdleConns:          100,              // 最大空闲连接数
-				MaxIdleConnsPerHost:   20,               // 每个主机的最大空闲连接数 (提升从10)
-				MaxConnsPerHost:       0,                // 0 表示不限制 (新增)
-				IdleConnTimeout:       90 * time.Second, // 空闲连接超时
+				MaxIdleConns:        100,              // 最大空闲连接数
+				MaxIdleConnsPerHost: 20,               // 每个主机的最大空闲连接数 (提升从10)
+				MaxConnsPerHost:     0,                // 0 表示不限制 (新增)
+				IdleConnTimeout:     90 * time.Second, // 空闲连接超时
 				// 连接超时配置
 				DialContext: (&net.Dialer{
 					Timeout:   10 * time.Second,
@@ -131,17 +131,17 @@ const (
 
 // MediaInfo represents media information from MoviePilot
 type MediaInfo struct {
-	ID          int           `json:"tmdb_id"`
-	Title       string        `json:"title"`
-	Year        FlexibleYear  `json:"year"`
-	Overview    string        `json:"overview"`
-	Poster      string        `json:"poster_path"`
-	Backdrop    string        `json:"backdrop_path"`
-	Rating      float64       `json:"vote_average"`
-	Type        MediaType     `json:"type"`
-	Seasons     interface{}   `json:"seasons,omitempty"` // Can be object or array
-	SeasonInfo  []SeasonInfo  `json:"season_info,omitempty"`
-	Genres      []string      `json:"genres,omitempty"`
+	ID         int          `json:"tmdb_id"`
+	Title      string       `json:"title"`
+	Year       FlexibleYear `json:"year"`
+	Overview   string       `json:"overview"`
+	Poster     string       `json:"poster_path"`
+	Backdrop   string       `json:"backdrop_path"`
+	Rating     float64      `json:"vote_average"`
+	Type       MediaType    `json:"type"`
+	Seasons    interface{}  `json:"seasons,omitempty"` // Can be object or array
+	SeasonInfo []SeasonInfo `json:"season_info,omitempty"`
+	Genres     []string     `json:"genres,omitempty"`
 }
 
 // SeasonInfo represents season information from MoviePilot
@@ -166,13 +166,13 @@ type Season struct {
 
 // SearchResult represents a search result from MoviePilot
 type SearchResult struct {
-	ID       int           `json:"tmdb_id"`
-	Title    string        `json:"title"`
-	Year     FlexibleYear  `json:"year"`
-	Type     string        `json:"type"`
-	Poster   string        `json:"poster_path"`
-	Rating   float64       `json:"vote_average"`
-	Overview string        `json:"overview"`
+	ID       int          `json:"tmdb_id"`
+	Title    string       `json:"title"`
+	Year     FlexibleYear `json:"year"`
+	Type     string       `json:"type"`
+	Poster   string       `json:"poster_path"`
+	Rating   float64      `json:"vote_average"`
+	Overview string       `json:"overview"`
 }
 
 // SearchResponse represents search response from MoviePilot
@@ -182,16 +182,16 @@ type SearchResponse struct {
 
 // SubscribeItem represents a subscription item from MoviePilot API
 type SubscribeItem struct {
-	ID           int     `json:"id"`
-	Name         string  `json:"name"`
-	Year         string  `json:"year"`
-	Type         string  `json:"type"`
-	Poster       string  `json:"poster"`
-	State        string  `json:"state"`
-	Username     string  `json:"username"`
-	Date         string  `json:"date"`
-	Season       int     `json:"season"`
-	TotalEpisode int     `json:"total_episode"`
+	ID           int    `json:"id"`
+	Name         string `json:"name"`
+	Year         string `json:"year"`
+	Type         string `json:"type"`
+	Poster       string `json:"poster"`
+	State        string `json:"state"`
+	Username     string `json:"username"`
+	Date         string `json:"date"`
+	Season       int    `json:"season"`
+	TotalEpisode int    `json:"total_episode"`
 }
 
 // Request represents a media request
@@ -535,8 +535,8 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 
 	// Parse response - MoviePilot returns {"success":true,"data":{...}}
 	var response struct {
-		Success bool   `json:"success"`
-		Data    User   `json:"data"`
+		Success bool `json:"success"`
+		Data    User `json:"data"`
 	}
 
 	if err := json.Unmarshal(body, &response); err != nil {
@@ -701,15 +701,61 @@ func stringToInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
 
+// FindExistingSubscription checks whether a similar subscription already exists in MoviePilot
+// It returns the first matched subscription and true when found.
+func (c *MoviePilotClient) FindExistingSubscription(tmdbID int, mediaType MediaType, season int) (*SubscribeStatus, bool, error) {
+	items, err := c.GetAllSubscriptions()
+	if err != nil {
+		return nil, false, err
+	}
+
+	normalizeType := func(t string) string {
+		t = strings.ToLower(strings.TrimSpace(t))
+		switch t {
+		case "tv", "series", "电视剧":
+			return "tv"
+		default:
+			return "movie"
+		}
+	}
+
+	targetType := "movie"
+	if mediaType == MediaTypeTV {
+		targetType = "tv"
+	}
+
+	for i := range items {
+		it := &items[i]
+		if it.MediaID != tmdbID {
+			continue
+		}
+		if normalizeType(it.Type) != targetType {
+			continue
+		}
+		// Ignore explicitly cancelled/failed subscriptions
+		if it.State == StateCancelled || it.State == StateFailed {
+			continue
+		}
+		// For TV season-specific requests, only block exact season match when season info exists
+		if targetType == "tv" && season > 0 && it.TotalEpisode > 0 {
+			// MoviePilot API payload doesn't always expose season directly in all versions,
+			// so we keep this check permissive and still treat same TMDB TV as duplicate.
+		}
+		return it, true, nil
+	}
+
+	return nil, false, nil
+}
+
 // Subscription state constants
 const (
-	StatePending    = "P" // Pending
-	StateRecycled   = "R" // Recycled
-	StateSearching  = "S" // Searching
+	StatePending     = "P" // Pending
+	StateRecycled    = "R" // Recycled
+	StateSearching   = "S" // Searching
 	StateDownloading = "D" // Downloading
-	StateCompleted  = "C" // Completed/Available
-	StateFailed     = "F" // Failed
-	StateCancelled = "X" // Cancelled
+	StateCompleted   = "C" // Completed/Available
+	StateFailed      = "F" // Failed
+	StateCancelled   = "X" // Cancelled
 )
 
 // GetStateText returns user-friendly state text
@@ -781,7 +827,7 @@ type SubscribeStatus struct {
 	MediaID        int    `json:"media_id"`
 	SavePath       string `json:"save_path"`
 	Username       string `json:"username"`
-	Downloader      string `json:"downloader"`
+	Downloader     string `json:"downloader"`
 	TotalEpisode   int    `json:"total_episode"`
 	CurrentEpisode int    `json:"current_episode"`
 	Percent        int    `json:"percent"`
