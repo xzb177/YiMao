@@ -8,6 +8,20 @@
 
 ---
 
+## ⚡ 3 分钟快速上手
+
+1. 用 BotFather 创建机器人，拿到 `TELEGRAM_BOT_TOKEN`
+2. 准备 MoviePilot 地址与 `MOVIEPILOT_API_KEY`
+3. 配置 `.env` 并启动容器
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash
+```
+
+启动后在 Telegram 输入 `/start` 即可。
+
+---
+
 ## ✨ 项目定位
 
 YiMao 是一个面向 Emby / Jellyfin + MoviePilot 用户的 Telegram Bot。
