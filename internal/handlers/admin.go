@@ -585,28 +585,28 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	msg := services.NewMessageBuilder()
 	msg.Bold("⚙️ 入库通知设置").Newline()
 	msg.Newline()
-	msg.Textf("群组：%s", groupStatus).Newline()
-	msg.Textf("单集推送：%s", singleText).Newline()
-	msg.Textf("每日汇总：%s（%s）", dailyText, settings.DailyTime).Newline()
+	msg.Textf("📡 群组：%s", groupStatus).Newline()
+	msg.Textf("📦 单集推送：%s", singleText).Newline()
+	msg.Textf("📰 每日汇总：%s（%s）", dailyText, settings.DailyTime).Newline()
 	msg.Newline()
-	msg.Italic("说明：单集发送到群组，汇总发送到群组和私聊").Newline()
+	msg.Italic("💡 单集发群组，汇总发群组和私聊").Newline()
 
 	kb := services.NewKeyboardBuilder()
 
 	if singleOn {
-		kb.AddButton("单集：开", "admin_notif_toggle_single_v2")
+		kb.AddButton("📦 单集：开", "admin_notif_toggle_single_v2")
 	} else {
-		kb.AddButton("单集：关", "admin_notif_toggle_single_v2")
+		kb.AddButton("📦 单集：关", "admin_notif_toggle_single_v2")
 	}
 
 	if dailyOn {
-		kb.AddButton("汇总：开", "admin_notif_toggle_daily_v2")
+		kb.AddButton("📰 汇总：开", "admin_notif_toggle_daily_v2")
 	} else {
-		kb.AddButton("汇总：关", "admin_notif_toggle_daily_v2")
+		kb.AddButton("📰 汇总：关", "admin_notif_toggle_daily_v2")
 	}
 	kb.NewRow()
 
-	kb.AddButton(fmt.Sprintf("时间：%s", settings.DailyTime), "admin_notif_settime")
+	kb.AddButton(fmt.Sprintf("⏰ 时间：%s", settings.DailyTime), "admin_notif_settime")
 	kb.NewRow()
 
 	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")

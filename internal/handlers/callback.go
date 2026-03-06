@@ -253,21 +253,21 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("欢迎使用云海影视助手").Newline()
+	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
 	msg.Newline()
-	msg.Text("搜索影片：快速查找内容").Newline()
+	msg.Text("🔍 搜索影片：快速查找想看的内容").Newline()
 
 	// Only show AI recommendation in private chats
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
-		msg.Text("精选推荐：浏览热门与高分").Newline()
+		msg.Text("🎬 精选推荐：浏览热门与高分").Newline()
 	}
 
-	msg.Text("我的请求：查看求片进度").Newline()
-	msg.Text("我的反馈：查看处理结果").Newline()
-	msg.Text("账号绑定：同步账号信息").Newline()
+	msg.Text("📋 我的请求：查看求片进度").Newline()
+	msg.Text("🐞 我的反馈：查看处理结果").Newline()
+	msg.Text("🔗 账号绑定：同步账号信息").Newline()
 	msg.Newline()
-	msg.Italic("请选择下方功能").Newline()
+	msg.Italic("👇 请选择下方功能").Newline()
 
 	// Check if user is admin to add admin menu button
 	isAdmin := false

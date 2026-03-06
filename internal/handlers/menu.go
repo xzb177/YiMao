@@ -176,9 +176,9 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	}
 
 	// Header
-	msg.Bold("我的请求").Newline()
+	msg.Bold("📋 我的请求").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
-	msg.Text("—").Newline()
+	msg.Text("────────").Newline()
 	msg.Newline()
 
 	// Calculate slice bounds
@@ -454,23 +454,23 @@ func NewHelpHandler() *HelpHandler {
 
 func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("帮助").Newline()
+	msg.Bold("❓ 帮助中心").Newline()
 	msg.Newline()
-	msg.Text("搜索：输入片名即可查询").Newline()
-	msg.Text("推荐：浏览热门和高分内容").Newline()
-	msg.Text("请求：提交后可查看处理进度").Newline()
-	msg.Text("绑定：/link 用户名 密码").Newline()
+	msg.Text("🔍 搜索：输入片名即可查询").Newline()
+	msg.Text("🎬 推荐：浏览热门与高分内容").Newline()
+	msg.Text("📋 请求：提交后可查看处理进度").Newline()
+	msg.Text("🔗 绑定：/link 用户名 密码").Newline()
 	msg.Newline()
-	msg.Bold("常用命令").Newline()
+	msg.Bold("⌨️ 常用命令").Newline()
 	msg.Text("/start  主菜单").Newline()
 	msg.Text("/search 搜索").Newline()
 	msg.Text("/ai     推荐").Newline()
 	msg.Text("/requests 我的请求").Newline()
 	msg.Newline()
-	msg.Italic("如有问题请联系管理员").Newline()
+	msg.Italic("💬 如有问题请联系管理员").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("返回", "start")
+	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
