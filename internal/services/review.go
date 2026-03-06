@@ -13,26 +13,26 @@ import (
 
 // ReviewRequest represents a media request awaiting review
 type ReviewRequest struct {
-	RequestID      string    `json:"request_id"`      // Unique ID for this review
-	TelegramID     int64     `json:"telegram_id"`
-	TelegramName   string    `json:"telegram_name"`
-	MoviePilotID   int64     `json:"moviepilot_id"`
-	TmdbID         int       `json:"tmdb_id"`
-	MediaTitle     string    `json:"media_title"`
-	MediaYear      int       `json:"media_year"`
-	MediaType      MediaType `json:"media_type"`
-	Season         int       `json:"season,omitempty"` // Season number for TV shows (0 = all seasons)
-	PosterPath     string    `json:"poster_path,omitempty"`
-	Overview       string    `json:"overview,omitempty"`
-	Status         string    `json:"status"`         // pending, approved, rejected
-	Priority       string    `json:"priority"`       // low, normal, high, urgent (default: normal)
-	CreatedAt      time.Time `json:"created_at"`
-	ReviewedAt     time.Time `json:"reviewed_at,omitempty"`
-	ReviewedBy     int64     `json:"reviewed_by,omitempty"`
-	RejectionReason string   `json:"rejection_reason,omitempty"`
-	EmbyExists     bool      `json:"emby_exists,omitempty"` // Media already exists in Emby
-	EmbyInfo       *EmbySearchResult `json:"emby_info,omitempty"`   // Emby media info if exists
-	ApproveToken   string    `json:"approve_token,omitempty"`   // One-time token for approve action
+	RequestID       string            `json:"request_id"` // Unique ID for this review
+	TelegramID      int64             `json:"telegram_id"`
+	TelegramName    string            `json:"telegram_name"`
+	MoviePilotID    int64             `json:"moviepilot_id"`
+	TmdbID          int               `json:"tmdb_id"`
+	MediaTitle      string            `json:"media_title"`
+	MediaYear       int               `json:"media_year"`
+	MediaType       MediaType         `json:"media_type"`
+	Season          int               `json:"season,omitempty"` // Season number for TV shows (0 = all seasons)
+	PosterPath      string            `json:"poster_path,omitempty"`
+	Overview        string            `json:"overview,omitempty"`
+	Status          string            `json:"status"`   // pending, approved, rejected
+	Priority        string            `json:"priority"` // low, normal, high, urgent (default: normal)
+	CreatedAt       time.Time         `json:"created_at"`
+	ReviewedAt      time.Time         `json:"reviewed_at,omitempty"`
+	ReviewedBy      int64             `json:"reviewed_by,omitempty"`
+	RejectionReason string            `json:"rejection_reason,omitempty"`
+	EmbyExists      bool              `json:"emby_exists,omitempty"`   // Media already exists in Emby
+	EmbyInfo        *EmbySearchResult `json:"emby_info,omitempty"`     // Emby media info if exists
+	ApproveToken    string            `json:"approve_token,omitempty"` // One-time token for approve action
 
 	// MoviePilot subscription info
 	SubscriptionID    int    `json:"subscription_id,omitempty"`    // MoviePilot subscription ID
@@ -41,10 +41,10 @@ type ReviewRequest struct {
 
 // ReviewService manages review requests
 type ReviewService struct {
-	reviewsFile  string
-	reviews      map[string]*ReviewRequest // requestID -> review
-	mu           sync.RWMutex
-	moviepilot   *MoviePilotClient // For updating subscription status
+	reviewsFile string
+	reviews     map[string]*ReviewRequest // requestID -> review
+	mu          sync.RWMutex
+	moviepilot  *MoviePilotClient // For updating subscription status
 }
 
 // NewReviewService creates a new review service
@@ -236,6 +236,36 @@ func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	}
 
 	return userReviews
+}
+
+// HasActiveSimilarRequest checks if user already has a similar active request
+func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	for _, review := range s.reviews {
+		if review == nil {
+			continue
+		}
+		if review.TelegramID != telegramID {
+			continue
+		}
+		if review.TmdbID != tmdbID || review.MediaType != mediaType {
+			continue
+		}
+
+		// TV requests should match season; movie season is always ignored
+		if mediaType == MediaTypeTV && review.Season != season {
+			continue
+		}
+
+		// Active statuses considered duplicate to prevent repeated submissions
+		if review.Status == "pending" || review.Status == "approved" {
+			return review, true
+		}
+	}
+
+	return nil, false
 }
 
 // Approve approves a review request with token verification

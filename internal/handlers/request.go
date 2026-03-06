@@ -236,6 +236,23 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
+	// Check duplicate active requests before quota deduction
+	reqMediaType := services.MediaTypeMovie
+	if mediaType == "tv" {
+		reqMediaType = services.MediaTypeTV
+	}
+	if existingReview, dup := h.reviewService.HasActiveSimilarRequest(ctx.UserID, tmdbID, reqMediaType, season); dup {
+		statusText := "处理中"
+		if existingReview.Status == "approved" {
+			statusText = "已通过审核"
+		}
+		return &callback.Response{
+			Text:        fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“我的请求”查看进度。", existingReview.MediaTitle, statusText),
+			CallbackMsg: "请勿重复提交",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	// Media doesn't exist in library (or check timed out), deduct quota before creating request
 	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
 		log.Printf("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
@@ -299,7 +316,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		ShowAlert:   true,
 	}, nil
 }
-
 
 // notifyAdminsForReview notifies all admins about a new review request
 func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
@@ -538,6 +554,23 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	if err == nil && existingMedia != nil {
 		embyInfo = existingMedia
 		log.Printf("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)
+	}
+
+	// Prevent duplicate active requests before creating review
+	reqMediaType := services.MediaTypeMovie
+	if mediaType == "tv" {
+		reqMediaType = services.MediaTypeTV
+	}
+	if existingReview, dup := h.reviewService.HasActiveSimilarRequest(ctx.UserID, tmdbID, reqMediaType, 0); dup {
+		statusText := "处理中"
+		if existingReview.Status == "approved" {
+			statusText = "已通过审核"
+		}
+		return &callback.Response{
+			Text:        fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“我的请求”查看。", existingReview.MediaTitle, statusText),
+			CallbackMsg: "请勿重复提交",
+			ShowAlert:   true,
+		}, nil
 	}
 
 	// Create review request
