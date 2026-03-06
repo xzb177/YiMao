@@ -5,6 +5,10 @@
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/xzb177/YiMao)](https://github.com/xzb177/YiMao/commits/master)
+[![Stars](https://img.shields.io/github/stars/xzb177/YiMao?style=social)](https://github.com/xzb177/YiMao/stargazers)
+[![Issues](https://img.shields.io/github/issues/xzb177/YiMao)](https://github.com/xzb177/YiMao/issues)
+[![Forks](https://img.shields.io/github/forks/xzb177/YiMao)](https://github.com/xzb177/YiMao/network/members)
 
 ---
 
