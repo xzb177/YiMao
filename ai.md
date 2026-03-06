@@ -2196,3 +2196,23 @@ watchlist_add:{tmdbID}  # 加入片单
 - **修改**: GROUP_ID 从 -100230696041 改为 -1002306960410
 - **部署**: docker compose up -d --build
 - **验证**: Chat ID parsed: -1002306960410
+
+
+### git: 推送到远程仓库 ✅
+- **提交**: 0a36086 - feat: 添加单集开关和群组通知功能
+- **范围**: ai.md, cmd/bot/main.go, internal/handlers/admin.go, internal/services/media_notification.go, internal/services/webhook.go
+- **结果**: 成功推送到 origin/master
+
+
+### fix: 修复单集推送按钮无限回调问题 ✅
+- **时间**: 2026-03-06 20:24
+- **问题**: handleNotifToggleSingle 和 handleNotifToggleDailyV2 函数中按钮回调使用相同数据，导致无限请求
+- **修复**: 简化函数，切换状态后直接调用 handleNotifSettings 返回设置页面
+- **修改**: internal/handlers/admin.go
+
+
+### fix: 修复回调 action 白名单不匹配 ✅
+- **时间**: 2026-03-06 20:31
+- **问题**: 代码使用 admin_notif_toggle_single 但白名单中是 admin_notif_toggle_single_v2
+- **修复**: 统一使用 admin_notif_toggle_single_v2
+- **文件**: internal/handlers/admin.go

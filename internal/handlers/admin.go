@@ -75,7 +75,7 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleAdminMenu(ctx)
 	case "admin_notif_settings":
 		return h.handleNotifSettings(ctx)
-	case "admin_notif_toggle_single":
+	case "admin_notif_toggle_single_v2":
 		return h.handleNotifToggleSingle(ctx)
 	case "admin_notif_toggle_daily_v2":
 		return h.handleNotifToggleDailyV2(ctx)
@@ -607,7 +607,7 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 	kb := services.NewKeyboardBuilder()
 
 	// 单集推送开关
-	kb.AddButton(fmt.Sprintf("📦 单集推送: %s %s", singleIcon, singleStatus), "admin_notif_toggle_single")
+	kb.AddButton(fmt.Sprintf("📦 单集推送: %s %s", singleIcon, singleStatus), "admin_notif_toggle_single_v2")
 	kb.NewRow()
 
 	// 每日汇总开关
@@ -646,82 +646,11 @@ func (h *AdminHandler) handleNotifToggleSingle(ctx *callback.Context) (*callback
 	}
 
 	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	newState := !settings.SingleEnabled
-	h.mediaNotificationSvc.SetSingleEnabled(ctx.UserID, newState)
+	oldState := settings.SingleEnabled
+	h.mediaNotificationSvc.SetSingleEnabled(ctx.UserID, !oldState)
 
-	// 防抖提示
-	callbackMsg := "单集推送已关闭"
-	if newState {
-		callbackMsg = "单集推送已开启"
-	}
-
-	// 重新构建界面
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-
-	// 获取群组ID显示
-	groupStatus := "未配置"
-	if h.cfg.TelegramChatID != "" {
-		groupStatus = h.cfg.TelegramChatID
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("⚙️ 入库通知设置").Newline()
-	msg.Newline()
-	
-	// 群组通知状态
-	msg.Bold("📺 群组通知").Newline()
-	msg.Textf("   群组 ID: %s", groupStatus).Newline()
-	msg.Newline()
-	
-	// 单集推送状态
-	singleStatus := "关闭"
-	singleIcon := "❌"
-	if updatedSettings.SingleEnabled {
-		singleStatus = "开启"
-		singleIcon = "✅"
-	}
-	msg.Bold("📦 单集推送").Newline()
-	msg.Textf("   状态: %s %s", singleIcon, singleStatus).Newline()
-	msg.Newline()
-	
-	// 每日汇总状态
-	msg.Bold("📰 每日汇总").Newline()
-	dailyStatus := "关闭"
-	dailyIcon := "❌"
-	if updatedSettings.DailySummaryEnabled {
-		dailyStatus = "开启"
-		dailyIcon = "✅"
-	}
-	msg.Textf("   状态: %s %s", dailyIcon, dailyStatus).Newline()
-	msg.Textf("   时间: %s", updatedSettings.DailyTime).Newline()
-	msg.Newline()
-	
-	msg.Italic("💡 单集推送到群组 · 汇总发送到群组和私聊").Newline()
-
-	kb := services.NewKeyboardBuilder()
-
-	// 单集推送开关
-	kb.AddButton(fmt.Sprintf("📦 单集推送: %s %s", singleIcon, singleStatus), "admin_notif_toggle_single")
-	kb.NewRow()
-
-	// 每日汇总开关
-	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
-	kb.NewRow()
-
-	// 汇总时间设置
-	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", updatedSettings.DailyTime), "admin_notif_settime")
-	kb.NewRow()
-
-	// 返回按钮
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
-
-	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		CallbackMsg: callbackMsg,
-	}, nil
+	// 切换后返回设置页面
+	return h.handleNotifSettings(ctx)
 }
 
 // handleNotifToggleDailyV2 处理每日汇总切换
@@ -741,88 +670,12 @@ func (h *AdminHandler) handleNotifToggleDailyV2(ctx *callback.Context) (*callbac
 	}
 
 	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	newState := !settings.DailySummaryEnabled
-	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, newState)
+	oldState := settings.DailySummaryEnabled
+	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, !oldState)
 
-	// 防抖提示
-	callbackMsg := "每日汇总已关闭"
-	if newState {
-		callbackMsg = "每日汇总已开启"
-	}
-
-	// 重新构建界面
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-
-	// 获取群组ID显示
-	groupStatus := "未配置"
-	if h.cfg.TelegramChatID != "" {
-		groupStatus = h.cfg.TelegramChatID
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("⚙️ 入库通知设置").Newline()
-	msg.Newline()
-	
-	// 群组通知状态
-	msg.Bold("📺 群组通知").Newline()
-	msg.Textf("   群组 ID: %s", groupStatus).Newline()
-	msg.Newline()
-	
-	// 单集推送状态
-	singleStatus := "关闭"
-	singleIcon := "❌"
-	if updatedSettings.SingleEnabled {
-		singleStatus = "开启"
-		singleIcon = "✅"
-	}
-	msg.Bold("📦 单集推送").Newline()
-	msg.Textf("   状态: %s %s", singleIcon, singleStatus).Newline()
-	msg.Newline()
-	
-	// 每日汇总状态（可配置）
-	msg.Bold("📰 每日汇总").Newline()
-	dailyStatus := "关闭"
-	dailyIcon := "❌"
-	if updatedSettings.DailySummaryEnabled {
-		dailyStatus = "开启"
-		dailyIcon = "✅"
-	}
-	msg.Textf("   状态: %s %s", dailyIcon, dailyStatus).Newline()
-	msg.Textf("   时间: %s", updatedSettings.DailyTime).Newline()
-	msg.Newline()
-	
-	msg.Italic("💡 单集推送到群组 · 汇总发送到群组和私聊").Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton(fmt.Sprintf("📦 单集推送: %s %s", singleIcon, singleStatus), "admin_notif_toggle_single")
-	kb.NewRow()
-	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
-	kb.NewRow()
-	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", updatedSettings.DailyTime), "admin_notif_settime")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
-
-	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		CallbackMsg: callbackMsg,
-	}, nil
+	// 切换后返回设置页面
+	return h.handleNotifSettings(ctx)
 }
-
-// handleNotifToggleFormat 处理格式切换 - 在"详细"和"简洁"之间循环
-
-// handleNotifDisableAll 停用所有通知
-
-// buildNotifSettingsKeyboard 构建通知设置的按钮键盘（用于原地刷新）
-
-// handleNotifToggleInstant handles toggling instant notifications
-
-// handleNotifToggleDaily handles toggling daily summary
-
-// handleNotifToggle handles toggling notifications on/off (overall)
-
 // handleNotifSetTime handles setting daily summary time
 func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
