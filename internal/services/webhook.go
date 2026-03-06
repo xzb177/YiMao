@@ -303,6 +303,14 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 
 // sendImmediateNotification sends notification immediately for non-episode content
 func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, itemType, itemName string) error {
+	// 检查单集/即时通知开关（关闭后跳过群组即时推送）
+	if s.mediaNotificationSvc != nil && !s.mediaNotificationSvc.IsSingleEnabled() {
+		log.Printf("[入库] 即时群组通知已关闭，跳过发送: type=%s, name=%s", itemType, itemName)
+		// 仍保留每日汇总入列能力
+		s.addMediaItemToSummary(payload, nil)
+		return nil
+	}
+
 	// Debug: check if payload.Item is available
 	if payload.Item != nil {
 		log.Printf("[Debug] payload.Item exists: Name=%s, Path=%s", payload.Item.Name, payload.Item.Path)

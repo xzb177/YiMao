@@ -212,12 +212,21 @@ func (s *MediaNotificationService) SetSingleEnabled(adminID int64, enabled bool)
 func (s *MediaNotificationService) IsSingleEnabled() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
+	// 没有任何设置记录时，保持默认开启（兼容旧行为）
+	if len(s.settings) == 0 {
+		return true
+	}
+
+	// 只要有任一管理员开启，就发送
 	for _, settings := range s.settings {
-		if settings.SingleEnabled {
+		if settings != nil && settings.SingleEnabled {
 			return true
 		}
 	}
-	return true // Default to enabled if no settings
+
+	// 存在设置但无人开启 => 关闭
+	return false
 }
 
 // SetDailyTime sets the daily summary time for an admin
