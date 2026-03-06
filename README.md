@@ -171,6 +171,8 @@ YiMao Bot (Handlers / Services / Session)
 - [CHANGELOG.md](CHANGELOG.md) 版本变更记录
 - [CONTRIBUTING.md](CONTRIBUTING.md) 贡献指南
 - [SECURITY.md](SECURITY.md) 安全策略
+- [.github/workflows/ci.yml](.github/workflows/ci.yml) 持续集成检查
+- [Makefile](Makefile) 本地一键检查命令
 
 ---
 
