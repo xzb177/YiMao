@@ -59,6 +59,7 @@ type MediaItem struct {
 // AdminNotificationSettings stores notification preferences for an admin
 type AdminNotificationSettings struct {
 	AdminID             int64             `json:"admin_id"`
+	SingleEnabled       bool             `json:"single_enabled"`       // Enable instant notification to group (入库群组通知)
 	DailyTime           string           `json:"daily_time"`           // Format: "HH:MM", default "23:50"
 	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification (private message)
 	Libraries           []string         `json:"libraries"`             // Specific libraries to monitor for daily summary, empty = all
@@ -70,6 +71,7 @@ type MediaNotificationService struct {
 	dataFile     string
 	telegram     *TelegramClient
 	adminService *AdminService
+	groupChatID  int64 // 群组 ChatID，用于发送每日汇总
 
 	// Settings per admin
 	settings map[int64]*AdminNotificationSettings
@@ -85,13 +87,14 @@ type MediaNotificationService struct {
 }
 
 // NewMediaNotificationService creates a new media notification service
-func NewMediaNotificationService(dataDir string, telegram *TelegramClient, adminService *AdminService) *MediaNotificationService {
+func NewMediaNotificationService(dataDir string, telegram *TelegramClient, adminService *AdminService, groupChatID int64) *MediaNotificationService {
 	dataFile := fmt.Sprintf("%s/media_notifications.json", dataDir)
 
 	service := &MediaNotificationService{
 		dataFile:     dataFile,
 		telegram:     telegram,
 		adminService: adminService,
+		groupChatID:  groupChatID,
 		settings:     make(map[int64]*AdminNotificationSettings),
 		pendingItems: make(map[string]map[string][]*MediaItem),
 		itemChan:     make(chan *MediaItem, 100),
@@ -172,6 +175,7 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 	// Return default settings
 	return &AdminNotificationSettings{
 		AdminID:             adminID,
+		SingleEnabled:       true,  // Default to enabled
 		DailyTime:           "23:50",
 		DailySummaryEnabled: false, // Default to disabled
 		Libraries:           []string{},
@@ -194,6 +198,26 @@ func (s *MediaNotificationService) SetDailySummaryEnabled(adminID int64, enabled
 	settings.DailySummaryEnabled = enabled
 	log.Printf("[MediaNotification] SetDailySummaryEnabled: adminID=%d, enabled=%v", adminID, enabled)
 	return s.SetSettings(settings)
+}
+
+// SetSingleEnabled sets whether instant group notification is enabled
+func (s *MediaNotificationService) SetSingleEnabled(adminID int64, enabled bool) error {
+	settings := s.GetSettings(adminID)
+	settings.SingleEnabled = enabled
+	log.Printf("[MediaNotification] SetSingleEnabled: adminID=%d, enabled=%v", adminID, enabled)
+	return s.SetSettings(settings)
+}
+
+// IsSingleEnabled checks if instant group notification is enabled (any admin has it enabled)
+func (s *MediaNotificationService) IsSingleEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, settings := range s.settings {
+		if settings.SingleEnabled {
+			return true
+		}
+	}
+	return true // Default to enabled if no settings
 }
 
 // SetDailyTime sets the daily summary time for an admin
@@ -247,6 +271,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			// Return default settings without calling GetSettings (which would try to acquire lock again)
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:             adminID,
+				SingleEnabled:       true,
 				DailyTime:           "23:50",
 				DailySummaryEnabled: false,
 				Libraries:           []string{},
@@ -536,6 +561,7 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 		} else {
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:             adminID,
+				SingleEnabled:       true,
 				DailyTime:           "23:50",
 				DailySummaryEnabled: false,
 				Libraries:           []string{},
@@ -579,11 +605,25 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 }
 
 // sendDailySummary sends a daily summary notification
+// 同时发送到群组和管理员私聊
 func (s *MediaNotificationService) sendDailySummary(adminID int64, items []*MediaItem) {
 	message := s.formatDailySummary(time.Now(), items)
 
+	// 1. 发送到群组（如果有配置且启用了汇总）
+	if s.groupChatID != 0 && s.groupChatID < -100 {
+		settings := s.GetSettings(adminID)
+		if settings.DailySummaryEnabled {
+			if _, err := s.telegram.SendMessage(s.groupChatID, message, "", nil); err != nil {
+				log.Printf("[MediaNotification] Failed to send daily summary to group %d: %v", s.groupChatID, err)
+			} else {
+				log.Printf("[MediaNotification] 已发送每日汇总到群组 %d", s.groupChatID)
+			}
+		}
+	}
+
+	// 2. 发送到管理员私聊
 	if _, err := s.telegram.SendMessage(adminID, message, "", nil); err != nil {
-		log.Printf("[MediaNotification] Failed to send daily summary to %d: %v", adminID, err)
+		log.Printf("[MediaNotification] Failed to send daily summary to admin %d: %v", adminID, err)
 	}
 }
 

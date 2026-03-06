@@ -917,10 +917,17 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		delete(s.epAggregation, key)
 	}
 }
+
 // sendAggregatedEpisodeToAdmins sends aggregated episode notification to group chat only
-// 入库通知直接推送到群组，不依赖管理员个人设置
+// 入库通知推送到群组，检查管理员单集开关设置
 func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year int, season int, episodes []int, epRange string, quality, imageURL string, fileSize int64, enhancedInfo *EmbyEnhancedInfo, libraryName string) {
-	// 直接发送到群组，不检查管理员设置
+	// 检查单集通知开关（任何管理员启用即发送）
+	if s.mediaNotificationSvc != nil && !s.mediaNotificationSvc.IsSingleEnabled() {
+		log.Printf("[入库] 单集群组通知已关闭，跳过发送")
+		return
+	}
+
+	// 只发送到群组
 	if s.chatID != 0 && s.chatID < -100 {
 		message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
 			SeriesName:   seriesName,
@@ -948,12 +955,11 @@ func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year i
 			}, epRange)
 			s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
 		} else {
-			// Fallback to text message if no image
-			s.telegram.SendMessage(s.chatID, message, "", nil)
-			log.Printf("[入库] 已发送文本通知到群组")
+			s.sendWithCache(s.chatID, message)
 		}
 	}
 }
+
 // sendNotificationWithPhotoToAdmin sends a photo notification to a specific admin
 func (s *WebhookService) sendNotificationWithPhotoToAdmin(adminID int64, caption string, imageURL string, enhancedInfo *EmbyEnhancedInfo) {
 	// Try to send as photo using Telegram's built-in URL download

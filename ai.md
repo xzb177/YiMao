@@ -4,6 +4,50 @@
 
 ## 2026-03-06
 
+
+### refactor: 通知设置重构 - 单集开关+汇总群组通知 ⏳
+- **背景**: 用户需求简化通知设置，添加单集开关，汇总通知发送到群组+私聊
+- **新设计**:
+  - **单集开关** (`SingleEnabled`): 控制入库单集通知是否发送到群组
+  - **汇总开关** (`DailySummaryEnabled`): 控制每日汇总是否发送（群组+私聊）
+- **修改内容**:
+  - `internal/services/media_notification.go`:
+    - `AdminNotificationSettings` 添加 `SingleEnabled` 字段（默认 true）
+    - 添加 `SetSingleEnabled()` 方法
+    - 添加 `IsSingleEnabled()` 方法
+    - 添加 `groupChatID` 字段到结构体
+    - 修改 `NewMediaNotificationService()` 构造函数，增加 `groupChatID` 参数
+    - 修改 `sendDailySummary()` 同时发送到群组和私聊
+  - `internal/services/webhook.go`:
+    - 修改 `sendAggregatedEpisodeToAdmins()` 使用 `IsSingleEnabled()` 检查
+  - `internal/handlers/admin.go`:
+    - 更新 `handleNotifSettings()` UI - 添加单集开关按钮
+    - 添加 `handleNotifToggleSingle()` 处理单集开关切换
+    - 更新 `handleNotifToggleDailyV2()` UI 包含单集状态
+    - 添加 `admin_notif_toggle_single` 路由
+  - `cmd/bot/main.go`:
+    - 更新 `NewMediaNotificationService()` 调用，传入 `chatID`
+- **新UI设计**:
+  ```
+  ┌─────────────────────────────────────┐
+  │        ⚙️ 入库通知设置               │
+  ├─────────────────────────────────────┤
+  │  📺 群组通知                         │
+  │     群组 ID: -100230696041           │
+  ├─────────────────────────────────────┤
+  │  📦 单集推送                         │
+  │     状态: ✅ 开启                    │
+  ├─────────────────────────────────────┤
+  │  📰 每日汇总                         │
+  │     状态: ✅ 开启                    │
+  │     时间: 23:50                      │
+  ├─────────────────────────────────────┤
+  │  💡 单集推送到群组 · 汇总发送到群组和私聊 │
+  └─────────────────────────────────────┘
+  ```
+- **状态**: 代码已修改，待测试
+
+
 ### refactor: 重构通知设置功能 ✅
 - **背景**: 原有三层开关（enabled、instant_enabled、daily_summary_enabled）让用户困惑
 - **问题**:
@@ -2134,3 +2178,21 @@ watchlist_add:{tmdbID}  # 加入片单
   - `daily_time: "23:50"` - 汇总发送时间
 - **群组ID**: -100230696041
 
+
+
+### deploy: 部署通知设置重构代码 ✅
+- **时间**: 2026-03-06 20:12
+- **操作**: docker compose up -d --build
+- **状态**: 容器运行正常 (healthy)
+- **部署内容**:
+  - cmd/bot/main.go - NewMediaNotificationService 增加 chatID 参数
+  - internal/handlers/admin.go - 单集开关 UI 和回调处理
+  - internal/services/media_notification.go - SingleEnabled 字段和方法
+  - internal/services/webhook.go - IsSingleEnabled() 检查
+
+
+### config: 更新群组 ChatID ✅
+- **时间**: 2026-03-06 20:15
+- **修改**: GROUP_ID 从 -100230696041 改为 -1002306960410
+- **部署**: docker compose up -d --build
+- **验证**: Chat ID parsed: -1002306960410
