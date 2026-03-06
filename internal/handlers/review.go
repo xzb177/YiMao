@@ -18,6 +18,7 @@ type ReviewHandler struct {
 	adminService   *services.AdminService
 	reviewService  *services.ReviewService
 	quotaService   *services.QuotaService
+	webhookService *services.WebhookService
 }
 
 func NewReviewHandler(
@@ -27,14 +28,16 @@ func NewReviewHandler(
 	adminService *services.AdminService,
 	reviewService *services.ReviewService,
 	quotaService *services.QuotaService,
+	webhookService *services.WebhookService,
 ) *ReviewHandler {
 	return &ReviewHandler{
-		sessMgr:       sessMgr,
-		telegram:      telegram,
-		moviepilot:    moviepilot,
-		adminService:  adminService,
-		reviewService: reviewService,
-		quotaService:  quotaService,
+		sessMgr:        sessMgr,
+		telegram:       telegram,
+		moviepilot:     moviepilot,
+		adminService:   adminService,
+		reviewService:  reviewService,
+		quotaService:   quotaService,
+		webhookService: webhookService,
 	}
 }
 
@@ -147,6 +150,40 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	season := review.Season
 	if season == 0 && review.MediaType == services.MediaTypeTV {
 		season = 1 // Default to season 1 if not specified
+	}
+
+	// 1) Emby existence check before creating subscription
+	if h.webhookService != nil {
+		embyType := services.MediaTypeMovie
+		if review.MediaType == services.MediaTypeTV {
+			embyType = services.MediaTypeTV
+		}
+		existingMedia, embyErr := h.webhookService.SearchEmbyMedia(review.MediaTitle, review.MediaYear, embyType)
+		if embyErr == nil && existingMedia != nil {
+			h.telegram.SendMessage(review.TelegramID,
+				fmt.Sprintf("⚠️ 求片已自动拦截：媒体库已存在\n\n📺 %s", existingMedia.Title), "", nil)
+			return &callback.Response{
+				Text:        fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》", review.MediaTitle),
+				CallbackMsg: "媒体已存在",
+				ShowAlert:   true,
+				Edit:        true,
+			}, nil
+		}
+	}
+
+	// 2) MoviePilot duplicate subscription check
+	if sub, found, mpErr := h.moviepilot.FindExistingSubscription(review.TmdbID, mpMediaType, season); mpErr == nil && found {
+		stateText := services.GetStateText(sub.State)
+		h.telegram.SendMessage(review.TelegramID,
+			fmt.Sprintf("⚠️ 求片已自动拦截：MoviePilot 已有订阅\n\n📺 %s\n状态：%s", sub.Name, stateText), "", nil)
+		// Sync review with existing subscription info when possible
+		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
+		return &callback.Response{
+			Text:        fmt.Sprintf("⚠️ 已拦截：MP 已存在订阅（#%d）", sub.ID),
+			CallbackMsg: "已有订阅",
+			ShowAlert:   true,
+			Edit:        true,
+		}, nil
 	}
 
 	req, err := h.moviepilot.RequestMedia(
@@ -346,8 +383,8 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 
 	if len(reviews) == 0 {
 		return &callback.Response{
-			Text:        "📋 我的求片\n\n暂无求片记录\n\n使用 🔍 搜索功能来请求影片",
-			Edit:        true,
+			Text: "📋 我的求片\n\n暂无求片记录\n\n使用 🔍 搜索功能来请求影片",
+			Edit: true,
 		}, nil
 	}
 
@@ -400,8 +437,8 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 
 	if len(pending) == 0 {
 		return &callback.Response{
-			Text:        "📋 待审核求片\n\n暂无待审核请求 ✨",
-			Edit:        true,
+			Text: "📋 待审核求片\n\n暂无待审核请求 ✨",
+			Edit: true,
 		}, nil
 	}
 

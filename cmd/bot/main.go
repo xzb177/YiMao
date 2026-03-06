@@ -127,7 +127,7 @@ func main() {
 
 // Dependencies holds all service dependencies
 type Dependencies struct {
-	Cfg *config.Config
+	Cfg               *config.Config
 	Telegram          *services.TelegramClient
 	MoviePilot        *services.MoviePilotClient
 	SessionMgr        *session.Manager
@@ -242,23 +242,23 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Println("✅ Services initialized")
 
 	return &Dependencies{
-		Cfg: cfg,
-		Telegram:         telegramClient,
-		MoviePilot:       moviepilotClient,
-		SessionMgr:       sessMgr,
-		UserMapping:      userMappingService,
-		BindingRequest:   bindingRequestService,
-		Preferences:      preferencesService,
-		IssueService:     issueService,
-		AdminService:     adminService,
-		QuotaService:     quotaService,
-		ReviewService:    reviewService,
+		Cfg:               cfg,
+		Telegram:          telegramClient,
+		MoviePilot:        moviepilotClient,
+		SessionMgr:        sessMgr,
+		UserMapping:       userMappingService,
+		BindingRequest:    bindingRequestService,
+		Preferences:       preferencesService,
+		IssueService:      issueService,
+		AdminService:      adminService,
+		QuotaService:      quotaService,
+		ReviewService:     reviewService,
 		MediaNotification: mediaNotificationSvc,
-		WebhookService:   webhookService,
-		TMDBClient:       tmdbClient,
-		Notification:     notificationService,
-		Scheduler:        scheduler,
-		SearchHistory:    searchHistory,
+		WebhookService:    webhookService,
+		TMDBClient:        tmdbClient,
+		Notification:      notificationService,
+		Scheduler:         scheduler,
+		SearchHistory:     searchHistory,
 	}
 }
 
@@ -282,7 +282,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(services.Cfg, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
-	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService)
+	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService, services.WebhookService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
 
 	// Inject dependencies
@@ -366,25 +366,25 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// Build full dependencies
 	deps := &Dependencies{
-		Cfg:     services.Cfg,
-		Telegram:         services.Telegram,
-		MoviePilot:       services.MoviePilot,
-		SessionMgr:       services.SessionMgr,
-		UserMapping:      services.UserMapping,
-		BindingRequest:   services.BindingRequest,
-		Preferences:      services.Preferences,
-		IssueService:     services.IssueService,
-		AdminService:     services.AdminService,
-		AdminHandler:     adminHandler,
-		QuotaService:     services.QuotaService,
-		ReviewService:    services.ReviewService,
+		Cfg:               services.Cfg,
+		Telegram:          services.Telegram,
+		MoviePilot:        services.MoviePilot,
+		SessionMgr:        services.SessionMgr,
+		UserMapping:       services.UserMapping,
+		BindingRequest:    services.BindingRequest,
+		Preferences:       services.Preferences,
+		IssueService:      services.IssueService,
+		AdminService:      services.AdminService,
+		AdminHandler:      adminHandler,
+		QuotaService:      services.QuotaService,
+		ReviewService:     services.ReviewService,
 		MediaNotification: services.MediaNotification,
-		WebhookService:   services.WebhookService,
-		TMDBClient:       services.TMDBClient,
-		Notification:     services.Notification,
-		Scheduler:        services.Scheduler,
-		SearchHistory:    services.SearchHistory,
-		FeedbackHandler:  feedbackHandler,
+		WebhookService:    services.WebhookService,
+		TMDBClient:        services.TMDBClient,
+		Notification:      services.Notification,
+		Scheduler:         services.Scheduler,
+		SearchHistory:     services.SearchHistory,
+		FeedbackHandler:   feedbackHandler,
 	}
 
 	return registry, deps
@@ -425,17 +425,17 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		AdminHandler:   deps.AdminHandler,
-		QuotaService:   deps.QuotaService,
-		SearchHistory:  deps.SearchHistory,
-		TMDB:           deps.TMDBClient,
-		IssueService:   deps.IssueService,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		AdminHandler:    deps.AdminHandler,
+		QuotaService:    deps.QuotaService,
+		SearchHistory:   deps.SearchHistory,
+		TMDB:            deps.TMDBClient,
+		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
 	}
 }
