@@ -58,13 +58,11 @@ type MediaItem struct {
 
 // AdminNotificationSettings stores notification preferences for an admin
 type AdminNotificationSettings struct {
-	AdminID           int64             `json:"admin_id"`
-	DailyTime         string           `json:"daily_time"`         // Format: "HH:MM", default "23:50"
-	Enabled           bool             `json:"enabled"`             // Overall notification toggle
-	InstantEnabled    bool             `json:"instant_enabled"`    // Enable instant notifications
-	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification
-	Libraries         []string         `json:"libraries"`           // Specific libraries to monitor, empty = all
-	Format           NotificationFormat `json:"format"`             // Notification format: simple or detailed
+	AdminID             int64             `json:"admin_id"`
+	DailyTime           string           `json:"daily_time"`           // Format: "HH:MM", default "23:50"
+	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification (private message)
+	Libraries           []string         `json:"libraries"`             // Specific libraries to monitor for daily summary, empty = all
+	Format              NotificationFormat `json:"format"`               // Notification format: simple or detailed
 }
 
 // MediaNotificationService handles media library notifications
@@ -173,13 +171,11 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 
 	// Return default settings
 	return &AdminNotificationSettings{
-		AdminID:           adminID,
-		DailyTime:         "23:50",
-		Enabled:           false,  // Default to disabled - require explicit opt-in
-		InstantEnabled:    false,  // Default to disabled - require explicit opt-in
+		AdminID:             adminID,
+		DailyTime:           "23:50",
 		DailySummaryEnabled: false, // Default to disabled
-		Libraries:         []string{},
-		Format:           FormatDetailed,
+		Libraries:           []string{},
+		Format:              FormatDetailed,
 	}
 }
 
@@ -190,14 +186,6 @@ func (s *MediaNotificationService) SetSettings(settings *AdminNotificationSettin
 	s.mu.Unlock()
 
 	return s.save()
-}
-
-// SetInstantEnabled sets whether instant notifications are enabled
-func (s *MediaNotificationService) SetInstantEnabled(adminID int64, enabled bool) error {
-	settings := s.GetSettings(adminID)
-	settings.InstantEnabled = enabled
-	log.Printf("[MediaNotification] SetInstantEnabled: adminID=%d, enabled=%v", adminID, enabled)
-	return s.SetSettings(settings)
 }
 
 // SetDailySummaryEnabled sets whether daily summary is enabled
@@ -213,15 +201,6 @@ func (s *MediaNotificationService) SetDailyTime(adminID int64, timeStr string) e
 	settings := s.GetSettings(adminID)
 	settings.DailyTime = timeStr
 	return s.SetSettings(settings)
-}
-
-// ToggleEnabled toggles notification on/off for an admin
-func (s *MediaNotificationService) ToggleEnabled(adminID int64) bool {
-	settings := s.GetSettings(adminID)
-	settings.Enabled = !settings.Enabled
-	log.Printf("[MediaNotification] ToggleEnabled: adminID=%d, new enabled state=%v", adminID, settings.Enabled)
-	s.SetSettings(settings)
-	return settings.Enabled
 }
 
 // SetFormat sets the notification format for an admin
@@ -249,8 +228,8 @@ func (s *MediaNotificationService) processItems() {
 }
 
 // handleItem handles a single media item
-// 入库通知只推送到群组，不推送给管理员个人
-// 此函数仅用于将项目添加到每日汇总列表，不发送即时通知
+// 群组通知由 webhook.go 统一处理
+// 此函数仅用于将项目添加到每日汇总列表（管理员私聊通知）
 func (s *MediaNotificationService) handleItem(item *MediaItem) {
 	adminIDs := s.adminService.GetAdminIDs()
 	today := time.Now().Format("2006-01-02")
@@ -267,13 +246,11 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 		} else {
 			// Return default settings without calling GetSettings (which would try to acquire lock again)
 			adminSettings[adminID] = &AdminNotificationSettings{
-				AdminID:           adminID,
-				DailyTime:         "23:50",
-				Enabled:           true,
-				InstantEnabled:    true,
+				AdminID:             adminID,
+				DailyTime:           "23:50",
 				DailySummaryEnabled: false,
-				Libraries:         []string{},
-				Format:           FormatDetailed,
+				Libraries:           []string{},
+				Format:              FormatDetailed,
 			}
 		}
 	}
@@ -289,12 +266,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			continue
 		}
 
-		// Skip if completely disabled
-		if !settings.Enabled {
-			continue
-		}
-
-		// Check library filter
+		// Check library filter for daily summary
 		if len(settings.Libraries) > 0 {
 			libraryMatch := false
 			for _, lib := range settings.Libraries {
@@ -308,7 +280,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			}
 		}
 
-		// Always add to pending items for daily summary (if enabled)
+		// Add to pending items for daily summary (if enabled)
 		if settings.DailySummaryEnabled {
 			adminKey := strconv.FormatInt(adminID, 10)
 			if s.pendingItems[adminKey] == nil {
@@ -316,9 +288,6 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			}
 			s.pendingItems[adminKey][today] = append(s.pendingItems[adminKey][today], item)
 		}
-
-		// 【修改】不再发送即时通知给管理员个人，只发送到群组
-		// 即时通知由 webhook.go 中的函数统一发送到群组
 	}
 }
 
@@ -566,13 +535,11 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 			adminSettings[adminID] = &settingsCopy
 		} else {
 			adminSettings[adminID] = &AdminNotificationSettings{
-				AdminID:           adminID,
-				DailyTime:         "23:50",
-				Enabled:           true,
-				InstantEnabled:    true,
+				AdminID:             adminID,
+				DailyTime:           "23:50",
 				DailySummaryEnabled: false,
-				Libraries:         []string{},
-				Format:           FormatDetailed,
+				Libraries:           []string{},
+				Format:              FormatDetailed,
 			}
 		}
 	}
@@ -589,7 +556,7 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 		}
 
 		// Only process admins with daily summary enabled and overall enabled
-		if !settings.DailySummaryEnabled || !settings.Enabled {
+		if !settings.DailySummaryEnabled {
 			continue
 		}
 

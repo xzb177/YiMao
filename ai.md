@@ -4,6 +4,68 @@
 
 ## 2026-03-06
 
+### refactor: 重构通知设置功能 ✅
+- **背景**: 原有三层开关（enabled、instant_enabled、daily_summary_enabled）让用户困惑
+- **问题**:
+  - 用户看到"单集推送: 已启用"但通知不发送（因为总开关关闭）
+  - 群组通知依赖管理员个人设置，逻辑复杂
+  - 代码中有多处冗余的通知处理函数
+- **重构方案**:
+  - **群组通知全局化**: 入库通知直接发送到配置的群组，不依赖管理员个人设置
+  - **简化管理员设置**: 管理员只能控制每日汇总（私聊通知）
+  - **移除总开关**: 删除 `Enabled` 和 `InstantEnabled` 字段
+- **修改内容**:
+  - `AdminNotificationSettings` 结构体:
+    - 移除 `Enabled` 总开关
+    - 移除 `InstantEnabled` 字段
+    - 保留 `DailySummaryEnabled`（每日汇总）
+    - 保留 `DailyTime`、`Libraries`、`Format`
+  - `internal/services/media_notification.go`:
+    - 删除 `SetInstantEnabled()` 函数
+    - 删除 `ToggleEnabled()` 函数
+    - 简化 `handleItem()` 函数
+  - `internal/services/webhook.go`:
+    - 删除对管理员个人设置的检查
+    - 群组通知直接发送，不判断 `settings.Enabled`
+  - `internal/handlers/admin.go`:
+    - 重构 `handleNotifSettings()` - 新的UI设计
+    - 删除 9 个不再需要的回调处理函数
+    - 更新 `Handle()` 中的 case 分支
+- **新UI设计**:
+  ```
+  ┌─────────────────────────────────────┐
+  │        ⚙️ 入库通知设置               │
+  ├─────────────────────────────────────┤
+  │  📺 群组通知                         │
+  │     状态: ✅ 全局开启                │
+  │     群组 ID: -100230696041           │
+  ├─────────────────────────────────────┤
+  │  📰 每日汇总                         │
+  │     状态: ✅ 开启                    │
+  │     时间: 23:50                      │
+  ├─────────────────────────────────────┤
+  │  💡 群组通知直接发送到配置的群组      │
+  │     每日汇总发送到私聊                │
+  └─────────────────────────────────────┘
+  ```
+- **效果**:
+  - 群组通知无条件发送到配置的群组
+  - 管理员只需配置是否接收每日汇总私聊通知
+  - 代码更简洁，逻辑更清晰
+
+### fix: 修复通知设置按钮回调 panic ✅
+- **问题**: 点击"通知设置"按钮出现 internal error
+- **原因**: `AdminHandler` 中的 `cfg` 字段为 nil
+  - `main.go` 中 `NewAdminHandler(nil, ...)` 第一个参数传了 nil
+- **修复**:
+  - 在 `Dependencies` 结构体中添加 `Cfg *config.Config` 字段
+  - 在 `initServices` 返回时设置 `Cfg: cfg`
+  - 在 `initRegistry` 的 deps 初始化时设置 `Cfg: services.Cfg`
+  - `NewAdminHandler` 改为使用 `services.Cfg`
+- **修改文件**: `cmd/bot/main.go`, `internal/handlers/admin.go`
+
+
+
 ### fix: 修复组合emoji乱码问题 ✅
 - **背景**: 代码中使用组合emoji（含零宽字符ZWJ）在部分系统显示为乱码
 - **问题emoji**:

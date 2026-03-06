@@ -75,28 +75,10 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleAdminMenu(ctx)
 	case "admin_notif_settings":
 		return h.handleNotifSettings(ctx)
-	// 新的 V2 回调处理 - 状态融合按钮
-	case "admin_notif_toggle_single_v2":
-		return h.handleNotifToggleSingleV2(ctx)
 	case "admin_notif_toggle_daily_v2":
 		return h.handleNotifToggleDailyV2(ctx)
-	case "admin_notif_toggle_format":
-		return h.handleNotifToggleFormat(ctx)
-	case "admin_notif_disable_all":
-		return h.handleNotifDisableAll(ctx)
-	// 保留旧的回调处理（向后兼容）
-	case "admin_notif_toggle_instant":
-		return h.handleNotifToggleInstant(ctx)
-	case "admin_notif_toggle_daily":
-		return h.handleNotifToggleDaily(ctx)
-	case "admin_notif_toggle":
-		return h.handleNotifToggle(ctx)
 	case "admin_notif_settime":
 		return h.handleNotifSetTime(ctx)
-	case "admin_notif_format_simple":
-		return h.handleNotifFormatSimple(ctx)
-	case "admin_notif_format_detailed":
-		return h.handleNotifFormatDetailed(ctx)
 	case "admin_notif_custom_time":
 		return h.handleNotifCustomTime(ctx)
 	// 管理员管理回调 - 仅 Root 可用
@@ -510,25 +492,15 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	if h.mediaNotificationSvc != nil {
 		log.Printf("[AdminHandler] Getting settings for user %d", ctx.UserID)
 		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-		log.Printf("[AdminHandler] Got settings: instant=%v, daily=%v, enabled=%v",
-			settings.InstantEnabled, settings.DailySummaryEnabled, settings.Enabled)
+		log.Printf("[AdminHandler] Got settings: daily=%v", settings.DailySummaryEnabled)
 
-		// Overall status
-		statusIcon := "✅"
-		if !settings.Enabled {
-			statusIcon = "❌"
-		}
-
-		msg.Bold(fmt.Sprintf("%s 媒体库通知", statusIcon)).Newline()
-
-		// Instant notification status
-		instantIcon := "🔔"
-		if settings.InstantEnabled {
-			instantIcon = "📨"
-		}
-		msg.Textf("   %s 单集推送: %s", instantIcon, h.getBoolText(settings.InstantEnabled)).Newline()
-
-		// Daily summary status
+		// 群组通知状态（全局开启）
+		msg.Bold("✅ 媒体库通知").Newline()
+		
+		// 群组通知
+		msg.Textf("   📺 群组通知: %s", "已开启").Newline()
+		
+		// 每日汇总状态
 		dailyIcon := "📅"
 		if !settings.DailySummaryEnabled {
 			dailyIcon = "📅"
@@ -571,7 +543,8 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	}, nil
 }
 
-// handleNotifSettings handles notification settings callback - 现代化 UI 重构
+// handleNotifSettings handles notification settings callback
+// 重构后：群组通知全局开启，管理员只能控制每日汇总（私聊）
 func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
@@ -589,97 +562,60 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 
 	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
 
-	// 极简文本引导
-	msg := services.NewMessageBuilder()
-	msg.Bold("⚙️ 媒体库通知设置").Newline()
-	msg.Newline()
-	msg.Text("点击下方按钮切换对应功能的开关状态").Newline()
-
-	kb := services.NewKeyboardBuilder()
-
-	// 第一行：核心功能开关 - 状态融合按钮
-	// 格式：[ 📺 单集推送: ❌ 关闭 ] 或 [ 📺 单集推送: ✅ 开启 ]
-	instantStatus := "关闭"
-	instantIcon := "❌"
-	if settings.InstantEnabled {
-		instantStatus = "开启"
-		instantIcon = "✅"
+	// 获取群组ID显示
+	groupStatus := "未配置"
+	if h.cfg.TelegramChatID != "" {
+		groupStatus = h.cfg.TelegramChatID
 	}
-	kb.AddButton(fmt.Sprintf("📺 单集推送: %s %s", instantIcon, instantStatus), "admin_notif_toggle_single_v2")
 
+	msg := services.NewMessageBuilder()
+	msg.Bold("⚙️ 入库通知设置").Newline()
+	msg.Newline()
+	
+	// 群组通知状态（全局开启）
+	msg.Bold("📺 群组通知").Newline()
+	msg.Text("   状态: ✅ 全局开启").Newline()
+	msg.Textf("   群组 ID: %s", groupStatus).Newline()
+	msg.Newline()
+	
+	// 每日汇总状态（可配置）
+	msg.Bold("📰 每日汇总").Newline()
 	dailyStatus := "关闭"
 	dailyIcon := "❌"
 	if settings.DailySummaryEnabled {
 		dailyStatus = "开启"
 		dailyIcon = "✅"
 	}
+	msg.Textf("   状态: %s %s", dailyIcon, dailyStatus).Newline()
+	msg.Textf("   时间: %s", settings.DailyTime).Newline()
+	msg.Newline()
+	
+	msg.Italic("💡 群组通知直接发送到配置的群组，每日汇总发送到私聊").Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// 每日汇总开关
 	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
 	kb.NewRow()
 
-	// 第二行：偏好设置
-	// 格式按钮：循环切换"详细"和"简洁"
-	formatText := "简洁"
-	if settings.Format == services.FormatDetailed {
-		formatText = "详细"
-	}
-	kb.AddButton(fmt.Sprintf("📝 格式: %s 🔄", formatText), "admin_notif_toggle_format")
-
-	// 时间按钮
+	// 汇总时间设置
 	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", settings.DailyTime), "admin_notif_settime")
 	kb.NewRow()
 
-	// 第三行：全局控制
-	kb.AddButton("🔕 停用所有通知", "admin_notif_disable_all")
-	kb.NewRow()
-
-	// 第四行：导航返回
+	// 返回按钮
 	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
 // handleNotifToggleSingleV2 处理单集推送切换 - 仅更新按钮，不发新消息
-func (h *AdminHandler) handleNotifToggleSingleV2(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
 
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	newState := !settings.InstantEnabled
-	h.mediaNotificationSvc.SetInstantEnabled(ctx.UserID, newState)
-
-	// 获取更新后的设置，构建新的按钮
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	kb := h.buildNotifSettingsKeyboard(updatedSettings)
-
-	// 防抖提示
-	callbackMsg := "单集推送已关闭"
-	if newState {
-		callbackMsg = "单集推送已开启"
-	}
-
-	return &callback.Response{
-		Keyboard:     convertKeyboard(kb),
-		CallbackMsg:  callbackMsg,
-	}, nil
-}
-
-// handleNotifToggleDailyV2 处理每日汇总切换 - 仅更新按钮
+// handleNotifToggleDailyV2 处理每日汇总切换
 func (h *AdminHandler) handleNotifToggleDailyV2(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{
@@ -699,237 +635,72 @@ func (h *AdminHandler) handleNotifToggleDailyV2(ctx *callback.Context) (*callbac
 	newState := !settings.DailySummaryEnabled
 	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, newState)
 
-	// 获取更新后的设置，构建新的按钮
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	kb := h.buildNotifSettingsKeyboard(updatedSettings)
-
 	// 防抖提示
 	callbackMsg := "每日汇总已关闭"
 	if newState {
 		callbackMsg = "每日汇总已开启"
 	}
 
+	// 重新构建界面
+	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+
+	// 获取群组ID显示
+	groupStatus := "未配置"
+	if h.cfg.TelegramChatID != "" {
+		groupStatus = h.cfg.TelegramChatID
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("⚙️ 入库通知设置").Newline()
+	msg.Newline()
+	
+	// 群组通知状态（全局开启）
+	msg.Bold("📺 群组通知").Newline()
+	msg.Text("   状态: ✅ 全局开启").Newline()
+	msg.Textf("   群组 ID: %s", groupStatus).Newline()
+	msg.Newline()
+	
+	// 每日汇总状态（可配置）
+	msg.Bold("📰 每日汇总").Newline()
+	dailyStatus := "关闭"
+	dailyIcon := "❌"
+	if updatedSettings.DailySummaryEnabled {
+		dailyStatus = "开启"
+		dailyIcon = "✅"
+	}
+	msg.Textf("   状态: %s %s", dailyIcon, dailyStatus).Newline()
+	msg.Textf("   时间: %s", updatedSettings.DailyTime).Newline()
+	msg.Newline()
+	
+	msg.Italic("💡 群组通知直接发送到配置的群组，每日汇总发送到私聊").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
+	kb.NewRow()
+	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", updatedSettings.DailyTime), "admin_notif_settime")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
 	return &callback.Response{
-		Keyboard:     convertKeyboard(kb),
-		CallbackMsg:  callbackMsg,
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		CallbackMsg: callbackMsg,
 	}, nil
 }
 
 // handleNotifToggleFormat 处理格式切换 - 在"详细"和"简洁"之间循环
-func (h *AdminHandler) handleNotifToggleFormat(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	// 循环切换格式
-	var newFormat services.NotificationFormat
-	if settings.Format == services.FormatDetailed {
-		newFormat = services.FormatSimple
-	} else {
-		newFormat = services.FormatDetailed
-	}
-	h.mediaNotificationSvc.SetFormat(ctx.UserID, newFormat)
-
-	// 获取更新后的设置，构建新的按钮
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	kb := h.buildNotifSettingsKeyboard(updatedSettings)
-
-	// 防抖提示
-	callbackMsg := "已切换到简洁格式"
-	if newFormat == services.FormatDetailed {
-		callbackMsg = "已切换到详细格式"
-	}
-
-	return &callback.Response{
-		Keyboard:     convertKeyboard(kb),
-		CallbackMsg:  callbackMsg,
-	}, nil
-}
 
 // handleNotifDisableAll 停用所有通知
-func (h *AdminHandler) handleNotifDisableAll(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// 关闭所有开关 - 使用 SetSettings 方法
-	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	settings.InstantEnabled = false
-	settings.DailySummaryEnabled = false
-	settings.Enabled = false
-	if err := h.mediaNotificationSvc.SetSettings(settings); err != nil {
-		log.Printf("[AdminHandler] Failed to disable all notifications: %v", err)
-		return &callback.Response{
-			CallbackMsg: "设置保存失败，请重试",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// 获取更新后的设置，构建新的按钮
-	updatedSettings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	kb := h.buildNotifSettingsKeyboard(updatedSettings)
-
-	return &callback.Response{
-		Keyboard:     convertKeyboard(kb),
-		CallbackMsg:  "已停用所有通知",
-	}, nil
-}
 
 // buildNotifSettingsKeyboard 构建通知设置的按钮键盘（用于原地刷新）
-func (h *AdminHandler) buildNotifSettingsKeyboard(settings *services.AdminNotificationSettings) *types.TelegramInlineKeyboard {
-	kb := services.NewKeyboardBuilder()
-
-	// 第一行：核心功能开关 - 状态融合按钮
-	instantStatus := "关闭"
-	instantIcon := "❌"
-	if settings.InstantEnabled {
-		instantStatus = "开启"
-		instantIcon = "✅"
-	}
-	kb.AddButton(fmt.Sprintf("📺 单集推送: %s %s", instantIcon, instantStatus), "admin_notif_toggle_single_v2")
-
-	dailyStatus := "关闭"
-	dailyIcon := "❌"
-	if settings.DailySummaryEnabled {
-		dailyStatus = "开启"
-		dailyIcon = "✅"
-	}
-	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
-	kb.NewRow()
-
-	// 第二行：偏好设置
-	formatText := "简洁"
-	if settings.Format == services.FormatDetailed {
-		formatText = "详细"
-	}
-	kb.AddButton(fmt.Sprintf("📝 格式: %s 🔄", formatText), "admin_notif_toggle_format")
-	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", settings.DailyTime), "admin_notif_settime")
-	kb.NewRow()
-
-	// 第三行：全局控制
-	kb.AddButton("🔕 停用所有通知", "admin_notif_disable_all")
-	kb.NewRow()
-
-	// 第四行：导航返回
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
-
-	return kb.Build()
-}
 
 // handleNotifToggleInstant handles toggling instant notifications
-func (h *AdminHandler) handleNotifToggleInstant(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	newState := !settings.InstantEnabled
-	h.mediaNotificationSvc.SetInstantEnabled(ctx.UserID, newState)
-
-	statusText := "已启用"
-	if !newState {
-		statusText = "已关闭"
-	}
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 单集推送%s", statusText),
-		CallbackMsg: statusText,
-		Edit:        true,
-	}, nil
-}
 
 // handleNotifToggleDaily handles toggling daily summary
-func (h *AdminHandler) handleNotifToggleDaily(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-	newState := !settings.DailySummaryEnabled
-	h.mediaNotificationSvc.SetDailySummaryEnabled(ctx.UserID, newState)
-
-	statusText := "已启用"
-	if !newState {
-		statusText = "已关闭"
-	}
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 每日汇总%s", statusText),
-		CallbackMsg: statusText,
-		Edit:        true,
-	}, nil
-}
 
 // handleNotifToggle handles toggling notifications on/off (overall)
-func (h *AdminHandler) handleNotifToggle(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	enabled := h.mediaNotificationSvc.ToggleEnabled(ctx.UserID)
-
-	statusText := "已启用"
-	if !enabled {
-		statusText = "已禁用"
-	}
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 通知%s", statusText),
-		CallbackMsg: statusText,
-		Edit:        true,
-	}, nil
-}
 
 // handleNotifSetTime handles setting daily summary time
 func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Response, error) {
@@ -1047,54 +818,8 @@ func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.R
 }
 
 // handleNotifFormatSimple handles switching to simple notification format
-func (h *AdminHandler) handleNotifFormatSimple(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	h.mediaNotificationSvc.SetFormat(ctx.UserID, services.FormatSimple)
-
-	return &callback.Response{
-		Text:        "✅ 已切换到简洁格式",
-		CallbackMsg: "格式已切换",
-		Edit:        true,
-	}, nil
-}
 
 // handleNotifFormatDetailed handles switching to detailed notification format
-func (h *AdminHandler) handleNotifFormatDetailed(ctx *callback.Context) (*callback.Response, error) {
-	if !h.adminService.IsAdmin(ctx.UserID) {
-		return &callback.Response{
-			CallbackMsg: "你不是管理员",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	if h.mediaNotificationSvc == nil {
-		return &callback.Response{
-			CallbackMsg: "通知服务未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	h.mediaNotificationSvc.SetFormat(ctx.UserID, services.FormatDetailed)
-
-	return &callback.Response{
-		Text:        "✅ 已切换到详细格式",
-		CallbackMsg: "格式已切换",
-		Edit:        true,
-	}, nil
-}
 
 // getBoolText returns the display text for a boolean
 func (h *AdminHandler) getBoolText(v bool) string {

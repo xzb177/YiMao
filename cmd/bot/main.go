@@ -127,6 +127,7 @@ func main() {
 
 // Dependencies holds all service dependencies
 type Dependencies struct {
+	Cfg *config.Config
 	Telegram          *services.TelegramClient
 	MoviePilot        *services.MoviePilotClient
 	SessionMgr        *session.Manager
@@ -241,6 +242,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Println("✅ Services initialized")
 
 	return &Dependencies{
+		Cfg: cfg,
 		Telegram:         telegramClient,
 		MoviePilot:       moviepilotClient,
 		SessionMgr:       sessMgr,
@@ -279,7 +281,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
-	adminHandler := handlers.NewAdminHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
+	adminHandler := handlers.NewAdminHandler(services.Cfg, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
 
@@ -361,6 +363,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// Build full dependencies
 	deps := &Dependencies{
+		Cfg:     services.Cfg,
 		Telegram:         services.Telegram,
 		MoviePilot:       services.MoviePilot,
 		SessionMgr:       services.SessionMgr,

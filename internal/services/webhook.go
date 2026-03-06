@@ -917,30 +917,10 @@ func (s *WebhookService) flushEpisodeAggregation() {
 		delete(s.epAggregation, key)
 	}
 }
-
 // sendAggregatedEpisodeToAdmins sends aggregated episode notification to group chat only
-// 入库通知只推送到群组，不推送给管理员个人
-// 只有在至少一个管理员启用通知时才发送
+// 入库通知直接推送到群组，不依赖管理员个人设置
 func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year int, season int, episodes []int, epRange string, quality, imageURL string, fileSize int64, enhancedInfo *EmbyEnhancedInfo, libraryName string) {
-	// 检查是否有至少一个管理员启用了入库通知
-	if s.mediaNotificationSvc != nil {
-		adminIDs := s.adminService.GetAdminIDs()
-		hasEnabledAdmin := false
-		for _, adminID := range adminIDs {
-			settings := s.mediaNotificationSvc.GetSettings(adminID)
-			if settings.Enabled {
-				hasEnabledAdmin = true
-				break
-			}
-		}
-		// 如果没有管理员启用通知，则不发送
-		if !hasEnabledAdmin {
-			log.Printf("[入库] 所有管理员已禁用通知，跳过发送")
-			return
-		}
-	}
-
-	// 只发送到群组，不发送给管理员个人
+	// 直接发送到群组，不检查管理员设置
 	if s.chatID != 0 && s.chatID < -100 {
 		message := s.formatAggregatedEpisodeMessage(&EpisodeAggregation{
 			SeriesName:   seriesName,
@@ -968,11 +948,12 @@ func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year i
 			}, epRange)
 			s.sendNotificationWithPhoto(photoCaption, imageURL, enhancedInfo)
 		} else {
-			s.sendWithCache(s.chatID, message)
+			// Fallback to text message if no image
+			s.telegram.SendMessage(s.chatID, message, "", nil)
+			log.Printf("[入库] 已发送文本通知到群组")
 		}
 	}
 }
-
 // sendNotificationWithPhotoToAdmin sends a photo notification to a specific admin
 func (s *WebhookService) sendNotificationWithPhotoToAdmin(adminID int64, caption string, imageURL string, enhancedInfo *EmbyEnhancedInfo) {
 	// Try to send as photo using Telegram's built-in URL download
