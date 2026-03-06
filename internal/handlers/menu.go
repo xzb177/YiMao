@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
@@ -213,7 +214,7 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 	}
 
 	// Build title with year
-	title := req.Name
+	title := trimDisplayTitle(req.Name, 32)
 	if req.Year != "" && req.Year != "0" {
 		title = fmt.Sprintf("%s (%s)", title, req.Year)
 	}
@@ -234,6 +235,9 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 	if extraInfo != "" {
 		line += fmt.Sprintf(" · %s", extraInfo)
 	}
+	if req.Date != "" {
+		line += fmt.Sprintf(" · %s", trimDisplayDate(req.Date))
+	}
 
 	return line
 }
@@ -241,8 +245,10 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 // getStateEmoji returns the emoji for a subscription state
 func getStateEmoji(state string) string {
 	switch state {
-	case services.StatePending, services.StateRecycled:
+	case services.StatePending:
 		return "⏳"
+	case services.StateRecycled:
+		return "🔄"
 	case services.StateSearching:
 		return "🔍"
 	case services.StateDownloading:
@@ -251,9 +257,31 @@ func getStateEmoji(state string) string {
 		return "✅"
 	case services.StateFailed:
 		return "❌"
+	case services.StateCancelled:
+		return "🚫"
 	default:
 		return "❓"
 	}
+}
+
+func trimDisplayTitle(s string, maxLen int) string {
+	s = strings.TrimSpace(s)
+	if maxLen <= 0 || len([]rune(s)) <= maxLen {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:maxLen-1]) + "…"
+}
+
+func trimDisplayDate(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if len(raw) >= 10 {
+		return raw[:10]
+	}
+	return raw
 }
 
 // buildRequestsKeyboard builds the inline keyboard for pagination and actions
@@ -380,6 +408,18 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 	msg.Newline()
 	msg.Textf("📊 状态: %s", statusText).Newline()
 
+	actionText := "等待系统处理"
+	switch item.State {
+	case services.StateCompleted:
+		actionText = "可前往 Emby 观看"
+	case services.StateFailed:
+		actionText = "可点击“重新搜索”重试"
+	case services.StateRecycled:
+		actionText = "已加入重新搜索队列"
+	case services.StateSearching, services.StateDownloading:
+		actionText = "请稍后刷新查看最新进度"
+	}
+	msg.Textf("💡 建议: %s", actionText).Newline()
 	if item.Season > 0 {
 		msg.Textf("📺 季数: 第 %d 季", item.Season).Newline()
 	}
