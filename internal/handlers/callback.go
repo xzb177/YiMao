@@ -244,6 +244,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleAI(ctx)
 	case callback.ActionMood:
 		return h.HandleMood(ctx)
+	case callback.ActionMoodPick:
+		return h.HandleMoodPick(ctx)
 	case callback.ActionHot:
 		return h.HandleHot(ctx)
 	case callback.ActionNew:
@@ -269,6 +271,22 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	msg.Text("📋 我的请求：查看求片进度").Newline()
 	msg.Text("🐞 我的反馈：查看处理结果").Newline()
 	msg.Text("🔗 账号绑定：同步账号信息").Newline()
+
+	if isPrivateChat {
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
+			moodMap := map[string]string{
+				"relax":    "解压轻松",
+				"mindblow": "烧脑刺激",
+				"emotional": "情绪共鸣",
+				"healing":  "治愈慢节奏",
+				"random":   "随机盲选",
+			}
+			if label, exists := moodMap[moodVal]; exists {
+				msg.Textf("🧠 观影人格：%s", label).Newline()
+			}
+		}
+	}
 	msg.Newline()
 	msg.Italic("👇 请选择下方功能").Newline()
 
@@ -352,13 +370,13 @@ func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, er
 	msg.Italic("系统会映射到不同推荐池，减少选择疲劳").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("😄 解压轻松", "search:type:hot")
-	kb.AddButton("🤯 烧脑刺激", "search:type:toprated")
+	kb.AddButton("😄 解压轻松", "moodpick:type:hot:mood:relax")
+	kb.AddButton("🤯 烧脑刺激", "moodpick:type:toprated:mood:mindblow")
 	kb.NewRow()
-	kb.AddButton("😭 情绪共鸣", "search:type:trending")
-	kb.AddButton("🧘 治愈慢节奏", "search:type:new")
+	kb.AddButton("😭 情绪共鸣", "moodpick:type:trending:mood:emotional")
+	kb.AddButton("🧘 治愈慢节奏", "moodpick:type:new:mood:healing")
 	kb.NewRow()
-	kb.AddButton("🎲 随机盲选", "search:type:random")
+	kb.AddButton("🎲 随机盲选", "moodpick:type:random:mood:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
@@ -366,6 +384,59 @@ func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, er
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+func (h *StartHandler) HandleMoodPick(ctx *callback.Context) (*callback.Response, error) {
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			Text:        "⚠️ 情绪选片仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	typeName := ctx.Callback.Params["type"]
+	mood := ctx.Callback.Params["mood"]
+	if typeName == "" {
+		typeName = "random"
+	}
+	if mood == "" {
+		mood = "random"
+	}
+
+	// 记录用户最近一次情绪偏好，用于后续个性化
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("pref_mood_last", mood)
+	sess.Set("pref_mood_last_type", typeName)
+
+	moodLabel := map[string]string{
+		"relax":    "解压轻松",
+		"mindblow": "烧脑刺激",
+		"emotional": "情绪共鸣",
+		"healing":  "治愈慢节奏",
+		"random":   "随机盲选",
+	}[mood]
+	if moodLabel == "" {
+		moodLabel = "随机盲选"
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("💫 情绪画像已记录").Newline()
+	msg.Newline()
+	msg.Textf("当前偏好：%s", moodLabel).Newline()
+	msg.Italic("接下来会优先给你相近风格内容").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎬 立即看推荐", fmt.Sprintf("search:type:%s", typeName))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:        msg.Build(),
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
+		CallbackMsg: "已记住你的口味",
 	}, nil
 }
 
