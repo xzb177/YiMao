@@ -321,7 +321,7 @@ func (r *Router) generateSummary() string {
 	message := "📊 今日统计汇总\n\n"
 	message += fmt.Sprintf("⏳ 待处理请求: %d\n", pendingCount)
 	message += fmt.Sprintf("👥 活跃用户: %d\n", totalSessions)
-	message += fmt.Sprintf("👨‍💼 管理员数: %d\n", r.adminService.GetAdminCount())
+	message += fmt.Sprintf("🛡️ 管理员数: %d\n", r.adminService.GetAdminCount())
 	message += fmt.Sprintf("\n生成时间: %s", formatCurrentTime())
 
 	return message

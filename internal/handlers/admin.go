@@ -549,11 +549,11 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 		if isRoot {
 			roleText = "👑 超级管理员"
 		}
-		msg.Bold(fmt.Sprintf("👮‍♂️ 管理员管理 (%s)", roleText)).Newline()
+		msg.Bold(fmt.Sprintf("🛡️ 管理员管理 (%s)", roleText)).Newline()
 		msg.Textf("   当前共有 %d 位管理员", adminCount).Newline()
 		msg.Newline()
 
-		kb.AddButton("👮‍♂️ 管理员设置", "admin_mgmt")
+		kb.AddButton("🛡️ 管理员设置", "admin_mgmt")
 		kb.NewRow()
 	}
 
@@ -1204,7 +1204,7 @@ func (h *AdminHandler) handleAdminMgmt(ctx *callback.Context) (*callback.Respons
 	}
 
 	msg := services.NewMessageBuilder()
-	msg.Bold("👮‍♂️ 管理员设置").Newline()
+	msg.Bold("🛡️ 管理员设置").Newline()
 	msg.Newline()
 	msg.Text("管理机器人管理员权限").Newline()
 	msg.Newline()
