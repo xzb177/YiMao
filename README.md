@@ -156,6 +156,17 @@ YiMao Bot (Handlers / Services / Session)
 
 ---
 
+## 📘 项目文档
+
+- [DEPLOY.md](DEPLOY.md) 部署说明
+- [COMMANDS.md](COMMANDS.md) 命令与回调说明
+- [ARCHITECTURE.md](ARCHITECTURE.md) 架构设计
+- [CHANGELOG.md](CHANGELOG.md) 版本变更记录
+- [CONTRIBUTING.md](CONTRIBUTING.md) 贡献指南
+- [SECURITY.md](SECURITY.md) 安全策略
+
+---
+
 ## 🧱 技术栈
 
 - Go 1.24+
