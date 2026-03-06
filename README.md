@@ -1,8 +1,6 @@
-# YiMao - Emby Telegram Bot
+# YiMao · Telegram 影视求片助手
 
-一个用于 Emby/MoviePilot 的 Telegram 机器人，解决媒体库求片和管理问题。
-
-> **🚀 一键部署安装** `curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash`
+> 让「找片、求片、追进度、收通知」都在 Telegram 内一次完成。
 
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
@@ -10,89 +8,105 @@
 
 ---
 
-## 功能特性
+## ✨ 项目定位
 
-| 功能 | 说明 |
-|------|------|
-| 🔍 **搜索求片** | 直接在 Telegram 搜片，自动调用 MoviePilot 下载 |
-| 📬 **入库通知** | 新片入库实时推送，支持每日汇总模式 |
-| 🔎 **库检查** | 求片前检查 Emby 媒体库，避免重复下载 |
-| ⭐ **精选推荐** | 从 TMDB 获取热门高分内容，发现新片 |
-| ✅ **审核机制** | 用户求片需管理员批准，避免滥用 |
-| 🔗 **账号绑定** | 支持 MoviePilot 多用户，各管各的账号 |
-| 📊 **配额限制** | 设置用户求片数量限制 |
-| 📺 **季数选择** | TV 剧集支持分季订阅，S1-S2 独立选择 |
-| 📎 **个人片单** | 收藏感兴趣的内容，支持分类管理 |
+YiMao 是一个面向 Emby / Jellyfin + MoviePilot 用户的 Telegram Bot。
+
+它的核心目标很直接：
+
+- 在聊天里就能搜片与求片
+- 自动走 MoviePilot 流程
+- 用户自己查看请求状态
+- 管理员可控审核、通知与配额
+
+不做复杂后台，不引入重依赖，用一个机器人把「影视请求链路」跑顺。
 
 ---
 
-## 一键安装
+## 🚀 一键部署
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash
 ```
 
-或者手动安装：
+或手动部署：
 
 ```bash
 git clone https://github.com/xzb177/YiMao.git
 cd YiMao
 cp .env.example .env
-# 编辑 .env 填写必需配置
+# 编辑 .env 后启动
 docker compose up -d
 ```
 
 ---
 
-## 配置说明
+## 🧩 核心能力
 
-### 必需配置
+| 模块 | 说明 |
+|------|------|
+| 🔍 搜索与求片 | Telegram 内直接搜索，命中后可一键求片 |
+| 📋 请求进度 | 用户可查看自己的请求状态（排队/搜索/下载/完成） |
+| 🧠 精选推荐 | 结合 TMDB 提供热门、高分、随机内容推荐 |
+| ✅ 审核流 | 支持管理员审核，降低滥用风险 |
+| 🔗 账号绑定 | 支持 MoviePilot 多用户映射，各看各的记录 |
+| 📬 通知系统 | 单集推送 + 每日汇总，支持时间配置 |
+| 📊 配额策略 | 可按用户限制求片次数 |
+| 📺 剧集订阅 | 支持按季选择，避免整剧误下 |
+| 🐞 反馈闭环 | 用户提交反馈，管理员统一处理 |
 
-| 环境变量 | 说明 | 获取方式 |
-|---------|------|---------|
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token | [@BotFather](https://t.me/BotFather) 创建机器人获取 |
-| `MOVIEPILOT_URL` | MoviePilot 地址 | 如 http://localhost:4500 |
-| `MOVIEPILOT_API_KEY` | MoviePilot API Key | MoviePilot 设置 -> API安全 |
-| `ADMINS` | 管理员 Telegram ID | [@userinfobot](https://t.me/userinfobot) 发消息获取 |
+---
 
-### 可选配置
+## 🛠 配置说明
 
-| 环境变量 | 说明 | 默认值 |
-|---------|------|-------|
+### 必填环境变量
+
+| 变量名 | 说明 | 获取方式 |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | Telegram 机器人 Token | [@BotFather](https://t.me/BotFather) |
+| `MOVIEPILOT_URL` | MoviePilot 地址 | 例如 `http://localhost:4500` |
+| `MOVIEPILOT_API_KEY` | MoviePilot API Key | MoviePilot 后台 |
+| `ADMINS` | 管理员 Telegram ID | [@userinfobot](https://t.me/userinfobot) |
+
+### 常用可选变量
+
+| 变量名 | 说明 | 默认值 |
+|---|---|---|
 | `EMBY_URL` | Emby 地址 | - |
 | `EMBY_API_KEY` | Emby API Key | - |
-| `TMDB_API_KEY` | TMDB API Key | 内置默认 Key |
-| `TZ` | 时区 | Asia/Shanghai |
+| `TMDB_API_KEY` | TMDB Key（可替换） | 内置默认 |
+| `TZ` | 时区 | `Asia/Shanghai` |
 
 ---
 
-## 命令列表
+## 📚 常用命令
 
-### 用户命令
+### 用户侧
 
-| 命令 | 功能 |
-|------|------|
+| 命令 | 作用 |
+|---|---|
 | `/start` | 打开主菜单 |
 | `/search 关键词` | 搜索影视 |
+| `/ai` | 打开推荐菜单 |
+| `/requests` | 查看我的请求 |
 | `/link 账号 密码` | 绑定 MoviePilot 账号 |
 
-### 管理员功能
+### 管理员侧（私聊机器人）
 
-私聊机器人可访问：
-- 审核求片请求
-- 设置通知模式
-- 查看用户反馈
-- 配额管理
+- 审核请求
+- 配置通知策略
+- 查看反馈
+- 管理配额
 
 ---
 
-## 常用操作
+## 🔄 维护与更新
 
 ```bash
-# 一键更新（推荐）
+# 推荐：一键更新
 ./update.sh
 
-# 查看日志
+# 查看运行日志
 docker logs -f emby-telegram-bot
 
 # 重启服务
@@ -101,48 +115,47 @@ docker compose restart
 # 停止服务
 docker compose down
 
-# 手动更新代码
+# 手动更新
 git pull && docker compose up -d --build
 ```
 
 ---
 
-## 架构设计
+## 🏗 架构概览
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Telegram  │────▶│    Bot      │────▶│  MoviePilot │
-│   User      │     │  (Handlers) │     │   (下载)    │
-└─────────────┘     └─────────────┘     └─────────────┘
-                          │
-                          ▼
-                    ┌─────────────┐
-                    │  Emby/Jellyfin│
-                    │   (媒体库)   │
-                    └─────────────┘
+Telegram User
+   │
+   ▼
+YiMao Bot (Handlers / Services / Session)
+   ├── MoviePilot（请求处理、下载链路）
+   ├── Emby / Jellyfin（库检查与媒体状态）
+   └── TMDB（推荐与元数据）
 ```
 
-- **Handlers**: 处理 Telegram 回调和命令
-- **Services**: 封装外部 API 调用（MoviePilot、Emby、TMDB）
-- **Session**: 管理用户会话和状态
-- **Security**: 限流、输入验证、敏感信息过滤
+### 代码分层
+
+- `internal/handlers`：命令与回调入口
+- `internal/services`：对外部系统能力封装
+- `internal/session`：会话与流程状态
+- `pkg/*`：通用类型、校验与工具
 
 ---
 
-## 技术栈
+## 🧱 技术栈
 
-- **语言**: Go 1.24+
-- **框架**: Telegram Bot API
-- **存储**: JSON 文件
-- **部署**: Docker Compose
+- Go 1.24+
+- Telegram Bot API
+- Docker Compose
+- JSON 文件存储（轻量部署友好）
 
 ---
 
-## 相关项目
+## 🤝 相关项目
 
-- [MoviePilot](https://github.com/jxxghp/MoviePilot) - 媒体刮削下载
-- [Emby](https://emby.media/) - 媒体服务器
-- [TMDB](https://www.themoviedb.org/) - 影视数据库
+- [MoviePilot](https://github.com/jxxghp/MoviePilot)
+- [Emby](https://emby.media/)
+- [TMDB](https://www.themoviedb.org/)
 
 ---
 
