@@ -179,6 +179,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	// Header
 	msg.Bold("📋 我的请求").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
+	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
 	msg.Text("────────").Newline()
 	msg.Newline()
 
@@ -189,11 +190,59 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		endIdx = totalRequests
 	}
 
-	// Build one-line format items
+	// Build grouped one-line items (当前页内按状态分组)
+	groupOrder := []struct {
+		Key    string
+		Label  string
+		States map[string]bool
+	}{
+		{Key: "processing", Label: "进行中", States: map[string]bool{services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
+		{Key: "done", Label: "已完成", States: map[string]bool{services.StateCompleted: true}},
+		{Key: "failed", Label: "异常/失败", States: map[string]bool{services.StateFailed: true, services.StateCancelled: true}},
+	}
+
+	bucket := map[string][]int{
+		"processing": {},
+		"done":       {},
+		"failed":     {},
+		"other":      {},
+	}
 	for i := startIdx; i < endIdx; i++ {
-		req := requests[i]
-		line := h.buildRequestLine(i+1, req)
-		msg.Text(line).Newline()
+		state := requests[i].State
+		matched := false
+		for _, g := range groupOrder {
+			if g.States[state] {
+				bucket[g.Key] = append(bucket[g.Key], i)
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			bucket["other"] = append(bucket["other"], i)
+		}
+	}
+
+	for _, g := range groupOrder {
+		idxList := bucket[g.Key]
+		if len(idxList) == 0 {
+			continue
+		}
+		msg.Textf("【%s】", g.Label).Newline()
+		for _, idx := range idxList {
+			req := requests[idx]
+			line := h.buildRequestLine(idx+1, req)
+			msg.Text(line).Newline()
+		}
+		msg.Newline()
+	}
+	if len(bucket["other"]) > 0 {
+		msg.Text("【其他】").Newline()
+		for _, idx := range bucket["other"] {
+			req := requests[idx]
+			line := h.buildRequestLine(idx+1, req)
+			msg.Text(line).Newline()
+		}
+		msg.Newline()
 	}
 
 	// Build keyboard
@@ -282,6 +331,23 @@ func trimDisplayDate(raw string) string {
 		return raw[:10]
 	}
 	return raw
+}
+
+func countStates(requests []services.SubscribeItem, states []string) int {
+	if len(requests) == 0 || len(states) == 0 {
+		return 0
+	}
+	stateSet := make(map[string]bool, len(states))
+	for _, s := range states {
+		stateSet[s] = true
+	}
+	count := 0
+	for _, req := range requests {
+		if stateSet[req.State] {
+			count++
+		}
+	}
+	return count
 }
 
 // buildRequestsKeyboard builds the inline keyboard for pagination and actions
