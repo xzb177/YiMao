@@ -242,6 +242,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleSearch(ctx)
 	case callback.ActionAI:
 		return h.HandleAI(ctx)
+	case callback.ActionMood:
+		return h.HandleMood(ctx)
 	case callback.ActionHot:
 		return h.HandleHot(ctx)
 	case callback.ActionNew:
@@ -261,6 +263,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
 		msg.Text("🎬 精选推荐：浏览热门与高分").Newline()
+		msg.Text("💫 情绪选片：按心情一键找片").Newline()
 	}
 
 	msg.Text("📋 我的请求：查看求片进度").Newline()
@@ -322,6 +325,40 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	kb.AddButton("🆕 最新上映", "search:type:new")
 	kb.NewRow()
 	kb.AddButton("🎲 随机探索", "search:type:random")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// HandleMood provides mood-based recommendation entry
+func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, error) {
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			Text:        "⚠️ 情绪选片仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("💫 情绪选片").Newline()
+	msg.Newline()
+	msg.Text("按你现在的心情，选一个入口：").Newline()
+	msg.Italic("系统会映射到不同推荐池，减少选择疲劳").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("😄 解压轻松", "search:type:hot")
+	kb.AddButton("🤯 烧脑刺激", "search:type:toprated")
+	kb.NewRow()
+	kb.AddButton("😭 情绪共鸣", "search:type:trending")
+	kb.AddButton("🧘 治愈慢节奏", "search:type:new")
+	kb.NewRow()
+	kb.AddButton("🎲 随机盲选", "search:type:random")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

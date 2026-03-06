@@ -29,6 +29,7 @@ const (
 	ActionLink         Action = "link"
 	ActionHelp         Action = "help"
 	ActionAI           Action = "ai"
+	ActionMood         Action = "mood"
 	ActionHot          Action = "hot"
 	ActionNew          Action = "new"
 
@@ -43,6 +44,7 @@ var validActions = map[Action]bool{
 	ActionStart:        true,
 	ActionSearch:       true,
 	ActionAI:           true,
+	ActionMood:         true,
 	ActionHot:          true,
 	ActionNew:          true,
 	ActionDetail:       true,

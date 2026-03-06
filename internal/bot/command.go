@@ -157,6 +157,7 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 	msg.Newline()
 	msg.Text("🔍 搜索影片：快速查找想看的内容").Newline()
 	msg.Text("🎬 精选推荐：发现热门和高分影片").Newline()
+	msg.Text("💫 情绪选片：按心情快速找片").Newline()
 	msg.Text("📋 我的请求：查看求片处理进度").Newline()
 	msg.Text("🐞 我的反馈：查看反馈处理结果").Newline()
 	msg.Text("🔗 账号绑定：同步账号与记录").Newline()
