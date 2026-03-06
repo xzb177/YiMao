@@ -160,25 +160,25 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	msg := services.NewMessageBuilder()
 
 	if totalRequests == 0 {
-		msg.Bold("📋 我的请求").Newline()
+		msg.Bold("我的请求").Newline()
 		msg.Newline()
-		msg.Text("暂无请求记录").Newline()
+		msg.Text("暂无记录").Newline()
 		msg.Newline()
-		msg.Italic("💡 搜索影片后点击「求片」即可添加")
+		msg.Italic("搜索后点击“求片”即可添加")
 
 		kb := &callback.Keyboard{
 			InlineKeyboard: [][]callback.Button{
-				{{Text: "🔄 刷新", CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": "1"})}},
-				{{Text: "⬅️ 返回", CallbackData: "start"}},
+				{{Text: "刷新", CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": "1"})}},
+				{{Text: "返回", CallbackData: "start"}},
 			},
 		}
 		return msg.Build(), kb
 	}
 
 	// Header
-	msg.Bold("📋 我的请求").Newline()
-	msg.Text(fmt.Sprintf("共 %d 条 · 第 %d/%d 页", totalRequests, page, totalPages)).Newline()
-	msg.Text("────────").Newline()
+	msg.Bold("我的请求").Newline()
+	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
+	msg.Text("—").Newline()
 	msg.Newline()
 
 	// Calculate slice bounds
@@ -293,7 +293,7 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 	// Previous button
 	if page > 1 {
 		paginationButtons = append(paginationButtons, callback.Button{
-			Text:         "⬅️ 上一页",
+			Text:         "上一页",
 			CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page - 1)}),
 		})
 	}
@@ -307,7 +307,7 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 	// Next button
 	if page < totalPages {
 		paginationButtons = append(paginationButtons, callback.Button{
-			Text:         "下一页 ➡️",
+			Text:         "下一页",
 			CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page + 1)}),
 		})
 	}
@@ -318,13 +318,13 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 
 	// Row 3: Refresh button
 	rows = append(rows, []callback.Button{{
-		Text:         "🔄 刷新状态",
+		Text:         "刷新",
 		CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page)}),
 	}})
 
 	// Row 4: Back button
 	rows = append(rows, []callback.Button{{
-		Text:         "⬅️ 返回主菜单",
+		Text:         "返回主菜单",
 		CallbackData: "start",
 	}})
 
@@ -454,44 +454,27 @@ func NewHelpHandler() *HelpHandler {
 
 func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("✨ 功能介绍").Newline()
+	msg.Bold("帮助").Newline()
 	msg.Newline()
-
-	msg.Bold("🔍 智能搜索").Newline()
-	msg.Text("  输入片名即刻搜索，中英文通用").Newline()
-	msg.Text("  💡 试试「沙丘」「Dune」").Newline()
+	msg.Text("搜索：输入片名即可查询").Newline()
+	msg.Text("推荐：浏览热门和高分内容").Newline()
+	msg.Text("请求：提交后可查看处理进度").Newline()
+	msg.Text("绑定：/link 用户名 密码").Newline()
 	msg.Newline()
-
-	msg.Bold("🎬 精选推荐").Newline()
-	msg.Text("  🔥 热门 · 📺 剧集 · ⭐ 高分").Newline()
-	msg.Text("  🆕 新片 · 🎲 随机发现").Newline()
+	msg.Bold("常用命令").Newline()
+	msg.Text("/start  主菜单").Newline()
+	msg.Text("/search 搜索").Newline()
+	msg.Text("/ai     推荐").Newline()
+	msg.Text("/requests 我的请求").Newline()
 	msg.Newline()
-
-	msg.Bold("📋 一键求片").Newline()
-	msg.Text("  搜索结果直接求片，自动下载入库").Newline()
-	msg.Text("  剧集支持分季订阅，按需选择").Newline()
-	msg.Newline()
-
-	msg.Bold("🔗 账号绑定").Newline()
-	msg.Text("  /link 用户名 密码").Newline()
-	msg.Text("  绑定后查看「我的请求」状态").Newline()
-	msg.Newline()
-
-	msg.Bold("📊 快捷命令").Newline()
-	msg.Text("  /start — 主菜单").Newline()
-	msg.Text("  /search — 搜索").Newline()
-	msg.Text("  /ai — 推荐").Newline()
-	msg.Text("  /requests — 我的请求").Newline()
-	msg.Newline()
-
-	msg.Italic("💬 有问题？联系管理员").Newline()
+	msg.Italic("如有问题请联系管理员").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("返回", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
-			Edit:     true,
+		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }

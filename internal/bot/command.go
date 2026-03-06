@@ -153,15 +153,15 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
+	msg.Bold("欢迎使用云海影视助手").Newline()
 	msg.Newline()
-	msg.Text("🔍 智能搜索 — 快速查找心仪影片").Newline()
-	msg.Text("🤖 AI 推荐 — 发现热门好片").Newline()
-	msg.Text("📋 请求管理 — 跟踪您的求片进度").Newline()
-	msg.Text("🐛 我的反馈 — 查看问题反馈").Newline()
-	msg.Text("🔗 账号绑定 — 同步您的观影记录").Newline()
+	msg.Text("搜索影片：快速查找内容").Newline()
+	msg.Text("精选推荐：发现值得看的片子").Newline()
+	msg.Text("我的请求：查看求片进度").Newline()
+	msg.Text("我的反馈：查看处理结果").Newline()
+	msg.Text("账号绑定：同步账号信息").Newline()
 	msg.Newline()
-	msg.Italic("💡 点击下方按钮开始探索").Newline()
+	msg.Italic("请选择下方功能").Newline()
 
 	// Always show AI menu for /start command (user explicitly using command)
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
@@ -171,34 +171,21 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 // SendHelpMessage sends the help message
 func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("❓ 帮助中心").Newline()
+	msg.Bold("帮助").Newline()
 	msg.Newline()
-	msg.Bold("🌟 功能介绍").Newline()
+	msg.Text("搜索：输入片名即可查询").Newline()
+	msg.Text("推荐：浏览热门与高分内容").Newline()
+	msg.Text("请求：提交后可在“我的请求”查看进度").Newline()
+	msg.Text("绑定：使用 /link 用户名 密码").Newline()
 	msg.Newline()
-
-	msg.Bold("🔍 智能搜索").Newline()
-	msg.Text("  直接输入影片名称即可搜索").Newline()
+	msg.Bold("常用命令").Newline()
+	msg.Text("/start  主菜单").Newline()
+	msg.Text("/search 搜索影片").Newline()
+	msg.Text("/ai     精选推荐").Newline()
+	msg.Text("/requests 我的请求").Newline()
+	msg.Text("/help   帮助").Newline()
 	msg.Newline()
-
-	msg.Bold("🤖 AI 智能推荐").Newline()
-	msg.Text("  基于 TMDB 数据，为您精选优质内容").Newline()
-	msg.Newline()
-
-	msg.Bold("📋 请求管理").Newline()
-	msg.Text("  一键求片，系统自动处理").Newline()
-	msg.Newline()
-
-	msg.Bold("⌨️ 快捷命令").Newline()
-	msg.Text("  /start — 打开主菜单").Newline()
-	msg.Text("  /search — 搜索影片").Newline()
-	msg.Text("  /ai — AI 推荐菜单").Newline()
-	msg.Text("  /requests — 我的请求").Newline()
-	msg.Text("  /link — 绑定账号").Newline()
-	msg.Text("  /quota — 查看配额").Newline()
-	msg.Text("  /help — 显示此帮助").Newline()
-	msg.Newline()
-
-	msg.Italic("💬 遇到问题？联系管理员获取帮助").Newline()
+	msg.Italic("如有问题请联系管理员").Newline()
 
 	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), nil)
 }

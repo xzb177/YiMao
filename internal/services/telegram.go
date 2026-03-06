@@ -903,25 +903,25 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
-	kb.AddButton("🔍 搜索影片", "start_search")
+	kb.AddButton("搜索", "start_search")
 	if showAI {
-		kb.AddButton("🎬 精选推荐", "start_ai")
+		kb.AddButton("推荐", "start_ai")
 	}
 
 	kb.NewRow()
-	kb.AddButton("📋 我的请求", "start_requests")
-	kb.AddButton("🐛 我的反馈", "my_feedback")
+	kb.AddButton("我的请求", "start_requests")
+	kb.AddButton("我的反馈", "my_feedback")
 
 	kb.NewRow()
-	kb.AddButton("🔗 绑定账号", "start_link")
+	kb.AddButton("绑定账号", "start_link")
 
 	kb.NewRow()
-	kb.AddButton("✨ 功能介绍", "start_help")
+	kb.AddButton("帮助", "start_help")
 
 	// Add admin button for admin users
 	if isAdmin {
 		kb.NewRow()
-		kb.AddButton("⚙️ 管理菜单", "admin_menu")
+		kb.AddButton("管理菜单", "admin_menu")
 	}
 
 	return kb.Build()

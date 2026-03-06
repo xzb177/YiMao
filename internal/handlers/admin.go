@@ -557,8 +557,8 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 
 	if h.mediaNotificationSvc == nil {
 		return &callback.Response{
-			Text:   "❌ 通知服务未启用",
-			Edit:   true,
+			Text: "❌ 通知服务未启用",
+			Edit: true,
 		}, nil
 	}
 
@@ -570,55 +570,45 @@ func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Res
 		groupStatus = h.cfg.TelegramChatID
 	}
 
+	singleOn := settings.SingleEnabled
+	dailyOn := settings.DailySummaryEnabled
+
+	singleText := "关闭"
+	if singleOn {
+		singleText = "开启"
+	}
+	dailyText := "关闭"
+	if dailyOn {
+		dailyText = "开启"
+	}
+
 	msg := services.NewMessageBuilder()
 	msg.Bold("⚙️ 入库通知设置").Newline()
 	msg.Newline()
-	
-	// 群组通知状态（全局开启）
-	msg.Bold("📺 群组通知").Newline()
-	msg.Textf("   群组 ID: %s", groupStatus).Newline()
+	msg.Textf("群组：%s", groupStatus).Newline()
+	msg.Textf("单集推送：%s", singleText).Newline()
+	msg.Textf("每日汇总：%s（%s）", dailyText, settings.DailyTime).Newline()
 	msg.Newline()
-	
-	// 单集推送状态
-	singleStatus := "关闭"
-	singleIcon := "❌"
-	if settings.SingleEnabled {
-		singleStatus = "开启"
-		singleIcon = "✅"
-	}
-	msg.Bold("📦 单集推送").Newline()
-	msg.Textf("   状态: %s %s", singleIcon, singleStatus).Newline()
-	msg.Newline()
-	
-	// 每日汇总状态（可配置）
-	msg.Bold("📰 每日汇总").Newline()
-	dailyStatus := "关闭"
-	dailyIcon := "❌"
-	if settings.DailySummaryEnabled {
-		dailyStatus = "开启"
-		dailyIcon = "✅"
-	}
-	msg.Textf("   状态: %s %s", dailyIcon, dailyStatus).Newline()
-	msg.Textf("   时间: %s", settings.DailyTime).Newline()
-	msg.Newline()
-	
-	msg.Italic("💡 单集推送到群组 · 汇总发送到群组和私聊").Newline()
+	msg.Italic("说明：单集发送到群组，汇总发送到群组和私聊").Newline()
 
 	kb := services.NewKeyboardBuilder()
 
-	// 单集推送开关
-	kb.AddButton(fmt.Sprintf("📦 单集推送: %s %s", singleIcon, singleStatus), "admin_notif_toggle_single_v2")
+	if singleOn {
+		kb.AddButton("单集：开", "admin_notif_toggle_single_v2")
+	} else {
+		kb.AddButton("单集：关", "admin_notif_toggle_single_v2")
+	}
+
+	if dailyOn {
+		kb.AddButton("汇总：开", "admin_notif_toggle_daily_v2")
+	} else {
+		kb.AddButton("汇总：关", "admin_notif_toggle_daily_v2")
+	}
 	kb.NewRow()
 
-	// 每日汇总开关
-	kb.AddButton(fmt.Sprintf("📰 每日汇总: %s %s", dailyIcon, dailyStatus), "admin_notif_toggle_daily_v2")
+	kb.AddButton(fmt.Sprintf("时间：%s", settings.DailyTime), "admin_notif_settime")
 	kb.NewRow()
 
-	// 汇总时间设置
-	kb.AddButton(fmt.Sprintf("⏰ 汇总时间: %s ✏️", settings.DailyTime), "admin_notif_settime")
-	kb.NewRow()
-
-	// 返回按钮
 	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
 
 	return &callback.Response{
@@ -701,12 +691,11 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 
 			// Build response with keyboard to continue
 			msg := services.NewMessageBuilder()
-			msg.Bold("✅ 汇总时间已设为 ").Text(timeStr).Newline()
-			msg.Newline()
-			msg.Italic("💡 您可以继续调整其他设置").Newline()
+			msg.Bold("时间已更新").Newline()
+			msg.Textf("当前时间：%s", timeStr).Newline()
 
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+			kb.AddButton("返回设置", "admin_notif_settings")
 
 			return &callback.Response{
 				Text:     msg.Build(),
@@ -720,11 +709,9 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 
 	// Show time selection keyboard with custom input option
 	msg := services.NewMessageBuilder()
-	msg.Bold("⏰ 设置每日汇总时间").Newline()
+	msg.Bold("设置每日汇总时间").Newline()
 	msg.Newline()
-	msg.Text("请选择预设时间或输入自定义时间（格式：HH:MM）").Newline()
-	msg.Newline()
-	msg.Italic("💡 例如：23:00、08:30").Newline()
+	msg.Text("请选择预设时间，或输入自定义时间（HH:MM）").Newline()
 
 	kb := services.NewKeyboardBuilder()
 
@@ -737,9 +724,9 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 		}
 	}
 	kb.NewRow()
-	kb.AddButton("✏️ 自定义时间", "admin_notif_custom_time")
+	kb.AddButton("自定义时间", "admin_notif_custom_time")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
+	kb.AddButton("返回设置", "admin_notif_settings")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -771,17 +758,16 @@ func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.R
 	sess.Set("previous_menu", "admin_notif_settings")
 
 	msg := services.NewMessageBuilder()
-	msg.Bold("⏰ 输入自定义时间").Newline()
+	msg.Bold("输入自定义时间").Newline()
 	msg.Newline()
-	msg.Text("请输入汇总发送时间").Newline()
+	msg.Text("请输入汇总发送时间（HH:MM）").Newline()
+	msg.Text("例如：23:00 或 08:30").Newline()
+	msg.Text("范围：00:00 - 23:59").Newline()
 	msg.Newline()
-	msg.Italic("💡 格式：HH:MM，例如：23:00、08:30").Newline()
-	msg.Italic("💡 范围：00:00 - 23:59").Newline()
-	msg.Newline()
-	msg.Italic("❌ 输入 /cancel 或「取消」可退出").Newline()
+	msg.Italic("输入 /cancel 或“取消”可退出").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 取消", "admin_notif_settings")
+	kb.AddButton("取消", "admin_notif_settings")
 
 	return &callback.Response{
 		Text:     msg.Build(),
