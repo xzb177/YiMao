@@ -916,12 +916,6 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 	kb.NewRow()
 	kb.AddButton("🔗 绑定账号", "start_link")
 
-	kb.NewRow()
-	kb.AddButton("🔗 绑定账号", "start_link")
-
-	kb.NewRow()
-	kb.AddButton("❓ 帮助", "start_help")
-
 	// Add admin button for admin users
 	if isAdmin {
 		kb.NewRow()
