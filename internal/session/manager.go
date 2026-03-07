@@ -171,6 +171,7 @@ func (m *Manager) Delete(userID int64) {
 	if sess, exists := m.sessions[userID]; exists {
 		log.Printf("[Session] Deleting session for user %d", userID)
 		delete(m.sessions, userID)
+		// Note: sess is removed from map, will be garbage collected (no explicit cleanup needed)
 		_ = sess
 	}
 }

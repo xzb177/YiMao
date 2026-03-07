@@ -220,6 +220,11 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		// 保存到缓存（异步）
 		if c.imageCache != nil {
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						log.Printf("[Telegram] Panic in cache save: %v", r)
+					}
+				}()
 				if err := c.imageCache.Set(photoURL, imageData); err != nil {
 					log.Printf("[Telegram] [缓存保存] 失败: %v", err)
 				}
@@ -253,8 +258,13 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
-		keyboardJSON, _ := json.Marshal(keyboard)
-		writer.WriteField("reply_markup", string(keyboardJSON))
+		keyboardJSON, err := json.Marshal(keyboard)
+		if err != nil {
+			log.Printf("[Telegram] Failed to marshal keyboard: %v", err)
+			// Continue without keyboard rather than failing the entire send
+		} else {
+			writer.WriteField("reply_markup", string(keyboardJSON))
+		}
 	}
 
 	writer.Close()
@@ -274,7 +284,11 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 	}
 	defer resp2.Body.Close()
 
-	body, _ := io.ReadAll(resp2.Body)
+	body, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		log.Printf("[Telegram] Failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
 
 	var result struct {
 		OK      bool                     `json:"ok"`
@@ -351,8 +365,13 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
-		keyboardJSON, _ := json.Marshal(keyboard)
-		writer.WriteField("reply_markup", string(keyboardJSON))
+		keyboardJSON, err := json.Marshal(keyboard)
+		if err != nil {
+			log.Printf("[Telegram] Failed to marshal keyboard: %v", err)
+			// Continue without keyboard rather than failing the entire send
+		} else {
+			writer.WriteField("reply_markup", string(keyboardJSON))
+		}
 	}
 
 	writer.Close()
@@ -372,7 +391,11 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 	}
 	defer resp2.Body.Close()
 
-	body, _ := io.ReadAll(resp2.Body)
+	body, err := io.ReadAll(resp2.Body)
+	if err != nil {
+		log.Printf("[Telegram] Failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
 
 	var result struct {
 		OK      bool                  `json:"ok"`

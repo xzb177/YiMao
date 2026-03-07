@@ -3,6 +3,7 @@ package callback
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"sync"
@@ -401,7 +402,12 @@ func (r *Registry) Match(pattern string, data string) bool {
 
 	// Regex match
 	if strings.HasPrefix(pattern, "^") && strings.HasSuffix(pattern, "$") {
-		matched, _ := regexp.MatchString(pattern, data)
+		matched, err := regexp.MatchString(pattern, data)
+		if err != nil {
+			// Invalid regex pattern - log and treat as no match
+			log.Printf("[Callback] Invalid regex pattern: %s, error: %v", pattern, err)
+			return false
+		}
 		return matched
 	}
 

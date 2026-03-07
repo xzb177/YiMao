@@ -93,7 +93,8 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if len(parts) > startIndex+1 {
 		password = strings.Join(parts[startIndex+1:], " ")
 	}
-	log.Printf("[LinkCommand] Username=%s, Password length=%d", username, len(password))
+	// 不记录密码和敏感信息，只记录操作类型
+	log.Printf("[LinkCommand] Processing link request for user")
 
 	// Validate and sanitize inputs
 	sanitizedUsername, err := validation.SanitizeUsername(username)

@@ -396,7 +396,12 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 // handleEmbyWebhook handles Emby webhook
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	// Log request for debugging
-	body, _ := io.ReadAll(req.Body)
+	body, err := io.ReadAll(req.Body)
+	if err != nil {
+		log.Printf("[API] Failed to read Emby webhook body: %v", err)
+		http.Error(w, "Failed to read request", http.StatusBadRequest)
+		return
+	}
 	log.Printf("[API] Emby webhook received - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
 
 	var payload services.EmbyWebhookPayload

@@ -343,7 +343,15 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 
 	// Parse and delegate to detail handler
 	parser := callback.NewParser()
-	cb, _ := parser.Parse(detailCallback)
+	cb, err := parser.Parse(detailCallback)
+	// Note: detailCallback is built by us, so parsing should always succeed
+	if err != nil {
+		log.Printf("[SearchHandler] Failed to parse detail callback: %v", err)
+		return &callback.Response{
+			Text: "❌ 操作失败",
+			Edit: true,
+		}, nil
+	}
 
 	detailHandler := NewDetailHandler(h.sessMgr, h.telegram, h.moviepilot, h.tmdb)
 
@@ -742,6 +750,7 @@ func (h *SearchHandler) getAIMoodRecommendations(mood string, count int) ([]serv
 
 		// If AI didn't return enough results, supplement with TMDB
 		if len(results) < count {
+			// Note: If fallback fails, we just continue with fewer results (acceptable)
 			fallbackResults, _ := h.getTMDBBasedRecommendations(mood, count-len(results))
 			results = append(results, fallbackResults...)
 		}
@@ -1491,6 +1500,7 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 
 	// Fallback if no results
 	if len(allResults) == 0 {
+		// Note: If fallback fails, we return empty results (acceptable - better than crashing)
 		results, _ := h.getFallbackMedia()
 		return results, nil
 	}

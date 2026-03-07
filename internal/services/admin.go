@@ -89,7 +89,11 @@ func (s *AdminService) load() error {
 		s.admins = make(map[int64]*AdminInfo)
 		firstID := int64(0)
 		for idStr, name := range legacyData.Admins {
-			id, _ := strconv.ParseInt(idStr, 10, 64)
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err != nil {
+				log.Printf("[AdminService] Invalid admin ID '%s' in legacy data, skipping", idStr)
+				continue
+			}
 			s.admins[id] = &AdminInfo{
 				UserID: id,
 				Name:   name,

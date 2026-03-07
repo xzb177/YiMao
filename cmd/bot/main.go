@@ -241,6 +241,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Start cleanup routines
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Cleanup] Panic recovered in cleanup routine: %v", r)
+			}
+		}()
 		ticker := time.NewTicker(1 * time.Hour)
 		for range ticker.C {
 			bindingRequestService.CleanupExpiredRequests()

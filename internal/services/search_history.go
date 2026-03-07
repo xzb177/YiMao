@@ -113,6 +113,11 @@ func (s *SearchHistoryService) AddSearch(telegramID int64, query string) {
 		historyCopy[k] = v
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[SearchHistory] Panic in async save: %v", r)
+			}
+		}()
 		s.saveAsync(historyCopy)
 	}()
 }

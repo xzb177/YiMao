@@ -440,6 +440,7 @@ func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Respons
 	}
 
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	// Note: If mood preference is not set, prefMood will be empty and defaults will be used
 	prefMood, _ := sess.GetString("pref_mood_last")
 
 	// 默认心情映射
@@ -1023,6 +1024,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 // buildDetailFromSearch builds detail page from search result item
 func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType string, sess *session.Session) *callback.Response {
 	// Try to get full media info from MoviePilot first
+	// Note: If item.ID is not a valid integer, mediaID will be 0 and the check below will skip it
 	mediaID, _ := strconv.Atoi(item.ID)
 	if mediaID > 0 && h.moviepilot != nil {
 		// Determine media type
@@ -1035,6 +1037,7 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 		mediaInfo, err := h.moviepilot.GetMediaInfo(mediaID, mpType)
 		if err == nil && mediaInfo != nil {
 			// Get the query from session to determine back button behavior
+			// Note: If GetSearchResults fails, query will be empty string (acceptable for back button)
 			_, _, query, _ := sess.GetSearchResults()
 			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
@@ -1054,6 +1057,7 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	}
 
 	// Fallback to basic detail view from session data
+	// Note: If GetSearchResults fails, query will be empty string (acceptable for back button)
 	_, _, query, _ := sess.GetSearchResults()
 	return h.buildBasicDetailFromSearch(item, mediaType, query, false) // Treat as available
 }

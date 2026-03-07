@@ -186,7 +186,9 @@ func (s *UserMappingService) scheduleSave() {
 		if s.dirty && !s.savePending {
 			s.savePending = true
 			s.mu.Unlock()
-			_ = s.save()
+			if err := s.save(); err != nil {
+				log.Printf("[UserMapping] Failed to save: %v", err)
+			}
 			s.mu.Lock()
 			s.savePending = false
 		}
@@ -485,7 +487,11 @@ func (s *BindingRequestService) CleanupExpiredRequests() int {
 	removed := 0
 	for id, req := range s.requests {
 		if req.Status == "pending" {
-			createdAt, _ := strconv.ParseInt(req.CreatedAt, 10, 64)
+			createdAt, err := strconv.ParseInt(req.CreatedAt, 10, 64)
+			if err != nil {
+				log.Printf("[UserMapping] Failed to parse CreatedAt for request %s: %v", id, err)
+				continue // Skip this request if timestamp is invalid
+			}
 			age := now - createdAt
 			if int(age) > expiry {
 				delete(s.requests, id)

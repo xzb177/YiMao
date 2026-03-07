@@ -290,6 +290,11 @@ type TrendingResultItem struct {
 // StartNotificationWorker starts the background worker to check for status updates
 func (s *NotificationService) StartNotificationWorker() {
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[NotificationService] Panic in notification worker: %v", r)
+			}
+		}()
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 
