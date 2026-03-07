@@ -2,6 +2,27 @@
 
 ---
 
+### git: UI 系统集成到主程序 ✅
+- **提交**: 7e0462d
+- **范围**: +43/-127 行 (6 文件变更)
+- **修改文件**:
+  - `internal/handlers/callback.go` - 导入 UI 包，主菜单使用波普艺术风格
+  - `internal/ui/card.go` - 修复 SearchResult 字段引用
+  - `internal/ui/cinema.go` - 修复 SearchResult 字段引用
+  - `internal/ui/film.go` - 修复 SearchResult 字段引用
+  - `internal/ui/neon.go` - 修复 SearchResult 字段引用
+  - `internal/ui/pop.go` - 修复 SearchResult 字段引用
+- **修复内容**:
+  - 移除不存在的字段引用 (OriginalTitle, ReleaseDate, Runtime, Genres)
+  - 使用实际字段 (Year, Type, Rating, Overview, ID, Poster)
+  - 修复中文引号语法错误 ("求片" → 「求片」)
+  - 移除未使用的 displayCount 变量
+  - 修复浮点数截断问题
+- **状态**: ✅ 已推送到 origin/master
+- **部署时间**: 2026-03-08 02:24
+
+---
+
 ### git: 同步远程更新 - 强视觉 UI 系统 ✅
 - **提交**: 71c89e5 (适配), d1ded96 (远程新增)
 - **范围**: +3791/-1 行 (14 文件变更)
