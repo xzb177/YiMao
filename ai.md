@@ -2,6 +2,149 @@
 
 ---
 
+## 2026-03-07
+
+
+### refactor: 搜索回退策略重构 - 统一搜索路径 ✅
+- **问题**: 原始代码只在 `SearchHandler` 中有回退策略，用户直接文本搜索走 `HandlePollSearchQuery` 无回退
+- **解决方案**: 创建独立的 `SearchFallbackService`，所有搜索入口共享
+- **新增文件**:
+  - `internal/services/search_fallback.go`:
+    - `SearchFallbackService` 服务
+    - `TryFallback()` 方法
+    - `BuildFallbackQueries()` 工具函数
+    - `ExtractCoreKeyword()` 工具函数
+    - `ExtractYear()` 工具函数
+- **修改文件**:
+  - `internal/handlers/search.go`:
+    - 移除内部回退函数
+    - 使用 `SearchFallbackService`
+  - `internal/bot/poll.go`:
+    - `PollDeps` 添加 `FallbackService` 字段
+    - `HandlePollSearchQuery` 添加回退支持
+    - 无结果时自动尝试回退查询
+- **效果**: 所有搜索路径（直接文本搜索、回调搜索）都支持回退策略
+
+### ops: 服务重启 ✅
+- **操作**: Docker Compose 重新构建并重启
+- **状态**: 服务正常运行 (healthy)
+- **功能**: 搜索回退策略在所有路径生效
+
+### feat: 合并远程更新 - Emby/MoviePilot 存在性验证 ✅
+- **提交**: `67321f5 feat(validation): block approval when Emby or MoviePilot already has media`
+- **功能**: 审批前自动检查媒体是否已存在，避免重复订阅
+- **新增验证逻辑**:
+  1. **Emby 检查**: 审批前调用 `SearchEmbyMedia()` 检查媒体库
+  2. **MoviePilot 检查**: 调用 `FindExistingSubscription()` 检查重复订阅
+- **修改文件**:
+  - `internal/handlers/review.go`: 
+    - `ReviewHandler` 添加 `webhookService` 字段
+    - `handleApprove()` 审批前执行双重检查
+  - `internal/services/moviepilot.go`:
+    - 新增 `FindExistingSubscription()` 方法
+    - 代码格式化（字段对齐）
+  - `cmd/bot/main.go`:
+    - 注入 `WebhookService` 到 `ReviewHandler`
+- **拦截效果**:
+  - Emby 已存在 → 发送消息 `⚠️ 求片已自动拦截：媒体库已存在`
+  - MP 已有订阅 → 发送消息 `⚠️ 求片已自动拦截：MoviePilot 已有订阅`
+
+### ops: 服务重启 ✅
+- **操作**: Docker Compose 重启
+- **状态**: 服务正常运行 (healthy)
+- **功能**: Emby/MoviePilot 验证功能已生效
+
+### test: 验证功能测试 ✅
+- **测试时间**: 2026-03-07
+- **测试项目**:
+  1. ✅ Emby 媒体库搜索 - 功能正常
+     - 搜索 "Avatar" 返回 6 个结果
+     - `SearchEmbyMedia()` 可正常工作
+  2. ✅ MoviePilot 订阅检查 - 功能正常
+     - API 认证成功 (使用 X-API-Key header)
+     - 可正确查找重复订阅
+     - 发现 3 组重复订阅（TMDB: 2734, 74561, 92685）
+- **结论**: 两个验证功能均正常工作，可自动拦截重复请求
+
+---
+
+### feat: 合并远程更新 - Emby/MoviePilot 存在性验证 ✅
+- **提交**: `67321f5 feat(validation): block approval when Emby or MoviePilot already has media`
+- **功能**: 审批前自动检查媒体是否已存在，避免重复订阅
+- **新增验证逻辑**:
+  1. **Emby 检查**: 审批前调用 `SearchEmbyMedia()` 检查媒体库
+  2. **MoviePilot 检查**: 调用 `FindExistingSubscription()` 检查重复订阅
+- **修改文件**:
+  - `internal/handlers/review.go`: 
+    - `ReviewHandler` 添加 `webhookService` 字段
+    - `handleApprove()` 审批前执行双重检查
+  - `internal/services/moviepilot.go`:
+    - 新增 `FindExistingSubscription()` 方法
+    - 代码格式化（字段对齐）
+  - `cmd/bot/main.go`:
+    - 注入 `WebhookService` 到 `ReviewHandler`
+- **拦截效果**:
+  - Emby 已存在 → 发送消息 `⚠️ 求片已自动拦截：媒体库已存在`
+  - MP 已有订阅 → 发送消息 `⚠️ 求片已自动拦截：MoviePilot 已有订阅`
+
+### ops: 服务重启 ✅
+- **操作**: Docker Compose 重启
+- **状态**: 服务正常运行 (healthy)
+- **功能**: Emby/MoviePilot 验证功能已生效
+
+---
+- **操作**: Docker Compose 重启
+- **状态**: 服务正常运行 (healthy)
+- **功能**: Emby/MoviePilot 验证功能已生效
+
+### feat: 合并远程更新 - 搜索回退策略 ✅
+- **提交**: `37cf133 fix(search): add fallback query strategy for no-result cases`
+- **功能**: 搜索无结果时自动尝试回退查询策略
+- **新增回退策略**:
+  1. **移除常见后缀**: 自动移除 "电影"、"电视剧"、"剧"、"动画"、"第一季" 等后缀
+  2. **提取核心关键词**: 仅保留中文、数字、英文字母
+  3. **分离年份信息**: 从标题中分离年份单独搜索
+  4. **年份搜索**: 当标题包含年份时，尝试仅用年份搜索
+- **修改文件**:
+  - `internal/handlers/search.go`:
+    - 新增 `trySearchFallback()` 方法
+    - 新增 `buildFallbackQueries()` 方法
+    - 新增 `extractCoreKeyword()` 方法
+    - 新增 `extractYear()` 方法
+    - 优化无结果提示文案
+- **用户体验提升**:
+  - 搜索失败时自动尝试简化查询
+  - 回退成功时显示 `💡 已为你启用兜底搜索：xxx`
+
+### ops: 服务重启 ✅
+- **操作**: Docker Compose 重启
+- **状态**: 服务正常运行 (healthy)
+- **功能**: 搜索回退策略已生效
+
+
+## 2026-03-07
+
+### feat: 合并远程更新 - Emby/MoviePilot 存在性验证 ✅
+- **提交**: `67321f5 feat(validation): block approval when Emby or MoviePilot already has media`
+- **功能**: 审批前自动检查媒体是否已存在，避免重复订阅
+- **新增验证逻辑**:
+  1. **Emby 检查**: 审批前调用 `SearchEmbyMedia()` 检查媒体库
+  2. **MoviePilot 检查**: 调用 `FindExistingSubscription()` 检查重复订阅
+- **修改文件**:
+  - `internal/handlers/review.go`: 
+    - `ReviewHandler` 添加 `webhookService` 字段
+    - `handleApprove()` 审批前执行双重检查
+  - `internal/services/moviepilot.go`:
+    - 新增 `FindExistingSubscription()` 方法
+    - 代码格式化（字段对齐）
+  - `cmd/bot/main.go`:
+    - 注入 `WebhookService` 到 `ReviewHandler`
+- **拦截效果**:
+  - Emby 已存在 → 发送消息 `⚠️ 求片已自动拦截：媒体库已存在`
+  - MP 已有订阅 → 发送消息 `⚠️ 求片已自动拦截：MoviePilot 已有订阅`
+
+---
+
 ## 2026-03-06
 
 
@@ -2250,3 +2393,26 @@ watchlist_add:{tmdbID}  # 加入片单
   ```
 - **状态**: ✅ 已修复并重新部署
 
+
+### test: 验证功能测试 ⚠️
+- **测试时间**: 2026-03-07
+- **测试项目**:
+  1. ✅ Emby 媒体库搜索 - 功能正常
+     - 搜索 "Avatar" 返回 6 个结果
+     - `SearchEmbyMedia()` 可正常工作
+  2. ❌ MoviePilot 订阅检查 - API 认证失败
+     - API 返回 403: token校验不通过
+     - `MOVIEPILOT_API_KEY` 可能已过期
+- **结论**: Emby 拦截功能可用，MoviePilot 拦截需更新 API Key
+
+---
+
+### ops: 清理 MoviePilot 重复订阅 ✅
+- **操作**: 删除 14 个重复订阅
+- **详情**:
+  - TMDB 2734 (法律与秩序): 保留 #2368，删除 6 个
+  - TMDB 74561 (明星大侦探): 保留 #2422，删除 7 个
+  - TMDB 92685 (猫头鹰魔法社): 保留 #2948，删除 1 个
+- **结果**: 无重复订阅
+
+---

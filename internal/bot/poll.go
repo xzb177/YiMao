@@ -29,6 +29,7 @@ type Dependencies struct {
 	TMDB            *services.TMDBClient
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
+	FallbackService *services.SearchFallbackService
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -45,6 +46,7 @@ type PollDeps struct {
 	TMDB            *services.TMDBClient
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
+	FallbackService *services.SearchFallbackService
 }
 
 // StartPolling starts the Telegram update polling
@@ -72,6 +74,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		TMDB:           deps.TMDB,
 		IssueService:   deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
+		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 	}
 
 	for {
@@ -263,7 +266,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
 		msg.Text = sanitizedText // Update with sanitized text
-		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
+		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.FallbackService)
 	}
 }
 
@@ -309,7 +312,7 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
-func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
+func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, fallbackSvc *services.SearchFallbackService) {
 	// Sanitize search query
 	query := validation.SanitizeSearchQuery(msg.Text)
 
@@ -329,10 +332,27 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	}
 
 	if len(results.Results) == 0 {
-		telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "", nil)
-		return
+		// Try fallback search strategies
+		if fallbackSvc != nil {
+			fallbackResults, fallbackQuery, fbErr := fallbackSvc.TryFallback(query)
+			if fbErr != nil {
+				log.Printf("[Poll] Fallback search failed: %v", fbErr)
+			}
+			if len(fallbackResults) > 0 {
+				log.Printf("[Poll] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
+				// Update query to the successful fallback query
+				query = fallbackQuery
+				results = &services.SearchResponse{Results: fallbackResults}
+				telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
+			} else {
+				telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "", nil)
+				return
+			}
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "", nil)
+			return
+		}
 	}
-
 	// Store search results in session
 	sess := sessMgr.GetOrCreate(msg.From.ID)
 	searchItems := make([]session.SearchItem, len(results.Results))

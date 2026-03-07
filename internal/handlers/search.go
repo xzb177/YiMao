@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -69,12 +68,13 @@ func (c *recommendationCache) set(key string, results []services.SearchResult) {
 
 // SearchHandler handles search callbacks and queries
 type SearchHandler struct {
-	sessMgr       *session.Manager
-	telegram      *services.TelegramClient
-	moviepilot    *services.MoviePilotClient
-	tmdb          *services.TMDBClient
-	searchService *services.SearchService
-	searchHistory *services.SearchHistoryService
+	fallbackService *services.SearchFallbackService
+	sessMgr         *session.Manager
+	telegram        *services.TelegramClient
+	moviepilot      *services.MoviePilotClient
+	tmdb            *services.TMDBClient
+	searchService   *services.SearchService
+	searchHistory   *services.SearchHistoryService
 }
 
 func NewSearchHandler(
@@ -85,12 +85,14 @@ func NewSearchHandler(
 ) *SearchHandler {
 	searchSvc := services.NewSearchService(moviepilot, sessMgr)
 	searchSvc.SetTMDBClient(tmdb)
+	fallbackSvc := services.NewSearchFallbackService(moviepilot)
 	return &SearchHandler{
-		sessMgr:       sessMgr,
-		telegram:      telegram,
-		moviepilot:    moviepilot,
-		tmdb:          tmdb,
-		searchService: searchSvc,
+		fallbackService: fallbackSvc,
+		sessMgr:         sessMgr,
+		telegram:        telegram,
+		moviepilot:      moviepilot,
+		tmdb:            tmdb,
+		searchService:   searchSvc,
 	}
 }
 
@@ -237,89 +239,7 @@ func (h *SearchHandler) sendNoResultsMessage(chatID int64, query string) {
 
 // trySearchFallback tries multiple fallback search strategies for CN titles
 func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult, string, error) {
-	candidates := buildFallbackQueries(query)
-	for _, q := range candidates {
-		if q == "" || q == query {
-			continue
-		}
-		results, err := h.moviepilot.SearchMedia(q, 1)
-		if err != nil || results == nil {
-			continue
-		}
-		if len(results.Results) > 0 {
-			return results.Results, q, nil
-		}
-	}
-	return nil, "", nil
-}
-
-func buildFallbackQueries(query string) []string {
-	q := strings.TrimSpace(query)
-	if q == "" {
-		return nil
-	}
-
-	seen := map[string]bool{q: true}
-	add := func(list *[]string, s string) {
-		s = strings.TrimSpace(s)
-		if s == "" || seen[s] {
-			return
-		}
-		seen[s] = true
-		*list = append(*list, s)
-	}
-
-	var out []string
-
-	// 1) remove common suffix words in Chinese titles
-	suffixes := []string{"电影", "电视剧", "剧", "动画", "动漫", "第1季", "第一季", "第2季", "第二季", "国语", "中字", "完整版"}
-	trimmed := q
-	for _, s := range suffixes {
-		trimmed = strings.ReplaceAll(trimmed, s, "")
-	}
-	trimmed = strings.TrimSpace(trimmed)
-	add(&out, trimmed)
-
-	// 2) keep only Chinese chars and digits to reduce noise
-	onlyCore := extractCoreKeyword(q)
-	add(&out, onlyCore)
-
-	// 3) if contains year info, split to title-only
-	for _, r := range []string{"（", "("} {
-		if idx := strings.Index(q, r); idx > 0 {
-			add(&out, strings.TrimSpace(q[:idx]))
-		}
-	}
-
-	// 4) fallback to year-only search when title contains 4-digit year
-	if y := extractYear(q); y != "" {
-		add(&out, y)
-	}
-
-	return out
-}
-
-func extractCoreKeyword(s string) string {
-	runes := []rune(strings.TrimSpace(s))
-	keep := make([]rune, 0, len(runes))
-	for _, r := range runes {
-		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= 0x4e00 && r <= 0x9fff) {
-			keep = append(keep, r)
-		}
-	}
-	return strings.TrimSpace(string(keep))
-}
-
-func extractYear(s string) string {
-	runes := []rune(s)
-	for i := 0; i+3 < len(runes); i++ {
-		chunk := string(runes[i : i+4])
-		y, err := strconv.Atoi(chunk)
-		if err == nil && y >= 1900 && y <= 2099 {
-			return chunk
-		}
-	}
-	return ""
+	return h.fallbackService.TryFallback(query)
 }
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
