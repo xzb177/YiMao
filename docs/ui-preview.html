@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YiMao UI 设计方案预览</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.8);
+            margin-bottom: 40px;
+            font-size: 1.2em;
+        }
+
+        .tabs {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            background: rgba(255,255,255,0.9);
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        .tab.active {
+            background: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+
+        .preview-container {
+            display: none;
+            animation: fadeIn 0.5s ease;
+        }
+
+        .preview-container.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .phone-frame {
+            background: #1a1a1a;
+            border-radius: 40px;
+            padding: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+            max-width: 400px;
+            margin: 0 auto;
+        }
+
+        .phone-screen {
+            background: #000;
+            border-radius: 30px;
+            padding: 20px;
+            min-height: 700px;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        .phone-screen::before {
+            content: '';
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80px;
+            height: 25px;
+            background: #333;
+            border-radius: 15px;
+        }
+
+        /* 方案一：暗黑霓虹 */
+        .neon-theme {
+            background: #0a0e17;
+            color: #ffffff;
+        }
+
+        .neon-theme .separator {
+            color: #00f5d4;
+            letter-spacing: 2px;
+        }
+
+        .neon-theme .title {
+            color: #00f5d4;
+            font-weight: bold;
+        }
+
+        .neon-theme .box {
+            border: 1px solid #2d3748;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .neon-theme .highlight {
+            color: #ff006e;
+        }
+
+        .neon-theme .item {
+            padding: 8px 0;
+            border-bottom: 1px solid #1e2d3d;
+        }
+
+        .neon-theme .progress {
+            color: #8338ec;
+        }
+
+        /* 方案二：文艺胶片 */
+        .film-theme {
+            background: #1a1a1a;
+            color: #f5f5f5;
+        }
+
+        .film-theme .separator {
+            color: #d4a574;
+            letter-spacing: 3px;
+        }
+
+        .film-theme .quote {
+            color: #d4a574;
+            font-style: italic;
+            margin: 15px 0;
+            line-height: 1.8;
+        }
+
+        .film-theme .title {
+            color: #e8dcc4;
+        }
+
+        .film-theme .box {
+            border: 1px solid #3d3d3d;
+            padding: 15px;
+            margin: 10px 0;
+            background: #0d0d0d;
+        }
+
+        .film-theme .meta {
+            color: #9e9e9e;
+            font-size: 0.9em;
+        }
+
+        /* 方案三：极简卡片 */
+        .card-theme {
+            background: #f8fafc;
+            color: #1e293b;
+        }
+
+        .card-theme .separator {
+            color: #cbd5e1;
+        }
+
+        .card-theme .box {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .card-theme .label {
+            color: #64748b;
+            font-size: 0.9em;
+        }
+
+        .card-theme .value {
+            color: #1e293b;
+            font-weight: 500;
+        }
+
+        .card-theme .status {
+            color: #3b82f6;
+            font-weight: bold;
+        }
+
+        /* 方案四：波普艺术 */
+        .pop-theme {
+            background: #fef3c7;
+            color: #111827;
+        }
+
+        .pop-theme .separator {
+            color: #ec4899;
+        }
+
+        .pop-theme .box {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 12px;
+            border: 3px solid #ec4899;
+            text-align: center;
+        }
+
+        .pop-theme .title {
+            color: #8b5cf6;
+            font-weight: bold;
+        }
+
+        .pop-theme .rating {
+            color: #f59e0b;
+        }
+
+        /* 方案五：沉浸电影 */
+        .cinema-theme {
+            background: #000000;
+            color: #f3f4f6;
+        }
+
+        .cinema-theme .separator {
+            color: #fbbf24;
+        }
+
+        .cinema-theme .title {
+            color: #fbbf24;
+            text-align: center;
+            font-size: 1.2em;
+            margin: 20px 0;
+        }
+
+        .cinema-theme .quote {
+            color: #dc2626;
+            font-style: italic;
+            margin: 15px 0;
+            line-height: 1.8;
+            text-align: center;
+        }
+
+        .cinema-theme .meta {
+            color: #9ca3af;
+            text-align: center;
+            font-size: 0.9em;
+        }
+
+        .button-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .button {
+            flex: 1;
+            min-width: calc(50% - 5px);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        .button:hover {
+            transform: scale(1.05);
+        }
+
+        .neon-theme .button {
+            background: #1e2d3d;
+            color: #00f5d4;
+            border: 1px solid #00f5d4;
+        }
+
+        .film-theme .button {
+            background: #3d3d3d;
+            color: #d4a574;
+        }
+
+        .card-theme .button {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .pop-theme .button {
+            background: #ec4899;
+            color: white;
+            font-weight: bold;
+        }
+
+        .cinema-theme .button {
+            background: #fbbf24;
+            color: #000;
+            font-weight: bold;
+        }
+
+        .info-panel {
+            background: rgba(255,255,255,0.95);
+            border-radius: 20px;
+            padding: 30px;
+            margin-top: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .info-panel h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .info-panel p {
+            color: #4a5568;
+            line-height: 1.8;
+            margin-bottom: 15px;
+        }
+
+        .info-panel ul {
+            color: #4a5568;
+            line-height: 1.8;
+            padding-left: 20px;
+        }
+
+        .info-panel li {
+            margin-bottom: 10px;
+        }
+
+        .color-palette {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .color-swatch {
+            width: 60px;
+            height: 60px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7em;
+            color: white;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 YiMao UI 设计方案</h1>
+        <p class="subtitle">5 套强视觉风格，供您参考选择</p>
+
+        <div class="tabs">
+            <button class="tab active" onclick="showTheme('neon')">⚡ 暗黑霓虹</button>
+            <button class="tab" onclick="showTheme('film')">🎞️ 文艺胶片</button>
+            <button class="tab" onclick="showTheme('card')">🎴 极简卡片</button>
+            <button class="tab" onclick="showTheme('pop')">🎨 波普艺术</button>
+            <button class="tab" onclick="showTheme('cinema')">🎬 沉浸电影</button>
+        </div>
+
+        <!-- 方案一：暗黑霓虹 -->
+        <div id="neon" class="preview-container active">
+            <div class="phone-frame">
+                <div class="phone-screen neon-theme">
+                    <div style="padding-top: 40px;">
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+                        <div class="title">🔮 搜索结果 · 复仇者联盟</div>
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div style="margin: 15px 0;">
+                            📊 热度 · <span class="highlight">⭐ 评分 8.4</span> · 🎬 2012
+                        </div>
+
+                        <div class="box">
+                            <div style="font-size: 1.1em; margin-bottom: 10px;">🎬 复仇者联盟</div>
+                            <div style="color: #8b9bb4; margin-bottom: 10px;">The Avengers</div>
+                            <div style="margin: 10px 0;">⏱️ 2小时23分 · 🎭 动作/科幻</div>
+                            <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━</div>
+                            <div style="color: #8b9bb4;">当邪恶威胁降临，地球最强<br/>超级英雄首次集结！</div>
+                        </div>
+
+                        <div class="separator">▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰</div>
+
+                        <div class="item">▸ 1. 🎬 复仇者联盟 (2012)</div>
+                        <div class="item">▸ 2. 🎬 复仇者联盟2 (2015)</div>
+                        <div class="item">▸ 3. 🎬 复仇者联盟3 (2018)</div>
+                        <div class="item">▸ 4. 🎬 复仇者联盟4 (2019)</div>
+                        <div class="item">▸ 5. 🎬 钢铁侠 (2008)</div>
+
+                        <div class="separator">▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰</div>
+
+                        <div style="color: #8b9bb4; margin: 10px 0;">输入数字选择 · 或翻页 ↓</div>
+
+                        <div class="button-grid">
+                            <div class="button">🔍 搜索</div>
+                            <div class="button">🎬 推荐</div>
+                            <div class="button">📋 我的请求</div>
+                            <div class="button">⚙️ 设置</div>
+                        </div>
+
+                        <div class="button-grid">
+                            <div class="button">⬅️ 上一页</div>
+                            <div class="button">1/5</div>
+                            <div class="button">下一页 ➡️</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h2>⚡ 暗黑霓虹风</h2>
+                <p><strong>风格定位：</strong>赛博朋克 × 年轻潮流 × 强对比</p>
+                <p>适合追求个性的年轻用户，视觉冲击力强。</p>
+
+                <h3>配色方案</h3>
+                <div class="color-palette">
+                    <div class="color-swatch" style="background: #0a0e17;">背景</div>
+                    <div class="color-swatch" style="background: #00f5d4;">主色</div>
+                    <div class="color-swatch" style="background: #ff006e;">辅色</div>
+                    <div class="color-swatch" style="background: #8338ec;">强调</div>
+                </div>
+
+                <h3>特点</h3>
+                <ul>
+                    <li>使用霓虹色系创造强视觉冲击</li>
+                    <li>分割线使用特殊字符装饰</li>
+                    <li>进度条可视化显示</li>
+                    <li>按钮采用 emoji + 简短文字</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 方案二：文艺胶片 -->
+        <div id="film" class="preview-container">
+            <div class="phone-frame">
+                <div class="phone-screen film-theme">
+                    <div style="padding-top: 40px;">
+                        <div class="separator">· · · · · · · · · · · · · · · · · ·</div>
+                        <div class="title">「今日推荐 · 治愈系电影」</div>
+                        <div class="separator">· · · · · · · · · · · · · · · · · ·</div>
+
+                        <div class="quote">
+                            ✨ 有些故事，<br/>
+                           像深夜里的一杯热茶，<br/>
+                           不惊艳，但温暖人心。
+                        </div>
+
+                        <div class="box">
+                            <div style="font-size: 1.2em; margin-bottom: 15px; text-align: center;">🎬 小森林</div>
+                            <div style="color: #d4a574; margin-bottom: 10px; text-align: center; font-style: italic;">Little Forest</div>
+                            <div style="text-align: center; margin: 15px 0;">⭐ 8.9 · 🎭 剧情/治愈</div>
+                            <div style="color: #9e9e9e; line-height: 1.8;">
+                                离开喧嚣的都市，<br/>
+                                回归四季更迭的乡村。<br/>
+                                用双手耕耘，用心感受，<br/>
+                                发现生活的本质美好。
+                            </div>
+                        </div>
+
+                        <div class="meta" style="margin: 15px 0;">♪ BGM: 原声带推荐</div>
+
+                        <div class="box" style="text-align: center;">
+                            <span style="color: #d4a574;">「导演: 森淳一 · 日本 · 2018」</span>
+                        </div>
+
+                        <div class="separator">· · · · · · · · · · · · · · · · · ·</div>
+
+                        <div class="button-grid">
+                            <div class="button">🎬 收藏</div>
+                            <div class="button">🎬 求片</div>
+                            <div class="button">📝 写影评</div>
+                        </div>
+
+                        <div class="button-grid">
+                            <div class="button">◀ 上一部</div>
+                            <div class="button">下一部 ▶</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h2>🎞️ 文艺胶片风</h2>
+                <p><strong>风格定位：</strong>复古电影 × 伤感文案 × 质感氛围</p>
+                <p>符合"伤感文案 + 配图"的偏好，适合文艺青年。</p>
+
+                <h3>配色方案</h3>
+                <div class="color-palette">
+                    <div class="color-swatch" style="background: #1a1a1a;">背景</div>
+                    <div class="color-swatch" style="background: #d4a574;">胶片金</div>
+                    <div class="color-swatch" style="background: #e8dcc4;">米白</div>
+                    <div class="color-swatch" style="background: #c94c4c;">暗红</div>
+                </div>
+
+                <h3>特点</h3>
+                <ul>
+                    <li>使用胶片齿孔效果作为分隔符</li>
+                    <li>标题使用「」括号，增强文艺感</li>
+                    <li>引用文案使用斜体和特殊符号</li>
+                    <li>整体氛围温馨治愈</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 方案三：极简卡片 -->
+        <div id="card" class="preview-container">
+            <div class="phone-frame">
+                <div class="phone-screen card-theme">
+                    <div style="padding-top: 40px;">
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+                        <div class="title">🎬 请求详情 · 盗梦空间</div>
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div style="margin: 15px 0;">
+                            <div><span class="label">状态：</span><span class="status">⏳ 下载中</span></div>
+                            <div style="margin-top: 10px;"><span class="label">进度：</span>[████████░░] 80%</div>
+                        </div>
+
+                        <div class="box">
+                            <div style="font-weight: bold; margin-bottom: 15px;">影片信息</div>
+                            <div style="margin: 8px 0;"><span class="label">📌 名称：</span><span class="value">盗梦空间</span></div>
+                            <div style="margin: 8px 0;"><span class="label">📌 年份：</span><span class="value">2010</span></div>
+                            <div style="margin: 8px 0;"><span class="label">📌 类型：</span><span class="value">科幻/动作</span></div>
+                            <div style="margin: 8px 0;"><span class="label">📌 评分：</span><span class="value">⭐ 9.3</span></div>
+                        </div>
+
+                        <div class="box">
+                            <div style="font-weight: bold; margin-bottom: 15px;">下载信息</div>
+                            <div style="margin: 8px 0;"><span class="label">📥 大小：</span><span class="value">4.2 GB</span></div>
+                            <div style="margin: 8px 0;"><span class="label">📀 质量：</span><span class="value">BluRay 1080p</span></div>
+                            <div style="margin: 8px 0;"><span class="label">📝 备注：</span><span class="value">内嵌中文字幕</span></div>
+                        </div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div class="label" style="margin: 10px 0;">📅 提交时间：2026-03-08 14:30</div>
+                        <div class="label" style="margin: 10px 0;">🔄 更新时间：2026-03-08 15:45</div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div class="button-grid">
+                            <div class="button" style="background: #ef4444;">取消请求</div>
+                            <div class="button" style="background: #f59e0b;">暂停</div>
+                            <div class="button" style="background: #3b82f6;">查看</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h2>🎴 极简卡片风</h2>
+                <p><strong>风格定位：</strong>现代干净 × 信息清晰 × 高效交互</p>
+                <p>适合追求效率的用户，信息一目了然。</p>
+
+                <h3>配色方案</h3>
+                <div class="color-palette">
+                    <div class="color-swatch" style="background: #f8fafc;">背景</div>
+                    <div class="color-swatch" style="background: #3b82f6;">主色</div>
+                    <div class="color-swatch" style="background: #10b981;">辅色</div>
+                    <div class="color-swatch" style="background: #ef4444;">警告</div>
+                </div>
+
+                <h3>特点</h3>
+                <ul>
+                    <li>使用卡片式布局，信息分组清晰</li>
+                    <li>标签化展示，便于快速浏览</li>
+                    <li>状态符号简洁明了（✓/⏳/⚠️/❌）</li>
+                    <li>整体风格现代、专业</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 方案四：波普艺术 -->
+        <div id="pop" class="preview-container">
+            <div class="phone-frame">
+                <div class="phone-screen pop-theme">
+                    <div style="padding-top: 40px;">
+                        <div class="separator">🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨</div>
+                        <div class="title">💥 YiMao · 你的私人选片师 💥</div>
+                        <div class="separator">🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨</div>
+
+                        <div style="text-align: center; font-size: 1.1em; margin: 20px 0;">🎯 今天想看什么？</div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div class="button-grid">
+                            <div class="box">🎬 搜索影片</div>
+                            <div class="box">🧠 智能推荐</div>
+                            <div class="box">📋 我的请求</div>
+                            <div class="box">😺 不纠结</div>
+                            <div class="box">🎭 观影人格</div>
+                            <div class="box">⚙️ 个人设置</div>
+                        </div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div style="text-align: center; margin: 20px 0;">★ 今日热门TOP3 ★</div>
+
+                        <div class="box" style="border-color: #8b5cf6; text-align: left;">
+                            <div>1. 🎬 沙丘2 <span class="rating">[★★★★★ 9.2]</span></div>
+                        </div>
+                        <div class="box" style="border-color: #10b981; text-align: left;">
+                            <div>2. 🎬 奥本海默 <span class="rating">[★★★★☆ 8.9]</span></div>
+                        </div>
+                        <div class="box" style="border-color: #3b82f6; text-align: left;">
+                            <div>3. 🎬 芭比 <span class="rating">[★★★★☆ 8.7]</span></div>
+                        </div>
+
+                        <div class="separator">🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨 🎨</div>
+
+                        <div class="button-grid">
+                            <div class="button">🔥 搜索</div>
+                            <div class="button">🎲 随机</div>
+                            <div class="button">📊 排行</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h2>🎨 波普艺术风</h2>
+                <p><strong>风格定位：</strong>撞色大胆 × 趣味性强 × 年轻潮流</p>
+                <p>符合"年轻潮流"命名偏好，有强烈记忆点。</p>
+
+                <h3>配色方案</h3>
+                <div class="color-palette">
+                    <div class="color-swatch" style="background: #fef3c7; color: #333;">背景</div>
+                    <div class="color-swatch" style="background: #ec4899;">亮粉</div>
+                    <div class="color-swatch" style="background: #8b5cf6;">紫罗兰</div>
+                    <div class="color-swatch" style="background: #f59e0b;">橙黄</div>
+                </div>
+
+                <h3>特点</h3>
+                <ul>
+                    <li>使用撞色和大胆的色彩组合</li>
+                    <li>按钮设计成卡片样式，趣味性强</li>
+                    <li>使用特殊装饰符号增强视觉</li>
+                    <li>整体风格活泼、年轻</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- 方案五：沉浸电影 -->
+        <div id="cinema" class="preview-container">
+            <div class="phone-frame">
+                <div class="phone-screen cinema-theme">
+                    <div style="padding-top: 40px;">
+                        <div class="separator">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+
+                        <div class="title">
+                            🎬 肖申克的救赎<br/>
+                            <span style="font-size: 0.7em; color: #9ca3af;">The Shawshank Redemption</span>
+                        </div>
+
+                        <div style="text-align: center; color: #fbbf24; margin: 20px 0;">★★★★★ 9.7</div>
+
+                        <div class="separator">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+
+                        <div class="meta" style="margin: 15px 0;">✦ 1994 · 剧情 · 犯罪 · 2小时22分 ✦</div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div class="quote">
+                            「恐惧让你沦为囚犯。<br/>希望让你重获自由。」
+                        </div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div style="color: #9ca3af; line-height: 1.8; text-align: center; padding: 0 20px;">
+                            有些鸟儿是永远关不住的，<br/>
+                            它的每一片羽毛都闪耀着<br/>
+                            自由的光辉。
+                        </div>
+
+                        <div class="separator">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</div>
+
+                        <div class="meta" style="margin: 15px 0;">📝 导演：弗兰克·德拉邦特</div>
+                        <div class="meta" style="margin: 10px 0;">🎭 主演：蒂姆·罗宾斯 / 摩根·弗里曼</div>
+
+                        <div class="separator">▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔</div>
+
+                        <div class="button-grid">
+                            <div class="button">🎬 求片</div>
+                            <div class="button">⭐ 收藏</div>
+                            <div class="button">📝 写影评</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h2>🎬 沉浸电影风</h2>
+                <p><strong>风格定位：</strong>电影海报 × 沉浸体验 × 视觉冲击</p>
+                <p>用大图+精选文案，营造影院氛围。</p>
+
+                <h3>配色方案</h3>
+                <div class="color-palette">
+                    <div class="color-swatch" style="background: #000000;">背景</div>
+                    <div class="color-swatch" style="background: #fbbf24;">金色</div>
+                    <div class="color-swatch" style="background: #ffffff;">纯白</div>
+                    <div class="color-swatch" style="background: #dc2626;">影院红</div>
+                </div>
+
+                <h3>特点</h3>
+                <ul>
+                    <li>使用影院式横线装饰</li>
+                    <li>标题居中，突出电影感</li>
+                    <li>引用台词，增强情感共鸣</li>
+                    <li>整体风格沉浸、大气</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="info-panel" style="margin-top: 50px;">
+            <h2>💡 方案对比与建议</h2>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                <tr style="background: #f3f4f6;">
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #667eea;">方案</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #667eea;">风格</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #667eea;">适合人群</th>
+                    <th style="padding: 12px; text-align: left; border-bottom: 2px solid #667eea;">视觉冲击</th>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">暗黑霓虹</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">赛博朋克</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">年轻潮流</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">⭐⭐⭐⭐⭐</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">文艺胶片</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">复古电影</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">文艺青年</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">⭐⭐⭐⭐</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">极简卡片</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">现代干净</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">效率追求</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">⭐⭐⭐</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">波普艺术</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">趣味撞色</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">年轻用户</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">⭐⭐⭐⭐⭐</td>
+                </tr>
+                <tr>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">沉浸电影</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">海报式</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">影迷</td>
+                    <td style="padding: 12px; border-bottom: 1px solid #e5e7eb;">⭐⭐⭐⭐⭐</td>
+                </tr>
+            </table>
+
+            <h3 style="margin-top: 30px;">🎯 推荐组合方案</h3>
+            <p>根据您「年轻潮流」+「伤感文案+配图」+「独一无二」的偏好，建议组合：</p>
+            <ul>
+                <li><strong>主风格：</strong>暗黑霓虹风（强视觉、年轻潮流）</li>
+                <li><strong>推荐模块：</strong>文艺胶片风（伤感文案）</li>
+                <li><strong>菜单系统：</strong>波普艺术风（趣味性强）</li>
+            </ul>
+            <p>这样可以：整体保持强视觉冲击、推荐内容有情感共鸣、交互体验有趣味记忆点。</p>
+        </div>
+    </div>
+
+    <script>
+        function showTheme(theme) {
+            // 隐藏所有预览
+            document.querySelectorAll('.preview-container').forEach(el => {
+                el.classList.remove('active');
+            });
+            // 取消所有标签激活状态
+            document.querySelectorAll('.tab').forEach(el => {
+                el.classList.remove('active');
+            });
+            // 显示选中的预览
+            document.getElementById(theme).classList.add('active');
+            // 激活选中的标签
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

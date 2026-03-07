@@ -2,6 +2,8 @@
 
 > 让「找片、求片、追进度、收通知」都在 Telegram 内一次完成。
 
+**全新 UI 设计**：5 套强视觉风格，可自由切换
+
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -38,6 +40,29 @@ YiMao 是一个面向 Emby / Jellyfin + MoviePilot 用户的 Telegram Bot。
 - 管理员可控审核、通知与配额
 
 不做复杂后台，不引入重依赖，用一个机器人把「影视请求链路」跑顺。
+
+---
+
+## 🎨 UI 设计
+
+YiMao 提供 5 套强视觉 UI 风格，可根据场景自由切换：
+
+| 风格 | 特点 | 适用场景 |
+|------|------|----------|
+| ⚡ 暗黑霓虹 | 赛博朋克、强对比、霓虹配色 | 搜索结果、媒体详情 |
+| 🎞️ 文艺胶片 | 复古质感、伤感文案、治愈氛围 | 推荐内容、AI 选片 |
+| 🎨 波普艺术 | 趣味撞色、年轻潮流、强记忆点 | 主菜单、功能入口 |
+| 🎴 极简卡片 | 现代干净、信息清晰、高效交互 | 请求列表、状态管理 |
+| 🎬 沉浸电影 | 影院海报、台词引用、氛围感强 | 影片详情页 |
+
+**推荐组合**：
+- 主菜单 → 波普艺术风
+- 搜索结果 → 暗黑霓虹风
+- 推荐内容 → 文艺胶片风
+- 请求列表 → 极简卡片风
+
+查看完整设计文档：[UI 设计方案](docs/ui-design-proposals.md)
+查看在线预览：[UI 预览演示](docs/ui-preview.html)
 
 ---
 
