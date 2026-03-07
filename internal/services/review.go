@@ -467,8 +467,14 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 		requestID string
 		subID     int
 	}
+	seenSubID := make(map[int]string)
 	for _, review := range s.reviews {
 		if review.Status == "approved" && review.SubscriptionID > 0 {
+			if existedReqID, dup := seenSubID[review.SubscriptionID]; dup {
+				log.Printf("[ReviewService] Skip duplicate subscription tracker: subID=%d, request=%s, existed=%s", review.SubscriptionID, review.RequestID, existedReqID)
+				continue
+			}
+			seenSubID[review.SubscriptionID] = review.RequestID
 			toUpdate = append(toUpdate, struct {
 				requestID string
 				subID     int
@@ -505,6 +511,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 
 	// Track recycled subscriptions that need to be resubscribed
 	var toResubscribe []string
+	resubSeen := make(map[int]bool)
 
 	for _, item := range toUpdate {
 		if sub, exists := subMap[item.subID]; exists {
@@ -514,9 +521,14 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 					review.SubscriptionState = sub.State
 					log.Printf("[ReviewService] Updated %s: %s -> %s", item.requestID, oldState, sub.State)
 
-					// If state is "R" (Recycled), mark for resubscription
+					// If state is "R" (Recycled), mark for resubscription (dedupe by subscription ID)
 					if sub.State == "R" {
-						toResubscribe = append(toResubscribe, item.requestID)
+						if !resubSeen[item.subID] {
+							toResubscribe = append(toResubscribe, item.requestID)
+							resubSeen[item.subID] = true
+						} else {
+							log.Printf("[ReviewService] Skip duplicate recycle trigger: subID=%d, request=%s", item.subID, item.requestID)
+						}
 					}
 				}
 			}
@@ -533,6 +545,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 
 // resubscribeRecycledRequests resubscribes requests that are in "R" (Recycled) state
 func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
+	processedSubID := make(map[int]bool)
 	for _, requestID := range requestIDs {
 		s.mu.RLock()
 		review, exists := s.reviews[requestID]
@@ -540,6 +553,14 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 
 		if !exists {
 			continue
+		}
+
+		if review.SubscriptionID > 0 {
+			if processedSubID[review.SubscriptionID] {
+				log.Printf("[ReviewService] Skip duplicate resubscribe for same subID=%d, request=%s", review.SubscriptionID, requestID)
+				continue
+			}
+			processedSubID[review.SubscriptionID] = true
 		}
 
 		// Delete old subscription first
