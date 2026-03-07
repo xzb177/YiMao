@@ -1,5 +1,3 @@
-//go:build ignore
-
 // Package ai provides next-generation AI recommendation system
 package ai
 
@@ -31,7 +29,6 @@ type RecommendationEngine struct {
 	profileMutex  sync.RWMutex
 	globalStats   *GlobalMediaStats
 	trendingMgr   *TrendingAIManager
-	memory        *MemorySystem
 	enabled       bool
 }
 
@@ -185,7 +182,6 @@ func NewRecommendationEngine(zhipu *ZhipuClient, trendingMgr *TrendingAIManager)
 			LastUpdate:     time.Time{},
 		},
 		trendingMgr: trendingMgr,
-		memory:      GetMemorySystem(),
 		enabled:     zhipu != nil && zhipu.IsEnabled(),
 	}
 }

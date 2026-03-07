@@ -145,6 +145,7 @@ type Dependencies struct {
 	Notification      *services.NotificationService
 	Scheduler         *services.Scheduler
 	SearchHistory     *services.SearchHistoryService
+	SearchHistoryDB   *services.SearchHistoryDB
 	FeedbackHandler   *handlers.FeedbackHandler
 }
 
@@ -225,8 +226,18 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	scheduler.Start()
 	log.Println("  [11/11] Scheduler started")
 
-	// Initialize Search History Service
+	// Initialize Search History Service (legacy, for backward compatibility)
 	searchHistory := services.NewSearchHistoryService(cfg.DataDir)
+
+	// Initialize Search History DB with cache (new, advanced features)
+	log.Println("    - SearchHistoryDB...")
+	searchHistoryDB, err := services.NewSearchHistoryDB(cfg.DataDir)
+	if err != nil {
+		log.Printf("⚠️  Failed to create SearchHistoryDB: %v", err)
+		searchHistoryDB = nil
+	} else {
+		log.Println("    - SearchHistoryDB initialized")
+	}
 
 	// Start cleanup routines
 	go func() {
@@ -259,6 +270,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		Notification:      notificationService,
 		Scheduler:         scheduler,
 		SearchHistory:     searchHistory,
+		SearchHistoryDB:   searchHistoryDB,
 	}
 }
 
@@ -284,6 +296,15 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler := handlers.NewAdminHandler(services.Cfg, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService, services.WebhookService)
 	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
+
+	// Search History Handler (if DB is available)
+	var searchHistoryHandler *handlers.SearchHistoryHandler
+	if services.SearchHistoryDB != nil {
+		searchHistoryHandler = handlers.NewSearchHistoryHandler(services.Telegram, services.SearchHistoryDB)
+		log.Println("    - SearchHistoryHandler created")
+	} else {
+		log.Println("    - SearchHistoryHandler skipped (DB not available)")
+	}
 
 	// Inject dependencies
 	startHandler.SetAdminService(services.AdminService)
@@ -362,6 +383,22 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionMyReqsPage, myRequestsHandler.HandlePage)
 	registry.RegisterFunc(callback.ActionMyReqsItem, myRequestsHandler.HandleItemAction)
 
+	// Search History callbacks (if handler is available)
+	if searchHistoryHandler != nil {
+		registry.RegisterFunc("search_history_menu", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_stats", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_popular", searchHistoryHandler.Handle)
+		registry.RegisterFunc("popular_week", searchHistoryHandler.Handle)
+		registry.RegisterFunc("popular_all", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_trends", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_manage", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_delete", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_clear_all", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_popular_refresh", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_trends_refresh", searchHistoryHandler.Handle)
+		log.Println("    - Search History callbacks registered")
+	}
+
 	log.Println("✅ Callback handlers registered")
 
 	// Build full dependencies
@@ -384,6 +421,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		Notification:      services.Notification,
 		Scheduler:         services.Scheduler,
 		SearchHistory:     services.SearchHistory,
+		SearchHistoryDB:   services.SearchHistoryDB,
 		FeedbackHandler:   feedbackHandler,
 	}
 
@@ -434,6 +472,7 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		AdminHandler:    deps.AdminHandler,
 		QuotaService:    deps.QuotaService,
 		SearchHistory:   deps.SearchHistory,
+		SearchHistoryDB: deps.SearchHistoryDB,
 		TMDB:            deps.TMDBClient,
 		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,

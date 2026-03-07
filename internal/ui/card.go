@@ -26,6 +26,17 @@ func (b *CardBuilder) BuildMenu(title, subtitle string) string {
 
 	sb.WriteString(fmt.Sprintf("%s\n\n", subtitle))
 
+	// 功能列表
+	sb.WriteString("🔍 搜索影片 · 快速查找想看的内容\n")
+	sb.WriteString("💫 情绪选片 · 按心情一键找片\n")
+	sb.WriteString("🎯 不纠结 · 直接给你三种风格候选\n")
+	sb.WriteString("📋 我的请求 · 查看求片进度\n")
+	sb.WriteString("🐞 我的反馈 · 查看处理结果\n")
+	sb.WriteString("🔗 绑定账号 · 同步账号信息\n")
+
+	sb.WriteString("\n")
+	sb.WriteString("👇 选择下方功能开始探索\n")
+
 	return sb.String()
 }
 

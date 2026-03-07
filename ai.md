@@ -2,6 +2,69 @@
 
 ---
 
+### feat: 集成未使用的新功能 ✅
+- **时间**: 2026-03-08
+- **任务**: 深度挖掘并集成远程仓库中未被使用的新功能
+- **集成内容**:
+  1. **搜索历史完整功能** (`internal/ui/history_builder.go`, `internal/handlers/search_history.go`)
+     - 按时间分组展示 (今天/本周/本月/更早)
+     - 搜索统计 (总次数/本周/本月/最常搜索)
+     - 热门搜索 (跨用户 TOP10)
+     - 搜索趋势 (增长最快的搜索)
+     - 管理历史 (删除单条/清空全部)
+  2. **AI 推荐系统 v2** (`ai/recommendation_v2.go`, `ai/trending.go`)
+     - 移除 `//go:build ignore` 标签
+     - 启用智能个性化推荐引擎
+     - 启用情绪选片增强算法
+  3. **UI 系统增强**
+     - 导出 Neon 常量 (`NeonLine`, `NeonSeparator`) 供其他构建器使用
+- **修改文件**:
+  - `internal/ui/history_builder.go` - 新增搜索历史 UI 构建器
+  - `internal/handlers/search_history.go` - 新增搜索历史处理器
+  - `internal/ui/neon.go` - 导出常量
+  - `ai/recommendation_v2.go` - 移除 build ignore
+  - `ai/trending.go` - 移除 build ignore
+  - `cmd/bot/main.go` - 集成 SearchHistoryDB 和 SearchHistoryHandler
+  - `internal/bot/poll.go` - 添加 SearchHistoryDB 依赖
+- **状态**: ✅ 已集成
+
+---
+
+### fix: 统一主菜单UI风格 ✅
+- **时间**: 2026-03-08 11:17
+- **问题**: 从二级菜单返回主菜单时显示不同的UI风格
+- **原因**: `BackHandler` 中有3处使用 `services.NewMessageBuilder()` 构建简单风格菜单，而 `HandleStart` 使用 `ui.BuildMenu()` (波普艺术风格)
+- **修复**: 统一所有返回主菜单的路径使用 `ui.BuildMenu()`
+  - 无导航历史时的主菜单
+  - 未知来源类型的主菜单
+  - 搜索结果过期时的主菜单
+- **修改文件**: `internal/handlers/callback.go`
+- **状态**: ✅ 已部署
+
+---
+
+### 构建部署: 远程更新同步与代码修复 ✅
+- **时间**: 2026-03-08 11:10
+- **远程提交**:
+  - `9fd88df` refactor: 将 UI 风格从暗黑霓虹改为极简卡片
+  - `d5c02cd` refactor: UI 样式统一优化
+  - `640de08` feat: 添加搜索历史功能
+  - `4963aa9` feat: UI 系统模块化重构
+- **修复内容**:
+  - 修复 `internal/services/message_cache.go` 与 `search_history_cache.go` 中 `cacheEntry` 结构体冲突
+    - 将 message_cache.go 中的 `cacheEntry` 重命名为 `messageCacheEntry`
+  - 修复 `internal/ui/history_builder.go` 中未定义的 `truncateString` → `truncateText`
+  - 修复 `internal/ui/media_detail_builder.go` 中字段引用问题
+    - 移除不存在的字段: OriginalTitle, Popularity, Runtime, ReleaseDate
+    - 添加类型转换: `string(info.Type)` 用于 MediaType → string
+  - 修复 `internal/handlers/search_history.go` 中 `errors.ServiceErr` 未定义 → `errors.InternalErr`
+  - 移除重复的函数定义和未使用的变量
+- **Dockerfile 更新**: 添加 `go mod tidy` 步骤
+- **状态**: ✅ 服务运行正常
+- **端口**: 8080 (健康检查启动)
+
+---
+
 ### git: UI 菜单增强 - 添加完整功能列表 ✅
 - **提交**: fdd0a46
 - **范围**: +14/-2 行 (1 文件变更)

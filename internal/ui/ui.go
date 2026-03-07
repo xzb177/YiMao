@@ -44,9 +44,9 @@ func NewBuilder(style UIStyle) MessageBuilder {
 	}
 }
 
-// BuildMenu 构建主菜单（使用波普艺术风格）
+// BuildMenu 构建主菜单（使用极简卡片风格）
 func BuildMenu(title, subtitle string) string {
-	builder := NewBuilder(StylePop)
+	builder := NewBuilder(StyleCard)
 	return builder.BuildMenu(title, subtitle)
 }
 
