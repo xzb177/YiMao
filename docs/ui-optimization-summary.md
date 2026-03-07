@@ -2,7 +2,7 @@
 
 ## ✅ 完成的工作
 
-已为 YiMao 完整优化搜索结果页面和媒体详情页面，采用统一的暗黑霓虹风格。
+已为 YiMao 完整优化搜索结果页面和媒体详情页面，采用统一的极简卡片风格。
 
 ---
 
@@ -32,28 +32,30 @@
 ### 1. 搜索结果页面优化
 
 #### 改进点
-- ✅ 添加暗黑霓虹风格分隔线
+- ✅ 添加极简卡片风格分隔线
 - ✅ 使用装饰符号增强视觉效果
 - ✅ 统一标题格式
 - ✅ 改进信息层次展示
 - ✅ 优化按钮布局
 
 #### 支持风格
-- ⚡ 暗黑霓虹风（默认）
+- 🎴 极简卡片风（默认）
+- ⚡ 暗黑霓虹风
 - 🎞️ 文艺胶片风
 - 🎨 波普艺术风
 
 ### 2. 媒体详情页优化
 
 #### 改进点
-- ✅ 添加暗黑霓虹风格标题
+- ✅ 添加极简卡片风格标题
 - ✅ 统一元信息展示格式
 - ✅ 优化剧情简介排版
 - ✅ 改进类型标签展示
 - ✅ 统一按钮布局
 
 #### 支持风格
-- ⚡ 暗黑霓虹风（默认）
+- 🎴 极简卡片风（默认）
+- ⚡ 暗黑霓虹风
 - 🎞️ 文艺胶片风
 - 🎨 波普艺术风
 
@@ -65,19 +67,19 @@
 
 | 项目 | 修改前 | 修改后 |
 |------|--------|--------|
-| 分隔线 | ❌ 无 | ✅ 暗黑霓虹风格 |
-| 装饰符号 | ❌ 无 | ✅ ▰▰▰、━━━ |
-| 标题格式 | 🔍 搜索结果 | 🔮 搜索结果 · 关键词 |
-| 信息展示 | 基础格式 | 📊 找到 X 个结果 |
+| 分隔线 | ❌ 无 | ✅ 极简卡片风格 |
+| 装饰符号 | ❌ 无 | ✅ ┌─┐ └─┘ |
+| 标题格式 | 🔍 搜索结果 | 🔍 搜索: 关键词 |
+| 信息展示 | 基础格式 | 结果: X |
 | 按钮布局 | 基础网格 | 优化布局 + 分页 |
 
 ### 媒体详情页
 
 | 项目 | 修改前 | 修改后 |
 |------|--------|--------|
-| 分隔线 | ❌ 无 | ✅ 暗黑霓虹风格 |
+| 分隔线 | ❌ 无 | ✅ 极简卡片风格 |
 | 标题格式 | 🎬 标题 | 🎬 标题 + 英文名 |
-| 元信息行 | 分散展示 | 📊 热度 · ⭐ 评分 · 🎬 类型 |
+| 元信息行 | 分散展示 | ┌─┐ 卡片框 └─┘ |
 | 剧情简介 | 简单文本 | 📖 标题 + 格式化文本 |
 | 类型标签 | 简单列表 | 🏷️ 标签分隔展示 |
 
@@ -85,22 +87,27 @@
 
 ## 🎨 设计规范
 
-### 暗黑霓虹风元素
+### 极简卡片风元素
 
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  （长线）
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰  （装饰线）
+┌─────────────────────────────┐       （卡片框）
+│  内容                       │
+└─────────────────────────────┘
 ```
 
 ### 标题格式
 ```
-🔮 搜索结果 · 复仇者联盟
-📊 找到 6 个结果
+🔍 搜索: 复仇者联盟
+📋 搜索历史
 ```
 
 ### 信息展示
 ```
-📊 热度 85.5  ·  ⭐ 评分 8.4  ·  🎬 类型 电影
+┌─────────────────────────────┐
+│  📊 评分: 8.4
+│  🎬 类型: 电影
+└─────────────────────────────┘
 ```
 
 ---
@@ -150,8 +157,8 @@
 ### SearchResultsBuilder
 
 ```go
-// 创建构建器
-builder := ui.NewSearchResultsBuilder(ui.StyleNeon)
+// 创建构建器（极简卡片风）
+builder := ui.NewSearchResultsBuilder(ui.StyleCard)
 
 // 构建消息
 message := builder.BuildSearchResultsMessage(query, results, page, total)
@@ -163,8 +170,8 @@ keyboard := builder.BuildSearchKeyboard(results, page, totalPages)
 ### MediaDetailBuilder
 
 ```go
-// 创建构建器
-builder := ui.NewMediaDetailBuilder(ui.StyleNeon)
+// 创建构建器（极简卡片风）
+builder := ui.NewMediaDetailBuilder(ui.StyleCard)
 
 // 构建消息
 message := builder.BuildMediaDetailMessage(mediaInfo)
@@ -202,8 +209,18 @@ keyboard := builder.BuildMediaDetailKeyboard(mediaInfo, hasSeasons, hasRequests)
 可以通过修改传入的 `UIStyle` 参数切换风格：
 
 ```go
+// 极简卡片风（默认）
+builder := ui.NewSearchResultsBuilder(ui.StyleCard)
+
 // 暗黑霓虹风
 builder := ui.NewSearchResultsBuilder(ui.StyleNeon)
+
+// 文艺胶片风
+builder := ui.NewSearchResultsBuilder(ui.StyleFilm)
+
+// 波普艺术风
+builder := ui.NewSearchResultsBuilder(ui.StylePop)
+```
 
 // 文艺胶片风
 builder := ui.NewSearchResultsBuilder(ui.StyleFilm)
@@ -235,13 +252,13 @@ func convertToTelegramKeyboard(kb *ui.SearchKeyboard) *types.TelegramInlineKeybo
 
 已为 YiMao 创建了完整的 UI 优化方案，包括：
 
-✅ **搜索结果页面** - 暗黑霓虹风格，3 种风格可选
-✅ **媒体详情页** - 暗黑霓虹风格，3 种风格可选
+✅ **搜索结果页面** - 极简卡片风格，4 种风格可选
+✅ **媒体详情页** - 极简卡片风格，4 种风格可选
 ✅ **完整文档** - 优化方案、实施指南、总结
 
 所有代码已完成，文档齐全，可直接集成使用。
 
 ---
 
-**文档版本**: v1.0
+**文档版本**: v1.1
 **更新时间**: 2026-03-08

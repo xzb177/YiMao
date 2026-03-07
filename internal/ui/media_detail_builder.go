@@ -26,8 +26,10 @@ func (b *MediaDetailBuilder) BuildMediaDetailMessage(info *services.MediaInfo) s
 		return b.buildFilmMediaDetail(info)
 	case StylePop:
 		return b.buildPopMediaDetail(info)
+	case StyleCard:
+		return b.buildCardMediaDetail(info)
 	default:
-		return b.buildNeonMediaDetail(info)
+		return b.buildCardMediaDetail(info) // 默认使用极简卡片风
 	}
 }
 
@@ -209,6 +211,61 @@ func (b *MediaDetailBuilder) buildPopMediaDetail(info *services.MediaInfo) strin
 
 	// TMDB ID
 	sb.WriteString(fmt.Sprintf("\n🆔 TMDB ID: %d", info.ID))
+
+	return sb.String()
+}
+
+// buildCardMediaDetail 极简卡片风格媒体详情
+func (b *MediaDetailBuilder) buildCardMediaDetail(info *services.MediaInfo) string {
+	var sb strings.Builder
+
+	// 确定媒体类型
+	isTV := info.Type == services.MediaTypeTV
+	typeIcon := "🎬"
+	typeLabel := "电影"
+	if isTV {
+		typeIcon = "📺"
+		typeLabel = "剧集"
+	}
+
+	// 标题分隔线
+	sb.WriteString(cardSeparator + "\n")
+	sb.WriteString(fmt.Sprintf("%s %s\n", typeIcon, info.Title))
+	if info.OriginalTitle != "" && info.OriginalTitle != info.Title {
+		sb.WriteString(fmt.Sprintf("%s\n", info.OriginalTitle))
+	}
+	sb.WriteString(cardSeparator + "\n\n")
+
+	// 信息卡片
+	sb.WriteString(cardBoxStart + "\n")
+	sb.WriteString(fmt.Sprintf("  📊 评分: %.1f\n", info.Rating))
+	sb.WriteString(fmt.Sprintf("  🎬 类型: %s\n", getMediaTypeLabel(info.Type)))
+
+	if info.ReleaseDate != "" {
+		sb.WriteString(fmt.Sprintf("  📅 日期: %s\n", info.ReleaseDate))
+	}
+
+	if info.Runtime > 0 {
+		sb.WriteString(fmt.Sprintf("  ⏱️ 时长: %d 分钟\n", info.Runtime))
+	}
+
+	sb.WriteString(cardBoxEnd + "\n\n")
+
+	// 概要卡片
+	if info.Overview != "" {
+		sb.WriteString(cardBoxStart + "\n")
+		sb.WriteString("  📖 剧情简介\n")
+		sb.WriteString(cardSeparator + "\n")
+		sb.WriteString(fmt.Sprintf("  %s\n", wrapText(info.Overview, 26)))
+		sb.WriteString(cardBoxEnd + "\n\n")
+	}
+
+	// 类型标签
+	if len(info.Genres) > 0 {
+		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(info.Genres, " / ")))
+	}
+
+	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d", info.ID))
 
 	return sb.String()
 }

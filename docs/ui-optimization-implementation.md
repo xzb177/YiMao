@@ -11,18 +11,20 @@
 ### 1. 搜索结果构建器
 **`internal/ui/search_results_builder.go`** (6,760 字节)
 
-支持 3 种风格：
+支持 4 种风格：
 - ⚡ 暗黑霓虹风
 - 🎞️ 文艺胶片风
 - 🎨 波普艺术风
+- 🎴 极简卡片风
 
 ### 2. 媒体详情构建器
 **`internal/ui/media_detail_builder.go`** (8,151 字节)
 
-支持 3 种风格：
+支持 4 种风格：
 - ⚡ 暗黑霓虹风
 - 🎞️ 文艺胶片风
 - 🎨 波普艺术风
+- 🎴 极简卡片风（默认）
 
 ---
 
@@ -55,8 +57,8 @@ import (
 )
 
 func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse) {
-	// 使用新的搜索结果构建器（暗黑霓虹风）
-	builder := ui.NewSearchResultsBuilder(ui.StyleNeon)
+	// 使用新的搜索结果构建器（极简卡片风）
+	builder := ui.NewSearchResultsBuilder(ui.StyleCard)
 
 	// 构建消息
 	text := builder.BuildSearchResultsMessage(query, results.Results, 1, len(results.Results))
@@ -122,8 +124,8 @@ import (
 )
 
 func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query string) *callback.Response {
-	// 使用新的媒体详情构建器（暗黑霓虹风）
-	builder := ui.NewMediaDetailBuilder(ui.StyleNeon)
+	// 使用新的媒体详情构建器（极简卡片风）
+	builder := ui.NewMediaDetailBuilder(ui.StyleCard)
 
 	// 构建消息
 	text := builder.BuildMediaDetailMessage(info)
@@ -178,7 +180,7 @@ func convertDetailKeyboard(kb *ui.DetailKeyboard) *types.TelegramInlineKeyboard 
 3. 复仇者联盟：无限战争 (2018) 🎬 电影 ⭐8.4
 ```
 
-#### 修改后（暗黑霓虹风）
+#### 修改后（极简卡片风）
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🔮 搜索结果 · 复仇者联盟
@@ -222,7 +224,7 @@ func convertDetailKeyboard(kb *ui.DetailKeyboard) *types.TelegramInlineKeyboard 
 🆔 TMDB ID: 2995
 ```
 
-#### 修改后（暗黑霓虹风）
+#### 修改后（极简卡片风）
 ```
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎬 复仇者联盟
@@ -265,7 +267,7 @@ func convertDetailKeyboard(kb *ui.DetailKeyboard) *types.TelegramInlineKeyboard 
 
 ```go
 // 创建构建器
-builder := ui.NewSearchResultsBuilder(ui.StyleNeon)
+builder := ui.NewSearchResultsBuilder(ui.StyleCard)
 
 // 构建消息
 message := builder.BuildSearchResultsMessage(query, results, page, total)
@@ -278,7 +280,7 @@ keyboard := builder.BuildSearchKeyboard(results, page, totalPages)
 
 ```go
 // 创建构建器
-builder := ui.NewMediaDetailBuilder(ui.StyleNeon)
+builder := ui.NewMediaDetailBuilder(ui.StyleCard)
 
 // 构建消息
 message := builder.BuildMediaDetailMessage(mediaInfo)

@@ -29,8 +29,10 @@ func (b *SearchResultsBuilder) BuildSearchResultsMessage(query string, results [
 		return b.buildFilmSearchResults(query, results, page, total)
 	case StylePop:
 		return b.buildPopSearchResults(query, results, page, total)
+	case StyleCard:
+		return b.buildCardSearchResults(query, results, page, total)
 	default:
-		return b.buildNeonSearchResults(query, results, page, total)
+		return b.buildCardSearchResults(query, results, page, total) // 默认使用极简卡片风
 	}
 }
 
@@ -198,6 +200,58 @@ func (b *SearchResultsBuilder) buildPopSearchResults(query string, results []ser
 	// 分隔线
 	sb.WriteString(popLine + "\n")
 	sb.WriteString("💥 选一个看看！💥\n")
+
+	return sb.String()
+}
+
+// buildCardSearchResults 极简卡片风格搜索结果
+func (b *SearchResultsBuilder) buildCardSearchResults(query string, results []services.SearchResult, page, total int) string {
+	var sb strings.Builder
+
+	// 标题分隔线
+	sb.WriteString(cardSeparator + "\n")
+	sb.WriteString(fmt.Sprintf("🔍 搜索: %s\n", query))
+	sb.WriteString(cardSeparator + "\n\n")
+
+	// 统计信息
+	sb.WriteString(fmt.Sprintf("结果: %d", total))
+	if total > len(results) {
+		sb.WriteString(fmt.Sprintf(" (第 %d 页)", page))
+	}
+	sb.WriteString("\n\n")
+	sb.WriteString(cardSeparator + "\n\n")
+
+	// 结果列表
+	displayCount := len(results)
+	for i, item := range results {
+		// 类型图标
+		icon := getMediaTypeIcon(item.Type)
+
+		// 年份
+		year := ""
+		if item.Year > 0 {
+			year = fmt.Sprintf(" (%d)", item.Year)
+		}
+
+		// 评分
+		rating := ""
+		if item.Rating > 0 {
+			rating = fmt.Sprintf(" [%.1f]", item.Rating)
+		}
+
+		// 结果项（卡片式）
+		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+
+		// 概要（如果有）
+		if item.Overview != "" {
+			overview := truncateText(item.Overview, 50)
+			sb.WriteString(fmt.Sprintf("   %s\n", overview))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString(cardSeparator + "\n")
+	sb.WriteString("输入数字选择或翻页\n")
 
 	return sb.String()
 }

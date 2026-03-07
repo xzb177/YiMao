@@ -25,7 +25,7 @@ func NewSearchHistoryHandler(
 	return &SearchHistoryHandler{
 		telegram:       telegram,
 		searchHistory: searchHistory,
-		uiBuilder:     ui.NewHistoryBuilder(ui.StyleNeon), // 使用暗黑霓虹风
+		uiBuilder:     ui.NewHistoryBuilder(ui.StyleCard), // 使用极简卡片风
 	}
 }
 
