@@ -266,7 +266,6 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	// Only show AI recommendation in private chats
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
-		msg.Text("🎬 精选推荐：浏览热门与高分").Newline()
 		msg.Text("💫 情绪选片：按心情一键找片").Newline()
 		msg.Text("🎯 不纠结：直接给你三种风格候选").Newline()
 	}
@@ -431,7 +430,7 @@ func (h *StartHandler) HandleMoodPick(ctx *callback.Context) (*callback.Response
 	msg.Italic("接下来会优先给你相近风格内容").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即看推荐", fmt.Sprintf("search:type:%s", typeName))
+	kb.AddButton("🎬 立即看推荐", fmt.Sprintf("search:type:%s:mood:%s", typeName, mood))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
@@ -455,12 +454,20 @@ func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Respons
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	prefMood, _ := sess.GetString("pref_mood_last")
 
-	steadyType := "toprated"
-	stimType := "trending"
-	nicheType := "random"
+	// 默认心情映射
+	steadyMood := "mindblow"  // 稳妥高口碑 → 烧脑刺激（高评分）
+	stimMood := "excited"     // 刺激高热度 → 兴奋（热门）
+	nicheMood := "random"     // 冷门盲盒 → 随机
+
+	// 根据用户心情偏好调整
 	if prefMood == "relax" || prefMood == "healing" {
-		steadyType = "new"
-		stimType = "hot"
+		steadyMood = "healing"   // 治愈类用户 → 治愈推荐
+		stimMood = "relax"       // 放松推荐
+		nicheMood = "cozy"       // 温馨推荐
+	} else if prefMood == "mindblow" || prefMood == "excited" {
+		steadyMood = "mindblow"  // 保持
+		stimMood = "excited"
+		nicheMood = "random"
 	}
 
 	msg := services.NewMessageBuilder()
@@ -471,10 +478,10 @@ func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Respons
 	msg.Italic("选一个直接开刷，不浪费时间").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🅰️ 稳妥", fmt.Sprintf("search:type:%s", steadyType))
-	kb.AddButton("🅱️ 刺激", fmt.Sprintf("search:type:%s", stimType))
+	kb.AddButton("🅰️ 稳妥", fmt.Sprintf("search:type:toprated:mood:%s", steadyMood))
+	kb.AddButton("🅱️ 刺激", fmt.Sprintf("search:type:trending:mood:%s", stimMood))
 	kb.NewRow()
-	kb.AddButton("🅲 冷门盲盒", fmt.Sprintf("search:type:%s", nicheType))
+	kb.AddButton("🅲 冷门盲盒", fmt.Sprintf("search:type:random:mood:%s", nicheMood))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

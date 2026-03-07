@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"emby-telegram-bot/ai"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -137,6 +138,10 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Check if this is a trending type selection
 	if tType, hasType := ctx.Callback.Params["type"]; hasType {
+		// Check if this is a mood-based recommendation
+		if mood, hasMood := ctx.Callback.Params["mood"]; hasMood {
+			return h.handleMoodRecommendation(ctx, tType, mood)
+		}
 		return h.handleTrending(ctx, tType)
 	}
 
@@ -535,6 +540,348 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// handleMoodRecommendation handles AI mood-based recommendations
+func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType, mood string) (*callback.Response, error) {
+	log.Printf("[SearchHandler] Mood recommendation: type=%s, mood=%s", recType, mood)
+
+	// AI recommendation is only available in private chats
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+
+	// Map mood parameter to Chinese keywords
+	moodKeywords := map[string]string{
+		"relax":     "放松",
+		"healing":   "治愈",
+		"mindblow":  "烧脑",
+		"emotional": "感动",
+		"random":    "随机",
+	}
+
+	moodKeyword := moodKeywords[mood]
+	if moodKeyword == "" {
+		moodKeyword = "放松"
+	}
+
+	// Get AI recommendations
+	results, err := h.getAIMoodRecommendations(moodKeyword, 6)
+	if err != nil {
+		log.Printf("[SearchHandler] AI recommendation failed: %v", err)
+		msg.Bold("🤖 AI 心情推荐").Newline()
+		msg.Newline()
+		msg.Text("😓 AI 推荐服务暂时不可用").Newline()
+		msg.Newline()
+		msg.Textf("💡 已为你切换到普通推荐").Newline()
+
+		// Fallback to regular trending
+		return h.handleTrending(ctx, recType)
+	}
+
+	// Build response with results
+	msg.Bold("🤖 AI 心情推荐").Newline()
+	msg.Newline()
+
+	moodLabels := map[string]string{
+		"放松":   "😌 轻松治愈",
+		"治愈":   "🧘 温暖治愈",
+		"烧脑":   "🤯 烧脑刺激",
+		"感动":   "😭 情绪共鸣",
+		"随机":   "🎲 随机惊喜",
+	}
+
+	moodLabel := moodLabels[moodKeyword]
+	if moodLabel == "" {
+		moodLabel = "😌 轻松治愈"
+	}
+
+	msg.Italic(moodLabel).Newline()
+	msg.Text("根据你的心情智能推荐").Newline()
+	msg.Newline()
+
+	if len(results) == 0 {
+		msg.Italic("💫 暂时没有找到相关内容").Newline()
+		msg.Newline()
+		msg.Text("试试其他心情，或许有惊喜哦")
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("😌 解压轻松", "search:type:hot:mood:relax")
+		kb.AddButton("🤯 烧脑刺激", "search:type:toprated:mood:mindblow")
+		kb.NewRow()
+		kb.AddButton("😭 情绪共鸣", "search:type:trending:mood:emotional")
+		kb.AddButton("🧘 治愈慢节奏", "search:type:new:mood:healing")
+		kb.NewRow()
+		kb.AddButton("⬅️ 返回主菜单", "start")
+
+		return &callback.Response{
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	// Display results
+	displayCount := len(results)
+	if displayCount > 6 {
+		displayCount = 6
+	}
+
+	// Save results to session for detail view
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	searchItems := make([]session.SearchItem, 0, len(results))
+	for _, item := range results {
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+
+		searchItem := session.SearchItem{
+			ID:       fmt.Sprintf("%d", item.ID),
+			Title:    item.Title,
+			Year:     item.Year.Int(),
+			Type:     mediaType,
+			Rating:   item.Rating,
+			Poster:   item.Poster,
+			Overview: item.Overview,
+		}
+		searchItems = append(searchItems, searchItem)
+	}
+	sess.SetSearchResults(searchItems, 1, "mood_"+mood)
+
+	kb := services.NewKeyboardBuilder()
+	for i, item := range results[:displayCount] {
+		year := ""
+		if item.Year > 0 {
+			year = fmt.Sprintf(" (%d)", item.Year)
+		}
+
+		rating := ""
+		if item.Rating > 0 {
+			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
+		}
+
+		mediaType := "🎬"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "📺"
+		}
+
+		msg.Textf("%d. %s%s%s%s", i+1, item.Title, year, mediaType, rating).Newline()
+
+		mediaTypeForCallback := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaTypeForCallback = "tv"
+		}
+		kb.AddButton(fmt.Sprintf("%d", i+1), fmt.Sprintf("detail:id:%d:type:%s", item.ID, mediaTypeForCallback))
+
+		if (i+1)%3 == 0 || i == displayCount-1 {
+			kb.NewRow()
+		}
+	}
+
+	// Add navigation row
+	kb.AddButton("🔄 换一批", fmt.Sprintf("search:type:%s:mood:%s", recType, mood))
+	kb.AddButton("💫 换个心情", "mood")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// getAIMoodRecommendations gets AI-powered mood-based recommendations
+func (h *SearchHandler) getAIMoodRecommendations(mood string, count int) ([]services.SearchResult, error) {
+	log.Printf("[SearchHandler] Calling AI mood recommendation: mood=%s", mood)
+
+	// Use a channel to get results with timeout
+	type aiResult struct {
+		results []*ai.RecommendationResult
+		err     error
+	}
+	resultChan := make(chan aiResult, 1)
+
+	// Call AI in background
+	go func() {
+		aiResults, err := getAIRecommendations(mood, count)
+		resultChan <- aiResult{results: aiResults, err: err}
+	}()
+
+	// Wait for AI with 5 second timeout
+	select {
+	case res := <-resultChan:
+		if res.err != nil {
+			log.Printf("[SearchHandler] AI recommendation failed: %v", res.err)
+			return h.getTMDBBasedRecommendations(mood, count)
+		}
+		log.Printf("[SearchHandler] AI returned %d recommendations", len(res.results))
+
+		// Convert AI results to TMDB search results for display
+		var results []services.SearchResult
+		for _, item := range res.results {
+			// Search TMDB for the recommended title to get full details
+			searchResult, err := h.searchByTitleAndYear(item.Title, item.Year, item.MediaType)
+			if err != nil {
+				log.Printf("[SearchHandler] Failed to find TMDB entry for %s: %v", item.Title, err)
+				continue
+			}
+			results = append(results, searchResult...)
+		}
+
+		// If AI didn't return enough results, supplement with TMDB
+		if len(results) < count {
+			fallbackResults, _ := h.getTMDBBasedRecommendations(mood, count-len(results))
+			results = append(results, fallbackResults...)
+		}
+
+		// Shuffle and limit
+		rand.Seed(time.Now().UnixNano())
+		rand.Shuffle(len(results), func(i, j int) {
+			results[i], results[j] = results[j], results[i]
+		})
+
+		if len(results) > count {
+			results = results[:count]
+		}
+
+		return results, nil
+
+	case <-time.After(5 * time.Second):
+		log.Printf("[SearchHandler] AI timeout after 5s, using fallback")
+		return h.getTMDBBasedRecommendations(mood, count)
+	}
+}
+
+// getTMDBBasedRecommendations gets TMDB-based recommendations as fallback
+func (h *SearchHandler) getTMDBBasedRecommendations(mood string, count int) ([]services.SearchResult, error) {
+	// Map mood to recommendation type
+	typeMap := map[string]string{
+		"放松":   "trending",
+		"治愈":   "new",
+		"烧脑":   "toprated",
+		"感动":   "trending",
+		"随机":   "random",
+	}
+
+	recType := typeMap[mood]
+	if recType == "" {
+		recType = "trending"
+	}
+
+	var allItems []services.SearchResult
+	var err error
+
+	switch recType {
+	case "trending":
+		allItems, err = h.getTrendingMoviesHybrid()
+	case "toprated":
+		allItems, err = h.getTopRatedMediaHybrid()
+	case "new":
+		allItems, err = h.getNewMediaHybrid()
+	case "random":
+		allItems, err = h.getRandomMedia()
+	default:
+		allItems, err = h.getTrendingMoviesHybrid()
+	}
+
+	if err != nil {
+		return h.getFallbackMedia()
+	}
+
+	if len(allItems) > count {
+		allItems = allItems[:count]
+	}
+
+	return allItems, nil
+}
+
+// searchByTitleAndYear searches TMDB by title and year
+// getAIRecommendations calls the AI service for recommendations
+func getAIRecommendations(mood string, count int) ([]*ai.RecommendationResult, error) {
+	// Get AI manager
+	manager := ai.GetManager()
+	if manager == nil || !manager.IsEnabled() {
+		return nil, fmt.Errorf("AI service not enabled")
+	}
+
+	// Get recommendations from AI
+	agent := manager.GetAgent()
+	if agent == nil {
+		return nil, fmt.Errorf("AI agent not available")
+	}
+
+	recommend := agent.GetRecommendation()
+	if recommend == nil {
+		return nil, fmt.Errorf("AI recommendation service not available")
+	}
+
+	return recommend.GetMoodBasedRecommendations(mood, count)
+}
+
+func (h *SearchHandler) searchByTitleAndYear(title string, year int, mediaType string) ([]services.SearchResult, error) {
+	if h.tmdb == nil {
+		return nil, fmt.Errorf("TMDB client not available")
+	}
+
+	query := fmt.Sprintf("%s %d", title, year)
+	result, err := h.tmdb.SearchMedia(query, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter by media type if specified
+	var filtered []services.SearchResult
+	for _, item := range result.Results {
+		if mediaType == "movie" && item.MediaType == "movie" {
+			filtered = append(filtered, services.SearchResult{
+				ID:       item.ID,
+				Title:    item.Title,
+				Year:     services.FlexibleYear(year),
+				Type:     "movie",
+				Poster:   item.PosterPath,
+				Rating:   item.VoteAverage,
+				Overview: item.Overview,
+			})
+		} else if mediaType == "tv" && item.MediaType == "tv" {
+			filtered = append(filtered, services.SearchResult{
+				ID:       item.ID,
+				Title:    item.Name,
+				Year:     services.FlexibleYear(year),
+				Type:     "tv",
+				Poster:   item.PosterPath,
+				Rating:   item.VoteAverage,
+				Overview: item.Overview,
+			})
+		}
+	}
+
+	if len(filtered) == 0 && len(result.Results) > 0 {
+		// Return first result if no match found
+		item := result.Results[0]
+		title := item.Title
+		if title == "" {
+			title = item.Name
+		}
+		return []services.SearchResult{{
+			ID:       item.ID,
+			Title:    title,
+			Year:     services.FlexibleYear(year),
+			Type:     item.MediaType,
+			Poster:   item.PosterPath,
+			Rating:   item.VoteAverage,
+			Overview: item.Overview,
+		}}, nil
+	}
+
+	return filtered, nil
 }
 
 // getTrendingResults gets trending results based on type

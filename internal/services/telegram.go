@@ -904,9 +904,6 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 	kb := NewKeyboardBuilder()
 
 	kb.AddButton("🔍 搜索", "start_search")
-	if showAI {
-		kb.AddButton("🎬 推荐", "start_ai")
-	}
 
 	kb.NewRow()
 	kb.AddButton("💫 情绪选片", "start_mood")

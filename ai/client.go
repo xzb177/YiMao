@@ -1,0 +1,283 @@
+// Package ai provides AI client implementations
+package ai
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Message represents a chat message
+type Message struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+// ClaudeClient handles Claude API interactions
+type ClaudeClient struct {
+	apiKey     string
+	baseURL    string
+	model      string
+	enabled    bool
+	httpClient *http.Client
+	mu         sync.RWMutex
+	cache      *ResponseCache
+}
+
+// NewClaudeClient creates a new Claude client
+func NewClaudeClient(apiKey string) *ClaudeClient {
+	if apiKey == "" {
+		return &ClaudeClient{enabled: false}
+	}
+
+	return &ClaudeClient{
+		apiKey:  apiKey,
+		baseURL: "https://api.anthropic.com/v1/messages",
+		model:   "claude-3-5-sonnet-20241022",
+		enabled: true,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		cache: NewResponseCache(30 * time.Minute),
+	}
+}
+
+// IsEnabled returns whether the client is enabled
+func (c *ClaudeClient) IsEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.enabled
+}
+
+// Send sends a message to Claude and returns the response
+func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, error) {
+	if !c.IsEnabled() {
+		return "", fmt.Errorf("Claude client is not enabled")
+	}
+
+	// Check cache
+	cacheKey := BuildCacheKey(systemPrompt, []Message{{Role: "user", Content: userMessage}})
+	if cached, ok := c.cache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
+	// Prepare request
+	messages := []Message{
+		{Role: "user", Content: userMessage},
+	}
+
+	requestBody := map[string]interface{}{
+		"model":      c.model,
+		"max_tokens": 4096,
+		"system":     systemPrompt,
+		"messages":   messages,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest("POST", c.baseURL, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	// Send request
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error: status %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Content) == 0 {
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	response := result.Content[0].Text
+	c.cache.Set(cacheKey, response)
+	return response, nil
+}
+
+// ZhipuClient handles Zhipu AI API interactions
+type ZhipuClient struct {
+	apiKey     string
+	baseURL    string
+	model      string
+	enabled    bool
+	httpClient *http.Client
+	mu         sync.RWMutex
+	cache      *ResponseCache
+}
+
+// NewZhipuClient creates a new Zhipu AI client
+func NewZhipuClient(apiKey string) *ZhipuClient {
+	if apiKey == "" {
+		// Try to get from environment
+		apiKey = os.Getenv("ZHIPU_API_KEY")
+		if apiKey == "" {
+			// Try to read from .env file
+			if data, err := os.ReadFile("/root/YiMao/.env"); err == nil {
+				for _, line := range strings.Split(string(data), "\n") {
+					if strings.HasPrefix(line, "ZHIPU_API_KEY=") {
+						apiKey = strings.TrimSpace(strings.TrimPrefix(line, "ZHIPU_API_KEY="))
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if apiKey == "" {
+		return &ZhipuClient{enabled: false}
+	}
+
+	return &ZhipuClient{
+		apiKey:  apiKey,
+		baseURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+		model:   "glm-4-flash",
+		enabled: true,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+		cache: NewResponseCache(30 * time.Minute),
+	}
+}
+
+// IsEnabled returns whether the client is enabled
+func (z *ZhipuClient) IsEnabled() bool {
+	z.mu.RLock()
+	defer z.mu.RUnlock()
+	return z.enabled
+}
+
+// Send sends a message to Zhipu AI and returns the response
+func (z *ZhipuClient) Send(userMessage string, systemPrompt string) (string, error) {
+	if !z.IsEnabled() {
+		return "", fmt.Errorf("Zhipu client is not enabled")
+	}
+
+	// Check cache
+	cacheKey := BuildCacheKey(systemPrompt, []Message{{Role: "user", Content: userMessage}})
+	if cached, ok := z.cache.Get(cacheKey); ok {
+		return cached, nil
+	}
+
+	// Prepare request
+	messages := []Message{}
+	if systemPrompt != "" {
+		messages = append(messages, Message{Role: "system", Content: systemPrompt})
+	}
+	messages = append(messages, Message{Role: "user", Content: userMessage})
+
+	requestBody := map[string]interface{}{
+		"model":    z.model,
+		"messages": messages,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest("POST", z.baseURL, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+z.apiKey)
+
+	// Send request
+	resp, err := z.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error: status %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	response := result.Choices[0].Message.Content
+	z.cache.Set(cacheKey, response)
+	return response, nil
+}
+
+// GetStats returns client statistics
+func (z *ZhipuClient) GetStats() map[string]interface{} {
+	stats := map[string]interface{}{
+		"enabled": z.IsEnabled(),
+		"model":   z.model,
+	}
+	if z.cache != nil {
+		stats["cache"] = z.cache.GetStats()
+	}
+	return stats
+}
+
+// GetStats returns client statistics
+func (c *ClaudeClient) GetStats() map[string]interface{} {
+	stats := map[string]interface{}{
+		"enabled": c.IsEnabled(),
+		"model":   c.model,
+	}
+	if c.cache != nil {
+		stats["cache"] = c.cache.GetStats()
+	}
+	return stats
+}

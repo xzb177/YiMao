@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-03-08
+
+### feat: 集成 AI 心情推荐功能 ⏳
+- **背景**: ai/ 目录包含完整的心情推荐代码，但未被项目使用
+- **问题分析**:
+  - `ai/recommend.go` 和 `ai/recommendation_v2.go` 包含 30+ 心情关键词分析
+  - `ai/integration.go` 提供了集成接口，但缺少 `ClaudeClient` 和 `ZhipuClient` 实现
+  - 现有的心情选片 UI 只记录偏好，没有真正使用 AI 推荐
+- **解决方案**:
+  1. 创建 `ai/client.go` - 实现 `ClaudeClient` 和 `ZhipuClient`
+     - HTTP API 调用支持
+     - 响应缓存机制（30分钟 TTL）
+     - 自动从 .env 文件读取 API Key
+  2. 创建 `ai/agent.go` - 实现 AI Agent 编排
+     - 优先使用智谱 AI（更适合中文）
+     - Fallback 到 Claude
+     - 自动初始化和配置
+  3. 扩展 `internal/handlers/search.go`:
+     - 添加 `handleMoodRecommendation()` 方法
+     - 添加 `getAIMoodRecommendations()` 方法
+     - 支持心情参数：relax（放松）、healing（治愈）、mindblow（烧脑）、emotional（感动）
+- **支持的心情关键词**:
+  - 😌 解压轻松：喜剧、爱情、动画
+  - 🧘 治愈慢节奏：温情、治愈、家庭
+  - 🤯 烧脑刺激：悬疑、科幻、惊悚
+  - 😭 情绪共鸣：剧情、浪漫、励志
+  - 🎲 随机盲选：混合推荐
+- **修改文件**:
+  - `ai/client.go` - 新增 AI 客户端实现
+  - `ai/agent.go` - 新增 AI Agent 编排
+  - `internal/handlers/search.go` - 添加心情推荐处理
+- **状态**: ✅ 代码编译通过
+- **部署**: ✅ 服务已部署 (healthy)
+- **部署时间**: 2026-03-08 00:07 / 00:22 / 00:27 / 00:32 / 00:37 / 00:41 (简化菜单)
+- **AI配置**: ✅ 智谱 API Key 已配置
+- **配置时间**: 2026-03-08 00:09
+- **模型**: glm-4-flash (智谱AI)
+- **修复**:
+  - moodpick 按钮回调现在正确传递 mood 参数
+  - 添加 5 秒超时保护，AI 慢时自动 fallback 到 TMDB
+  - "不纠结"功能现在也带 AI 心情推荐，根据用户偏好智能调整
+- **优化**: 移除重叠的"🎬 精选推荐"入口，简化主菜单
+
+---
+
 ## 2026-03-07
 
 ### feat: 完善心情推荐算法 ✅
