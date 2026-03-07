@@ -43,27 +43,27 @@ type MediaItem struct {
 	EpisodeEnd   int    `json:"episode_end,omitempty"`
 	IsCompleted  bool   `json:"is_completed,omitempty"`
 	// Metadata
-	Quality      string  `json:"quality,omitempty"`
-	Rating       float64 `json:"rating,omitempty"`
-	Genres       []string `json:"genres,omitempty"`
-	Overview     string  `json:"overview,omitempty"`
-	ImageURL     string  `json:"image_url,omitempty"`
+	Quality  string   `json:"quality,omitempty"`
+	Rating   float64  `json:"rating,omitempty"`
+	Genres   []string `json:"genres,omitempty"`
+	Overview string   `json:"overview,omitempty"`
+	ImageURL string   `json:"image_url,omitempty"`
 	// File info
-	FileSize     int64  `json:"file_size,omitempty"`
-	FileCount    int    `json:"file_count,omitempty"`
-	IsWEBDL      bool   `json:"is_webdl,omitempty"`
+	FileSize  int64 `json:"file_size,omitempty"`
+	FileCount int   `json:"file_count,omitempty"`
+	IsWEBDL   bool  `json:"is_webdl,omitempty"`
 	// Timestamp
 	AddedAt time.Time `json:"added_at"`
 }
 
 // AdminNotificationSettings stores notification preferences for an admin
 type AdminNotificationSettings struct {
-	AdminID             int64             `json:"admin_id"`
-	SingleEnabled       bool             `json:"single_enabled"`       // Enable instant notification to group (入库群组通知)
-	DailyTime           string           `json:"daily_time"`           // Format: "HH:MM", default "23:50"
-	DailySummaryEnabled bool             `json:"daily_summary_enabled"` // Enable daily summary notification (private message)
-	Libraries           []string         `json:"libraries"`             // Specific libraries to monitor for daily summary, empty = all
-	Format              NotificationFormat `json:"format"`               // Notification format: simple or detailed
+	AdminID             int64              `json:"admin_id"`
+	SingleEnabled       bool               `json:"single_enabled"`        // Enable instant notification to group (入库群组通知)
+	DailyTime           string             `json:"daily_time"`            // Format: "HH:MM", default "23:50"
+	DailySummaryEnabled bool               `json:"daily_summary_enabled"` // Enable daily summary notification (private message)
+	Libraries           []string           `json:"libraries"`             // Specific libraries to monitor for daily summary, empty = all
+	Format              NotificationFormat `json:"format"`                // Notification format: simple or detailed
 }
 
 // MediaNotificationService handles media library notifications
@@ -82,8 +82,8 @@ type MediaNotificationService struct {
 	mu sync.RWMutex
 
 	// Channels
-	itemChan    chan *MediaItem
-	doneChan    chan struct{}
+	itemChan chan *MediaItem
+	doneChan chan struct{}
 }
 
 // NewMediaNotificationService creates a new media notification service
@@ -175,7 +175,7 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 	// Return default settings
 	return &AdminNotificationSettings{
 		AdminID:             adminID,
-		SingleEnabled:       true,  // Default to enabled
+		SingleEnabled:       true, // Default to enabled
 		DailyTime:           "23:50",
 		DailySummaryEnabled: false, // Default to disabled
 		Libraries:           []string{},
@@ -639,107 +639,89 @@ func (s *MediaNotificationService) sendDailySummary(adminID int64, items []*Medi
 // formatDailySummary formats a daily summary message
 func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*MediaItem) string {
 	var builder strings.Builder
-
-	// Header
 	builder.WriteString(fmt.Sprintf("📅 %s 总入库目录\n\n", date.Format("2006-01-02")))
 
-	// Group by library category
-	// First, detect library categories
-	libCategories := make(map[string]string) // libraryName -> category
+	// 按媒体类型分桶（避免仅按库名判断导致剧集跑到电影库）
+	type bucketMeta struct {
+		Label string
+		Emoji string
+		Type  MediaType
+	}
+	order := []bucketMeta{
+		{Label: "动画库", Emoji: "🎬", Type: MediaTypeAnime},
+		{Label: "剧集库", Emoji: "📺", Type: MediaTypeSeries},
+		{Label: "电影库", Emoji: "🎥", Type: MediaTypeMovie},
+	}
+
+	byType := make(map[MediaType][]*MediaItem)
 	for _, item := range items {
-		if _, exists := libCategories[item.LibraryName]; !exists {
-			libCategories[item.LibraryName] = s.detectLibraryCategory(item.LibraryName)
+		mt := item.MediaType
+		if mt == "" {
+			mt = MediaTypeMovie
 		}
+		byType[mt] = append(byType[mt], item)
 	}
 
-	// Group items by library category
-	categoryGroups := make(map[string][]*MediaItem) // category -> items
-	for _, item := range items {
-		category := libCategories[item.LibraryName]
-		categoryGroups[category] = append(categoryGroups[category], item)
-	}
-
-	// Define category order and emoji
-	categoryOrder := []string{"动画库", "剧集库", "电影库"}
-	categoryEmojis := map[string]string{
-		"动画库": "🎬",
-		"剧集库": "📺",
-		"电影库": "🎥",
-	}
-
-	// Build tree structure - improved clarity
-	for _, category := range categoryOrder {
-		categoryItems, exists := categoryGroups[category]
-		if !exists || len(categoryItems) == 0 {
+	for _, meta := range order {
+		typeItems := byType[meta.Type]
+		if len(typeItems) == 0 {
 			continue
 		}
 
-		emoji := categoryEmojis[category]
-		builder.WriteString(fmt.Sprintf("├─ %s %s\n", emoji, category))
+		builder.WriteString(fmt.Sprintf("├─ %s %s\n", meta.Emoji, meta.Label))
 
-		// Group by library name within category
+		// 类型内按库名分组
 		libGroups := make(map[string][]*MediaItem)
-		for _, item := range categoryItems {
-			libName := item.LibraryName
+		for _, item := range typeItems {
+			libName := strings.TrimSpace(item.LibraryName)
 			if libName == "" {
 				libName = "其他"
 			}
 			libGroups[libName] = append(libGroups[libName], item)
 		}
 
-		// Sort library names
 		libNames := make([]string, 0, len(libGroups))
 		for name := range libGroups {
 			libNames = append(libNames, name)
 		}
 		sort.Strings(libNames)
 
-		// Print items per library - improved tree structure
 		for i, libName := range libNames {
 			libItems := libGroups[libName]
-			isLastLib := i == len(libNames)-1
+			sort.Slice(libItems, func(a, b int) bool {
+				return s.formatItemForSummary(libItems[a]) < s.formatItemForSummary(libItems[b])
+			})
 
-			// Library branch prefix
+			isLastLib := i == len(libNames)-1
 			libPrefix := "│   ├─"
 			if isLastLib {
 				libPrefix = "│   └─"
 			}
-
-			// Count items for this library
-			itemCount := len(libItems)
-
-			// Show library name with item count if multiple items
-			if itemCount > 1 {
-				builder.WriteString(fmt.Sprintf("%s %s (%d部)\n", libPrefix, libName, itemCount))
-			} else {
-				builder.WriteString(fmt.Sprintf("%s %s\n", libPrefix, libName))
-			}
-
-			// Print items under this library
-			itemPrefix := "│   │   ├─"
-			if isLastLib {
-				itemPrefix = "│       ├─"
-			}
+			builder.WriteString(fmt.Sprintf("%s %s (%d部)\n", libPrefix, libName, len(libItems)))
 
 			for j, item := range libItems {
-				isLastItem := j == itemCount-1
-				currentPrefix := itemPrefix
+				isLastItem := j == len(libItems)-1
+				itemPrefix := "│   │   ├─"
+				if isLastLib {
+					itemPrefix = "│       ├─"
+				}
 				if isLastItem {
 					if isLastLib {
-						currentPrefix = "│       └─"
+						itemPrefix = "│       └─"
 					} else {
-						currentPrefix = "│   │   └─"
+						itemPrefix = "│   │   └─"
 					}
 				}
-				builder.WriteString(fmt.Sprintf("%s %s\n", currentPrefix, s.formatItemForSummary(item)))
+				builder.WriteString(fmt.Sprintf("%s %s\n", itemPrefix, s.formatItemForSummary(item)))
 			}
 		}
 		builder.WriteString("│\n")
 	}
 
-	// Summary stats
 	stats := s.calculateStats(items)
+	total := stats[MediaTypeAnime] + stats[MediaTypeSeries] + stats[MediaTypeMovie]
 	builder.WriteString("入库总览：\n")
+	builder.WriteString(fmt.Sprintf("总计：%d 部\n", total))
 	if stats[MediaTypeAnime] > 0 {
 		builder.WriteString(fmt.Sprintf("动画：%d 部\n", stats[MediaTypeAnime]))
 	}
