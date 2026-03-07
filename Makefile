@@ -13,3 +13,7 @@ build:
 	go build ./...
 
 ci: fmt vet test build
+
+
+safe-commit:
+	./scripts/safe-commit.sh "$(MSG)"
