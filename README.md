@@ -4,6 +4,8 @@
 
 **全新 UI 设计**：5 套强视觉风格，可自由切换
 
+**🔄 部署用户请注意**：更新前请务必查看 [📘 更新指南](UPDATE.md) 以避免数据丢失！
+
 [![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -175,22 +177,52 @@ docker compose up -d
 
 ## 🔄 维护与更新
 
+> **⚠️ 重要：更新前请务必备份数据！** 详见 [📘 更新指南](UPDATE.md)
+
+### 快速更新
+
 ```bash
-# 推荐：一键更新
-./update.sh
+# 一键更新（推荐）
+./manage.sh update
 
 # 查看运行日志
-docker logs -f emby-telegram-bot
+./manage.sh logs-f
 
 # 重启服务
-docker compose restart
+./manage.sh restart
 
 # 停止服务
-docker compose down
-
-# 手动更新
-git pull && docker compose up -d --build
+./manage.sh stop
 ```
+
+### 更新指南
+
+- [📘 UPDATE.md](UPDATE.md) - **完整更新指南**
+  - 更新前准备与数据备份
+  - 三种更新方法（脚本/手动/指定版本）
+  - 更新后验证与回滚方案
+  - 常见问题排查
+
+### 必读：更新注意事项
+
+1. **每次更新前务必备份数据**
+   - `data/` 目录
+   - `*.json` 配置文件（preferences.json, user_quotas.json 等）
+
+2. **查看更新内容**
+   ```bash
+   git log HEAD@{1}..HEAD --oneline  # 查看本次更新了什么
+   ```
+
+3. **检查配置变更**
+   ```bash
+   git diff HEAD@{1} .env.example      # 查看是否有新增配置项
+   ```
+
+4. **更新后验证**
+   - 容器状态是否 `healthy`
+   - Bot 是否响应 `/start` 命令
+   - 数据是否完整
 
 ---
 
@@ -217,14 +249,20 @@ YiMao Bot (Handlers / Services / Session)
 
 ## 📘 项目文档
 
-- [DEPLOY.md](DEPLOY.md) 部署说明
-- [COMMANDS.md](COMMANDS.md) 命令与回调说明
-- [ARCHITECTURE.md](ARCHITECTURE.md) 架构设计
-- [CHANGELOG.md](CHANGELOG.md) 版本变更记录
-- [CONTRIBUTING.md](CONTRIBUTING.md) 贡献指南
-- [SECURITY.md](SECURITY.md) 安全策略
-- [.github/workflows/ci.yml](.github/workflows/ci.yml) 持续集成检查
-- [Makefile](Makefile) 本地一键检查命令
+**部署与维护**
+- [📘 UPDATE.md](UPDATE.md) - **更新指南（必读）**
+- [DEPLOY.md](DEPLOY.md) - 部署说明
+- [DOCKER.md](DOCKER.md) - Docker 管理
+
+**功能说明**
+- [COMMANDS.md](COMMANDS.md) - 命令与回调说明
+- [FEATURES.md](FEATURES.md) - 功能特性
+
+**开发文档**
+- [ARCHITECTURE.md](ARCHITECTURE.md) - 架构设计
+- [CHANGELOG.md](CHANGELOG.md) - 版本变更记录
+- [CONTRIBUTING.md](CONTRIBUTING.md) - 贡献指南
+- [SECURITY.md](SECURITY.md) - 安全策略
 
 ---
 
