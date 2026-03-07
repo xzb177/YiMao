@@ -26,6 +26,7 @@ type Dependencies struct {
 	AdminHandler    *handlers.AdminHandler
 	QuotaService    *services.QuotaService
 	SearchHistory   *services.SearchHistoryService
+	SearchHistoryDB *services.SearchHistoryDB
 	TMDB            *services.TMDBClient
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler

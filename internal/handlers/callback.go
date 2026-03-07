@@ -1562,23 +1562,30 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
-		// No history, show start menu with full content
-		msg := services.NewMessageBuilder()
-		msg.Bold("👋 欢迎使用云海影视助手").Newline()
-		msg.Newline()
-		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
-		msg.Text("🎬 精选推荐 · 发现优质内容").Newline()
-		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
-		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
-		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
-		msg.Newline()
-		msg.Italic("💡 点击下方按钮开始探索").Newline()
+		// No history, show start menu using UI package
+		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
+
+		// 添加用户观影人格显示（如果有的话）
+		isPrivateChat := ctx.ChatType == "private"
+		if isPrivateChat {
+			if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
+				moodMap := map[string]string{
+					"relax":     "解压轻松",
+					"mindblow":  "烧脑刺激",
+					"emotional": "情绪共鸣",
+					"healing":   "治愈慢节奏",
+					"random":    "随机盲选",
+				}
+				if label, exists := moodMap[moodVal]; exists {
+					baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
+				}
+			}
+		}
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:     baseMsg,
 			Edit:     true,
 			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil
@@ -1681,23 +1688,30 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			}, nil
 		}
 
-		// Show start menu with full content for any other source
-		msg := services.NewMessageBuilder()
-		msg.Bold("👋 欢迎使用云海影视助手").Newline()
-		msg.Newline()
-		msg.Text("🔍 搜索影片 · 快速查找心仪内容").Newline()
-		msg.Text("🎬 精选推荐 · 发现优质内容").Newline()
-		msg.Text("📋 我的请求 · 跟踪求片进度").Newline()
-		msg.Text("🐛 我的反馈 · 查看问题反馈").Newline()
-		msg.Text("🔗 账号绑定 · 同步观影记录").Newline()
-		msg.Newline()
-		msg.Italic("💡 点击下方按钮开始探索").Newline()
+		// Show start menu using UI package for any other source
+		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
+
+		// 添加用户观影人格显示（如果有的话）
+		isPrivateChat := ctx.ChatType == "private"
+		if isPrivateChat {
+			if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
+				moodMap := map[string]string{
+					"relax":     "解压轻松",
+					"mindblow":  "烧脑刺激",
+					"emotional": "情绪共鸣",
+					"healing":   "治愈慢节奏",
+					"random":    "随机盲选",
+				}
+				if label, exists := moodMap[moodVal]; exists {
+					baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
+				}
+			}
+		}
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:     baseMsg,
 			Edit:     true,
 			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil
@@ -1710,20 +1724,15 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	log.Printf("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, query=%s", hasSearch, len(items), query)
 
 	if !hasSearch || len(items) == 0 {
-		// Search results expired, show start menu
+		// Search results expired, show start menu using UI package
 		log.Printf("[BackHandler] Search results expired or empty, showing start menu")
-		msg := services.NewMessageBuilder()
-		msg.Bold("👋 欢迎使用云海影视助手").Newline()
-		msg.Newline()
-		msg.Text("⏰ 搜索结果已过期，请重新搜索").Newline()
-		msg.Newline()
-		msg.Italic("💡 点击下方按钮开始探索").Newline()
+		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:     baseMsg,
 			Edit:     true,
 			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
 		}, nil

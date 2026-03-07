@@ -7,6 +7,7 @@ import (
 
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
+	"emby-telegram-bot/internal/ui"
 	"emby-telegram-bot/pkg/types"
 	"emby-telegram-bot/pkg/validation"
 )
@@ -152,22 +153,14 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
-	msg.Newline()
-	msg.Text("🔍 搜索影片：快速查找想看的内容").Newline()
-	msg.Text("🎬 精选推荐：发现热门和高分影片").Newline()
-	msg.Text("💫 情绪选片：按心情快速找片").Newline()
-	msg.Text("🎯 不纠结：直接给你三种风格候选").Newline()
-	msg.Text("📋 我的请求：查看求片处理进度").Newline()
-	msg.Text("🐞 我的反馈：查看反馈处理结果").Newline()
-	msg.Text("🔗 账号绑定：同步账号与记录").Newline()
-	msg.Newline()
-	msg.Italic("👇 请选择下方功能").Newline()
+	// 使用 UI 包构建主菜单（极简卡片风格）
+	menuText := ui.BuildMenu("云海影视助手", "你的私人选片师")
 
-	// Always show AI menu for /start command (user explicitly using command)
+	// 构建键盘
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
-	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), keyboard)
+
+	// 发送消息（纯文本，不需要特殊解析模式）
+	telegram.SendMessage(chatID, menuText, "", keyboard)
 }
 
 // SendHelpMessage sends the help message

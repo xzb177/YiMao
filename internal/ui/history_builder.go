@@ -24,10 +24,8 @@ func (b *HistoryBuilder) BuildHistoryUI(userID int64, stats *services.SearchStat
 	switch b.style {
 	case StyleNeon:
 		return b.buildNeonHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
-	case StyleCard:
-		return b.buildCardHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
 	default:
-		return b.buildCardHistoryUI(userID, stats, groupedHistory, popularSearches, trends) // 默认使用极简卡片风
+		return b.buildNeonHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
 	}
 }
 
@@ -35,13 +33,13 @@ func (b *HistoryBuilder) BuildHistoryUI(userID int64, stats *services.SearchStat
 func (b *HistoryBuilder) buildNeonHistoryUI(userID int64, stats *services.SearchStats, groupedHistory map[string][]services.SearchEntry, popularSearches []services.PopularSearch, trends []services.TrendItem) string {
 	var sb strings.Builder
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 	sb.WriteString("🔮 搜索历史 · 你的观影足迹\n")
-	sb.WriteString(neonLine + "\n\n")
+	sb.WriteString(NeonLine + "\n\n")
 
 	// 统计数据
 	sb.WriteString("📊 统计数据\n")
-	sb.WriteString(neonSeparator + "\n\n")
+	sb.WriteString(NeonSeparator + "\n\n")
 	sb.WriteString(fmt.Sprintf("• 总搜索次数：%d 次\n", stats.Total))
 	sb.WriteString(fmt.Sprintf("• 本周搜索：%d 次\n", stats.Week))
 	sb.WriteString(fmt.Sprintf("• 本月搜索：%d 次\n", stats.Month))
@@ -50,7 +48,7 @@ func (b *HistoryBuilder) buildNeonHistoryUI(userID int64, stats *services.Search
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(neonSeparator + "\n\n")
+	sb.WriteString(NeonSeparator + "\n\n")
 
 	// 分组历史记录
 	groupOrder := []string{"今天", "本周", "本月", "更早"}
@@ -76,55 +74,7 @@ func (b *HistoryBuilder) buildNeonHistoryUI(userID int64, stats *services.Search
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(neonLine + "\n")
-
-	return sb.String()
-}
-
-// buildCardHistoryUI 极简卡片风格历史界面
-func (b *HistoryBuilder) buildCardHistoryUI(userID int64, stats *services.SearchStats, groupedHistory map[string][]services.SearchEntry, popularSearches []services.PopularSearch, trends []services.TrendItem) string {
-	var sb strings.Builder
-
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString("📋 搜索历史\n")
-	sb.WriteString(cardSeparator + "\n\n")
-
-	// 统计数据
-	sb.WriteString("📊 统计\n")
-	sb.WriteString(cardBoxStart + "\n")
-	sb.WriteString(fmt.Sprintf("  总次数: %d\n", stats.Total))
-	sb.WriteString(fmt.Sprintf("  本周: %d\n", stats.Week))
-	sb.WriteString(fmt.Sprintf("  本月: %d\n", stats.Month))
-	if len(stats.Top5) > 0 {
-		sb.WriteString(fmt.Sprintf("  最常: %s\n", stats.Top5[0]))
-	}
-	sb.WriteString(cardBoxEnd + "\n\n")
-
-	// 分组历史记录
-	groupOrder := []string{"今天", "本周", "本月", "更早"}
-	for _, group := range groupOrder {
-		entries, exists := groupedHistory[group]
-		if !exists || len(entries) == 0 {
-			continue
-		}
-
-		sb.WriteString(fmt.Sprintf("📅 %s (%d)\n\n", group, len(entries)))
-
-		for i, entry := range entries {
-			countText := ""
-			if entry.Count > 1 {
-				countText = fmt.Sprintf(" [%d]", entry.Count)
-			}
-
-			timeText := formatTimeAgo(entry.Timestamp)
-
-			sb.WriteString(fmt.Sprintf("%d. %s%s\n", i+1, entry.Query, countText))
-			sb.WriteString(fmt.Sprintf("   %s\n", timeText))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(cardSeparator + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	return sb.String()
 }
@@ -134,10 +84,8 @@ func (b *HistoryBuilder) BuildHistoryKeyboard(history []services.SearchEntry, us
 	switch b.style {
 	case StyleNeon:
 		return b.buildNeonHistoryKeyboard(history, userID)
-	case StyleCard:
-		return b.buildCardHistoryKeyboard(history, userID)
 	default:
-		return b.buildCardHistoryKeyboard(history, userID) // 默认使用极简卡片风
+		return b.buildNeonHistoryKeyboard(history, userID)
 	}
 }
 
@@ -159,7 +107,7 @@ func (b *HistoryBuilder) buildNeonHistoryKeyboard(history []services.SearchEntry
 
 		query := history[i].Query
 		// Limit query length for button text
-		buttonText := fmt.Sprintf("%d. %s", i+1, truncateString(query, 12))
+		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
 
 		// Build callback with escape
 		escapedQuery := escapeString(query)
@@ -205,73 +153,11 @@ func (b *HistoryBuilder) buildNeonHistoryKeyboard(history []services.SearchEntry
 	return &callback.Keyboard{InlineKeyboard: rows}
 }
 
-// buildCardHistoryKeyboard 极简卡片风格键盘
-func (b *HistoryBuilder) buildCardHistoryKeyboard(history []services.SearchEntry, userID int64) *callback.Keyboard {
-	var rows [][]callback.Button
-
-	displayCount := len(history)
-	if displayCount > 10 {
-		displayCount = 10
-	}
-
-	// 数字按钮（每行2个）
-	const buttonsPerRow = 2
-	for i := 0; i < displayCount; i++ {
-		if i%buttonsPerRow == 0 {
-			rows = append(rows, []callback.Button{})
-		}
-
-		query := history[i].Query
-		buttonText := fmt.Sprintf("%d. %s", i+1, truncateString(query, 12))
-
-		escapedQuery := escapeString(query)
-		callbackData := fmt.Sprintf("search:query:%s", escapedQuery)
-
-		rows[len(rows)-1] = append(rows[len(rows)-1], callback.Button{
-			Text:         buttonText,
-			CallbackData: callbackData,
-		})
-	}
-
-	// 操作按钮行
-	actionRow := []callback.Button{}
-	actionRow = append(actionRow, callback.Button{
-		Text:         "🔍 搜索",
-		CallbackData: "search_input",
-	})
-	actionRow = append(actionRow, callback.Button{
-		Text:         "📊 统计",
-		CallbackData: "search_stats",
-	})
-	rows = append(rows, actionRow)
-
-	// 管理按钮行
-	manageRow := []callback.Button{}
-	if len(history) > 0 {
-		manageRow = append(manageRow, callback.Button{
-			Text:         "🗑 清空",
-			CallbackData: "search_clear_all",
-		})
-	}
-	manageRow = append(manageRow, callback.Button{
-		Text:         "⚙️ 管理",
-		CallbackData: "search_manage",
-	})
-	rows = append(rows, manageRow)
-
-	// 返回按钮
-	rows = append(rows, []callback.Button{
-		{Text: "⬅️ 返回", CallbackData: "start"},
-	})
-
-	return &callback.Keyboard{InlineKeyboard: rows}
-}
-
 // BuildPopularSearchesUI 构建热门搜索界面
 func (b *HistoryBuilder) BuildPopularSearchesUI(popular []services.PopularSearch, allTime bool) string {
 	var sb strings.Builder
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	title := "🔥 全网热门搜索"
 	if allTime {
@@ -279,7 +165,7 @@ func (b *HistoryBuilder) BuildPopularSearchesUI(popular []services.PopularSearch
 	}
 
 	sb.WriteString(fmt.Sprintf("%s\n", title))
-	sb.WriteString(neonLine + "\n\n")
+	sb.WriteString(NeonLine + "\n\n")
 
 	sb.WriteString("✨ 大家都在搜\n\n")
 
@@ -289,7 +175,7 @@ func (b *HistoryBuilder) BuildPopularSearchesUI(popular []services.PopularSearch
 	}
 
 	sb.WriteString("\n")
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	return sb.String()
 }
@@ -318,7 +204,7 @@ func (b *HistoryBuilder) BuildPopularSearchesKeyboard(popular []services.Popular
 		}
 
 		query := popular[i].Query
-		buttonText := fmt.Sprintf("%d. %s", i+1, truncateString(query, 12))
+		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
 		escapedQuery := escapeString(query)
 		callbackData := fmt.Sprintf("search:query:%s", escapedQuery)
 
@@ -341,13 +227,13 @@ func (b *HistoryBuilder) BuildPopularSearchesKeyboard(popular []services.Popular
 func (b *HistoryBuilder) BuildTrendsUI(trends []services.TrendItem, days int) string {
 	var sb strings.Builder
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 	sb.WriteString(fmt.Sprintf("📈 搜索趋势 · 最近%d天\n", days))
-	sb.WriteString(neonLine + "\n\n")
+	sb.WriteString(NeonLine + "\n\n")
 
 	if len(trends) == 0 {
 		sb.WriteString("💫 暂无趋势数据\n\n")
-		sb.WriteString(neonLine + "\n")
+		sb.WriteString(NeonLine + "\n")
 		return sb.String()
 	}
 
@@ -371,7 +257,7 @@ func (b *HistoryBuilder) BuildTrendsUI(trends []services.TrendItem, days int) st
 		sb.WriteString(fmt.Sprintf("   搜索 %d 次 (昨日%d次)\n\n", item.Count, item.Yesterday))
 	}
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	return sb.String()
 }
@@ -401,9 +287,9 @@ func (b *HistoryBuilder) BuildTrendsKeyboard(days int) *callback.Keyboard {
 func (b *HistoryBuilder) BuildManageHistoryUI(history []services.SearchEntry) string {
 	var sb strings.Builder
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 	sb.WriteString("⚙️ 管理搜索历史\n")
-	sb.WriteString(neonLine + "\n\n")
+	sb.WriteString(NeonLine + "\n\n")
 
 	sb.WriteString("选择要删除的搜索记录\n\n")
 
@@ -426,7 +312,7 @@ func (b *HistoryBuilder) BuildManageHistoryUI(history []services.SearchEntry) st
 		sb.WriteString(fmt.Sprintf("   %s\n\n", timeText))
 	}
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	return sb.String()
 }
@@ -496,13 +382,13 @@ func (b *HistoryBuilder) BuildManageHistoryKeyboard(history []services.SearchEnt
 func (b *HistoryBuilder) BuildStatsUI(stats *services.SearchStats, userID int64) string {
 	var sb strings.Builder
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 	sb.WriteString(fmt.Sprintf("📊 搜索统计 · 用户 %d\n", userID))
-	sb.WriteString(neonLine + "\n\n")
+	sb.WriteString(NeonLine + "\n\n")
 
 	// 总体统计
 	sb.WriteString("📈 总体统计\n")
-	sb.WriteString(neonSeparator + "\n")
+	sb.WriteString(NeonSeparator + "\n")
 	sb.WriteString(fmt.Sprintf("• 总搜索次数：%d 次\n", stats.Total))
 	sb.WriteString(fmt.Sprintf("• 本周搜索：%d 次\n", stats.Week))
 	sb.WriteString(fmt.Sprintf("• 本月搜索：%d 次\n\n", stats.Month))
@@ -510,7 +396,7 @@ func (b *HistoryBuilder) BuildStatsUI(stats *services.SearchStats, userID int64)
 	// 热门搜索
 	if len(stats.Top5) > 0 {
 		sb.WriteString("🔥 最常搜索 TOP5\n")
-		sb.WriteString(neonSeparator + "\n")
+		sb.WriteString(NeonSeparator + "\n")
 
 		for i, query := range stats.Top5 {
 			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, query))
@@ -519,7 +405,7 @@ func (b *HistoryBuilder) BuildStatsUI(stats *services.SearchStats, userID int64)
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(neonLine + "\n")
+	sb.WriteString(NeonLine + "\n")
 
 	return sb.String()
 }

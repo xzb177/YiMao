@@ -11,14 +11,14 @@ import (
 
 // MessageCache prevents sending duplicate messages within a time window
 type MessageCache struct {
-	cache      map[string]cacheEntry
+	cache      map[string]messageCacheEntry
 	mu         sync.RWMutex
 	ttl        time.Duration
 	cleanupInt time.Duration
 	stopChan   chan struct{}
 }
 
-type cacheEntry struct {
+type messageCacheEntry struct {
 	content   string
 	timestamp time.Time
 }
@@ -26,7 +26,7 @@ type cacheEntry struct {
 // NewMessageCache creates a new message cache
 func NewMessageCache(ttl time.Duration) *MessageCache {
 	mc := &MessageCache{
-		cache:      make(map[string]cacheEntry),
+		cache:      make(map[string]messageCacheEntry),
 		ttl:        ttl,
 		cleanupInt: ttl * 2,
 		stopChan:   make(chan struct{}),
@@ -79,7 +79,7 @@ func (mc *MessageCache) Add(chatID int64, content string) {
 	key := mc.cacheKey(chatID, content)
 
 	mc.mu.Lock()
-	mc.cache[key] = cacheEntry{
+	mc.cache[key] = messageCacheEntry{
 		content:   content,
 		timestamp: time.Now(),
 	}

@@ -25,7 +25,7 @@ func NewSearchHistoryHandler(
 	return &SearchHistoryHandler{
 		telegram:       telegram,
 		searchHistory: searchHistory,
-		uiBuilder:     ui.NewHistoryBuilder(ui.StyleCard), // 使用极简卡片风
+		uiBuilder:     ui.NewHistoryBuilder(ui.StyleNeon), // 使用暗黑霓虹风
 	}
 }
 
@@ -62,7 +62,7 @@ func (h *SearchHistoryHandler) showHistoryMenu(ctx *callback.Context) (*callback
 	groupedHistory, err := h.searchHistory.GetHistoryGrouped(ctx.UserID)
 	if err != nil {
 		log.Printf("[SearchHistoryHandler] Failed to get grouped history: %v", err)
-		return nil, errors.ServiceErr("failed to get history", err)
+		return nil, errors.InternalErr(fmt.Sprintf("failed to get history: %v", err))
 	}
 
 	// 获取统计数据

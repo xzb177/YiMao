@@ -11,11 +11,18 @@ import (
 type NeonBuilder struct{}
 
 const (
-	neonSeparator = "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
-	neonLine      = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	neonPrimary   = "00f5d4" // 霓虹青
-	neonSecondary = "ff006e" // 霓虹粉
-	neonAccent    = "8338ec" // 霓虹紫
+	NeonSeparator = "▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰"
+	NeonLine      = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	NeonPrimary   = "00f5d4" // 霓虹青
+	NeonSecondary = "ff006e" // 霓虹粉
+	NeonAccent    = "8338ec" // 霓虹紫
+
+	// 保留小写别名用于内部使用
+	neonSeparator = NeonSeparator
+	neonLine      = NeonLine
+	neonPrimary   = NeonPrimary
+	neonSecondary = NeonSecondary
+	neonAccent    = NeonAccent
 )
 
 // BuildMenu 构建主菜单
