@@ -56,7 +56,6 @@ func (b *NeonBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString(neonSeparator + "\n\n")
 
 	// 显示结果列表
-	displayCount := len(results)
 	for i, item := range results {
 		icon := getMediaTypeIcon(item.Type)
 		year := ""
@@ -92,25 +91,19 @@ func (b *NeonBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	// 标题
 	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if result.Year > 0 {
+	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
 	sb.WriteString("\n")
 
-	// 英文名
-	if result.OriginalTitle != "" && result.OriginalTitle != result.Title {
-		sb.WriteString(fmt.Sprintf("%s\n", result.OriginalTitle))
-	}
-
 	sb.WriteString(neonLine + "\n\n")
 
 	// 元信息
-	sb.WriteString(fmt.Sprintf("📊 热度  ·  ⭐ 评分 %.1f  ·  🎬 %s\n",
-		result.Popularity, result.Rating, getMediaTypeLabel(result.Type)))
-
-	// 时长
-	if result.Runtime > 0 {
-		sb.WriteString(fmt.Sprintf("⏱️ 时长: %d 分钟\n", result.Runtime))
+	if result.Rating > 0 {
+		sb.WriteString(fmt.Sprintf("⭐ 评分 %.1f  ·  🎬 %s\n",
+			result.Rating, getMediaTypeLabel(result.Type)))
+	} else {
+		sb.WriteString(fmt.Sprintf("🎬 %s\n", getMediaTypeLabel(result.Type)))
 	}
 
 	sb.WriteString("\n")
@@ -122,16 +115,6 @@ func (b *NeonBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	}
 
 	sb.WriteString(neonLine + "\n")
-
-	// 类型标签
-	if len(result.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(result.Genres, " · ")))
-	}
-
-	// 日期
-	if result.ReleaseDate != "" {
-		sb.WriteString(fmt.Sprintf("📅 发布: %s\n", result.ReleaseDate))
-	}
 
 	// TMDB ID
 	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
@@ -200,7 +183,7 @@ func (b *NeonBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 
 	if total == 0 {
 		sb.WriteString("暂无记录\n\n")
-		sb.WriteString("搜索后点击"求片"即可添加\n")
+		sb.WriteString("搜索后点击「求片」即可添加\n")
 		return sb.String()
 	}
 

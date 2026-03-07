@@ -54,7 +54,6 @@ func (b *PopBuilder) BuildSearchResults(query string, results []services.SearchR
 	sb.WriteString("\n\n")
 	sb.WriteString(popLine + "\n\n")
 
-	displayCount := len(results)
 	for i, item := range results {
 		icon := getMediaTypeIcon(item.Type)
 		year := ""
@@ -89,28 +88,19 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	// 标题
 	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if result.Year > 0 {
+	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
 	sb.WriteString("\n")
 
-	// 英文名
-	if result.OriginalTitle != "" && result.OriginalTitle != result.Title {
-		sb.WriteString(fmt.Sprintf("%s\n", result.OriginalTitle))
-	}
-
 	sb.WriteString(popSeparator + "\n\n")
 
 	// 元信息
-	sb.WriteString(fmt.Sprintf("📊 评分 %.1f  ·  🎬 %s\n",
-		result.Rating, getMediaTypeLabel(result.Type)))
-
-	if result.ReleaseDate != "" {
-		sb.WriteString(fmt.Sprintf("📅 日期 %s\n", result.ReleaseDate))
-	}
-
-	if result.Runtime > 0 {
-		sb.WriteString(fmt.Sprintf("⏱️ 时长 %d 分钟\n", result.Runtime))
+	if result.Rating > 0 {
+		sb.WriteString(fmt.Sprintf("📊 评分 %.1f  ·  🎬 %s\n",
+			result.Rating, getMediaTypeLabel(result.Type)))
+	} else {
+		sb.WriteString(fmt.Sprintf("🎬 %s\n", getMediaTypeLabel(result.Type)))
 	}
 
 	sb.WriteString("\n")
@@ -128,11 +118,6 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	}
 
 	sb.WriteString(popLine + "\n\n")
-
-	// 类型标签
-	if len(result.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(result.Genres, " · ")))
-	}
 
 	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
 
