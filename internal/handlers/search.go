@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +18,8 @@ import (
 
 // Recommendation cache entry
 type recommendationCacheEntry struct {
-	results    []services.SearchResult
-	expiredAt  time.Time
+	results   []services.SearchResult
+	expiredAt time.Time
 }
 
 // Recommendation cache
@@ -68,12 +69,12 @@ func (c *recommendationCache) set(key string, results []services.SearchResult) {
 
 // SearchHandler handles search callbacks and queries
 type SearchHandler struct {
-	sessMgr         *session.Manager
-	telegram        *services.TelegramClient
-	moviepilot      *services.MoviePilotClient
-	tmdb            *services.TMDBClient
-	searchService   *services.SearchService
-	searchHistory   *services.SearchHistoryService
+	sessMgr       *session.Manager
+	telegram      *services.TelegramClient
+	moviepilot    *services.MoviePilotClient
+	tmdb          *services.TMDBClient
+	searchService *services.SearchService
+	searchHistory *services.SearchHistoryService
 }
 
 func NewSearchHandler(
@@ -85,11 +86,11 @@ func NewSearchHandler(
 	searchSvc := services.NewSearchService(moviepilot, sessMgr)
 	searchSvc.SetTMDBClient(tmdb)
 	return &SearchHandler{
-		sessMgr:        sessMgr,
-		telegram:       telegram,
-		moviepilot:     moviepilot,
-		tmdb:           tmdb,
-		searchService:  searchSvc,
+		sessMgr:       sessMgr,
+		telegram:      telegram,
+		moviepilot:    moviepilot,
+		tmdb:          tmdb,
+		searchService: searchSvc,
 	}
 }
 
@@ -206,6 +207,16 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 
 	if len(results.Results) == 0 {
 		log.Printf("[SearchHandler] No results found for query: %s", query)
+		fallbackResults, fallbackQuery, fbErr := h.trySearchFallback(query)
+		if fbErr != nil {
+			log.Printf("[SearchHandler] Fallback search failed: %v", fbErr)
+		}
+		if len(fallbackResults) > 0 {
+			log.Printf("[SearchHandler] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
+			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults})
+			h.telegram.SendMessage(chatID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
+			return nil
+		}
 		h.sendNoResultsMessage(chatID, query)
 		return nil
 	}
@@ -218,10 +229,97 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 
 // sendNoResultsMessage sends a message when no search results are found
 func (h *SearchHandler) sendNoResultsMessage(chatID int64, query string) {
-	msg := fmt.Sprintf("🔍 搜索结果「%s」\n\n😔 未搜索到需要的资源\n\n💡 建议：\n• 检查影片名称是否正确\n• 尝试使用更简短的关键词\n• 或使用英文片名搜索", query)
+	msg := fmt.Sprintf("🔍 搜索结果「%s」\n\n😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", query)
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 	h.telegram.SendMessage(chatID, msg, "", kb.Build())
+}
+
+// trySearchFallback tries multiple fallback search strategies for CN titles
+func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult, string, error) {
+	candidates := buildFallbackQueries(query)
+	for _, q := range candidates {
+		if q == "" || q == query {
+			continue
+		}
+		results, err := h.moviepilot.SearchMedia(q, 1)
+		if err != nil || results == nil {
+			continue
+		}
+		if len(results.Results) > 0 {
+			return results.Results, q, nil
+		}
+	}
+	return nil, "", nil
+}
+
+func buildFallbackQueries(query string) []string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+
+	seen := map[string]bool{q: true}
+	add := func(list *[]string, s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		*list = append(*list, s)
+	}
+
+	var out []string
+
+	// 1) remove common suffix words in Chinese titles
+	suffixes := []string{"电影", "电视剧", "剧", "动画", "动漫", "第1季", "第一季", "第2季", "第二季", "国语", "中字", "完整版"}
+	trimmed := q
+	for _, s := range suffixes {
+		trimmed = strings.ReplaceAll(trimmed, s, "")
+	}
+	trimmed = strings.TrimSpace(trimmed)
+	add(&out, trimmed)
+
+	// 2) keep only Chinese chars and digits to reduce noise
+	onlyCore := extractCoreKeyword(q)
+	add(&out, onlyCore)
+
+	// 3) if contains year info, split to title-only
+	for _, r := range []string{"（", "("} {
+		if idx := strings.Index(q, r); idx > 0 {
+			add(&out, strings.TrimSpace(q[:idx]))
+		}
+	}
+
+	// 4) fallback to year-only search when title contains 4-digit year
+	if y := extractYear(q); y != "" {
+		add(&out, y)
+	}
+
+	return out
+}
+
+func extractCoreKeyword(s string) string {
+	runes := []rune(strings.TrimSpace(s))
+	keep := make([]rune, 0, len(runes))
+	for _, r := range runes {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= 0x4e00 && r <= 0x9fff) {
+			keep = append(keep, r)
+		}
+	}
+	return strings.TrimSpace(string(keep))
+}
+
+func extractYear(s string) string {
+	runes := []rune(s)
+	for i := 0; i+3 < len(runes); i++ {
+		chunk := string(runes[i : i+4])
+		y, err := strconv.Atoi(chunk)
+		if err == nil && y >= 1900 && y <= 2099 {
+			return chunk
+		}
+	}
+	return ""
 }
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
@@ -505,10 +603,10 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 
 	if isReturningFromDetail {
 		return &callback.Response{
-			Text:         msg.Build(),
-			Edit:         false,
+			Text:          msg.Build(),
+			Edit:          false,
 			DeleteMessage: true,
-			Keyboard:     convertKeyboard(kb.Build()),
+			Keyboard:      convertKeyboard(kb.Build()),
 		}, nil
 	}
 
