@@ -35,8 +35,9 @@ type ReviewRequest struct {
 	ApproveToken    string            `json:"approve_token,omitempty"` // One-time token for approve action
 
 	// MoviePilot subscription info
-	SubscriptionID    int    `json:"subscription_id,omitempty"`    // MoviePilot subscription ID
-	SubscriptionState string `json:"subscription_state,omitempty"` // N, R, S, D, C, F, X
+	SubscriptionID    int       `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
+	SubscriptionState string    `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
+	LastResubscribeAt time.Time `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
 }
 
 // ReviewService manages review requests
@@ -512,6 +513,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	// Track recycled subscriptions that need to be resubscribed
 	var toResubscribe []string
 	resubSeen := make(map[int]bool)
+	const resubscribeCooldown = 30 * time.Minute
 
 	for _, item := range toUpdate {
 		if sub, exists := subMap[item.subID]; exists {
@@ -523,6 +525,10 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 
 					// If state is "R" (Recycled), mark for resubscription (dedupe by subscription ID)
 					if sub.State == "R" {
+						if !review.LastResubscribeAt.IsZero() && time.Since(review.LastResubscribeAt) < resubscribeCooldown {
+							log.Printf("[ReviewService] Skip recycle trigger in cooldown: request=%s, last=%s", item.requestID, review.LastResubscribeAt.Format(time.RFC3339))
+							continue
+						}
 						if !resubSeen[item.subID] {
 							toResubscribe = append(toResubscribe, item.requestID)
 							resubSeen[item.subID] = true
@@ -599,6 +605,14 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 		if err := s.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
 			log.Printf("[ReviewService] Failed to update subscription info: %v", err)
 		}
+
+		// Mark last resubscribe time to avoid frequent recycle loops
+		s.mu.Lock()
+		if r, ok := s.reviews[requestID]; ok {
+			r.LastResubscribeAt = time.Now()
+			s.saveLocked()
+		}
+		s.mu.Unlock()
 
 		log.Printf("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
 	}
