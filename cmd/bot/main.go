@@ -295,6 +295,9 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	cancelHandler := handlers.NewCancelHandler()
 	requestHandler := handlers.NewRequestHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.WebhookService, services.UserMapping, services.QuotaService, services.ReviewService)
 	searchHandler := handlers.NewSearchHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
+	if services.SearchHistoryDB != nil {
+		searchHandler.SetSearchHistoryDB(services.SearchHistoryDB)
+	}
 	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()

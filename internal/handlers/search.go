@@ -76,6 +76,7 @@ type SearchHandler struct {
 	tmdb            *services.TMDBClient
 	searchService   *services.SearchService
 	searchHistory   *services.SearchHistoryService
+	searchHistoryDB *services.SearchHistoryDB // New database-backed history
 }
 
 func NewSearchHandler(
@@ -100,6 +101,11 @@ func NewSearchHandler(
 // SetSearchHistory sets the search history service
 func (h *SearchHandler) SetSearchHistory(sh *services.SearchHistoryService) {
 	h.searchHistory = sh
+}
+
+// SetSearchHistoryDB sets the search history database service
+func (h *SearchHandler) SetSearchHistoryDB(db *services.SearchHistoryDB) {
+	h.searchHistoryDB = db
 }
 
 // shuffleStrings randomly selects n items from slice and shuffles them
@@ -189,8 +195,10 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return h.showSearchHistory(userID, chatID)
 	}
 
-	// Add to search history
-	if h.searchHistory != nil {
+	// Add to search history (prefer database version if available)
+	if h.searchHistoryDB != nil {
+		h.searchHistoryDB.AddSearch(userID, query)
+	} else if h.searchHistory != nil {
 		h.searchHistory.AddSearch(userID, query)
 	}
 
