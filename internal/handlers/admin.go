@@ -135,9 +135,9 @@ func (h *AdminHandler) handleApprove(ctx *callback.Context) (*callback.Response,
 	message := fmt.Sprintf("✅ 请求已批准\n\n请求ID: %d", requestID)
 
 	return &callback.Response{
-		Text:   message,
+		Text:        message,
 		CallbackMsg: "已批准",
-		Edit:   true,
+		Edit:        true,
 	}, nil
 }
 
@@ -177,9 +177,9 @@ func (h *AdminHandler) handleDecline(ctx *callback.Context) (*callback.Response,
 	message := fmt.Sprintf("❌ 请求已拒绝\n\n请求ID: %d", requestID)
 
 	return &callback.Response{
-		Text:   message,
+		Text:        message,
 		CallbackMsg: "已拒绝",
-		Edit:   true,
+		Edit:        true,
 	}, nil
 }
 
@@ -195,8 +195,8 @@ func (h *AdminHandler) handlePending(ctx *callback.Context) (*callback.Response,
 
 	if h.moviepilot == nil {
 		return &callback.Response{
-			Text:   "❌ MoviePilot API 未配置",
-			Edit:   true,
+			Text: "❌ MoviePilot API 未配置",
+			Edit: true,
 		}, nil
 	}
 
@@ -204,8 +204,8 @@ func (h *AdminHandler) handlePending(ctx *callback.Context) (*callback.Response,
 	message := "📋 待处理请求\n\n💡 MoviePilot API 集成中，请直接访问 MoviePilot 网页管理请求"
 
 	return &callback.Response{
-		Text:   message,
-		Edit:   true,
+		Text: message,
+		Edit: true,
 	}, nil
 }
 
@@ -275,8 +275,8 @@ func (h *AdminHandler) handleIssueReply(ctx *callback.Context) (*callback.Respon
 	message := fmt.Sprintf("💬 请输入回复内容\n\n问题ID: %d\n\n发送下一条消息将作为回复内容", issueID)
 
 	return &callback.Response{
-		Text:   message,
-		Edit:   true,
+		Text: message,
+		Edit: true,
 	}, nil
 }
 
@@ -337,8 +337,8 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 	message := fmt.Sprintf("✅ 问题已标记为修复\n\n问题ID: %d", issueID)
 
 	return &callback.Response{
-		Text:   message,
-		Edit:   true,
+		Text: message,
+		Edit: true,
 	}, nil
 }
 
@@ -399,8 +399,8 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 	message := fmt.Sprintf("ℹ️ 问题已标记为处理中\n\n问题ID: %d", issueID)
 
 	return &callback.Response{
-		Text:   message,
-		Edit:   true,
+		Text: message,
+		Edit: true,
 	}, nil
 }
 
@@ -461,8 +461,8 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 	message := fmt.Sprintf("❌ 问题已关闭\n\n问题ID: %d", issueID)
 
 	return &callback.Response{
-		Text:   message,
-		Edit:   true,
+		Text: message,
+		Edit: true,
 	}, nil
 }
 
@@ -498,10 +498,10 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 
 		// 群组通知状态（全局开启）
 		msg.Bold("✅ 媒体库通知").Newline()
-		
+
 		// 群组通知
 		msg.Textf("   📺 群组通知: %s", "已开启").Newline()
-		
+
 		// 每日汇总状态
 		dailyIcon := "📅"
 		if !settings.DailySummaryEnabled {
@@ -538,10 +538,10 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	log.Printf("[AdminHandler] Returning admin menu with %d chars text, isRoot=%v", len(resultText), isRoot)
 
 	return &callback.Response{
-		Text:     resultText,
+		Text:      resultText,
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -666,6 +666,7 @@ func (h *AdminHandler) handleNotifToggleDailyV2(ctx *callback.Context) (*callbac
 	// 切换后返回设置页面
 	return h.handleNotifSettings(ctx)
 }
+
 // handleNotifSetTime handles setting daily summary time
 func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Response, error) {
 	if !h.adminService.IsAdmin(ctx.UserID) {
@@ -684,6 +685,11 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 
 	// Get time from params or show time selection
 	timeStr := ctx.Callback.Params["time"]
+	if timeStr == "" {
+		if compact := ctx.Callback.Params["t"]; compact != "" && len(compact) == 4 {
+			timeStr = compact[:2] + ":" + compact[2:]
+		}
+	}
 	if timeStr != "" {
 		// Validate time format (HH:MM)
 		if len(timeStr) == 5 && timeStr[2] == ':' {
@@ -698,11 +704,11 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 			kb.AddButton("返回设置", "admin_notif_settings")
 
 			return &callback.Response{
-				Text:     msg.Build(),
-				ParseMode: msg.ParseMode(),
+				Text:        msg.Build(),
+				ParseMode:   msg.ParseMode(),
 				CallbackMsg: "时间已设置",
-				Edit:     true,
-				Keyboard: convertKeyboard(kb.Build()),
+				Edit:        true,
+				Keyboard:    convertKeyboard(kb.Build()),
 			}, nil
 		}
 	}
@@ -718,7 +724,8 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 	// Common time options
 	times := []string{"08:00", "12:00", "18:00", "20:00", "21:00", "22:00", "23:00", "23:59"}
 	for i, t := range times {
-		kb.AddButton(t, fmt.Sprintf("admin_notif_settime:time:%s", t))
+		compact := strings.ReplaceAll(t, ":", "")
+		kb.AddButton(t, fmt.Sprintf("admin_notif_settime:t:%s", compact))
 		if i%2 == 1 && i < len(times)-1 {
 			kb.NewRow()
 		}
@@ -729,10 +736,10 @@ func (h *AdminHandler) handleNotifSetTime(ctx *callback.Context) (*callback.Resp
 	kb.AddButton("返回设置", "admin_notif_settings")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -770,10 +777,10 @@ func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.R
 	kb.AddButton("取消", "admin_notif_settings")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -804,9 +811,9 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 		msg.Text("已取消").Newline()
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:      msg.Build(),
 			ParseMode: msg.ParseMode(),
-			Keyboard: convertKeyboard(kb.Build()),
+			Keyboard:  convertKeyboard(kb.Build()),
 		}, nil
 	}
 
@@ -823,9 +830,9 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 		kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:      msg.Build(),
 			ParseMode: msg.ParseMode(),
-			Keyboard: convertKeyboard(kb.Build()),
+			Keyboard:  convertKeyboard(kb.Build()),
 		}, nil
 	}
 
@@ -849,9 +856,9 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 		kb.AddButton("⬅️ 返回设置", "admin_notif_settings")
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:      msg.Build(),
 			ParseMode: msg.ParseMode(),
-			Keyboard: convertKeyboard(kb.Build()),
+			Keyboard:  convertKeyboard(kb.Build()),
 		}, nil
 	}
 
@@ -868,9 +875,9 @@ func (h *AdminHandler) HandleNotifCustomTimeInput(userID int64, chatID int64, te
 	msg.Textf("每日汇总将在 %s 发送", timeStr).Newline()
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Keyboard: convertKeyboard(kb.Build()),
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -910,10 +917,10 @@ func (h *AdminHandler) handleAdminMgmt(ctx *callback.Context) (*callback.Respons
 	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -955,10 +962,10 @@ func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Respons
 	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -991,10 +998,10 @@ func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Res
 	kb.AddButton("⬅️ 取消", "admin_mgmt")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -1047,10 +1054,10 @@ func (h *AdminHandler) handleAdminRemoveList(ctx *callback.Context) (*callback.R
 	}
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -1180,9 +1187,9 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 		kb.AddButton("⬅️ 取消", "admin_mgmt")
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:      msg.Build(),
 			ParseMode: msg.ParseMode(),
-			Keyboard: convertKeyboard(kb.Build()),
+			Keyboard:  convertKeyboard(kb.Build()),
 		}, nil
 	}
 
@@ -1210,9 +1217,9 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 
 		return &callback.Response{
-			Text:     msg.Build(),
+			Text:      msg.Build(),
 			ParseMode: msg.ParseMode(),
-			Keyboard: convertKeyboard(kb.Build()),
+			Keyboard:  convertKeyboard(kb.Build()),
 		}, nil
 	}
 
@@ -1241,8 +1248,8 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:      msg.Build(),
 		ParseMode: msg.ParseMode(),
-		Keyboard: convertKeyboard(kb.Build()),
+		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
 }
