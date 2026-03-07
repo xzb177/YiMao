@@ -293,7 +293,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 
 	// Verify token to prevent duplicate approvals
 	if review.ApproveToken == "" || review.ApproveToken != token {
-		log.Printf("[ReviewService] 无效的批准令牌: 期望=%s, 实际=%s", review.ApproveToken, token)
+		log.Printf("[ReviewService] 无效的批准令牌")
 		return nil, fmt.Errorf("invalid or expired approve token")
 	}
 
@@ -391,7 +391,14 @@ func (s *ReviewService) cleanupRoutine() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		s.cleanup()
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ReviewService] Panic in cleanup routine: %v, recovering...", r)
+				}
+			}()
+			s.cleanup()
+		}()
 	}
 }
 
@@ -456,10 +463,24 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 	defer ticker.Stop()
 
 	// Initial refresh
-	s.updateAllSubscriptionStatus()
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ReviewService] Panic in initial subscription refresh: %v, recovering...", r)
+			}
+		}()
+		s.updateAllSubscriptionStatus()
+	}()
 
 	for range ticker.C {
-		s.updateAllSubscriptionStatus()
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[ReviewService] Panic in subscription refresh: %v, recovering...", r)
+				}
+			}()
+			s.updateAllSubscriptionStatus()
+		}()
 	}
 }
 

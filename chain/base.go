@@ -125,8 +125,11 @@ func (c *ChainBase) postJellyseerrRequest(endpoint string, payload, result inter
 	}
 	defer resp.Body.Close()
 
-	// Read response body for debugging
-	body, _ := io.ReadAll(resp.Body)
+	// Read response body for debugging and unmarshaling
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
 
 	if resp.StatusCode >= 400 {
 		log.Printf("[ChainBase] API error: status=%d, body=%s", resp.StatusCode, string(body))

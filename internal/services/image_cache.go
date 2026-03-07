@@ -127,6 +127,11 @@ func (c *ImageCache) DownloadOrFetch(imageURL string, headers map[string]string)
 
 	// 保存到缓存（异步，不阻塞）
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ImageCache] Panic in async cache save: %v", r)
+			}
+		}()
 		if err := c.Set(imageURL, data); err != nil {
 			log.Printf("[ImageCache] Failed to cache image: %v", err)
 		}
@@ -271,6 +276,11 @@ func (c *ImageCache) StartCleanupRoutine(interval time.Duration) {
 	}
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ImageCache] Panic recovered in cleanup routine: %v", r)
+			}
+		}()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 

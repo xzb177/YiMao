@@ -225,9 +225,13 @@ func (s *PreferencesService) ShouldNotify(telegramID int64, prefType PreferenceT
 	// Check quiet start time
 	if pref.QuietStart != "" {
 		currentTime := time.Now()
-		quietStart, _ := time.Parse("15:04", pref.QuietStart)
-		if currentTime.Hour() < quietStart.Hour() {
+		quietStart, err := time.Parse("15:04", pref.QuietStart)
+		if err == nil && currentTime.Hour() < quietStart.Hour() {
 			return false
+		}
+		// If time parsing fails, log and continue without quiet time check
+		if err != nil {
+			log.Printf("[Preferences] Failed to parse quiet start time '%s': %v", pref.QuietStart, err)
 		}
 	}
 

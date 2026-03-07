@@ -76,6 +76,7 @@ type SearchHandler struct {
 	tmdb            *services.TMDBClient
 	searchService   *services.SearchService
 	searchHistory   *services.SearchHistoryService
+	searchHistoryDB *services.SearchHistoryDB // New database-backed history
 }
 
 func NewSearchHandler(
@@ -100,6 +101,11 @@ func NewSearchHandler(
 // SetSearchHistory sets the search history service
 func (h *SearchHandler) SetSearchHistory(sh *services.SearchHistoryService) {
 	h.searchHistory = sh
+}
+
+// SetSearchHistoryDB sets the search history database service
+func (h *SearchHandler) SetSearchHistoryDB(db *services.SearchHistoryDB) {
+	h.searchHistoryDB = db
 }
 
 // shuffleStrings randomly selects n items from slice and shuffles them
@@ -189,8 +195,10 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return h.showSearchHistory(userID, chatID)
 	}
 
-	// Add to search history
-	if h.searchHistory != nil {
+	// Add to search history (prefer database version if available)
+	if h.searchHistoryDB != nil {
+		h.searchHistoryDB.AddSearch(userID, query)
+	} else if h.searchHistory != nil {
 		h.searchHistory.AddSearch(userID, query)
 	}
 
@@ -343,7 +351,15 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 
 	// Parse and delegate to detail handler
 	parser := callback.NewParser()
-	cb, _ := parser.Parse(detailCallback)
+	cb, err := parser.Parse(detailCallback)
+	// Note: detailCallback is built by us, so parsing should always succeed
+	if err != nil {
+		log.Printf("[SearchHandler] Failed to parse detail callback: %v", err)
+		return &callback.Response{
+			Text: "❌ 操作失败",
+			Edit: true,
+		}, nil
+	}
 
 	detailHandler := NewDetailHandler(h.sessMgr, h.telegram, h.moviepilot, h.tmdb)
 
@@ -742,6 +758,7 @@ func (h *SearchHandler) getAIMoodRecommendations(mood string, count int) ([]serv
 
 		// If AI didn't return enough results, supplement with TMDB
 		if len(results) < count {
+			// Note: If fallback fails, we just continue with fewer results (acceptable)
 			fallbackResults, _ := h.getTMDBBasedRecommendations(mood, count-len(results))
 			results = append(results, fallbackResults...)
 		}
@@ -1491,6 +1508,7 @@ func (h *SearchHandler) getRandomMedia() ([]services.SearchResult, error) {
 
 	// Fallback if no results
 	if len(allResults) == 0 {
+		// Note: If fallback fails, we return empty results (acceptable - better than crashing)
 		results, _ := h.getFallbackMedia()
 		return results, nil
 	}

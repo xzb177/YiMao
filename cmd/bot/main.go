@@ -241,6 +241,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Start cleanup routines
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[Cleanup] Panic recovered in cleanup routine: %v", r)
+			}
+		}()
 		ticker := time.NewTicker(1 * time.Hour)
 		for range ticker.C {
 			bindingRequestService.CleanupExpiredRequests()
@@ -290,6 +295,9 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	cancelHandler := handlers.NewCancelHandler()
 	requestHandler := handlers.NewRequestHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.WebhookService, services.UserMapping, services.QuotaService, services.ReviewService)
 	searchHandler := handlers.NewSearchHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
+	if services.SearchHistoryDB != nil {
+		searchHandler.SetSearchHistoryDB(services.SearchHistoryDB)
+	}
 	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
 	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()

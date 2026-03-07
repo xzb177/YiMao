@@ -3429,6 +3429,7 @@ func (s *WebhookService) handleMoviePilotSubscribe(payload MoviePilotWebhookPayl
 	// Try to find user's Telegram ID by MoviePilot username
 	var userTelegramID int64
 	if payload.Data.Username != "" && s.userMapping != nil {
+		// Note: If lookup fails, userTelegramID stays 0, and message won't be sent (acceptable)
 		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
 	}
 
@@ -3485,6 +3486,7 @@ func (s *WebhookService) handleMoviePilotDownload(payload MoviePilotWebhookPaylo
 	// Try to find user's Telegram ID by MoviePilot username
 	var userTelegramID int64
 	if payload.Data.Username != "" && s.userMapping != nil {
+		// Note: If lookup fails, userTelegramID stays 0, and message won't be sent (acceptable)
 		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
 	}
 
@@ -3523,6 +3525,7 @@ func (s *WebhookService) handleMoviePilotComplete(payload MoviePilotWebhookPaylo
 	// Try to find user's Telegram ID by MoviePilot username
 	var userTelegramID int64
 	if payload.Data.Username != "" && s.userMapping != nil {
+		// Note: If lookup fails, userTelegramID stays 0, and message won't be sent (acceptable)
 		userTelegramID, _ = s.userMapping.GetTelegramIDByMoviePilotUsername(payload.Data.Username)
 	}
 

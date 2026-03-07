@@ -1,91 +1,64 @@
 #!/bin/bash
-# YiMao 项目一键更新脚本
-# 用于快速更新并重启服务
+# YiMao Bot 更新脚本
+# 这是 ./manage.sh update 的快捷方式，更符合用户习惯
 
 set -e
 
-# 颜色定义
-RED='\033[0;31m'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+# 颜色
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+RED='\033[0;31m'
+NC='\033[0m'
 
 echo -e "${GREEN}======================================${NC}"
-echo -e "${GREEN}   YiMao 项目一键更新脚本${NC}"
+echo -e "${GREEN}   YiMao Bot 更新脚本${NC}"
 echo -e "${GREEN}======================================${NC}"
 echo ""
 
-# 检查是否有未提交的更改
-if [ -n "$(git status --porcelain)" ]; then
-    echo -e "${YELLOW}警告: 检测到未提交的更改${NC}"
-    echo "正在备份当前更改..."
-    BACKUP_DIR="backup_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$BACKUP_DIR"
-    cp -r . "$BACKUP_DIR/" 2>/dev/null || true
-    echo -e "${GREEN}备份已保存至: $BACKUP_DIR${NC}"
-    echo ""
-fi
+# 检查备份目录
+BACKUP_DIR="./backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -p "$BACKUP_DIR"
 
-# 拉取最新代码
-echo -e "${YELLOW}[1/4] 拉取最新代码...${NC}"
-git fetch origin
-git reset --hard origin/master
-echo -e "${GREEN}✓ 代码已更新${NC}"
+echo -e "${YELLOW}[1/4] 备份数据...${NC}"
+cp -r data/ "$BACKUP_DIR/" 2>/dev/null || true
+cp preferences.json "$BACKUP_DIR/" 2>/dev/null || true
+cp user_quotas.json "$BACKUP_DIR/" 2>/dev/null || true
+cp user_mappings.json "$BACKUP_DIR/" 2>/dev/null || true
+cp binding_requests.json "$BACKUP_DIR/" 2>/dev/null || true
+cp review_requests.json "$BACKUP_DIR/" 2>/dev/null || true
+echo -e "   ✅ 备份完成: $BACKUP_DIR"
 echo ""
 
-# 停止服务
-echo -e "${YELLOW}[2/4] 停止当前服务...${NC}"
-if command -v docker-compose &> /dev/null; then
-    docker-compose down
-elif command -v docker &> /dev/null; then
-    docker compose down
-else
-    echo -e "${RED}错误: 未找到 docker-compose 或 docker 命令${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ 服务已停止${NC}"
+echo -e "${YELLOW}[2/4] 拉取最新代码...${NC}"
+git pull origin master || echo -e "   ${RED}Git pull 失败，继续...${NC}"
 echo ""
 
-# 构建镜像
-echo -e "${YELLOW}[3/4] 构建新镜像...${NC}"
-if command -v docker-compose &> /dev/null; then
-    docker-compose build --no-cache
-elif command -v docker &> /dev/null; then
-    docker compose build --no-cache
-fi
-echo -e "${GREEN}✓ 镜像构建完成${NC}"
+echo -e "${YELLOW}[3/4] 查看更新内容...${NC}"
+git log HEAD@{1}..HEAD --oneline 2>/dev/null || echo "   (首次安装或无法获取历史)"
 echo ""
 
-# 启动服务
-echo -e "${YELLOW}[4/4] 启动服务...${NC}"
-if command -v docker-compose &> /dev/null; then
-    docker-compose up -d
-elif command -v docker &> /dev/null; then
-    docker compose up -d
-fi
-echo -e "${GREEN}✓ 服务已启动${NC}"
+echo -e "${YELLOW}[4/4] 重新构建并启动...${NC}"
+docker compose build
+docker compose up -d --force-recreate
 echo ""
 
-# 等待服务就绪
-echo -e "${YELLOW}等待服务就绪...${NC}"
-sleep 5
+# 等待容器启动
+sleep 3
 
-# 显示服务状态
-echo ""
+# 检查状态
 echo -e "${GREEN}======================================${NC}"
-echo -e "${GREEN}   服务状态${NC}"
+echo -e "${GREEN}   更新完成！${NC}"
 echo -e "${GREEN}======================================${NC}"
-if command -v docker-compose &> /dev/null; then
-    docker-compose ps
-elif command -v docker &> /dev/null; then
-    docker compose ps
-fi
+echo ""
+
+echo "容器状态:"
+docker ps --filter "name=emby-telegram-bot" --format "table {{.Names}}\t{{.Status}}"
 
 echo ""
-echo -e "${GREEN}======================================${NC}"
-echo -e "${GREEN}   最新日志 (最近15行)${NC}"
-echo -e "${GREEN}======================================${NC}"
-docker logs --tail 15 emby-telegram-bot 2>&1
-
+echo "查看日志:"
+echo "  ./manage.sh logs-f"
 echo ""
-echo -e "${GREEN}✓ 更新完成！${NC}"
+echo "如遇问题，请查看更新指南: https://github.com/xzb177/YiMao/blob/master/UPDATE.md"

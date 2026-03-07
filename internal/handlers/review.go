@@ -176,7 +176,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		stateText := services.GetStateText(sub.State)
 		h.telegram.SendMessage(review.TelegramID,
 			fmt.Sprintf("⚠️ 求片已自动拦截：MoviePilot 已有订阅\n\n📺 %s\n状态：%s", sub.Name, stateText), "", nil)
-		// Sync review with existing subscription info when possible
+	// Sync review with existing subscription info when possible
+		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
 		return &callback.Response{
 			Text:        fmt.Sprintf("⚠️ 已拦截：MP 已存在订阅（#%d）", sub.ID),
