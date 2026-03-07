@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
@@ -71,11 +72,11 @@ func HandleWebhookCallback(
 
 	// Build context
 	ctx := &callback.Context{
-		UserID:    cb.From.ID,
-		ChatID:    cb.Message.Chat.ID,
-		MessageID: cb.Message.MessageID,
+		UserID:     cb.From.ID,
+		ChatID:     cb.Message.Chat.ID,
+		MessageID:  cb.Message.MessageID,
 		CallbackID: cb.ID,
-		Callback:  parsed,
+		Callback:   parsed,
 	}
 
 	// Get handler
@@ -284,9 +285,16 @@ func PerformSearch(
 	}
 
 	if len(results.Results) == 0 {
-		text := "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
-		return
+		fallbackResults, fallbackQuery, _ := tryWebhookSearchFallback(moviepilot, query)
+		if len(fallbackResults) > 0 {
+			results.Results = fallbackResults
+			query = fallbackQuery
+			telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("💡 已启用兜底搜索：%s", fallbackQuery), "", nil)
+		} else {
+			text := "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索"
+			telegram.SendMessage(msg.Chat.ID, text, "", nil)
+			return
+		}
 	}
 
 	// Build search results message
@@ -365,4 +373,79 @@ func PerformSearch(
 
 	keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: keyboardRows}
 	telegram.SendMessage(msg.Chat.ID, text, "", keyboard)
+}
+
+func tryWebhookSearchFallback(moviepilot *services.MoviePilotClient, query string) ([]services.SearchResult, string, error) {
+	candidates := buildWebhookFallbackQueries(query)
+	for _, q := range candidates {
+		if q == "" || q == query {
+			continue
+		}
+		results, err := moviepilot.SearchMedia(q, 1)
+		if err != nil || results == nil {
+			continue
+		}
+		if len(results.Results) > 0 {
+			return results.Results, q, nil
+		}
+	}
+	return nil, "", nil
+}
+
+func buildWebhookFallbackQueries(query string) []string {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return nil
+	}
+
+	seen := map[string]bool{q: true}
+	add := func(list *[]string, s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		*list = append(*list, s)
+	}
+
+	var out []string
+	suffixes := []string{"电影", "电视剧", "剧", "动画", "动漫", "第1季", "第一季", "第2季", "第二季", "国语", "中字", "完整版"}
+	trimmed := q
+	for _, s := range suffixes {
+		trimmed = strings.ReplaceAll(trimmed, s, "")
+	}
+	add(&out, trimmed)
+	add(&out, extractWebhookCoreKeyword(q))
+	for _, r := range []string{"（", "("} {
+		if idx := strings.Index(q, r); idx > 0 {
+			add(&out, strings.TrimSpace(q[:idx]))
+		}
+	}
+	if y := extractWebhookYear(q); y != "" {
+		add(&out, y)
+	}
+	return out
+}
+
+func extractWebhookCoreKeyword(s string) string {
+	runes := []rune(strings.TrimSpace(s))
+	keep := make([]rune, 0, len(runes))
+	for _, r := range runes {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= 0x4e00 && r <= 0x9fff) {
+			keep = append(keep, r)
+		}
+	}
+	return strings.TrimSpace(string(keep))
+}
+
+func extractWebhookYear(s string) string {
+	runes := []rune(s)
+	for i := 0; i+3 < len(runes); i++ {
+		chunk := string(runes[i : i+4])
+		y, err := strconv.Atoi(chunk)
+		if err == nil && y >= 1900 && y <= 2099 {
+			return chunk
+		}
+	}
+	return ""
 }
