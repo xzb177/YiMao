@@ -108,6 +108,19 @@ var validActions = map[Action]bool{
 	"admin_remove_confirm":    true,
 	"admin_notif_custom_time": true, // 自定义每日汇总时间输入
 
+	// Search History actions
+	"search_history_menu":     true,
+	"search_stats":            true,
+	"search_popular":          true,
+	"popular_week":            true,
+	"popular_all":             true,
+	"search_trends":           true,
+	"search_manage":           true,
+	"search_delete":           true,
+	"search_clear_all":        true,
+	"search_popular_refresh":  true,
+	"search_trends_refresh":   true,
+
 	// Request related actions
 	"force_subscribe": true,
 	"cancel_request":  true,
