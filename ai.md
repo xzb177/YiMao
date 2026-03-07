@@ -4,6 +4,168 @@
 
 ## 2026-03-07
 
+### feat: 完善心情推荐算法 ✅
+- **背景**: 原心情推荐算法过于简单，仅支持硬编码的类型映射
+- **问题分析**:
+  - 心情到类型映射单一，不支持复杂心情描述
+  - 没有考虑时间、天气等动态上下文因素
+  - 没有结合用户历史偏好进行个性化推荐
+  - prompt 比较简单，推荐质量有限
+- **优化方案**:
+  1. **扩展心情词汇库**: 从 10 个扩展到 30+ 个心情关键词
+  2. **多维度心情分析**:
+     - 主分类（开心、难过、紧张等）
+     - 子分类（细分心情状态）
+     - 内容基调（轻松、治愈、刺激等）
+     - 节奏偏好（快/中/慢）
+  3. **时间上下文感知**:
+     - 早上/上午/下午/晚上/深夜不同时段调整
+     - 深夜避免过于恐怖内容
+     - 周末支持较长作品
+  4. **智能类型融合**:
+     - 心情类型 + 用户历史偏好类型
+     - 保持心情主导向的前提下融合用户喜好
+  5. **年份偏好智能调整**:
+     - 根据用户怀旧倾向动态调整
+     - 治愈类推荐经典作品
+     - 兴奋类推荐新片
+- **修改文件**:
+  - `ai/recommend.go`:
+    - 新增 `MoodKeywordsAnalysis` 结构体
+    - 新增 `analyzeMoodKeywords()` 函数
+    - 新增 `TimeContext` 结构体和 `getTimeContext()` 函数
+    - 新增 `buildMoodRecommendationMessage()` 函数
+    - 重构 `GetMoodBasedRecommendations()` 方法
+  - `ai/recommendation_v2.go`:
+    - 新增 `MoodAnalysis` 结构体
+    - 新增 `analyzeMood()` 函数
+    - 新增 `adjustByTimeOfDay()` 函数
+    - 新增 `adjustByUserPreference()` 函数
+    - 新增 `buildMoodQuery()` 函数
+    - 新增 `getTimeOfDay()`, `isLateNight()`, `isWeekend()` 函数
+    - 重构 `moodBasedRecommend()` 方法
+- **支持的心情关键词** (30+):
+  - 开心类: 开心、快乐、愉快
+  - 难过类: 难过、沮丧、郁闷、失恋
+  - 治愈类: 治愈
+  - 紧张类: 紧张、焦虑
+  - 刺激类: 刺激、恐怖
+  - 无聊类: 无聊、没劲
+  - 放松类: 放松、休闲、舒适、解压
+  - 兴奋类: 兴奋、热血
+  - 思考类: 思考、烧脑、学习
+  - 浪漫类: 浪漫、甜蜜
+  - 怀旧类: 怀旧、回忆
+  - 愤怒类: 生气、愤怒
+  - 孤独类: 孤独、寂寞
+  - 困倦类: 困、累了、疲劳
+  - 探索类: 探索、好奇
+- **效果**: 心情推荐更精准、更个性化，考虑用户状态和上下文
+- **部署时间**: 2026-03-07 23:16
+- **服务状态**: ✅ 正常运行
+
+---
+
+### fix: 合并远程更新 - 预设汇总时间回调解析 ✅
+- **提交**: 3235026
+- **功能**: 修复预设汇总时间回调解析问题
+- **修改文件**: `internal/handlers/admin.go`
+  - 代码重构：65行新增，58行删除
+- **状态**: 服务运行正常 (healthy)
+- **部署时间**: 2026-03-07 14:10
+
+# YiMao 项目更新日志
+
+---
+
+### refactor: 合并远程更新 - 每日汇总媒体分类 ✅
+- **提交**: d0704dd
+- **功能**: 每日汇总按媒体类型分类后再按媒体库分组
+- **修改文件**: `internal/services/media_notification.go`
+  - 重构汇总逻辑，先按媒体类型（电影/剧集）分类
+  - 每个类型内再按媒体库分组
+  - 代码优化：55行新增，73行删除
+- **状态**: 服务运行正常 (healthy)
+
+### feat: 合并远程更新 - 自动重新订阅开关 ✅
+- **提交范围**: 0e66f3b..24f4670 (3个新提交)
+- **新功能**:
+  - `24f4670` - feat(review): 添加自动重新订阅开关（默认关闭）
+  - `665e8f5` - fix(review): 添加回收重订阅循环的冷却保护
+  - `3632b96` - chore(workflow): 添加安全提交脚本
+- **配置更新**:
+  - 新增 `ENABLE_AUTO_RESUBSCRIBE=false` 到 .env
+  - 默认禁用审核回收后的自动重新订阅
+- **修改文件**:
+  - internal/config/config.go - 添加 EnableAutoResubscribe 字段
+  - internal/services/review.go - 重新订阅逻辑添加冷却保护
+  - scripts/safe-commit.sh - 安全提交脚本
+- **状态**: 服务运行正常 (healthy)
+
+# YiMao 项目更新日志
+
+---
+
+### test: 验证订阅去重修复 ✅
+- **验证时间**: 2026-03-07 13:45
+- **测试项目**: 审核订阅去重功能
+- **验证结果**:
+  - ✅ 去重功能正常工作
+  - ✅ 检测到重复订阅: subID=2817 被两个请求共享
+  - ✅ 正确跳过重复处理: `Skip duplicate subscription tracker`
+  - ✅ 无其他重复订阅错误
+- **日志证据**:
+  ```
+  [ReviewService] Skip duplicate subscription tracker: subID=2817, 
+  request=review_8025047064_1772363051, 
+  existed=review_8025047064_1772432428
+  ```
+- **结论**: 订阅去重修复验证通过，代码生效
+
+### feat: 合并远程更新 - 审核订阅去重修复 ✅
+- **提交**: `0e66f3b fix(review): dedupe recycle resubscribe by subscription id`
+- **功能**: 修复审核服务中重复订阅和重复重新订阅的问题
+- **修改文件**: `internal/services/review.go`
+  - 新增 `seenSubID` 映射，追踪已处理的订阅ID
+  - 新增 `resubSeen` 映射，防止重复触发重新订阅
+  - 新增 `processedSubID` 映射，防止重复处理同一订阅
+- **问题修复**:
+  - 防止同一订阅ID被多个审核请求重复追踪
+  - 防止已回收订阅被多次触发重新订阅
+  - 优化日志输出，记录跳过的重复操作
+- **效果**: 避免MoviePilot API重复调用，减少不必要的操作
+
+### ops: 远程代码合并 ✅
+- **操作**: git merge origin/master
+- **提交**: 56b7a4b..0e66f3b (1个新提交)
+- **状态**: 服务正常运行 (healthy)
+- **日志**: 订阅回收重订阅功能正常工作（河狸变身计划、无翅飞翔、Top Gear US）
+
+## 2026-03-07
+
+### feat: 合并远程更新 - Webhook 搜索回退策略 ✅
+- **提交**: `56b7a4b fix(webhook-search): add fallback strategy for direct text queries`
+- **功能**: 为 webhook 直连搜索添加回退策略
+- **修改文件**: `internal/bot/webhook.go`
+  - 新增 `tryWebhookSearchFallback()` 回退尝试函数
+  - 新增 `buildWebhookFallbackQueries()` 构建回退查询
+  - 新增 `extractWebhookCoreKeyword()` 提取核心关键词
+  - 新增 `extractWebhookYear()` 提取年份
+- **回退策略**:
+  - 移除常见后缀（电影、电视剧、剧、动画等）
+  - 提取核心关键词（仅保留中英数字）
+  - 分离括号内容
+  - 年份单独搜索
+- **效果**: webhook 搜索无结果时自动尝试简化查询
+
+### ops: 远程更新并部署 ✅
+- **操作**: git merge origin/master + docker compose up -d --build
+- **提交范围**: 6857e02..56b7a4b (1个新提交)
+- **状态**: 服务正常运行 (healthy)
+
+
+## 2026-03-07
+
 
 ### refactor: 搜索回退策略重构 - 统一搜索路径 ✅
 - **问题**: 原始代码只在 `SearchHandler` 中有回退策略，用户直接文本搜索走 `HandlePollSearchQuery` 无回退

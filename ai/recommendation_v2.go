@@ -432,49 +432,575 @@ func (e *RecommendationEngine) trendingRecommend(req *RecommendationRequestV2) (
 	return recResults, nil
 }
 
-// moodBasedRecommend 心情推荐
+// moodBasedRecommend 心情推荐（增强版）
 func (e *RecommendationEngine) moodBasedRecommend(req *RecommendationRequestV2) ([]*RecommendationResultV2, error) {
 	e.profileMutex.RLock()
 	profile := e.userProfiles[req.UserID]
 	e.profileMutex.RUnlock()
 
-	// 确定心情
-	mood := req.Context
-	if mood == "" {
-		mood = profile.Context.CurrentMood
-	}
-	if mood == "" {
-		mood = "放松"
-	}
+	// 解析心情（支持复杂的心情描述）
+	moodAnalysis := e.analyzeMood(req.Context, profile)
 
-	// 心情到类型映射
-	moodGenres := map[string][]string{
-		"开心":     {"喜剧", "动画", "音乐"},
-		"难过":     {"喜剧", "温情", "治愈"},
-		"紧张":     {"悬疑", "惊悚", "动作"},
-		"无聊":     {"惊悚", "科幻", "冒险"},
-		"放松":     {"喜剧", "爱情", "动画"},
-		"兴奋":     {"动作", "科幻", "冒险"},
-		"思考":     {"科幻", "悬疑", "剧情"},
-		"浪漫":     {"爱情", "剧情"},
-		"怀旧":     {"经典", "老片"},
-		"刺激":     {"恐怖", "惊悚", "动作"},
+	// 构建增强的查询
+	query := e.buildMoodQuery(moodAnalysis, profile, req)
+
+	results, err := e.aiGenerateRecommendations(query)
+	if err != nil {
+		return nil, err
 	}
 
-	genres := moodGenres[mood]
-	if genres == nil {
-		genres = []string{"剧情"}
+	// 为每个结果添加心情相关标签
+	for _, result := range results {
+		result.Tags = append(result.Tags, moodAnalysis.MoodCategory, "心情推荐")
+		if moodAnalysis.ShouldIncludeNew {
+			result.Tags = append(result.Tags, "新鲜感")
+		}
 	}
 
-	// 构建查询
-	query := fmt.Sprintf(`【心情推荐】
-- 当前心情: %s
-- 推荐类型: %s
-- 推荐数量: %d
-- %s
-`, mood, strings.Join(genres, "/"), req.Count, e.buildPersonalizationQuery(profile, req))
+	return results, nil
+}
 
-	return e.aiGenerateRecommendations(query)
+// MoodAnalysis 心情分析结果
+type MoodAnalysis struct {
+	// 基础心情分类
+	MoodCategory    string   `json:"mood_category"`    // 主要分类
+	MoodSubCategory  string   `json:"mood_sub_category"` // 子分类
+
+	// 推荐特征
+	PreferredGenres  []string `json:"preferred_genres"`  // 推荐类型
+	PreferredTones   []string `json:"preferred_tones"`   // 推荐基调
+	MinRating        float64  `json:"min_rating"`        // 最低评分要求
+	Pace             string   `json:"pace"`              // 节奏：快/中/慢
+	IncludeNew       bool     `json:"include_new"`       // 是否包含新片
+	ShouldIncludeNew bool     `json:"should_include_new"`// 建议包含新片
+	YearPreference   string   `json:"year_preference"`   // 年份偏好
+	DurationHint     string   `json:"duration_hint"`     // 时长建议
+
+	// 上下文因素
+	TimeOfDay        string   `json:"time_of_day"`       // 时间段
+	IsLateNight      bool     `json:"is_late_night"`     // 是否深夜
+	Weekend          bool     `json:"weekend"`           // 是否周末
+}
+
+// analyzeMood 分析用户心情（多维度解析）
+func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2) *MoodAnalysis {
+	analysis := &MoodAnalysis{
+		TimeOfDay:   e.getTimeOfDay(),
+		IsLateNight: e.isLateNight(),
+		Weekend:     e.isWeekend(),
+		MinRating:   6.5,
+	}
+
+	// 如果没有输入，使用用户当前心情或默认心情
+	moodInput := input
+	if moodInput == "" {
+		moodInput = profile.Context.CurrentMood
+	}
+	if moodInput == "" {
+		moodInput = "放松"
+	}
+
+	// 解析心情关键词
+	moodLower := strings.ToLower(moodInput)
+
+	// 心情分类映射（增强版）
+	moodMappings := map[string]*MoodAnalysis{
+		// === 开心类 ===
+		"开心": {
+			MoodCategory:   "开心",
+			PreferredGenres: []string{"喜剧", "动画", "音乐", "家庭"},
+			PreferredTones:  []string{"轻松", "愉快", "正能量", "温馨"},
+			Pace:            "中",
+			IncludeNew:      true,
+			YearPreference:  "近三年",
+			DurationHint:    "90-120分钟",
+		},
+		"快乐": {
+			MoodCategory:   "开心",
+			PreferredGenres: []string{"喜剧", "动画", "冒险", "音乐"},
+			PreferredTones:  []string{"轻松", "愉快", "正能量"},
+			Pace:            "快",
+			IncludeNew:      true,
+		},
+		"愉快": {
+			MoodCategory:   "开心",
+			PreferredGenres: []string{"喜剧", "爱情", "家庭"},
+			PreferredTones:  []string{"温馨", "轻松"},
+			Pace:            "慢",
+		},
+
+		// === 难过/治愈类 ===
+		"难过": {
+			MoodCategory:   "难过",
+			PreferredGenres: []string{"喜剧", "温情", "治愈", "动画"},
+			PreferredTones:  []string{"温暖", "治愈", "励志", "正能量"},
+			Pace:            "慢",
+			MinRating:       7.0,
+			IncludeNew:      false,
+			YearPreference:  "经典",
+		},
+		"沮丧": {
+			MoodCategory:   "难过",
+			PreferredGenres: []string{"励志", "传记", "剧情"},
+			PreferredTones:  []string{"励志", "温暖", "治愈"},
+			Pace:            "中",
+			MinRating:       7.5,
+		},
+		"郁闷": {
+			MoodCategory:   "难过",
+			PreferredGenres: []string{"喜剧", "治愈", "动画"},
+			PreferredTones:  []string{"轻松", "温暖", "治愈"},
+		},
+		"治愈": {
+			MoodCategory:   "治愈",
+			PreferredGenres: []string{"温情", "动画", "剧情", "家庭"},
+			PreferredTones:  []string{"温暖", "治愈", "宁静"},
+			Pace:            "慢",
+		},
+
+		// === 紧张/刺激类 ===
+		"紧张": {
+			MoodCategory:   "紧张",
+			PreferredGenres: []string{"悬疑", "惊悚", "动作", "犯罪"},
+			PreferredTones:  []string{"紧张", "刺激", "烧脑"},
+			Pace:            "快",
+			MinRating:       6.0,
+			IncludeNew:      true,
+		},
+		"焦虑": {
+			MoodCategory:   "紧张",
+			PreferredGenres: []string{"悬疑", "惊悚", "犯罪"},
+			PreferredTones:  []string{"烧脑", "紧张"},
+			Pace:            "快",
+		},
+		"刺激": {
+			MoodCategory:   "刺激",
+			PreferredGenres: []string{"恐怖", "惊悚", "动作", "冒险"},
+			PreferredTones:  []string{"刺激", "紧张", "惊悚"},
+			Pace:            "快",
+		},
+		"恐怖": {
+			MoodCategory:   "刺激",
+			PreferredGenres: []string{"恐怖", "惊悚", "悬疑"},
+			PreferredTones:  []string{"恐怖", "惊悚"},
+			Pace:            "快",
+		},
+
+		// === 无聊类 ===
+		"无聊": {
+			MoodCategory:   "无聊",
+			PreferredGenres: []string{"惊悚", "科幻", "冒险", "悬疑", "动作"},
+			PreferredTones:  []string{"刺激", "烧脑", "反转"},
+			Pace:            "快",
+			MinRating:       7.0,
+			IncludeNew:      true,
+		},
+		"没劲": {
+			MoodCategory:   "无聊",
+			PreferredGenres: []string{"喜剧", "科幻", "冒险"},
+			PreferredTones:  []string{"有趣", "新奇"},
+		},
+
+		// === 放松类 ===
+		"放松": {
+			MoodCategory:   "放松",
+			PreferredGenres: []string{"喜剧", "爱情", "动画", "纪录片"},
+			PreferredTones:  []string{"轻松", "温馨", "治愈"},
+			Pace:            "慢",
+			MinRating:       6.5,
+		},
+		"休闲": {
+			MoodCategory:   "放松",
+			PreferredGenres: []string{"喜剧", "爱情", "家庭"},
+			PreferredTones:  []string{"轻松", "温馨"},
+			Pace:            "慢",
+		},
+		"舒适": {
+			MoodCategory:   "放松",
+			PreferredGenres: []string{"动画", "纪录片", "剧情"},
+			PreferredTones:  []string{"宁静", "治愈"},
+			Pace:            "慢",
+		},
+
+		// === 兴奋类 ===
+		"兴奋": {
+			MoodCategory:   "兴奋",
+			PreferredGenres: []string{"动作", "科幻", "冒险", "超级英雄"},
+			PreferredTones:  []string{"热血", "刺激", "震撼"},
+			Pace:            "快",
+			IncludeNew:      true,
+			YearPreference:  "近期大片",
+		},
+		"热血": {
+			MoodCategory:   "兴奋",
+			PreferredGenres: []string{"动作", "冒险", "超级英雄"},
+			PreferredTones:  []string{"热血", "励志"},
+			Pace:            "快",
+		},
+
+		// === 思考类 ===
+		"思考": {
+			MoodCategory:   "思考",
+			PreferredGenres: []string{"科幻", "悬疑", "剧情", "传记"},
+			PreferredTones:  []string{"烧脑", "深度", "哲学"},
+			Pace:            "中",
+			MinRating:       7.5,
+		},
+		"烧脑": {
+			MoodCategory:   "思考",
+			PreferredGenres: []string{"悬疑", "科幻", "惊悚"},
+			PreferredTones:  []string{"烧脑", "反转", "复杂"},
+			Pace:            "中",
+			MinRating:       7.0,
+		},
+		"学习": {
+			MoodCategory:   "思考",
+			PreferredGenres: []string{"纪录片", "传记", "历史", "科普"},
+			PreferredTones:  []string{"知识", "深度", "教育"},
+			Pace:            "中",
+		},
+
+		// === 浪漫类 ===
+		"浪漫": {
+			MoodCategory:   "浪漫",
+			PreferredGenres: []string{"爱情", "剧情", "浪漫"},
+			PreferredTones:  []string{"浪漫", "温馨", "甜蜜"},
+			Pace:            "慢",
+		},
+		"甜蜜": {
+			MoodCategory:   "浪漫",
+			PreferredGenres: []string{"爱情", "喜剧", "动画"},
+			PreferredTones:  []string{"甜蜜", "温馨"},
+			Pace:            "慢",
+		},
+		"失恋": {
+			MoodCategory:   "难过",
+			PreferredGenres: []string{"励志", "治愈", "喜剧"},
+			PreferredTones:  []string{"治愈", "正能量", "温暖"},
+			Pace:            "慢",
+			MinRating:       7.0,
+		},
+
+		// === 怀旧类 ===
+		"怀旧": {
+			MoodCategory:   "怀旧",
+			PreferredGenres: []string{"经典", "剧情", "家庭"},
+			PreferredTones:  []string{"怀旧", "经典", "回忆"},
+			Pace:            "慢",
+			IncludeNew:      false,
+			YearPreference:  "90年代-2000年代",
+		},
+		"回忆": {
+			MoodCategory:   "怀旧",
+			PreferredGenres: []string{"经典", "剧情"},
+			PreferredTones:  []string{"怀旧", "温暖"},
+			YearPreference:  "经典老片",
+		},
+
+		// === 愤怒/发泄类 ===
+		"生气": {
+			MoodCategory:   "愤怒",
+			PreferredGenres: []string{"动作", "犯罪", "惊悚"},
+			PreferredTones:  []string{"爽片", "解压", "动作"},
+			Pace:            "快",
+		},
+		"愤怒": {
+			MoodCategory:   "愤怒",
+			PreferredGenres: []string{"动作", "犯罪", "复仇"},
+			PreferredTones:  []string{"爽片", "解压"},
+			Pace:            "快",
+		},
+		"解压": {
+			MoodCategory:   "放松",
+			PreferredGenres: []string{"动作", "喜剧", "爽片"},
+			PreferredTones:  []string{"解压", "爽快"},
+			Pace:            "快",
+		},
+
+		// === 孤独类 ===
+		"孤独": {
+			MoodCategory:   "孤独",
+			PreferredGenres: []string{"剧情", "温情", "治愈", "动画"},
+			PreferredTones:  []string{"温暖", "陪伴感", "治愈"},
+			Pace:            "慢",
+		},
+		"寂寞": {
+			MoodCategory:   "孤独",
+			PreferredGenres: []string{"爱情", "剧情", "温情"},
+			PreferredTones:  []string{"温暖", "治愈"},
+		},
+
+		// === 困倦类 ===
+		"困": {
+			MoodCategory:   "困倦",
+			PreferredGenres: []string{"喜剧", "动画", "轻松剧情"},
+			PreferredTones:  []string{"轻松", "不需要太烧脑"},
+			Pace:            "慢",
+			MinRating:       6.0,
+			DurationHint:    "90分钟以内",
+		},
+		"累了": {
+			MoodCategory:   "困倦",
+			PreferredGenres: []string{"喜剧", "治愈", "动画"},
+			PreferredTones:  []string{"轻松", "治愈"},
+			Pace:            "慢",
+		},
+		"疲劳": {
+			MoodCategory:   "困倦",
+			PreferredGenres: []string{"喜剧", "纪录片", "动画"},
+			PreferredTones:  []string{"轻松", "治愈"},
+		},
+
+		// === 探索类 ===
+		"探索": {
+			MoodCategory:   "探索",
+			PreferredGenres: []string{"科幻", "纪录片", "冒险"},
+			PreferredTones:  []string{"新奇", "知识", "探索"},
+			Pace:            "中",
+			IncludeNew:      true,
+		},
+		"好奇": {
+			MoodCategory:   "探索",
+			PreferredGenres: []string{"科幻", "悬疑", "纪录片"},
+			PreferredTones:  []string{"新奇", "烧脑"},
+		},
+	}
+
+	// 精确匹配
+	if mapping, ok := moodMappings[moodInput]; ok {
+		analysis.mergeFrom(mapping)
+	} else {
+		// 模糊匹配
+		found := false
+		for key, mapping := range moodMappings {
+			if strings.Contains(moodLower, key) || strings.Contains(key, moodInput) {
+				analysis.mergeFrom(mapping)
+				found = true
+				break
+			}
+		}
+		if !found {
+			// 默认映射
+			analysis.mergeFrom(moodMappings["放松"])
+		}
+	}
+
+	// 根据时间段调整
+	e.adjustByTimeOfDay(analysis)
+
+	// 根据用户历史偏好调整
+	e.adjustByUserPreference(analysis, profile)
+
+	return analysis
+}
+
+// mergeFrom 从另一个 MoodAnalysis 合并数据
+func (a *MoodAnalysis) mergeFrom(other *MoodAnalysis) {
+	if other.MoodCategory != "" && a.MoodCategory == "" {
+		a.MoodCategory = other.MoodCategory
+	}
+	if other.MoodSubCategory != "" {
+		a.MoodSubCategory = other.MoodSubCategory
+	}
+	if len(other.PreferredGenres) > 0 {
+		a.PreferredGenres = other.PreferredGenres
+	}
+	if len(other.PreferredTones) > 0 {
+		a.PreferredTones = other.PreferredTones
+	}
+	if other.MinRating > 0 && a.MinRating == 0 {
+		a.MinRating = other.MinRating
+	}
+	if other.Pace != "" && a.Pace == "" {
+		a.Pace = other.Pace
+	}
+	if other.YearPreference != "" {
+		a.YearPreference = other.YearPreference
+	}
+	if other.DurationHint != "" {
+		a.DurationHint = other.DurationHint
+	}
+	a.ShouldIncludeNew = other.IncludeNew
+}
+
+// adjustByTimeOfDay 根据时间段调整推荐
+func (e *RecommendationEngine) adjustByTimeOfDay(analysis *MoodAnalysis) {
+	if analysis.IsLateNight {
+		// 深夜：避免恐怖、过于刺激的内容
+		if analysis.MoodCategory == "刺激" || analysis.MoodCategory == "紧张" {
+			// 转向悬疑/犯罪类
+			newGenres := []string{}
+			for _, g := range analysis.PreferredGenres {
+				if g != "恐怖" && g != "惊悚" {
+					newGenres = append(newGenres, g)
+				}
+			}
+			if len(newGenres) > 0 {
+				analysis.PreferredGenres = newGenres
+			}
+		}
+		// 深夜推荐节奏较慢的内容
+		if analysis.Pace == "快" {
+			analysis.Pace = "中"
+		}
+	}
+
+	switch analysis.TimeOfDay {
+	case "早上":
+		// 早上适合励志、积极的内容
+		if analysis.MoodCategory == "放松" {
+			analysis.PreferredTones = append(analysis.PreferredTones, "励志", "积极")
+		}
+	case "晚上":
+		// 晚上可以看更长的内容
+		if analysis.DurationHint == "" {
+			analysis.DurationHint = "不限"
+		}
+	}
+}
+
+// adjustByUserPreference 根据用户历史偏好调整
+func (e *RecommendationEngine) adjustByUserPreference(analysis *MoodAnalysis, profile *UserProfileV2) {
+	if profile == nil {
+		return
+	}
+
+	// 如果用户有明确的类型偏好，尝试融合
+	if len(profile.Preferences.FavoriteGenres) > 0 {
+		// 检查是否有重叠
+		hasOverlap := false
+		for _, userGenre := range profile.Preferences.FavoriteGenres {
+			for _, moodGenre := range analysis.PreferredGenres {
+				if strings.Contains(moodGenre, userGenre) || strings.Contains(userGenre, moodGenre) {
+					hasOverlap = true
+					break
+				}
+			}
+		}
+
+		// 如果有重叠，考虑添加用户喜欢的其他类型
+		if hasOverlap && len(analysis.PreferredGenres) < 5 {
+			for _, userGenre := range profile.Preferences.FavoriteGenres {
+				add := true
+				for _, existing := range analysis.PreferredGenres {
+					if strings.Contains(existing, userGenre) || strings.Contains(userGenre, existing) {
+						add = false
+						break
+					}
+				}
+				if add {
+					analysis.PreferredGenres = append(analysis.PreferredGenres, userGenre)
+					if len(analysis.PreferredGenres) >= 5 {
+						break
+					}
+				}
+			}
+		}
+	}
+
+	// 调整最低评分
+	if profile.Preferences.MinRating > analysis.MinRating {
+		analysis.MinRating = profile.Preferences.MinRating
+	}
+
+	// 根据用户怀旧倾向调整
+	if profile.Preferences.NostalgiaTendency > 0.6 && analysis.YearPreference == "" {
+		analysis.YearPreference = "包含经典作品"
+	}
+	if profile.Preferences.NostalgiaTendency < 0.3 && analysis.YearPreference == "" {
+		analysis.IncludeNew = true
+	}
+}
+
+// buildMoodQuery 构建心情推荐查询
+func (e *RecommendationEngine) buildMoodQuery(analysis *MoodAnalysis, profile *UserProfileV2, req *RecommendationRequestV2) string {
+	var parts []string
+
+	parts = append(parts, fmt.Sprintf("【心情推荐】"))
+	parts = append(parts, fmt.Sprintf("- 心情分类: %s", analysis.MoodCategory))
+	if analysis.MoodSubCategory != "" {
+		parts = append(parts, fmt.Sprintf("- 细分心情: %s", analysis.MoodSubCategory))
+	}
+	parts = append(parts, fmt.Sprintf("- 推荐类型: %s", strings.Join(analysis.PreferredGenres, "、")))
+	if len(analysis.PreferredTones) > 0 {
+		parts = append(parts, fmt.Sprintf("- 内容基调: %s", strings.Join(analysis.PreferredTones, "、")))
+	}
+	parts = append(parts, fmt.Sprintf("- 推荐节奏: %s", analysis.Pace))
+	parts = append(parts, fmt.Sprintf("- 最低评分: %.1f", analysis.MinRating))
+
+	// 时间上下文
+	if analysis.IsLateNight {
+		parts = append(parts, "- 时间: 深夜，推荐适合深夜观看的内容")
+	}
+	if analysis.Weekend {
+		parts = append(parts, "- 时间: 周末，可以推荐较长作品")
+	}
+
+	// 年份偏好
+	if analysis.YearPreference != "" {
+		parts = append(parts, fmt.Sprintf("- 年份偏好: %s", analysis.YearPreference))
+	} else if analysis.IncludeNew {
+		parts = append(parts, "- 包含新片: 是")
+	}
+
+	// 时长建议
+	if analysis.DurationHint != "" {
+		parts = append(parts, fmt.Sprintf("- 建议时长: %s", analysis.DurationHint))
+	}
+
+	// 媒体类型限制
+	if req.MediaType != "" && req.MediaType != "both" {
+		typeName := "电影"
+		if req.MediaType == "tv" {
+			typeName = "剧集"
+		}
+		parts = append(parts, fmt.Sprintf("- 只要%s", typeName))
+	}
+
+	// 用户画像补充（如果有的话）
+	if profile != nil && len(profile.Behavior.RequestGenres) > 0 {
+		topGenre := e.getTopGenre(profile.Behavior.RequestGenres)
+		if topGenre != "" {
+			parts = append(parts, fmt.Sprintf("- 用户常看: %s", topGenre))
+		}
+	}
+
+	parts = append(parts, fmt.Sprintf("- 推荐数量: %d", req.Count))
+
+	return strings.Join(parts, "\n")
+}
+
+// getTimeOfDay 获取当前时间段
+func (e *RecommendationEngine) getTimeOfDay() string {
+	hour := time.Now().Hour()
+	switch {
+	case hour >= 6 && hour < 9:
+		return "早上"
+	case hour >= 9 && hour < 12:
+		return "上午"
+	case hour >= 12 && hour < 14:
+		return "中午"
+	case hour >= 14 && hour < 18:
+		return "下午"
+	case hour >= 18 && hour < 22:
+		return "晚上"
+	case hour >= 22 || hour < 2:
+		return "深夜"
+	default:
+		return "凌晨"
+	}
+}
+
+// isLateNight 判断是否是深夜
+func (e *RecommendationEngine) isLateNight() bool {
+	hour := time.Now().Hour()
+	return hour >= 23 || hour < 6
+}
+
+// isWeekend 判断是否是周末
+func (e *RecommendationEngine) isWeekend() bool {
+	weekday := time.Now().Weekday()
+	return weekday == time.Saturday || weekday == time.Sunday
 }
 
 // discoveryRecommend 发现推荐（探索新内容）
