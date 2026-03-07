@@ -284,6 +284,8 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 				kb.AddButton("🗑️ 清空历史", "search:clear_history:1")
 			}
 			kb.NewRow()
+			kb.AddButton("📊 更多历史", "search_history_menu")
+			kb.NewRow()
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
 			msg.Newline()
@@ -304,6 +306,8 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.NewRow()
+	kb.AddButton("📊 搜索历史", "search_history_menu")
 
 	return &callback.Response{
 		Text:     msg.Build(),

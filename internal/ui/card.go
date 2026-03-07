@@ -32,7 +32,6 @@ func (b *CardBuilder) BuildMenu(title, subtitle string) string {
 	sb.WriteString("🎯 不纠结 · 直接给你三种风格候选\n")
 	sb.WriteString("📋 我的请求 · 查看求片进度\n")
 	sb.WriteString("🐞 我的反馈 · 查看处理结果\n")
-	sb.WriteString("📊 搜索历史 · 查看搜索记录\n")
 	sb.WriteString("🔗 绑定账号 · 同步账号信息\n")
 
 	sb.WriteString("\n")
