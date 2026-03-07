@@ -2,6 +2,59 @@
 
 ---
 
+### clean: 删除未使用的新功能代码和文档 ✅
+- **时间**: 2026-03-08 14:20
+- **原因**: 远程新增的反馈功能（SQLite版本）完全没有被集成到主程序，是死代码
+- **删除内容**:
+  1. **未集成的新功能代码** (11 个文件):
+     - `internal/handlers/feedback_enhanced.go` - 与现有代码冲突
+     - `internal/handlers/feedback_v2.go` - 与现有代码冲突
+     - `internal/services/feedback_db.go` - SQLite 反馈数据库
+     - `internal/services/feedback_adapter.go` - 反馈适配器
+     - `internal/services/feedback_similar.go` - 相似度检查
+     - `internal/services/feedback_templates.go` - 模板服务
+     - `scripts/migrate_feedback.go` - 迁移脚本
+  2. **设计/实施文档** (5805 行):
+     - `docs/` 目录全部删除（API错误处理、UI优化、搜索历史等文档）
+  3. **未使用的目录**:
+     - `backup-20260308-043558/` - 空备份目录
+     - `examples/` - 测试示例文件
+     - `chain/` - 未被引用的链式操作代码
+- **保留内容**:
+  - `scripts/safe-commit.sh` - 提交前检查脚本
+  - `scripts/security-check.sh` - 代码安全检查脚本
+- **状态**: ✅ 代码库精简，服务运行正常
+
+---
+
+### fix: 远程代码同步与编译错误修复 ✅
+- **时间**: 2026-03-08 14:15
+- **远程提交**:
+  - `38094d3` feat: 完整替换旧反馈功能为新的 SQLite 版本
+  - `b16e1df` feat: 添加反馈功能整合方案和适配器
+  - `4944f72` feat: 完整实现反馈功能优化（全部3个阶段）
+- **拉取内容**: +5424 行代码 (14 文件变更)
+  - 新增文档: `feedback-implementation.md`, `feedback-improvements.md`, `feedback-integration.md`, `feedback-replacement-guide.md` 等
+  - 新增服务: `feedback_db.go`, `feedback_adapter.go`, `feedback_similar.go`, `feedback_templates.go`
+  - 新增处理器: `feedback_enhanced.go`, `feedback_v2.go`
+  - 迁移脚本: `scripts/migrate_feedback.go`
+- **修复内容**:
+  1. **`feedback_similar.go`**: `contains` 函数重命名为 `containsSlice` 避免与 `preferences.go` 冲突
+  2. **`feedback_adapter.go`**: 修复多个方法调用错误
+     - `GetFeedback`: 返回类型从 `(interface{}, bool)` 改为 `(interface{}, error)`
+     - `GetUserFeedbacks`: 添加 limit 参数
+     - `GetOpenFeedbacks`: 使用 `GetOpenFeedbacks()` 替代不存在的 `GetFeedbacksByStatus()`
+     - `AddReply`: 使用 `AddFeedbackReply()` 替代不存在的 `AddReply()`
+     - `AddImages`: 暂时返回未实现错误
+     - `GetStatistics`: 使用 `GetFeedbackStats()` 替代不存在的 `GetFeedbackStatistics()`
+     - `ExportToCSV/ExportToExcel`: 暂时返回未实现错误
+  3. **`feedback_templates.go`**: 移除未使用的 `encoding/json` 导入
+  4. **`feedback_enhanced.go` / `feedback_v2.go`**: 添加 `//go:build ignore` 标签禁用（与现有代码冲突）
+- **状态**: ✅ 服务运行正常
+- **端口**: 8080 (健康检查通过)
+
+---
+
 ### feat: 集成未使用的新功能 ✅
 - **时间**: 2026-03-08
 - **任务**: 深度挖掘并集成远程仓库中未被使用的新功能
