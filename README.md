@@ -96,6 +96,7 @@ docker compose up -d
 | `EMBY_URL` | Emby 地址 | - |
 | `EMBY_API_KEY` | Emby API Key | - |
 | `TMDB_API_KEY` | TMDB Key（可替换） | 内置默认 |
+| `ENABLE_AUTO_RESUBSCRIBE` | 自动处理回收订阅（建议关闭） | `false` |
 | `TZ` | 时区 | `Asia/Shanghai` |
 
 ---

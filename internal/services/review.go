@@ -42,19 +42,21 @@ type ReviewRequest struct {
 
 // ReviewService manages review requests
 type ReviewService struct {
-	reviewsFile string
-	reviews     map[string]*ReviewRequest // requestID -> review
-	mu          sync.RWMutex
-	moviepilot  *MoviePilotClient // For updating subscription status
+	reviewsFile     string
+	reviews         map[string]*ReviewRequest // requestID -> review
+	mu              sync.RWMutex
+	moviepilot      *MoviePilotClient // For updating subscription status
+	autoResubscribe bool
 }
 
 // NewReviewService creates a new review service
-func NewReviewService(dataDir string) *ReviewService {
+func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 	reviewsFile := fmt.Sprintf("%s/review_requests.json", dataDir)
 
 	service := &ReviewService{
-		reviewsFile: reviewsFile,
-		reviews:     make(map[string]*ReviewRequest),
+		reviewsFile:     reviewsFile,
+		reviews:         make(map[string]*ReviewRequest),
+		autoResubscribe: autoResubscribe,
 	}
 
 	service.load()
@@ -545,7 +547,11 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 
 	// Resubscribe recycled subscriptions (在锁外执行避免死锁)
 	if len(toResubscribe) > 0 {
-		go s.resubscribeRecycledRequests(toResubscribe)
+		if s.autoResubscribe {
+			go s.resubscribeRecycledRequests(toResubscribe)
+		} else {
+			log.Printf("[ReviewService] Auto resubscribe disabled, skipped %d recycled requests", len(toResubscribe))
+		}
 	}
 }
 

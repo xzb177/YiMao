@@ -30,9 +30,9 @@ type Config struct {
 	OpenAIAPIKey    string
 
 	// Server
-	ServerPort      string
-	ServerHost      string
-	WebhookURL      string
+	ServerPort string
+	ServerHost string
+	WebhookURL string
 
 	// Storage
 	DataDir         string
@@ -50,8 +50,8 @@ type Config struct {
 	EnableRandom    bool
 
 	// Limits
-	MaxSessionAge   int // in hours
-	MaxSessions     int
+	MaxSessionAge int // in hours
+	MaxSessions   int
 
 	// Admins
 	Admins map[int64]string // admin ID -> name
@@ -63,50 +63,54 @@ type Config struct {
 	EnableIPBlocking bool
 
 	// Security Limits
-	RateLimitRequests int  // requests per window
-	RateLimitWindow   int  // window duration in seconds
-	MaxFailedAttempts int  // failed attempts before IP block
-	BlockDuration     int  // block duration in minutes
+	RateLimitRequests int // requests per window
+	RateLimitWindow   int // window duration in seconds
+	MaxFailedAttempts int // failed attempts before IP block
+	BlockDuration     int // block duration in minutes
 
 	// Notification Format
 	NotificationFormat string // "simple" or "detailed"
+
+	// Review/Resubscribe
+	EnableAutoResubscribe bool
 }
 
 // Load loads configuration from environment variables and files
 func Load() (*Config, error) {
 	cfg := &Config{
-		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
-		MoviePilotURL:       getEnv("MOVIEPILOT_URL", ""),
-		MoviePilotAPIKey:    getEnv("MOVIEPILOT_API_KEY", ""),
-		EmbyURL:             getEnv("EMBY_URL", ""),
-		EmbyAPIKey:          getEnv("EMBY_API_KEY", ""),
-		TMDBAPIKey:          getEnv("TMDB_API_KEY", ""),
+		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:   getEnv("TELEGRAM_CHAT_ID", ""),
+		MoviePilotURL:    getEnv("MOVIEPILOT_URL", ""),
+		MoviePilotAPIKey: getEnv("MOVIEPILOT_API_KEY", ""),
+		EmbyURL:          getEnv("EMBY_URL", ""),
+		EmbyAPIKey:       getEnv("EMBY_API_KEY", ""),
+		TMDBAPIKey:       getEnv("TMDB_API_KEY", ""),
 		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
-		AnthropicAPIKey:     getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
-		ZhipuAPIKey:         getEnv("ZHIPU_API_KEY", ""),
-		OpenAIAPIKey:        getEnv("OPENAI_API_KEY", ""),
-		ServerPort:          getEnv("PORT", "8080"),
-		ServerHost:          getEnv("HOST", "0.0.0.0"),
-		WebhookURL:          getEnv("WEBHOOK_URL", ""),
-		DataDir:             getEnv("DATA_DIR", "/app/data"),
-		MaxSessionAge:       getEnvInt("MAX_SESSION_AGE", 24),
-		MaxSessions:         getEnvInt("MAX_SESSIONS", 1000),
-		EnableAI:            getEnvBool("ENABLE_AI", true),
-		EnableTrending:      getEnvBool("ENABLE_TRENDING", true),
-		EnableHotTV:         getEnvBool("ENABLE_HOT_TV", true),
-		EnableNewMovies:     getEnvBool("ENABLE_NEW_MOVIES", true),
-		EnableRandom:        getEnvBool("ENABLE_RANDOM", true),
-		Admins:              make(map[int64]string),
-		EnableAPIAuth:       getEnvBool("ENABLE_API_AUTH", false),
-		APIKeys:             make(map[string]string),
-		EnableRateLimit:     getEnvBool("ENABLE_RATE_LIMIT", true),
-		EnableIPBlocking:    getEnvBool("ENABLE_IP_BLOCKING", true),
-		RateLimitRequests:   getEnvInt("RATE_LIMIT_REQUESTS", 60),
-		RateLimitWindow:     getEnvInt("RATE_LIMIT_WINDOW", 60),    // seconds
-		MaxFailedAttempts:   getEnvInt("MAX_FAILED_ATTEMPTS", 5),
-		BlockDuration:       getEnvInt("BLOCK_DURATION", 30),       // minutes
-		NotificationFormat:  getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
+		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
+		ZhipuAPIKey:           getEnv("ZHIPU_API_KEY", ""),
+		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
+		ServerPort:            getEnv("PORT", "8080"),
+		ServerHost:            getEnv("HOST", "0.0.0.0"),
+		WebhookURL:            getEnv("WEBHOOK_URL", ""),
+		DataDir:               getEnv("DATA_DIR", "/app/data"),
+		MaxSessionAge:         getEnvInt("MAX_SESSION_AGE", 24),
+		MaxSessions:           getEnvInt("MAX_SESSIONS", 1000),
+		EnableAI:              getEnvBool("ENABLE_AI", true),
+		EnableTrending:        getEnvBool("ENABLE_TRENDING", true),
+		EnableHotTV:           getEnvBool("ENABLE_HOT_TV", true),
+		EnableNewMovies:       getEnvBool("ENABLE_NEW_MOVIES", true),
+		EnableRandom:          getEnvBool("ENABLE_RANDOM", true),
+		Admins:                make(map[int64]string),
+		EnableAPIAuth:         getEnvBool("ENABLE_API_AUTH", false),
+		APIKeys:               make(map[string]string),
+		EnableRateLimit:       getEnvBool("ENABLE_RATE_LIMIT", true),
+		EnableIPBlocking:      getEnvBool("ENABLE_IP_BLOCKING", true),
+		RateLimitRequests:     getEnvInt("RATE_LIMIT_REQUESTS", 60),
+		RateLimitWindow:       getEnvInt("RATE_LIMIT_WINDOW", 60), // seconds
+		MaxFailedAttempts:     getEnvInt("MAX_FAILED_ATTEMPTS", 5),
+		BlockDuration:         getEnvInt("BLOCK_DURATION", 30),           // minutes
+		NotificationFormat:    getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
+		EnableAutoResubscribe: getEnvBool("ENABLE_AUTO_RESUBSCRIBE", false),
 	}
 
 	// Set file paths

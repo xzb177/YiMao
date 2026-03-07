@@ -173,7 +173,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	log.Println("    - QuotaService...")
 	quotaService := services.NewQuotaService(cfg.DataDir, moviepilotClient)
 	log.Println("    - ReviewService...")
-	reviewService := services.NewReviewService(cfg.DataDir)
+	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
 	log.Println("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
 	log.Println("  [2/11] Basic services created")
