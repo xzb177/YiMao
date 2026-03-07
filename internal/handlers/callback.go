@@ -10,6 +10,7 @@ import (
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
+	"emby-telegram-bot/internal/ui"
 	"emby-telegram-bot/pkg/errors"
 	"emby-telegram-bot/pkg/types"
 )
@@ -258,39 +259,26 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 }
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🌟 欢迎使用云海影视助手").Newline()
-	msg.Newline()
-	msg.Text("🔍 搜索影片：快速查找想看的内容").Newline()
+	// 使用 UI 包构建主菜单消息（波普艺术风格）
+	baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
 
-	// Only show AI recommendation in private chats
+	// 添加用户观影人格显示（如果有的话）
 	isPrivateChat := ctx.ChatType == "private"
-	if isPrivateChat {
-		msg.Text("💫 情绪选片：按心情一键找片").Newline()
-		msg.Text("🎯 不纠结：直接给你三种风格候选").Newline()
-	}
-
-	msg.Text("📋 我的请求：查看求片进度").Newline()
-	msg.Text("🐞 我的反馈：查看处理结果").Newline()
-	msg.Text("🔗 账号绑定：同步账号信息").Newline()
-
 	if isPrivateChat {
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
 		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
 			moodMap := map[string]string{
-				"relax":    "解压轻松",
-				"mindblow": "烧脑刺激",
+				"relax":     "解压轻松",
+				"mindblow":  "烧脑刺激",
 				"emotional": "情绪共鸣",
-				"healing":  "治愈慢节奏",
-				"random":   "随机盲选",
+				"healing":   "治愈慢节奏",
+				"random":    "随机盲选",
 			}
 			if label, exists := moodMap[moodVal]; exists {
-				msg.Textf("🧠 观影人格：%s", label).Newline()
+				baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
 			}
 		}
 	}
-	msg.Newline()
-	msg.Italic("👇 请选择下方功能").Newline()
 
 	// Check if user is admin to add admin menu button
 	isAdmin := false
@@ -301,7 +289,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)
 
 	return &callback.Response{
-		Text:     msg.Build(),
+		Text:     baseMsg,
 		Edit:     true,
 		Keyboard: convertKeyboard(keyboard),
 	}, nil

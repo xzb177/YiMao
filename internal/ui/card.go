@@ -53,7 +53,6 @@ func (b *CardBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString("\n\n")
 	sb.WriteString(cardSeparator + "\n\n")
 
-	displayCount := len(results)
 	for i, item := range results {
 		icon := getMediaTypeIcon(item.Type)
 		year := ""
@@ -86,30 +85,19 @@ func (b *CardBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	sb.WriteString(cardSeparator + "\n")
 	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if result.Year > 0 {
+	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
 	sb.WriteString("\n")
-
-	if result.OriginalTitle != "" && result.OriginalTitle != result.Title {
-		sb.WriteString(fmt.Sprintf("%s\n", result.OriginalTitle))
-	}
 
 	sb.WriteString(cardSeparator + "\n\n")
 
 	// 信息卡片
 	sb.WriteString(cardBoxStart + "\n")
-	sb.WriteString(fmt.Sprintf("  📊 评分: %.1f\n", result.Rating))
+	if result.Rating > 0 {
+		sb.WriteString(fmt.Sprintf("  📊 评分: %.1f\n", result.Rating))
+	}
 	sb.WriteString(fmt.Sprintf("  🎬 类型: %s\n", getMediaTypeLabel(result.Type)))
-
-	if result.ReleaseDate != "" {
-		sb.WriteString(fmt.Sprintf("  📅 日期: %s\n", result.ReleaseDate))
-	}
-
-	if result.Runtime > 0 {
-		sb.WriteString(fmt.Sprintf("  ⏱️ 时长: %d 分钟\n", result.Runtime))
-	}
-
 	sb.WriteString(cardBoxEnd + "\n\n")
 
 	// 概要卡片
@@ -119,11 +107,6 @@ func (b *CardBuilder) BuildMediaDetail(result *services.SearchResult) string {
 		sb.WriteString(cardSeparator + "\n")
 		sb.WriteString(fmt.Sprintf("  %s\n", wrapText(result.Overview, 26)))
 		sb.WriteString(cardBoxEnd + "\n\n")
-	}
-
-	// 类型标签
-	if len(result.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(result.Genres, " / ")))
 	}
 
 	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))

@@ -1,3 +1,5 @@
+//go:build ignore
+
 // Package ai provides next-generation AI recommendation system
 package ai
 

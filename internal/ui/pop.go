@@ -23,8 +23,20 @@ func (b *PopBuilder) BuildMenu(title, subtitle string) string {
 	sb.WriteString(fmt.Sprintf("💥 %s 💥\n", title))
 	sb.WriteString(popSeparator + "\n\n")
 
-	sb.WriteString(fmt.Sprintf("🎯 %s\n\n", subtitle))
-	sb.WriteString(popLine + "\n\n")
+	sb.WriteString(fmt.Sprintf("✨ %s\n\n", subtitle))
+
+	// 功能列表
+	sb.WriteString("🔍 搜索影片 · 快速查找想看的内容\n")
+	sb.WriteString("💫 情绪选片 · 按心情一键找片\n")
+	sb.WriteString("🎯 不纠结 · 直接给你三种风格候选\n")
+	sb.WriteString("📋 我的请求 · 查看求片进度\n")
+	sb.WriteString("🐞 我的反馈 · 查看处理结果\n")
+	sb.WriteString("🔗 绑定账号 · 同步账号信息\n")
+
+	sb.WriteString("\n")
+	sb.WriteString(popLine + "\n")
+	sb.WriteString("👇 选择下方功能开始探索\n")
+	sb.WriteString(popLine + "\n")
 
 	return sb.String()
 }
@@ -54,7 +66,6 @@ func (b *PopBuilder) BuildSearchResults(query string, results []services.SearchR
 	sb.WriteString("\n\n")
 	sb.WriteString(popLine + "\n\n")
 
-	displayCount := len(results)
 	for i, item := range results {
 		icon := getMediaTypeIcon(item.Type)
 		year := ""
@@ -89,28 +100,19 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	// 标题
 	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if result.Year > 0 {
+	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
 	sb.WriteString("\n")
 
-	// 英文名
-	if result.OriginalTitle != "" && result.OriginalTitle != result.Title {
-		sb.WriteString(fmt.Sprintf("%s\n", result.OriginalTitle))
-	}
-
 	sb.WriteString(popSeparator + "\n\n")
 
 	// 元信息
-	sb.WriteString(fmt.Sprintf("📊 评分 %.1f  ·  🎬 %s\n",
-		result.Rating, getMediaTypeLabel(result.Type)))
-
-	if result.ReleaseDate != "" {
-		sb.WriteString(fmt.Sprintf("📅 日期 %s\n", result.ReleaseDate))
-	}
-
-	if result.Runtime > 0 {
-		sb.WriteString(fmt.Sprintf("⏱️ 时长 %d 分钟\n", result.Runtime))
+	if result.Rating > 0 {
+		sb.WriteString(fmt.Sprintf("📊 评分 %.1f  ·  🎬 %s\n",
+			result.Rating, getMediaTypeLabel(result.Type)))
+	} else {
+		sb.WriteString(fmt.Sprintf("🎬 %s\n", getMediaTypeLabel(result.Type)))
 	}
 
 	sb.WriteString("\n")
@@ -128,11 +130,6 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	}
 
 	sb.WriteString(popLine + "\n\n")
-
-	// 类型标签
-	if len(result.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(result.Genres, " · ")))
-	}
 
 	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
 

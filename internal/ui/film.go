@@ -67,7 +67,6 @@ func (b *FilmBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString("\n\n")
 	sb.WriteString(filmSeparator + "\n\n")
 
-	displayCount := len(results)
 	for i, item := range results {
 		icon := getMediaTypeIcon(item.Type)
 		year := ""
@@ -102,27 +101,18 @@ func (b *FilmBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	// 标题
 	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if result.Year > 0 {
+	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
 	sb.WriteString("\n")
 
-	// 英文名
-	if result.OriginalTitle != "" && result.OriginalTitle != result.Title {
-		sb.WriteString(fmt.Sprintf("%s\n", result.OriginalTitle))
-	}
-
 	sb.WriteString(filmSeparator + "\n\n")
 
 	// 元信息
-	sb.WriteString(fmt.Sprintf("⭐ %.1f 分  ·  📅 %s\n", result.Rating, getMediaTypeLabel(result.Type)))
-
-	if result.ReleaseDate != "" {
-		sb.WriteString(fmt.Sprintf("📅 上映日期: %s\n", result.ReleaseDate))
-	}
-
-	if result.Runtime > 0 {
-		sb.WriteString(fmt.Sprintf("⏱️ 时长: %d 分钟\n", result.Runtime))
+	if result.Rating > 0 {
+		sb.WriteString(fmt.Sprintf("⭐ %.1f 分  ·  📅 %s\n", result.Rating, getMediaTypeLabel(result.Type)))
+	} else {
+		sb.WriteString(fmt.Sprintf("📅 %s\n", getMediaTypeLabel(result.Type)))
 	}
 
 	sb.WriteString("\n")
@@ -140,11 +130,6 @@ func (b *FilmBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	}
 
 	sb.WriteString(filmLine + "\n\n")
-
-	// 类型标签
-	if len(result.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("🏷️ %s\n", strings.Join(result.Genres, " / ")))
-	}
 
 	// 添加一句相关的感悟
 	sb.WriteString("\n")
@@ -267,7 +252,10 @@ func (b *FilmBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 
 // 辅助函数：获取随机文案
 func getRandomQuote() string {
-	index := int(len(filmQuotes) * 0.5) // 简单的伪随机
+	if len(filmQuotes) == 0 {
+		return ""
+	}
+	index := len(filmQuotes) / 2 // 简单选择中间的文案
 	if index >= len(filmQuotes) {
 		index = 0
 	}
