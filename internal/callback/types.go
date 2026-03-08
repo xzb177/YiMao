@@ -29,6 +29,8 @@ const (
 	ActionRequests     Action = "requests"
 	ActionLink         Action = "link"
 	ActionHelp         Action = "help"
+	ActionHelpTopic    Action = "help_topic"
+	ActionSettings     Action = "settings"
 	ActionAI           Action = "ai"
 	ActionMood         Action = "mood"
 	ActionMoodPick     Action = "moodpick"
@@ -62,9 +64,13 @@ var validActions = map[Action]bool{
 	ActionRequests:     true,
 	ActionLink:         true,
 	ActionHelp:         true,
+	ActionHelpTopic:    true,
+	ActionSettings:     true,
 	ActionFeedback:     true,
 	ActionRandom:       true,
 	"my_feedback":      true, // User feedback list
+	"start_settings":   true, // Settings page
+	"start_ai":         true, // AI recommendations page (renamed from start_mood)
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,

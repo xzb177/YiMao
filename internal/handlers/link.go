@@ -47,7 +47,7 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		sess.Set("moviepilot_id", int(moviepilotID))
 
 		return &callback.Response{
-			Text:   "✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号",
+			Text:   "✅ 已绑定\n\n你的账号已绑定，可以使用完整功能",
 			Edit:   true,
 		}, nil
 	}
@@ -62,19 +62,21 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 }
 
 func (h *LinkHandler) getLinkInstructions() string {
-	return `🔗 绑定 MoviePilot 账号
+	return `🔗 绑定账号
 
-绑定后即可使用求片功能并接收订阅通知
+绑定后可以：
 
-📝 绑定格式：
+• 查看/管理你提交过的求片
+• 收取完成通知
+• 查看下载进度
+
+📝 怎么绑定：
 /link 用户名 密码
 
 📌 示例：
-/link johndoe mypassword123
+/link admin password123
 
-✨ 新用户自动注册，无需手动添加账号
-
-💡 您的凭据直接发送至 MoviePilot 服务器验证，机器人不做存储`
+不绑定也能搜片和求片，但体验不完整 👇`
 }
 
 // HandleWithCredentials handles linking with username and password

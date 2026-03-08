@@ -55,17 +55,14 @@ func (b *KeyboardBuilder) BuildRecommendationKeyboard(itemCount int, recType str
 	var rows [][]types.TelegramInlineKeyboardButton
 
 	if itemCount == 0 {
-		// Empty state keyboard
+		// Empty state keyboard - simplified
 		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "🔥 热门电影", CallbackData: "search:type:trending"},
-			{Text: "📺 热播剧集", CallbackData: "search:type:hot"},
+			{Text: "🔥 热门", CallbackData: "search:type:trending"},
+			{Text: "⭐ 高分", CallbackData: "search:type:toprated"},
 		})
 		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "⭐ 高分佳作", CallbackData: "search:type:toprated"},
-			{Text: "🆕 最新上线", CallbackData: "search:type:new"},
-		})
-		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "🎲 随机发现", CallbackData: "search:type:random"},
+			{Text: "🆕 新片", CallbackData: "search:type:new"},
+			{Text: "🎲 随机", CallbackData: "search:type:random"},
 		})
 		rows = append(rows, []types.TelegramInlineKeyboardButton{
 			{Text: "⬅️ 返回主菜单", CallbackData: "start"},
@@ -92,14 +89,9 @@ func (b *KeyboardBuilder) BuildRecommendationKeyboard(itemCount int, recType str
 	// Navigation row
 	navRow := []types.TelegramInlineKeyboardButton{
 		{Text: "🔄 换一批", CallbackData: fmt.Sprintf("search:type:%s", recType)},
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "⬅️ 返回", CallbackData: "start_ai"},
 	}
 	rows = append(rows, navRow)
-
-	// AI recommendation row
-	rows = append(rows, []types.TelegramInlineKeyboardButton{
-		{Text: "🤖 其他推荐", CallbackData: "ai"},
-	})
 
 	return &types.TelegramInlineKeyboard{
 		InlineKeyboard: rows,
@@ -171,6 +163,9 @@ func (b *KeyboardBuilder) BuildSearchHistoryKeyboard(hasHistory bool) *types.Tel
 func (b *KeyboardBuilder) BuildNoResultsKeyboard() *types.TelegramInlineKeyboard {
 	return &types.TelegramInlineKeyboard{
 		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+			{
+				{Text: "🔥 热门搜索", CallbackData: "start_ai"},
+			},
 			{
 				{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 			},

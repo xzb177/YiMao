@@ -161,18 +161,16 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜索影片").Newline()
+	msg.Bold("🔍 搜影片").Newline()
 	msg.Newline()
-	msg.Text("支持搜索电影和电视剧，输入名称即可开始").Newline()
+	msg.Text("把片名发给我就行").Newline()
 	msg.Newline()
-	msg.Text("📝 支持中英文片名").Newline()
-	msg.Text("🎬 支持模糊搜索").Newline()
-	msg.Text("📺 可查看详情后订阅").Newline()
+	msg.Text("中英文、电影剧集都能搜").Newline()
 	msg.Newline()
-	msg.Italic("💡 直接输入影片名称开始搜索").Newline()
+	msg.Italic("💡 直接发片名，不用加命令")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📊 搜索历史", "search_history_menu")
+	kb.AddButton("📊 历史记录", "search_history_menu")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

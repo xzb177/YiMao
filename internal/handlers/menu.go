@@ -560,22 +560,21 @@ func NewHelpHandler() *HelpHandler {
 
 func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("❓ 帮助中心").Newline()
+	msg.Bold("❓ 帮助").Newline()
 	msg.Newline()
-	msg.Text("🔍 搜索：输入片名即可查询").Newline()
-	msg.Text("🎬 推荐：浏览热门与高分内容").Newline()
-	msg.Text("📋 请求：提交后可查看处理进度").Newline()
-	msg.Text("🔗 绑定：/link 用户名 密码").Newline()
+	msg.Text("遇到问题了？").Newline()
 	msg.Newline()
-	msg.Bold("⌨️ 常用命令").Newline()
-	msg.Text("/start  主菜单").Newline()
-	msg.Text("/search 搜索").Newline()
-	msg.Text("/ai     推荐").Newline()
-	msg.Text("/requests 我的请求").Newline()
-	msg.Newline()
-	msg.Italic("💬 如有问题请联系管理员").Newline()
+	msg.Italic("👇 选一个问题看看")
 
 	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔍 怎么搜片", "help_topic:search")
+	kb.AddButton("🔗 怎么绑定", "help_topic:link")
+	kb.NewRow()
+	kb.AddButton("❌ 请求失败", "help_topic:failed")
+	kb.AddButton("🔔 没收到通知", "help_topic:notify")
+	kb.NewRow()
+	kb.AddButton("📮 其他问题", "help_topic:other")
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{

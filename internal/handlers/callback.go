@@ -253,6 +253,10 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleHot(ctx)
 	case callback.ActionNew:
 		return h.HandleNew(ctx)
+	case callback.ActionSettings:
+		return h.HandleSettings(ctx)
+	case callback.ActionHelpTopic:
+		return h.HandleHelpTopic(ctx)
 	default:
 		return nil, errors.CallbackInvalid(fmt.Sprintf("unknown start action: %s", action))
 	}
@@ -297,11 +301,13 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜索影片").Newline()
+	msg.Bold("🔍 搜影片").Newline()
 	msg.Newline()
-	msg.Text("请输入影片名称，支持中文/英文").Newline()
+	msg.Text("把片名发给我就行").Newline()
 	msg.Newline()
-	msg.Italic("💡 输入影片名称后自动搜索")
+	msg.Text("中英文、电影剧集都能搜").Newline()
+	msg.Newline()
+	msg.Italic("💡 直接发片名，不用加命令")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -321,18 +327,20 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	}
 
 	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 精选推荐").Newline()
+	msg.Bold("🎬 看推荐").Newline()
 	msg.Newline()
-	msg.Italic("✨ 发现你喜欢的精彩内容").Newline()
+	msg.Text("不知道看什么？我来帮你挑").Newline()
+	msg.Newline()
+	msg.Italic("👇 选一个方式")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 本周热门", "search:type:trending")
-	kb.AddButton("📺 热门剧集", "search:type:hot")
+	kb.AddButton("🔥 热门", "search:type:trending")
+	kb.AddButton("⭐ 高分", "search:type:toprated")
 	kb.NewRow()
-	kb.AddButton("⭐ 必看神作", "search:type:toprated")
-	kb.AddButton("🆕 最新上映", "search:type:new")
+	kb.AddButton("🆕 新片", "search:type:new")
+	kb.AddButton("🎲 随机", "search:type:random")
 	kb.NewRow()
-	kb.AddButton("🎲 随机探索", "search:type:random")
+	kb.AddButton("😊 按心情", "start_mood")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
@@ -347,28 +355,27 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, error) {
 	if ctx.ChatType != "private" {
 		return &callback.Response{
-			Text:        "⚠️ 情绪选片仅在私聊中可用",
+			Text:        "⚠️ 推荐功能仅在私聊中可用",
 			CallbackMsg: "请私聊使用",
 			ShowAlert:   true,
 		}, nil
 	}
 
 	msg := services.NewMessageBuilder()
-	msg.Bold("💫 情绪选片").Newline()
+	msg.Bold("😊 按心情选片").Newline()
 	msg.Newline()
-	msg.Text("按你现在的心情，选一个入口：").Newline()
-	msg.Italic("系统会映射到不同推荐池，减少选择疲劳").Newline()
+	msg.Text("你现在什么状态？").Newline()
+	msg.Newline()
+	msg.Italic("👇 选一个心情")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("😄 解压轻松", "moodpick:type:hot:mood:relax")
+	kb.AddButton("😌 解压轻松", "moodpick:type:hot:mood:relax")
 	kb.AddButton("🤯 烧脑刺激", "moodpick:type:toprated:mood:mindblow")
 	kb.NewRow()
 	kb.AddButton("😭 情绪共鸣", "moodpick:type:trending:mood:emotional")
 	kb.AddButton("🧘 治愈慢节奏", "moodpick:type:new:mood:healing")
 	kb.NewRow()
-	kb.AddButton("🎲 随机盲选", "moodpick:type:random:mood:random")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("⬅️ 返回", "start_ai")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -494,6 +501,96 @@ func (h *StartHandler) HandleNew(ctx *callback.Context) (*callback.Response, err
 		Text:        "🆕 加载中...",
 		CallbackMsg: "加载中",
 		ShowAlert:   true,
+	}, nil
+}
+
+// HandleSettings shows the settings page
+func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response, error) {
+	msg := services.NewMessageBuilder()
+	msg.Bold("⚙️ 设置").Newline()
+	msg.Newline()
+	msg.Text("账号和偏好设置")
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔗 绑定账号", "start_link")
+	kb.AddButton("🐞 我的反馈", "my_feedback")
+	kb.NewRow()
+	kb.AddButton("❓ 帮助", "help")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// HandleHelpTopic shows help topic details
+func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Response, error) {
+	topic := ctx.Callback.Params["topic"]
+
+	msg := services.NewMessageBuilder()
+
+	switch topic {
+	case "search":
+		msg.Bold("🔍 怎么搜片").Newline()
+		msg.Newline()
+		msg.Text("1. 点「搜影片」").Newline()
+		msg.Text("2. 直接发片名给我").Newline()
+		msg.Text("3. 点结果里的数字看详情").Newline()
+		msg.Text("4. 点「求片」或「订阅」").Newline()
+		msg.Newline()
+		msg.Italic("就这么简单 💡")
+
+	case "link":
+		msg.Bold("🔗 怎么绑定").Newline()
+		msg.Newline()
+		msg.Text("1. 点「绑定账号」").Newline()
+		msg.Text("2. 输入你的 MoviePilot 用户名和密码").Newline()
+		msg.Text("3. 绑定成功后可以查看请求进度").Newline()
+		msg.Newline()
+		msg.Italic("不绑定也能搜片和求片 👌")
+
+	case "failed":
+		msg.Bold("❌ 请求失败").Newline()
+		msg.Newline()
+		msg.Text("可能的原因：").Newline()
+		msg.Text("• 资源确实没有种子").Newline()
+		msg.Text("• 站点没有这个资源").Newline()
+		msg.Text("• 搜索规则需要调整").Newline()
+		msg.Newline()
+		msg.Text("建议：").Newline()
+		msg.Text("• 点「🔄 重新搜索」再试").Newline()
+		msg.Text("• 或者联系管理员调整规则").Newline()
+
+	case "notify":
+		msg.Bold("🔔 没收到通知").Newline()
+		msg.Newline()
+		msg.Text("可能的原因：").Newline()
+		msg.Text("• Telegram 没有给机器人发消息权限").Newline()
+		msg.Text("• 绑定的账号和通知接收账号不一致").Newline()
+		msg.Newline()
+		msg.Text("解决方法：").Newline()
+		msg.Text("• 私聊我发条消息，开启通知权限").Newline()
+		msg.Text("• 确保在正确的 Telegram 账号下绑定").Newline()
+
+	default:
+		msg.Bold("📮 其他问题").Newline()
+		msg.Newline()
+		msg.Text("遇到其他问题了？").Newline()
+		msg.Newline()
+		msg.Text("请通过「我的反馈」功能提交问题，").Newline()
+		msg.Text("管理员会尽快处理。")
+	}
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回帮助", "help")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }
 
