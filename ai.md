@@ -2,6 +2,40 @@
 
 ---
 
+### fix: 我的请求列表显示为空 - 订阅过滤逻辑修复 ✅
+- **时间**: 2026-03-08 23:23
+- **问题**: "我的请求"显示"暂无记录"，但实际有 81 个订阅
+- **根本原因**:
+  - `SubscribeItem` 结构体缺少 `user_id` 字段
+  - 用户过滤逻辑仅依赖 `username` 字符串匹配，API 返回格式不匹配
+  - MoviePilot API 的 `username` 参数可能不支持或格式不同
+- **修复内容**:
+  1. **`SubscribeItem` 结构体**: 添加 `UserID int64 json:"user_id"` 字段
+  2. **`GetUserRequests` 方法**: 增强过滤逻辑
+     - 添加调试日志显示订阅项的 username/user_id 字段
+     - 多重匹配策略：username 匹配、user_id 匹配、name 匹配
+- **修改文件**:
+  - `internal/services/moviepilot.go` - SubscribeItem 结构体、GetUserRequests 方法
+- **状态**: ✅ 已部署
+
+---
+
+### fix: Telegram API 错误解析 - message not modified 仍报错 ✅
+- **时间**: 2026-03-08 23:23
+- **问题**: "message not modified" 错误已静默处理但仍产生日志
+- **根本原因**:
+  - Telegram API 错误格式是 `{"ok":false,"error_code":400,"description":"..."}`
+  - 代码期望嵌套的 `error` 对象，导致 `result.Error` 为 nil
+  - 错误走通用路径输出 "API 未知错误" 日志
+- **修复内容**:
+  - 修改 JSON 解析结构体：直接映射 `error_code` 和 `description` 字段
+  - `makeRequest` 和 `makeSimpleRequest` 同步修复
+- **修改文件**:
+  - `internal/services/telegram.go` - makeRequest/makeSimpleRequest 方法
+- **状态**: ✅ 已部署
+
+---
+
 ### clean: 清理无效反馈数据 ✅
 - **时间**: 2026-03-08 15:30
 - **操作**: 删除 feedback.json 中的无效反馈数据

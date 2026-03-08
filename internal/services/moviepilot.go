@@ -189,6 +189,7 @@ type SubscribeItem struct {
 	Poster       string `json:"poster"`
 	State        string `json:"state"`
 	Username     string `json:"username"`
+	UserID       int64  `json:"user_id"` // Add user_id field for filtering
 	Date         string `json:"date"`
 	Season       int    `json:"season"`
 	TotalEpisode int    `json:"total_episode"`
@@ -620,12 +621,22 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	// If API doesn't support filtering, filter client-side
 	var filtered []SubscribeItem
 	for _, item := range items {
-		if item.Username == user.Username {
+		// Log first few items for debugging
+		if len(filtered) < 3 {
+			log.Printf("[MoviePilot] Subscription item: id=%d, name=%s, username=%q, user_id=%q, state=%s",
+				item.ID, item.Name, item.Username, item.UserID, item.State)
+		}
+		// Try multiple matching strategies:
+		// 1. Direct username match
+		// 2. User ID match (if SubscribeItem has UserID field)
+		// 3. Name match as fallback
+		if item.Username == user.Username || item.Username == fmt.Sprintf("%d", userID) ||
+			item.Name == user.Username || item.UserID == userID {
 			filtered = append(filtered, item)
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: user=%s, total_items=%d, filtered=%d", user.Username, len(items), len(filtered))
+	log.Printf("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, total_items=%d, filtered=%d", userID, user.Username, len(items), len(filtered))
 
 	// Log state values of first few items
 	for i, item := range filtered {

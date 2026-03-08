@@ -667,9 +667,10 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 
 	var result struct {
-		OK      bool                  `json:"ok"`
-		Result  *types.TelegramMessage `json:"result"`
-		Error   *types.TelegramError  `json:"error"`
+		OK             bool                  `json:"ok"`
+		Result         *types.TelegramMessage `json:"result"`
+		ErrorCode      int    `json:"error_code,omitempty"`
+		ErrorDesc      string `json:"description,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -678,18 +679,19 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 
 	if !result.OK {
-		if result.Error != nil {
-			// 特殊处理：消息未被修改不是真正的错误，只是说明消息已经是目标状态
-			// 这是一个常见的 Telegram API 行为，可以安全忽略
-			if result.Error.Code == 400 &&
-				(strings.Contains(result.Error.Message, "message not modified") ||
-				 strings.Contains(result.Error.Message, "消息未修改") ||
-				 strings.Contains(result.Error.Message, "message is not modified")) {
-				// 静默忽略，返回 nil 表示操作成功（消息已经正确）
-				return nil, nil
-			}
-			log.Printf("[Telegram] API 错误: %s", result.Error.Message)
-			return nil, result.Error
+		errorMsg := result.ErrorDesc
+		// 特殊处理：消息未被修改不是真正的错误，只是说明消息已经是目标状态
+		// 这是一个常见的 Telegram API 行为，可以安全忽略
+		if result.ErrorCode == 400 &&
+			(strings.Contains(errorMsg, "message not modified") ||
+			 strings.Contains(errorMsg, "消息未修改") ||
+			 strings.Contains(errorMsg, "message is not modified")) {
+			// 静默忽略，返回 nil 表示操作成功（消息已经正确）
+			return nil, nil
+		}
+		if errorMsg != "" {
+			log.Printf("[Telegram] API 错误: %s", errorMsg)
+			return nil, &types.TelegramError{Code: result.ErrorCode, Message: errorMsg}
 		}
 		log.Printf("[Telegram] API 未知错误: %s", string(body))
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
@@ -738,9 +740,10 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	}
 
 	var result struct {
-		OK     bool                 `json:"ok"`
-		Result bool                 `json:"result"`
-		Error  *types.TelegramError `json:"error"`
+		OK        bool   `json:"ok"`
+		Result    bool   `json:"result"`
+		ErrorCode int    `json:"error_code,omitempty"`
+		ErrorDesc string `json:"description,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -749,16 +752,17 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	}
 
 	if !result.OK {
-		if result.Error != nil {
-			// 特殊处理：消息未被修改不是真正的错误
-			if result.Error.Code == 400 &&
-				(strings.Contains(result.Error.Message, "message not modified") ||
-				 strings.Contains(result.Error.Message, "消息未修改") ||
-				 strings.Contains(result.Error.Message, "message is not modified")) {
-				return nil // 静默忽略
-			}
-			log.Printf("[Telegram] API 错误: %s", result.Error.Message)
-			return result.Error
+		errorMsg := result.ErrorDesc
+		// 特殊处理：消息未被修改不是真正的错误
+		if result.ErrorCode == 400 &&
+			(strings.Contains(errorMsg, "message not modified") ||
+			 strings.Contains(errorMsg, "消息未修改") ||
+			 strings.Contains(errorMsg, "message is not modified")) {
+			return nil // 静默忽略
+		}
+		if errorMsg != "" {
+			log.Printf("[Telegram] API 错误: %s", errorMsg)
+			return &types.TelegramError{Code: result.ErrorCode, Message: errorMsg}
 		}
 		return fmt.Errorf("telegram API error: %s", string(body))
 	}
