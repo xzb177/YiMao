@@ -134,6 +134,7 @@ var validActions = map[Action]bool{
 	"admin_feedback_filter":  true, // Filter by status
 	"admin_feedback_close":   true, // Admin force close
 	"admin_feedback_priority": true, // Adjust priority
+	"admin_feedback_priority_menu": true, // Priority selection menu
 	"admin_feedback_detail":  true, // View feedback detail
 	"admin_feedback_reply":   true, // Reply to feedback
 	"admin_feedback_template": true, // Quick reply template

@@ -109,6 +109,8 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleFeedbackReply(ctx)
 	case "admin_feedback_priority":
 		return h.handleFeedbackPriority(ctx)
+	case "admin_feedback_priority_menu":
+		return h.handleFeedbackPriorityMenu(ctx)
 	case "admin_feedback_template":
 		return h.handleFeedbackTemplate(ctx)
 	default:
@@ -1376,22 +1378,14 @@ func (h *AdminHandler) handleFeedbackPanel(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 
-	// Action buttons (2 columns)
-	kb.AddButton("📋 全部反馈", "admin_feedback_list")
+	// 第一行：主要操作（最常用）
 	kb.AddButton("🔵 待处理", "admin_feedback_filter:status:open")
-	kb.NewRow()
-	kb.AddButton("🔧 处理中", "admin_feedback_filter:status:processing")
-	kb.AddButton("✅ 已解决", "admin_feedback_filter:status:fixed")
-	kb.NewRow()
-	kb.AddButton("🚫 已关闭", "admin_feedback_filter:status:closed")
+	kb.AddButton("📋 全部反馈", "admin_feedback_list")
+	kb.AddButton("🔄 刷新", "admin_feedback")
 	kb.NewRow()
 
-	// Refresh button
-	kb.AddButton("🔄 刷新统计", "admin_feedback")
-	kb.NewRow()
-
-	// Return to admin menu
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+	// 第二行：查看筛选（合并）
+	kb.AddButton("📊 筛选", "admin_feedback_filter:status:all")
 
 	return &callback.Response{
 		Text:      msg.Build(),
@@ -1523,8 +1517,37 @@ func (h *AdminHandler) handleFeedbackFilter(ctx *callback.Context) (*callback.Re
 	}
 
 	statusStr := ctx.Callback.Params["status"]
-	if statusStr == "" {
-		return h.handleFeedbackPanel(ctx)
+	if statusStr == "" || statusStr == "all" {
+		// Show filter menu
+		stats := h.issueService.GetStats()
+
+		msg := services.NewMessageBuilder()
+		msg.Bold("📊 反馈筛选").Newline()
+		msg.Newline()
+		msg.Text("请选择要查看的反馈状态：").Newline()
+		msg.Newline()
+		msg.Textf("🔵 待处理: %d 条", stats.Open).Newline()
+		msg.Textf("🔧 处理中: %d 条", stats.Processing).Newline()
+		msg.Textf("✅ 已解决: %d 条", stats.Fixed).Newline()
+		msg.Textf("🚫 已关闭: %d 条", stats.Closed).Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🔵 待处理", "admin_feedback_filter:status:open")
+		kb.AddButton("🔧 处理中", "admin_feedback_filter:status:processing")
+		kb.NewRow()
+		kb.AddButton("✅ 已解决", "admin_feedback_filter:status:fixed")
+		kb.AddButton("🚫 已关闭", "admin_feedback_filter:status:closed")
+		kb.NewRow()
+		kb.AddButton("📋 全部反馈", "admin_feedback_list")
+		kb.NewRow()
+		kb.AddButton("⬅️ 返回", "admin_feedback")
+
+		return &callback.Response{
+			Text:      msg.Build(),
+			ParseMode: msg.ParseMode(),
+			Edit:      true,
+			Keyboard:  convertKeyboard(kb.Build()),
+		}, nil
 	}
 
 	var status services.IssueStatus
@@ -1692,34 +1715,33 @@ func (h *AdminHandler) handleFeedbackDetail(ctx *callback.Context) (*callback.Re
 
 	kb := services.NewKeyboardBuilder()
 
-	// Action buttons based on current status
+	// 第一行：主要操作（根据状态显示）
 	switch issue.Status {
 	case services.IssueStatusOpen, services.IssueStatusReply:
+		// 待处理状态：回复 + 处理中
 		kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
 		kb.AddButton("🔧 处理中", fmt.Sprintf("admin_issue_processing:id:%d", issue.ID))
 		kb.NewRow()
 	case services.IssueStatusProcessing:
+		// 处理中状态：回复 + 已解决
 		kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
 		kb.AddButton("✅ 已解决", fmt.Sprintf("admin_issue_fixed:id:%d", issue.ID))
 		kb.NewRow()
-	}
-
-	// Priority buttons
-	if issue.Status != services.IssueStatusClosed && issue.Status != services.IssueStatusFixed {
-		kb.AddButton("🔴 高优先级", fmt.Sprintf("admin_feedback_priority:id:%d:priority:high", issue.ID))
-		kb.AddButton("🟢 低优先级", fmt.Sprintf("admin_feedback_priority:id:%d:priority:low", issue.ID))
-		kb.NewRow()
-	}
-
-	// Close button (if not already closed)
-	if issue.Status != services.IssueStatusClosed {
+	case services.IssueStatusFixed:
+		// 已解决状态：可以关闭
 		kb.AddButton("🚫 关闭", fmt.Sprintf("admin_issue_close:id:%d", issue.ID))
 		kb.NewRow()
 	}
 
-	kb.AddButton("⬅️ 返回列表", "admin_feedback_list")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+	// 第二行：更多操作（优先级 + 关闭，已关闭除外）
+	if issue.Status != services.IssueStatusClosed && issue.Status != services.IssueStatusFixed {
+		kb.AddButton("⚙️ 优先级", fmt.Sprintf("admin_feedback_priority_menu:id:%d", issue.ID))
+		kb.AddButton("🚫 关闭", fmt.Sprintf("admin_issue_close:id:%d", issue.ID))
+		kb.NewRow()
+	}
+
+	// 最后一行：导航
+	kb.AddButton("⬅️ 返回", "admin_feedback_list")
 
 	return &callback.Response{
 		Text:      msg.Build(),
@@ -1778,18 +1800,13 @@ func (h *AdminHandler) handleFeedbackReply(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 
-	// Add reply template buttons
+	// Add reply template buttons - 单列显示更清晰
 	templates := services.GetReplyTemplates()
 	for i, tmpl := range templates {
 		callbackData := fmt.Sprintf("admin_feedback_template:id:%d:template:%d", issueID, i)
 		kb.AddButton(tmpl.Name, callbackData)
-		if i%2 == 1 {
-			kb.NewRow()
-		}
 	}
-	if len(templates)%2 != 0 {
-		kb.NewRow()
-	}
+	kb.NewRow()
 
 	kb.AddButton("❌ 取消", "admin_feedback")
 
@@ -2011,4 +2028,63 @@ func getPriorityText(priority services.IssuePriority) string {
 	default:
 		return "⚪ 未知"
 	}
+}
+
+// handleFeedbackPriorityMenu shows priority selection menu
+func (h *AdminHandler) handleFeedbackPriorityMenu(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["id"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueID, err := strconv.ParseInt(issueIDStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get current priority
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("⚙️ 设置优先级").Newline()
+	msg.Newline()
+	msg.Textf("问题编号: #%d", issueID).Newline()
+	msg.Textf("当前优先级: %s", getPriorityText(issue.Priority)).Newline()
+	msg.Newline()
+	msg.Text("请选择新的优先级：").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔴 紧急", fmt.Sprintf("admin_feedback_priority:id:%d:priority:urgent", issueID))
+	kb.AddButton("🟠 高", fmt.Sprintf("admin_feedback_priority:id:%d:priority:high", issueID))
+	kb.NewRow()
+	kb.AddButton("🟡 中", fmt.Sprintf("admin_feedback_priority:id:%d:priority:medium", issueID))
+	kb.AddButton("🟢 低", fmt.Sprintf("admin_feedback_priority:id:%d:priority:low", issueID))
+	kb.NewRow()
+	kb.AddButton("⬅️ 取消", fmt.Sprintf("admin_feedback_detail:id:%d", issueID))
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
 }

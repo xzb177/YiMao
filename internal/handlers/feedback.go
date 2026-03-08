@@ -568,20 +568,22 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 
 	kb := services.NewKeyboardBuilder()
 
-	// Add action buttons based on status
+	// 根据状态显示不同操作
 	if issue.Status == services.IssueStatusFixed {
-		// Show rating prompt if not yet rated
+		// 已解决状态 - 显示评分（如果未评分）
 		if issue.Satisfaction == 0 {
 			msg.Newline()
 			msg.Bold("⭐ 请为本次处理评分").Newline()
-			kb.AddButton("⭐", fmt.Sprintf("feedback:rate:1:id:%d", issue.ID))
-			kb.AddButton("⭐⭐", fmt.Sprintf("feedback:rate:2:id:%d", issue.ID))
-			kb.AddButton("⭐⭐⭐", fmt.Sprintf("feedback:rate:3:id:%d", issue.ID))
-			kb.AddButton("⭐⭐⭐⭐", fmt.Sprintf("feedback:rate:4:id:%d", issue.ID))
+			// 评分按钮：一行两个，更紧凑
 			kb.AddButton("⭐⭐⭐⭐⭐", fmt.Sprintf("feedback:rate:5:id:%d", issue.ID))
+			kb.AddButton("⭐⭐⭐", fmt.Sprintf("feedback:rate:3:id:%d", issue.ID))
 			kb.NewRow()
+			kb.AddButton("⭐⭐", fmt.Sprintf("feedback:rate:2:id:%d", issue.ID))
+			kb.AddButton("⭐", fmt.Sprintf("feedback:rate:1:id:%d", issue.ID))
+			kb.NewRow()
+			kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
 		} else {
-			// Show existing rating
+			// 已评分 - 显示评分和关闭按钮
 			stars := ""
 			for i := 0; i < 5; i++ {
 				if i < issue.Satisfaction {
@@ -592,16 +594,19 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 			}
 			msg.Newline()
 			msg.Textf("您的评分: %s (%d/5)", stars, issue.Satisfaction).Newline()
+			kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
 		}
-	}
-
-	// If issue is not closed, allow user to close it
-	if issue.Status != services.IssueStatusClosed {
+	} else if issue.Status != services.IssueStatusClosed {
+		// 未关闭状态 - 显示关闭按钮
 		kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
-		kb.NewRow()
 	}
 
-	// If there are admin replies, show follow-up prompt
+	// 最后一行：返回按钮
+	if len(issue.Replies) > 0 && issue.Status != services.IssueStatusClosed {
+		kb.NewRow()
+		msg.Italic("💬 您可以回复此消息进行追问").Newline()
+	}
+	kb.AddButton("⬅️ 返回列表", "feedback:view")
 	if len(issue.Replies) > 0 && issue.Status != services.IssueStatusClosed {
 		msg.Newline()
 		msg.Italic("💬 您可以直接回复此消息进行追问").Newline()
