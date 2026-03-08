@@ -1,228 +1,247 @@
-# Emby Telegram Bot - 模块化架构重构
+# YiMao 架构文档
 
-## 概述
+## 1. 程序入口
 
-参考 MoviePilot 的架构设计，对 Emby Telegram Bot 进行了全面的模块化重构。
+程序从 `cmd/bot/main.go` 启动。启动流程：
 
-## 新架构目录结构
+1. 加载环境变量配置（`internal/config/config.go`）
+2. 初始化服务层（Telegram、MoviePilot、Session 等）
+3. 初始化回调注册器并注册 handlers（`internal/callback/types.go`）
+4. 设置 Webhook 或启动 Polling（`internal/bot/webhook.go` 或 `poll.go`）
+5. 启动 HTTP 服务器（`internal/server/`）
 
-```
-/root/emby-telegram-bot/
-├── bot/                    # Bot 处理模块
-│   ├── handler.go         # 消息处理入口
-│   ├── editor.go          # 消息编辑和发送
-│   └── module.go          # 模块集成
-├── session/               # 会话管理
-│   └── manager.go         # 用户会话管理器
-├── callback/              # 回调处理
-│   └── parser.go          # 回调数据解析
-├── chain/                 # 业务链处理
-│   ├── base.go            # 链基类
-│   ├── search.go          # 搜索链
-│   ├── subscribe.go       # 订阅链
-│   └── download.go        # 下载链
-└── main.go                # 主程序入口
-```
+## 2. 请求如何进入系统
 
-## 核心模块说明
-
-### 1. Bot Handler (`bot/handler.go`)
-
-**功能**: 统一的消息处理入口
-
-**核心方法**:
-- `HandleMessage()` - 处理普通消息
-- `HandleCallback()` - 处理按钮回调
-- `handleSearch()` - 处理搜索请求
-- `handlePagination()` - 处理翻页
-- `handleNumericInput()` - 处理数字选择
-
-**特点**:
-- 支持命令、搜索、订阅、下载等多种操作
-- 统一的消息响应格式
-- 集成会话管理和回调解析
-
-### 2. Session Manager (`session/manager.go`)
-
-**功能**: 用户会话状态管理
-
-**UserSession 结构**:
-```go
-type UserSession struct {
-    UserID        int64
-    ChatID        int64
-    LastActive    time.Time
-    CurrentPage   int
-    SearchQuery   string
-    SearchResults []SearchItem
-    TotalResults  int
-    SelectedItem  *SearchItem
-    PendingAction string
-    Context       map[string]interface{}
-}
-```
-
-**特点**:
-- 30分钟会话超时
-- 自动清理过期会话
-- 支持分页状态保持
-- 支持上下文存储
-
-### 3. Message Editor (`bot/editor.go`)
-
-**功能**: 消息发送和编辑
-
-**核心方法**:
-- `SendMessage()` - 发送新消息
-- `EditMessage()` - 编辑已有消息
-- `DeleteMessage()` - 删除消息
-- `SendMediaMessage()` - 发送图片消息
-- `AnswerCallback()` - 回应按钮回调
-
-**特点**:
-- 优先编辑原消息，减少聊天刷屏
-- 自动拆分长消息 (>4000字符)
-- 支持 Markdown 格式
-- 消息 ID 跟踪
-
-### 4. Callback Parser (`callback/parser.go`)
-
-**功能**: 解析和格式化回调数据
-
-**Callback 格式**: `action:key1:value1:key2:value2`
-
-**示例**:
-```
-search:id:123:type:movie
-subscribe:id:456:type:tv:season:1
-page:2
-cancel
-```
-
-**特点**:
-- 统一的回调数据格式
-- 支持复杂数据传递
-- 类型安全的数据访问
-
-### 5. Chain 模块 (`chain/`)
-
-**ChainBase** - 链基类，提供通用功能
-**SearchChain** - 搜索处理链
-**SubscribeChain** - 订阅处理链
-**DownloadChain** - 下载处理链
-
-## 交互流程
-
-### 搜索流程
+### Webhook 模式
 
 ```
-用户输入 "复仇者联盟"
-    ↓
-Handler.HandleMessage()
-    ↓
-获取/创建 UserSession
-    ↓
-调用 SearchChain.SearchByTitle()
-    ↓
-返回 SearchResult
-    ↓
-buildSearchResultsMessage() 构建消息
-    ↓
-MessageEditor.SendMessage() 发送消息
-    ↓
-保存结果到 UserSession
+Telegram → POST /webhook → internal/server/server.go
+    → internal/bot/webhook.go → 解析 Update
+    → callback.Registry.Dispatch() → Handler.Handle()
 ```
 
-### 选择流程
+### Polling 模式
 
 ```
-用户输入 "1"
-    ↓
-Handler.handleNumericInput()
-    ↓
-从 UserSession 获取 SearchResults
-    ↓
-计算索引: index = num + currentPage*8 - 1
-    ↓
-获取选中的 SearchItem
-    ↓
-buildItemDetailsMessage() 构建详情
-    ↓
-MessageEditor.EditMessage() 编辑消息
+Telegram (long polling) → internal/bot/poll.go
+    → 解析 Update → callback.Registry.Dispatch() → Handler.Handle()
 ```
 
-### 回调流程
+## 3. Callback 分发机制
+
+所有回调数据由 `internal/callback/types.go` 统一解析：
+
+- **格式**：`action:param1:value1:param2:value2`
+- **解析器**：`callback.NewParser().Parse(data)`
+- **白名单验证**：`validActions` 映射表防止非法回调
+- **分发**：`callback.Registry` 根据 `Action` 字段路由到对应 Handler
+
+已注册的 Actions 在 `internal/callback/types.go` 第 15-150 行定义。
+
+## 4. 模块职责划分
+
+### Handlers (`internal/handlers/`)
+
+处理 Telegram 回调和命令，返回响应。
+
+| 文件 | 职责 |
+|------|------|
+| `callback.go` | 通用回调处理（开始、返回、取消） |
+| `search.go` | 搜索、推荐、搜索历史 |
+| `request.go` | 创建求片请求 |
+| `menu.go` | 主菜单、我的请求、帮助 |
+| `review.go` | 审核系统 |
+| `admin.go` | 管理员功能 |
+| `feedback.go` | 用户反馈 |
+| `link.go` | 账号绑定 |
+| `search_history.go` | 搜索历史展示 |
+
+### Services (`internal/services/`)
+
+封装外部系统能力和业务逻辑。
+
+| 文件 | 职责 |
+|------|------|
+| `telegram.go` | Telegram Bot API 封装、消息发送 |
+| `moviepilot.go` | MoviePilot API 封装 |
+| `tmdb.go` | TMDB API 封装 |
+| `webhook.go` | Webhook 发送（Emby 通知） |
+| `search.go` | 搜索业务逻辑 |
+| `search_fallback.go` | 兜底搜索策略 |
+| `search_history*.go` | 搜索历史管理（内存/缓存/数据库） |
+| `review.go` | 审核业务逻辑 |
+| `quota.go` | 配额管理 |
+| `notification.go` | 通知发送 |
+| `user_mapping.go` | 用户映射 |
+| `admin.go` | 管理员功能 |
+| `issue.go` | Issue/反馈处理 |
+| `preferences.go` | 用户偏好 |
+
+### Session (`internal/session/`)
+
+管理用户会话状态，支持搜索结果分页、上下文保持。
+
+### Bot (`internal/bot/`)
+
+| 文件 | 职责 |
+|------|------|
+| `webhook.go` | Webhook 模式接收 Telegram 更新 |
+| `poll.go` | Polling 模式接收 Telegram 更新 |
+| `command.go` | 命令处理 |
+
+### UI (`internal/ui/`)
+
+消息构建器和键盘构建器。
+
+## 5. 目录结构
 
 ```
-用户点击按钮 "订阅"
-    ↓
-Handler.HandleCallback()
-    ↓
-CallbackParser.Parse() 解析回调
-    ↓
-根据 Action 调用对应的处理函数
-    ↓
-执行操作 (订阅/下载/翻页)
-    ↓
-MessageEditor.EditMessage() 更新消息
+YiMao/
+├── cmd/
+│   └── bot/
+│       └── main.go              # 程序入口
+├── internal/
+│   ├── bot/                      # Telegram 消息接收
+│   │   ├── webhook.go
+│   │   ├── poll.go
+│   │   └── command.go
+│   ├── callback/                 # 回调解析与分发
+│   │   └── types.go
+│   ├── config/                   # 配置管理
+│   │   └── config.go
+│   ├── handlers/                 # 回调处理器
+│   │   ├── callback.go
+│   │   ├── search.go
+│   │   ├── request.go
+│   │   ├── menu.go
+│   │   ├── review.go
+│   │   ├── admin.go
+│   │   ├── feedback.go
+│   │   ├── link.go
+│   │   └── search_history.go
+│   ├── middleware/               # HTTP 中间件
+│   ├── server/                   # HTTP 服务器
+│   │   └── server.go
+│   ├── services/                 # 业务服务层
+│   │   ├── telegram.go
+│   │   ├── moviepilot.go
+│   │   ├── tmdb.go
+│   │   ├── webhook.go
+│   │   ├── search.go
+│   │   ├── search_fallback.go
+│   │   ├── search_history.go
+│   │   ├── search_history_cache.go
+│   │   ├── search_history_db.go
+│   │   ├── review.go
+│   │   ├── quota.go
+│   │   ├── notification.go
+│   │   ├── user_mapping.go
+│   │   ├── admin.go
+│   │   ├── issue.go
+│   │   └── preferences.go
+│   ├── session/                  # 会话管理
+│   │   └── manager.go
+│   └── ui/                       # UI 构建
+│       ├── message_builder.go
+│       └── keyboard_builder.go
+├── ai/                           # AI 推荐模块
+│   └── search.go
+├── pkg/                          # 公共包
+│   └── types/
+└── data/                         # 运行时数据
 ```
 
-## 与 MoviePilot 的对比
+## 6. 代码分层
 
-| 特性 | MoviePilot | Emby Bot (新架构) |
-|------|-----------|-------------------|
-| 语言 | Python | Go |
-| 会话管理 | ✅ 30分钟超时 | ✅ 30分钟超时 |
-| 消息编辑 | ✅ 优先编辑 | ✅ 优先编辑 |
-| 分页支持 | ✅ 每页8条 | ✅ 每页8条 |
-| 回调系统 | ✅ 灵活格式 | ✅ 统一格式 |
-| Chain 模式 | ✅ 独立链 | ✅ 独立链 |
-| 长消息处理 | ✅ 自动拆分 | ✅ 自动拆分 |
-
-## 使用示例
-
-### 初始化
-
-```go
-botModule := NewBotModule()
-botModule.Init(
-    os.Getenv("TELEGRAM_BOT_TOKEN"),
-    os.Getenv("TELEGRAM_CHAT_ID"),
-    os.Getenv("JELLYSEERR_URL"),
-    os.Getenv("JELLYSEERR_API_KEY"),
-)
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        Telegram Bot API                      │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│  internal/bot/ (webhook.go, poll.go) - Update 接收           │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│  internal/callback/ (types.go) - 解析与分发                   │
+└─────────────────────────────────────────────────────────────┘
+                              ▲
+                              │
+┌─────────────────────────────────────────────────────────────┐
+│  internal/handlers/ - 回调处理                               │
+│  ┌──────────┬──────────┬──────────┬──────────┬────────────┐  │
+│  │ callback │  search  │ request  │  review  │   admin    │  │
+│  └──────────┴──────────┴──────────┴──────────┴────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+         ▲                              │
+         │                              ▼
+┌─────────────────────────┐  ┌─────────────────────────────────┐
+│  internal/services/     │  │  internal/session/              │
+│  - telegram             │  │  - 会话状态管理                   │
+│  - moviepilot           │  └─────────────────────────────────┘
+│  - tmdb                 │
+│  - search               │
+│  - review               │
+│  - notification         │
+└─────────────────────────┘
+         ▲
+         │
+┌─────────────────────────────────────────────────────────────┐
+│  外部系统：MoviePilot / Emby / TMDB                          │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### 注册路由
+## 7. 核心链路 vs 增强模块
 
-```go
-r.POST("/webhook", botModule.GinRoute())
-```
+### 核心链路（不可少）
+- 搜索：`handlers/search.go` + `services/search.go` + `services/moviepilot.go`
+- 请求：`handlers/request.go` + `services/review.go`
+- 通知：`services/notification.go` + `services/webhook.go`
 
-### 获取会话信息
+### 增强模块（可选）
+- AI 推荐：`ai/` 目录
+- 审核系统：`handlers/review.go` + `services/review.go`
+- 搜索历史：`handlers/search_history.go` + `services/search_history*.go`
 
-```go
-session := botModule.GetSession(userID)
-query, results, page, total := session.GetSearchResults()
-```
+### 管理运维模块
+- 管理员面板：`handlers/admin.go`
+- 配额管理：`services/quota.go`
+- 用户反馈：`handlers/feedback.go` + `services/issue.go`
 
-## 配置迁移
+## 8. Callback 格式规范
 
-所有现有功能保持不变，新架构内部使用:
+所有回调遵循统一格式：`action:key1:value1:key2:value2`
 
-1. 消息处理 → `bot.Handler`
-2. 会话管理 → `session.SessionManager`
-3. 回调处理 → `callback.CallbackParser`
-4. 业务逻辑 → `chain.*`
+| Action | 格式示例 | 说明 |
+|--------|----------|------|
+| `start` | `start` | 打开开始菜单 |
+| `search` | `search` 或 `search:type:trending` | 搜索/推荐 |
+| `detail` | `detail:id:123:type:movie` | 显示媒体详情 |
+| `request` | `request:id:123:type:movie` | 创建媒体请求 |
+| `back` | `back` | 返回上一页 |
+| `cancel` | `cancel` | 取消当前操作 |
+| `ai` | `ai:type:trending` | AI 推荐 |
+| `mood` | `mood` | 心情选片 |
 
-## 后续优化方向
+完整 Action 列表见 `internal/callback/types.go`。
 
-1. **AI 集成** - 添加 AI 智能体支持 (`/ai` 命令)
-2. **插件系统** - 支持动态插件加载
-3. **更多 Chain** - 添加更多业务链
-4. **Web UI** - 添加可视化管理界面
-5. **数据持久化** - 会话数据持久化到数据库
+## 9. 会话管理
 
----
+会话由 `internal/session/manager.go` 管理：
 
-**文档更新时间**: 2026-02-19
+- **超时时间**：30 分钟无活动自动清理
+- **存储内容**：搜索结果、当前页码、选中项、上下文数据
+- **用途**：支持分页、返回上一页、状态保持
+
+## 10. 数据存储
+
+| 类型 | 存储方式 | 位置 |
+|------|----------|------|
+| 会话数据 | 内存 | `session.Manager` |
+| 搜索历史 | SQLite | `data/search_history.db` |
+| 用户配额 | JSON | `user_quotas.json` |
+| 用户偏好 | JSON | `preferences.json` |
+| 用户映射 | JSON | `user_mappings.json` |
+| 绑定请求 | JSON | `binding_requests.json` |
