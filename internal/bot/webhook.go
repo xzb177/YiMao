@@ -211,6 +211,20 @@ func HandleWebhookMessage(
 			fmt.Fprint(w, "OK")
 			return
 		}
+
+		// Check if user is in a feedback follow-up conversation
+		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
+			if _, exists := sess.Get("feedback_conversation_issue_id"); exists {
+				log.Printf("[Webhook] User %d is in feedback follow-up conversation", msg.From.ID)
+				if err := deps.FeedbackHandler.HandleUserFollowUp(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
+					log.Printf("[Webhook] Failed to handle follow-up: %v", err)
+				}
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+		}
 	}
 
 	// Handle commands

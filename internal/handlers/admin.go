@@ -94,6 +94,23 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.handleAdminRemoveList(ctx)
 	case "admin_remove_confirm":
 		return h.handleAdminRemoveConfirm(ctx)
+	// Admin feedback panel callbacks
+	case "admin_feedback":
+		return h.handleFeedbackPanel(ctx)
+	case "admin_feedback_stats":
+		return h.handleFeedbackStats(ctx)
+	case "admin_feedback_list":
+		return h.handleFeedbackList(ctx)
+	case "admin_feedback_filter":
+		return h.handleFeedbackFilter(ctx)
+	case "admin_feedback_detail":
+		return h.handleFeedbackDetail(ctx)
+	case "admin_feedback_reply":
+		return h.handleFeedbackReply(ctx)
+	case "admin_feedback_priority":
+		return h.handleFeedbackPriority(ctx)
+	case "admin_feedback_template":
+		return h.handleFeedbackTemplate(ctx)
 	default:
 		return nil, nil
 	}
@@ -502,6 +519,17 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	msg.Text("请选择操作：").Newline()
 
 	kb := services.NewKeyboardBuilder()
+
+	// Feedback management panel
+	if h.issueService != nil {
+		stats := h.issueService.GetStats()
+		kb.AddButton("📊 反馈管理", "admin_feedback")
+		kb.NewRow()
+
+		msg.Bold("📊 反馈管理").Newline()
+		msg.Textf("   总反馈: %d | 待处理: %d", stats.Total, stats.Open).Newline()
+		msg.Newline()
+	}
 
 	// Media notification settings
 	log.Printf("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
@@ -1266,4 +1294,721 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 		ParseMode: msg.ParseMode(),
 		Keyboard:  convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// ============================================================
+// 管理员反馈面板模块
+// ============================================================
+
+// handleFeedbackPanel shows the main admin feedback panel with statistics
+func (h *AdminHandler) handleFeedbackPanel(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.issueService == nil {
+		return &callback.Response{
+			Text: "❌ 反馈服务未启用",
+			Edit: true,
+		}, nil
+	}
+
+	stats := h.issueService.GetStats()
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("📊 反馈管理面板").Newline()
+	msg.Newline()
+
+	// Statistics section
+	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("📈 统计数据").Newline()
+	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Textf("总反馈: %d  |  待处理: %d", stats.Total, stats.Open).Newline()
+	msg.Textf("处理中: %d   |  已解决: %d", stats.Processing, stats.Fixed).Newline()
+	msg.Textf("已关闭: %d   |  本周新增: %d", stats.Closed, stats.ThisWeek).Newline()
+	msg.Newline()
+
+	// Type distribution
+	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("🏷️ 类型分布").Newline()
+	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+
+	typeIcons := map[string]string{
+		"画质问题": "🎬",
+		"音频问题": "🔊",
+		"字幕问题": "📝",
+		"搜索不到": "🔍",
+		"播放问题": "⏯️",
+		"其他问题": "❓",
+	}
+
+	// Display type distribution
+	if len(stats.ByType) > 0 {
+		types := []string{"画质问题", "音频问题", "字幕问题", "搜索不到", "播放问题", "其他问题"}
+		for i, t := range types {
+			if count, ok := stats.ByType[t]; ok {
+				icon := typeIcons[t]
+				if icon == "" {
+					icon = "📌"
+				}
+				msg.Textf("%s %s: %d", icon, t, count)
+				if i%2 == 1 {
+					msg.Newline()
+				} else {
+					msg.Text("   | ")
+				}
+			}
+		}
+		msg.Newline()
+	} else {
+		msg.Text("暂无数据").Newline()
+	}
+
+	// Average resolve time
+	if stats.AvgResolveTime > 0 {
+		hours := int(stats.AvgResolveTime)
+		msg.Newline()
+		msg.Italic(fmt.Sprintf("⏱️ 平均解决时间: %d 小时", hours)).Newline()
+	}
+
+	kb := services.NewKeyboardBuilder()
+
+	// Action buttons (2 columns)
+	kb.AddButton("📋 全部反馈", "admin_feedback_list")
+	kb.AddButton("🔵 待处理", "admin_feedback_filter:status:open")
+	kb.NewRow()
+	kb.AddButton("🔧 处理中", "admin_feedback_filter:status:processing")
+	kb.AddButton("✅ 已解决", "admin_feedback_filter:status:fixed")
+	kb.NewRow()
+	kb.AddButton("🚫 已关闭", "admin_feedback_filter:status:closed")
+	kb.NewRow()
+
+	// Refresh button
+	kb.AddButton("🔄 刷新统计", "admin_feedback")
+	kb.NewRow()
+
+	// Return to admin menu
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleFeedbackStats shows detailed statistics (redirects to panel for now)
+func (h *AdminHandler) handleFeedbackStats(ctx *callback.Context) (*callback.Response, error) {
+	return h.handleFeedbackPanel(ctx)
+}
+
+// handleFeedbackList shows all feedback with pagination
+func (h *AdminHandler) handleFeedbackList(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.issueService == nil {
+		return &callback.Response{
+			Text: "❌ 反馈服务未启用",
+			Edit: true,
+		}, nil
+	}
+
+	// Get page from params
+	page := 1
+	if pageStr := ctx.Callback.Params["page"]; pageStr != "" {
+		fmt.Sscanf(pageStr, "%d", &page)
+	}
+
+	// Get all issues
+	issues := h.issueService.GetAllIssues()
+	const perPage = 10
+
+	totalPages := (len(issues) + perPage - 1) / perPage
+	if page < 1 {
+		page = 1
+	}
+	if page > totalPages && totalPages > 0 {
+		page = totalPages
+	}
+
+	startIdx := (page - 1) * perPage
+	endIdx := startIdx + perPage
+	if endIdx > len(issues) {
+		endIdx = len(issues)
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("📋 反馈列表").Newline()
+	msg.Newline()
+	msg.Textf("共 %d 条反馈", len(issues)).Newline()
+	if totalPages > 1 {
+		msg.Italic(fmt.Sprintf("第 %d/%d 页", page, totalPages)).Newline()
+	}
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	if startIdx >= endIdx {
+		msg.Text("暂无反馈").Newline()
+	} else {
+		for i := startIdx; i < endIdx; i++ {
+			issue := issues[i]
+			statusIcon := getStatusIconFromService(issue.Status)
+			priorityIcon := getPriorityIcon(issue.Priority)
+
+			mediaText := ""
+			if issue.MediaTitle != "" {
+				mediaText = fmt.Sprintf(" - %s", issue.MediaTitle)
+			}
+
+			msg.Textf("%d. %s [#%d]%s", i+1, statusIcon, issue.ID, mediaText).Newline()
+			msg.Textf("   %s %s", priorityIcon, issue.Title).Newline()
+			msg.Textf("   👤 %s | 🕐 %s", issue.UserName,
+				issue.CreatedAt.Format("01-02 15:04")).Newline()
+			msg.Newline()
+
+			// Detail button
+			kb.AddButton(fmt.Sprintf("#%d %s", issue.ID, getStatusTextFromService(issue.Status)),
+				fmt.Sprintf("admin_feedback_detail:id:%d", issue.ID))
+			kb.NewRow()
+		}
+	}
+
+	// Pagination buttons
+	if totalPages > 1 {
+		if page > 1 {
+			kb.AddButton("⬅️ 上一页", fmt.Sprintf("admin_feedback_list:page:%d", page-1))
+		}
+		if page < totalPages {
+			kb.AddButton("➡️ 下一页", fmt.Sprintf("admin_feedback_list:page:%d", page+1))
+		}
+		kb.NewRow()
+	}
+
+	kb.AddButton("📊 统计面板", "admin_feedback")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleFeedbackFilter shows filtered feedback by status
+func (h *AdminHandler) handleFeedbackFilter(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.issueService == nil {
+		return &callback.Response{
+			Text: "❌ 反馈服务未启用",
+			Edit: true,
+		}, nil
+	}
+
+	statusStr := ctx.Callback.Params["status"]
+	if statusStr == "" {
+		return h.handleFeedbackPanel(ctx)
+	}
+
+	var status services.IssueStatus
+	var statusTitle string
+
+	switch statusStr {
+	case "open":
+		status = services.IssueStatusOpen
+		statusTitle = "待处理"
+	case "processing":
+		status = services.IssueStatusProcessing
+		statusTitle = "处理中"
+	case "fixed":
+		status = services.IssueStatusFixed
+		statusTitle = "已解决"
+	case "closed":
+		status = services.IssueStatusClosed
+		statusTitle = "已关闭"
+	default:
+		return h.handleFeedbackPanel(ctx)
+	}
+
+	// Get filtered issues
+	issues := h.issueService.GetFilteredIssues([]services.IssueStatus{status}, 50)
+
+	msg := services.NewMessageBuilder()
+	msg.Bold(fmt.Sprintf("📋 %s反馈", statusTitle)).Newline()
+	msg.Newline()
+	msg.Textf("共 %d 条", len(issues)).Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	if len(issues) == 0 {
+		msg.Italic("暂无反馈").Newline()
+	} else {
+		for i, issue := range issues {
+			if i >= 20 { // Limit display
+				break
+			}
+			priorityIcon := getPriorityIcon(issue.Priority)
+			mediaText := ""
+			if issue.MediaTitle != "" {
+				mediaText = fmt.Sprintf(" - %s", issue.MediaTitle)
+			}
+
+			msg.Textf("%d. %s [#%d]%s", i+1, getStatusIconFromService(issue.Status), issue.ID, mediaText).Newline()
+			msg.Textf("   %s %s", priorityIcon, issue.Title).Newline()
+			msg.Textf("   👤 %s", issue.UserName).Newline()
+			msg.Newline()
+
+			kb.AddButton(fmt.Sprintf("#%d %s", issue.ID, issue.Title),
+				fmt.Sprintf("admin_feedback_detail:id:%d", issue.ID))
+			kb.NewRow()
+		}
+	}
+
+	kb.AddButton("📊 统计面板", "admin_feedback")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleFeedbackDetail shows feedback detail with action buttons
+func (h *AdminHandler) handleFeedbackDetail(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if h.issueService == nil {
+		return &callback.Response{
+			Text: "❌ 反馈服务未启用",
+			Edit: true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["id"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueID, err := strconv.ParseInt(issueIDStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🐛 反馈详情").Newline()
+	msg.Newline()
+	msg.Textf("编号: #%d", issue.ID).Newline()
+	msg.Textf("状态: %s %s", getStatusIconFromService(issue.Status), getStatusTextFromService(issue.Status)).Newline()
+	msg.Textf("优先级: %s", getPriorityText(issue.Priority)).Newline()
+	msg.Textf("类型: %s", issue.Title).Newline()
+	msg.Textf("用户: %s (%d)", issue.UserName, issue.UserID).Newline()
+
+	if issue.MediaTitle != "" {
+		mediaType := "电影"
+		if issue.MediaType == "tv" {
+			mediaType = "剧集"
+		}
+		msg.Textf("媒体: %s (%s)", issue.MediaTitle, mediaType).Newline()
+	}
+
+	msg.Newline()
+	msg.Bold("📝 问题描述:").Newline()
+	msg.Text(issue.Description).Newline()
+	msg.Newline()
+
+	// Show satisfaction rating if available
+	if issue.Satisfaction > 0 {
+		stars := ""
+		for i := 0; i < 5; i++ {
+			if i < issue.Satisfaction {
+				stars += "⭐"
+			} else {
+				stars += "☆"
+			}
+		}
+		msg.Textf("用户评分: %s (%d/5)", stars, issue.Satisfaction).Newline()
+		msg.Newline()
+	}
+
+	// Show replies if any
+	if len(issue.Replies) > 0 {
+		msg.Bold("💬 回复记录:").Newline()
+		for _, reply := range issue.Replies {
+			replyType := ""
+			if reply.Type == "admin" {
+				replyType = "[管理员] "
+			} else if reply.Type == "user" {
+				replyType = "[用户] "
+			}
+			msg.Textf("  %s%s: %s", replyType, reply.AuthorName, reply.Content).Newline()
+		}
+		msg.Newline()
+	}
+
+	msg.Italic(fmt.Sprintf("🕐 提交: %s", issue.CreatedAt.Format("2006-01-02 15:04"))).Newline()
+	if issue.ResolvedAt != nil {
+		msg.Italic(fmt.Sprintf("✅ 解决: %s", issue.ResolvedAt.Format("2006-01-02 15:04"))).Newline()
+	}
+
+	kb := services.NewKeyboardBuilder()
+
+	// Action buttons based on current status
+	switch issue.Status {
+	case services.IssueStatusOpen, services.IssueStatusReply:
+		kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
+		kb.AddButton("🔧 处理中", fmt.Sprintf("admin_issue_processing:id:%d", issue.ID))
+		kb.NewRow()
+	case services.IssueStatusProcessing:
+		kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
+		kb.AddButton("✅ 已解决", fmt.Sprintf("admin_issue_fixed:id:%d", issue.ID))
+		kb.NewRow()
+	}
+
+	// Priority buttons
+	if issue.Status != services.IssueStatusClosed && issue.Status != services.IssueStatusFixed {
+		kb.AddButton("🔴 高优先级", fmt.Sprintf("admin_feedback_priority:id:%d:priority:high", issue.ID))
+		kb.AddButton("🟢 低优先级", fmt.Sprintf("admin_feedback_priority:id:%d:priority:low", issue.ID))
+		kb.NewRow()
+	}
+
+	// Close button (if not already closed)
+	if issue.Status != services.IssueStatusClosed {
+		kb.AddButton("🚫 关闭", fmt.Sprintf("admin_issue_close:id:%d", issue.ID))
+		kb.NewRow()
+	}
+
+	kb.AddButton("⬅️ 返回列表", "admin_feedback_list")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleFeedbackReply handles admin reply to feedback
+func (h *AdminHandler) handleFeedbackReply(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["id"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueID, err := strconv.ParseInt(issueIDStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Store pending reply in session
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("pending_feedback_reply", issueID)
+
+	// Get issue details
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("💬 回复反馈").Newline()
+	msg.Newline()
+	msg.Textf("问题编号: #%d", issueID).Newline()
+	msg.Textf("问题类型: %s", issue.Title).Newline()
+	msg.Newline()
+	msg.Bold("请选择快捷回复或直接输入回复内容").Newline()
+	msg.Newline()
+
+	kb := services.NewKeyboardBuilder()
+
+	// Add reply template buttons
+	templates := services.GetReplyTemplates()
+	for i, tmpl := range templates {
+		callbackData := fmt.Sprintf("admin_feedback_template:id:%d:template:%d", issueID, i)
+		kb.AddButton(tmpl.Name, callbackData)
+		if i%2 == 1 {
+			kb.NewRow()
+		}
+	}
+	if len(templates)%2 != 0 {
+		kb.NewRow()
+	}
+
+	kb.AddButton("❌ 取消", "admin_feedback")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		ParseMode: msg.ParseMode(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// handleFeedbackPriority handles priority adjustment
+func (h *AdminHandler) handleFeedbackPriority(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["id"]
+	priorityStr := ctx.Callback.Params["priority"]
+
+	if issueIDStr == "" || priorityStr == "" {
+		return &callback.Response{
+			CallbackMsg: "参数错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueID, err := strconv.ParseInt(issueIDStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	var priority services.IssuePriority
+	switch priorityStr {
+	case "urgent":
+		priority = services.PriorityUrgent
+	case "high":
+		priority = services.PriorityHigh
+	case "medium":
+		priority = services.PriorityMedium
+	case "low":
+		priority = services.PriorityLow
+	default:
+		return &callback.Response{
+			CallbackMsg: "无效的优先级",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if err := h.issueService.UpdatePriority(issueID, priority); err != nil {
+		log.Printf("[AdminHandler] Failed to update priority: %v", err)
+		return &callback.Response{
+			CallbackMsg: "更新失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	return h.handleFeedbackDetail(ctx)
+}
+
+// handleFeedbackTemplate handles quick reply template selection
+func (h *AdminHandler) handleFeedbackTemplate(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["id"]
+	templateIdxStr := ctx.Callback.Params["template"]
+
+	if issueIDStr == "" || templateIdxStr == "" {
+		return &callback.Response{
+			CallbackMsg: "参数错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueID, err := strconv.ParseInt(issueIDStr, 10, 64)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	templateIdx := 0
+	fmt.Sscanf(templateIdxStr, "%d", &templateIdx)
+
+	templates := services.GetReplyTemplates()
+	if templateIdx < 0 || templateIdx >= len(templates) {
+		return &callback.Response{
+			CallbackMsg: "无效的模板",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	template := templates[templateIdx]
+
+	// Add the reply
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get admin name
+	adminName := "管理员"
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	if name, ok := sess.GetString("name"); ok && name != "" {
+		adminName = name
+	}
+
+	_, err = h.issueService.AddReply(issueID, ctx.UserID, adminName, template.Content, "admin")
+	if err != nil {
+		log.Printf("[AdminHandler] Failed to add reply: %v", err)
+		return &callback.Response{
+			CallbackMsg: "回复失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Notify the user about the reply
+	if issue.UserID != ctx.UserID {
+		notifyMsg := services.NewMessageBuilder()
+		notifyMsg.Bold("💬 管理员回复了您的反馈").Newline()
+		notifyMsg.Newline()
+		notifyMsg.Textf("问题编号: #%d", issue.ID).Newline()
+		notifyMsg.Textf("问题类型: %s", issue.Title).Newline()
+		notifyMsg.Newline()
+		notifyMsg.Bold("回复内容:").Newline()
+		notifyMsg.Text(template.Content).Newline()
+		notifyMsg.Newline()
+		notifyMsg.Italic("💬 您可以继续回复此消息进行追问").Newline()
+
+		// Set session for user follow-up
+		userSess := h.sessMgr.GetOrCreate(issue.UserID)
+		userSess.Set("feedback_conversation_issue_id", float64(issueID))
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回主菜单", "start")
+
+		h.telegram.SendMessage(issue.UserID, notifyMsg.Build(), "HTML", kb.Build())
+	}
+
+	return h.handleFeedbackDetail(ctx)
+}
+
+// Helper functions for status and priority display
+
+func getStatusIconFromService(status services.IssueStatus) string {
+	switch status {
+	case services.IssueStatusOpen:
+		return "🔵"
+	case services.IssueStatusReply:
+		return "💬"
+	case services.IssueStatusProcessing:
+		return "🔧"
+	case services.IssueStatusFixed:
+		return "✅"
+	case services.IssueStatusClosed:
+		return "🚫"
+	default:
+		return "⚪"
+	}
+}
+
+func getStatusTextFromService(status services.IssueStatus) string {
+	switch status {
+	case services.IssueStatusOpen:
+		return "待处理"
+	case services.IssueStatusReply:
+		return "已回复"
+	case services.IssueStatusProcessing:
+		return "处理中"
+	case services.IssueStatusFixed:
+		return "已解决"
+	case services.IssueStatusClosed:
+		return "已关闭"
+	default:
+		return "未知"
+	}
+}
+
+func getPriorityIcon(priority services.IssuePriority) string {
+	switch priority {
+	case services.PriorityUrgent:
+		return "🔴"
+	case services.PriorityHigh:
+		return "🟠"
+	case services.PriorityMedium:
+		return "🟡"
+	case services.PriorityLow:
+		return "🟢"
+	default:
+		return "⚪"
+	}
+}
+
+func getPriorityText(priority services.IssuePriority) string {
+	switch priority {
+	case services.PriorityUrgent:
+		return "🔴 紧急"
+	case services.PriorityHigh:
+		return "🟠 高"
+	case services.PriorityMedium:
+		return "🟡 中"
+	case services.PriorityLow:
+		return "🟢 低"
+	default:
+		return "⚪ 未知"
+	}
 }

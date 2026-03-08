@@ -126,6 +126,26 @@ var validActions = map[Action]bool{
 	// Request related actions
 	"force_subscribe": true,
 	"cancel_request":  true,
+
+	// Admin Feedback Panel actions
+	"admin_feedback":         true, // Feedback management main panel
+	"admin_feedback_stats":   true, // Feedback statistics
+	"admin_feedback_list":    true, // Feedback list
+	"admin_feedback_filter":  true, // Filter by status
+	"admin_feedback_close":   true, // Admin force close
+	"admin_feedback_priority": true, // Adjust priority
+	"admin_feedback_detail":  true, // View feedback detail
+	"admin_feedback_reply":   true, // Reply to feedback
+	"admin_feedback_template": true, // Quick reply template
+
+	// User Feedback actions
+	"feedback_follow_up": true, // User follow-up message
+	"feedback_close":     true, // User close feedback
+	"feedback_rate_1":    true, // 1 star rating
+	"feedback_rate_2":    true, // 2 star rating
+	"feedback_rate_3":    true, // 3 star rating
+	"feedback_rate_4":    true, // 4 star rating
+	"feedback_rate_5":    true, // 5 star rating
 }
 
 // isValidAction checks if an action is in the whitelist

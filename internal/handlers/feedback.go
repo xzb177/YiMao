@@ -55,6 +55,16 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 		return h.handleViewDetail(ctx, issueIDStr)
 	}
 
+	// Check if user is closing feedback
+	if _, hasClose := ctx.Callback.Params["close"]; hasClose {
+		return h.handleCloseByUser(ctx)
+	}
+
+	// Check if user is rating satisfaction
+	if ratingStr, hasRating := ctx.Callback.Params["rate"]; hasRating {
+		return h.handleRateSatisfaction(ctx, ratingStr)
+	}
+
 	// Check if this is a type selection
 	// When user clicks an issue type button, callback is like: feedback:issue_type:quality:id:xxx
 	issueTypeParam, hasIssueType := ctx.Callback.Params["issue_type"]
@@ -515,6 +525,10 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 		}, nil
 	}
 
+	// Set session for follow-up
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("feedback_conversation_issue_id", float64(issueID))
+
 	msg := services.NewMessageBuilder()
 	msg.Bold("🐛 反馈详情").Newline()
 	msg.Newline()
@@ -537,9 +551,15 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 
 	// Show replies if any
 	if len(issue.Replies) > 0 {
-		msg.Bold("💬 管理员回复:").Newline()
+		msg.Bold("💬 回复记录:").Newline()
 		for _, reply := range issue.Replies {
-			msg.Textf("  %s: %s", reply.AuthorName, reply.Content).Newline()
+			replyType := ""
+			if reply.Type == "admin" {
+				replyType = "[管理员] "
+			} else if reply.Type == "user" {
+				replyType = "[您] "
+			}
+			msg.Textf("  %s%s: %s", replyType, reply.AuthorName, reply.Content).Newline()
 		}
 		msg.Newline()
 	}
@@ -547,6 +567,46 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 	msg.Italic(fmt.Sprintf("🕐 提交时间: %s", issue.CreatedAt.Format("2006-01-02 15:04"))).Newline()
 
 	kb := services.NewKeyboardBuilder()
+
+	// Add action buttons based on status
+	if issue.Status == services.IssueStatusFixed {
+		// Show rating prompt if not yet rated
+		if issue.Satisfaction == 0 {
+			msg.Newline()
+			msg.Bold("⭐ 请为本次处理评分").Newline()
+			kb.AddButton("⭐", fmt.Sprintf("feedback:rate:1:id:%d", issue.ID))
+			kb.AddButton("⭐⭐", fmt.Sprintf("feedback:rate:2:id:%d", issue.ID))
+			kb.AddButton("⭐⭐⭐", fmt.Sprintf("feedback:rate:3:id:%d", issue.ID))
+			kb.AddButton("⭐⭐⭐⭐", fmt.Sprintf("feedback:rate:4:id:%d", issue.ID))
+			kb.AddButton("⭐⭐⭐⭐⭐", fmt.Sprintf("feedback:rate:5:id:%d", issue.ID))
+			kb.NewRow()
+		} else {
+			// Show existing rating
+			stars := ""
+			for i := 0; i < 5; i++ {
+				if i < issue.Satisfaction {
+					stars += "⭐"
+				} else {
+					stars += "☆"
+				}
+			}
+			msg.Newline()
+			msg.Textf("您的评分: %s (%d/5)", stars, issue.Satisfaction).Newline()
+		}
+	}
+
+	// If issue is not closed, allow user to close it
+	if issue.Status != services.IssueStatusClosed {
+		kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
+		kb.NewRow()
+	}
+
+	// If there are admin replies, show follow-up prompt
+	if len(issue.Replies) > 0 && issue.Status != services.IssueStatusClosed {
+		msg.Newline()
+		msg.Italic("💬 您可以直接回复此消息进行追问").Newline()
+	}
+
 	kb.AddButton("⬅️ 返回列表", "feedback:view")
 	kb.NewRow()
 	kb.AddButton("🏠 返回主菜单", "start")
@@ -592,4 +652,226 @@ func getStatusText(status services.IssueStatus) string {
 	default:
 		return "未知"
 	}
+}
+
+// ============================================================
+// 用户交互增强模块
+// ============================================================
+
+// handleUserFollowUp handles user follow-up messages to an existing feedback
+func (h *FeedbackHandler) HandleUserFollowUp(userID int64, chatID int64, text string) error {
+	sess := h.sessMgr.GetOrCreate(userID)
+
+	// Check if user has an active feedback conversation
+	issueIDVal, exists := sess.Get("feedback_conversation_issue_id")
+	if !exists {
+		return nil // Not in a follow-up conversation
+	}
+
+	var issueID int64
+	switch v := issueIDVal.(type) {
+	case float64:
+		issueID = int64(v)
+	case int64:
+		issueID = v
+	case string:
+		fmt.Sscanf(v, "%d", &issueID)
+	default:
+		return fmt.Errorf("invalid issue ID type")
+	}
+
+	if issueID == 0 {
+		return nil
+	}
+
+	// Get issue to verify ownership
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists || issue.UserID != userID {
+		// Clear the invalid session
+		sess.Delete("feedback_conversation_issue_id")
+		return nil
+	}
+
+	// Add user follow-up as a reply
+	userName := "用户"
+	if nameVal, ok := sess.Get("name"); ok && nameVal != "" {
+		if name, ok := nameVal.(string); ok {
+			userName = name
+		}
+	}
+
+	_, err := h.issueService.AddReply(issueID, userID, userName, text, "user")
+	if err != nil {
+		log.Printf("[FeedbackHandler] Failed to add follow-up: %v", err)
+		return err
+	}
+
+	// Confirm to user
+	confirmMsg := services.NewMessageBuilder()
+	confirmMsg.Bold("💬 追问已发送").Newline()
+	confirmMsg.Newline()
+	confirmMsg.Textf("问题编号: #%d", issueID).Newline()
+	confirmMsg.Italic("管理员已收到您的追问，会尽快回复").Newline()
+
+	h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", nil)
+
+	// Notify admins
+	go h.notifyAdminFollowUp(issueID, text, userName)
+
+	return nil
+}
+
+// notifyAdminFollowUp sends notification to admins about user follow-up
+func (h *FeedbackHandler) notifyAdminFollowUp(issueID int64, text, userName string) {
+	if h.adminService == nil {
+		return
+	}
+
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists {
+		return
+	}
+
+	adminIDs := h.adminService.GetAdminIDs()
+	if len(adminIDs) == 0 {
+		return
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("💬 用户追问").Newline()
+	msg.Newline()
+	msg.Textf("🐛 问题 #%d", issue.ID).Newline()
+	msg.Textf("👤 用户: %s", userName).Newline()
+	msg.Newline()
+	msg.Bold("📝 追问内容:").Newline()
+	msg.Text(text).Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
+	kb.AddButton("✅ 已解决", fmt.Sprintf("admin_issue_fixed:id:%d", issue.ID))
+
+	message := msg.Build()
+	keyboard := kb.Build()
+
+	// Send to all admins
+	for _, adminID := range adminIDs {
+		if _, err := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err != nil {
+			log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+		}
+	}
+}
+
+// handleCloseByUser handles user closing their own feedback
+func (h *FeedbackHandler) handleCloseByUser(ctx *callback.Context) (*callback.Response, error) {
+	if h.issueService == nil {
+		return &callback.Response{
+			CallbackMsg: "功能暂不可用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issueIDStr := ctx.Callback.Params["close"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	var issueID int64
+	fmt.Sscanf(issueIDStr, "%d", &issueID)
+
+	// Close the issue (will verify ownership)
+	err := h.issueService.CloseByUser(issueID, ctx.UserID)
+	if err != nil {
+		return &callback.Response{
+			CallbackMsg: err.Error(),
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Clear follow-up session if exists
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Delete("feedback_conversation_issue_id")
+
+	return h.handleViewList(ctx)
+}
+
+// handleRateSatisfaction handles user satisfaction rating
+func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingStr string) (*callback.Response, error) {
+	if h.issueService == nil {
+		return &callback.Response{
+			CallbackMsg: "功能暂不可用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	rating := 0
+	fmt.Sscanf(ratingStr, "%d", &rating)
+
+	if rating < 1 || rating > 5 {
+		return &callback.Response{
+			CallbackMsg: "无效的评分",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get issue ID from params
+	issueIDStr := ctx.Callback.Params["id"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	var issueID int64
+	fmt.Sscanf(issueIDStr, "%d", &issueID)
+
+	// Verify ownership and get issue
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists || issue.UserID != ctx.UserID {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Save rating
+	if err := h.issueService.RateSatisfaction(issueID, rating); err != nil {
+		log.Printf("[FeedbackHandler] Failed to save rating: %v", err)
+		return &callback.Response{
+			CallbackMsg: "评分失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Show success message
+	stars := ""
+	for i := 0; i < 5; i++ {
+		if i < rating {
+			stars += "⭐"
+		} else {
+			stars += "☆"
+		}
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("✅ 感谢您的评价").Newline()
+	msg.Newline()
+	msg.Textf("问题编号: #%d", issueID).Newline()
+	msg.Textf("您的评分: %s", stars).Newline()
+	msg.Newline()
+	msg.Italic("💡 您的评价将帮助我们改进服务").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回列表", "feedback:view")
+	kb.AddButton("🏠 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		CallbackMsg: "感谢评价",
+	}, nil
 }

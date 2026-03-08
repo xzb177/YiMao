@@ -408,6 +408,25 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		log.Println("    - Search History callbacks registered")
 	}
 
+	// Admin Feedback Panel callbacks
+	registry.RegisterFunc("admin_feedback", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_stats", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_list", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_filter", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_detail", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_reply", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_priority", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_template", adminHandler.Handle)
+
+	// User Feedback interaction callbacks
+	registry.RegisterFunc("feedback_follow_up", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_close", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_rate_1", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_rate_2", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_rate_3", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_rate_4", feedbackHandler.Handle)
+	registry.RegisterFunc("feedback_rate_5", feedbackHandler.Handle)
+
 	log.Println("✅ Callback handlers registered")
 
 	// Build full dependencies

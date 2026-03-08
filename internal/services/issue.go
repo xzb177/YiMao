@@ -47,6 +47,8 @@ type Issue struct {
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
 	Replies     []IssueReply `json:"replies"`
+	Satisfaction int         `json:"satisfaction,omitempty"` // 1-5 星评价
+	ResolvedAt  *time.Time   `json:"resolved_at,omitempty"`  // 解决时间
 }
 
 // IssueReply represents a reply to an issue
@@ -56,7 +58,7 @@ type IssueReply struct {
 	AuthorID  int64     `json:"author_id"`
 	AuthorName string    `json:"author_name"`
 	Content   string    `json:"content"`
-	Type      string    `json:"type"` // "template", "custom"
+	Type      string    `json:"type"` // "template", "custom", "admin", "user"
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -286,4 +288,227 @@ func (s *IssueService) cleanupOldIssues() int {
 	}
 
 	return removed
+}
+
+// FeedbackStats represents feedback statistics
+type FeedbackStats struct {
+	Total          int              `json:"total"`
+	Open           int              `json:"open"`
+	Processing     int              `json:"processing"`
+	Fixed          int              `json:"fixed"`
+	Closed         int              `json:"closed"`
+	ThisWeek       int              `json:"this_week"`
+	ThisMonth      int              `json:"this_month"`
+	ByType         map[string]int   `json:"by_type"`
+	AvgResolveTime float64          `json:"avg_resolve_time"` // Average resolution time in hours
+}
+
+// GetStats returns feedback statistics
+func (s *IssueService) GetStats() *FeedbackStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	stats := &FeedbackStats{
+		ByType: make(map[string]int),
+	}
+
+	now := time.Now()
+	weekAgo := now.AddDate(0, 0, -7)
+	monthAgo := now.AddDate(0, -1, 0)
+
+	var totalResolveTime float64
+	var resolvedCount int
+
+	for _, issue := range s.issues {
+		stats.Total++
+
+		// Count by status
+		switch issue.Status {
+		case IssueStatusOpen, IssueStatusReply:
+			stats.Open++
+		case IssueStatusProcessing:
+			stats.Processing++
+		case IssueStatusFixed:
+			stats.Fixed++
+		case IssueStatusClosed:
+			stats.Closed++
+		}
+
+		// Count by time period
+		if issue.CreatedAt.After(weekAgo) {
+			stats.ThisWeek++
+		}
+		if issue.CreatedAt.After(monthAgo) {
+			stats.ThisMonth++
+		}
+
+		// Count by type
+		if issue.Title != "" {
+			stats.ByType[issue.Title]++
+		} else {
+			stats.ByType["其他"]++
+		}
+
+		// Calculate average resolve time
+		if issue.ResolvedAt != nil {
+			duration := issue.ResolvedAt.Sub(issue.CreatedAt).Hours()
+			totalResolveTime += duration
+			resolvedCount++
+		}
+	}
+
+	if resolvedCount > 0 {
+		stats.AvgResolveTime = totalResolveTime / float64(resolvedCount)
+	}
+
+	return stats
+}
+
+// GetFilteredIssues returns issues filtered by status
+func (s *IssueService) GetFilteredIssues(statuses []IssueStatus, limit int) []*Issue {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	statusMap := make(map[IssueStatus]bool)
+	for _, status := range statuses {
+		statusMap[status] = true
+	}
+
+	var filtered []*Issue
+	for _, issue := range s.issues {
+		if statusMap[issue.Status] {
+			filtered = append(filtered, issue)
+		}
+	}
+
+	// Sort by created date (newest first)
+	for i := 0; i < len(filtered); i++ {
+		for j := i + 1; j < len(filtered); j++ {
+			if filtered[i].CreatedAt.Before(filtered[j].CreatedAt) {
+				filtered[i], filtered[j] = filtered[j], filtered[i]
+			}
+		}
+	}
+
+	if limit > 0 && len(filtered) > limit {
+		filtered = filtered[:limit]
+	}
+
+	return filtered
+}
+
+// GetAllIssues returns all issues (for admin panel)
+func (s *IssueService) GetAllIssues() []*Issue {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var all []*Issue
+	for _, issue := range s.issues {
+		all = append(all, issue)
+	}
+
+	// Sort by created date (newest first)
+	for i := 0; i < len(all); i++ {
+		for j := i + 1; j < len(all); j++ {
+			if all[i].CreatedAt.Before(all[j].CreatedAt) {
+				all[i], all[j] = all[j], all[i]
+			}
+		}
+	}
+
+	return all
+}
+
+// UpdatePriority updates the priority of an issue
+func (s *IssueService) UpdatePriority(issueID int64, priority IssuePriority) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if issue, exists := s.issues[issueID]; exists {
+		issue.Priority = priority
+		issue.UpdatedAt = time.Now()
+		return s.save()
+	}
+
+	return fmt.Errorf("issue not found: %d", issueID)
+}
+
+// RateSatisfaction records user satisfaction rating
+func (s *IssueService) RateSatisfaction(issueID int64, rating int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if issue, exists := s.issues[issueID]; exists {
+		issue.Satisfaction = rating
+		issue.UpdatedAt = time.Now()
+		return s.save()
+	}
+
+	return fmt.Errorf("issue not found: %d", issueID)
+}
+
+// CloseByUser closes an issue by the user who reported it
+func (s *IssueService) CloseByUser(issueID int64, userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	issue, exists := s.issues[issueID]
+	if !exists {
+		return fmt.Errorf("issue not found: %d", issueID)
+	}
+
+	// Only the user who created the issue can close it
+	if issue.UserID != userID {
+		return fmt.Errorf("user %d is not allowed to close issue %d", userID, issueID)
+	}
+
+	issue.Status = IssueStatusClosed
+	issue.UpdatedAt = time.Now()
+	return s.save()
+}
+
+// GetIssuesByStatus returns issues with a specific status
+func (s *IssueService) GetIssuesByStatus(status IssueStatus) []*Issue {
+	return s.GetFilteredIssues([]IssueStatus{status}, 0)
+}
+
+// UpdateStatusWithNotify updates status and sets resolved time if fixed/closed
+func (s *IssueService) UpdateStatusWithNotify(issueID int64, status IssueStatus) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	issue, exists := s.issues[issueID]
+	if !exists {
+		return fmt.Errorf("issue not found: %d", issueID)
+	}
+
+	issue.Status = status
+	issue.UpdatedAt = time.Now()
+
+	// Set resolved time for fixed or closed status
+	if status == IssueStatusFixed || status == IssueStatusClosed {
+		now := time.Now()
+		issue.ResolvedAt = &now
+	}
+
+	return s.save()
+}
+
+// ReplyTemplate represents a quick reply template
+type ReplyTemplate struct {
+	Name    string `json:"name"`
+	Content string `json:"content"`
+}
+
+// GetReplyTemplates returns available reply templates
+func GetReplyTemplates() []ReplyTemplate {
+	return []ReplyTemplate{
+		{"已收到", "感谢反馈，我们已收到并正在处理。"},
+		{"需要信息", "请问您能提供更多细节吗？比如具体的剧集或时间点。"},
+		{"已修复", "问题已修复，请重试。"},
+		{"正在处理", "我们正在处理此问题，请耐心等待。"},
+		{"需要更多时间", "此问题需要更多时间调查，我们会尽快更新进展。"},
+		{"无法复现", "我们暂时无法复现此问题，请提供更多详细信息。"},
+		{"版本更新", "请尝试更新到最新版本后重试。"},
+	}
 }

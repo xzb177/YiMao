@@ -149,6 +149,18 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 			}
 			return
 		}
+
+		// Check if user is in a feedback follow-up conversation
+		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
+			if _, exists := sess.Get("feedback_conversation_issue_id"); exists {
+				log.Printf("[Poll] User %d is in feedback follow-up conversation", msg.From.ID)
+				if err := deps.FeedbackHandler.HandleUserFollowUp(msg.From.ID, msg.Chat.ID, sanitizedText); err != nil {
+					log.Printf("[Poll] Failed to handle follow-up: %v", err)
+				}
+				return
+			}
+		}
 	}
 
 	// Check if user is in "waiting for add admin" state
