@@ -1,12 +1,67 @@
 # 更新指南
 
-本文档指导如何安全地更新 Emby Telegram Bot。
+> 💡 **新用户提示**：如果你是第一次使用本 Bot，请先查看 [README.md](README.md) 的快速上手部分，完成初始部署后再使用本文档进行更新。
+
+---
+
+## 📋 快速更新（推荐）
+
+对于大多数用户，使用一键更新脚本即可：
+
+```bash
+./update.sh
+```
+
+这个脚本会自动完成：
+1. ✅ 备份所有数据
+2. ✅ 拉取最新代码
+3. ✅ 显示更新内容
+4. ✅ 重新构建并启动
+5. ✅ 检查容器状态
+
+**更新命令对比**：
+
+| 命令 | 说明 | 推荐场景 |
+|------|------|---------|
+| `./update.sh` | 一键更新脚本 | **日常更新（推荐）** |
+| `./manage.sh update` | 管理脚本更新 | 习惯使用 manage.sh |
+| 手动更新 | 逐步执行 | 需要更多控制 |
+
+---
+
+## 🆕 新用户首次更新
+
+如果你刚刚完成首次部署，想获取最新代码：
+
+```bash
+# 1. 进入项目目录
+cd YiMao
+
+# 2. 拉取最新代码
+git pull origin master
+
+# 3. 重新构建（如有代码更新）
+docker compose build
+
+# 4. 重启容器
+docker compose up -d --force-recreate
+
+# 5. 验证运行状态
+docker ps | grep emby-telegram-bot
+```
+
+**首次更新提示**：
+- 📂 数据会保留在 Docker 卷中，更新不会影响
+- 🔐 如果 `.env.example` 有更新，记得检查对比
+- 📱 更新后在 Telegram 发送 `/start` 测试
+
+---
 
 ## 更新前准备
 
 ### 1. 备份数据
 
-在更新前，**务必备份**以下数据：
+更新脚本会自动备份，你也可以手动备份：
 
 ```bash
 # 创建备份目录
@@ -44,11 +99,50 @@ git log origin/master --oneline -10
 cat CHANGELOG.md | head -50
 ```
 
+---
+
 ## 更新方法
 
-### 方法一：使用管理脚本（推荐）
+### 方法一：使用 update.sh 脚本（最简单）
 
-最简单的方式，自动完成所有步骤：
+```bash
+./update.sh
+```
+
+**输出示例**：
+```
+======================================
+   YiMao Bot 更新脚本
+======================================
+
+▶️  检查运行环境...
+✅ 运行环境检查通过
+
+▶️  创建数据备份...
+✅ 已备份 data/ 目录
+✅ 已备份 .env 配置
+ℹ️  备份位置: ./backup-20260308-120000
+
+▶️  拉取最新代码...
+✅ 代码已更新
+ℹ️  从 abc1234 更新到 def5678
+
+▶️  本次更新内容:
+  • fix(search-ui): improve search history UI
+  • chore: remove unused image files
+
+▶️  构建 Docker 镜像...
+✅ 镜像构建成功
+
+▶️  重启容器...
+✅ 容器已启动
+
+======================================
+   更新完成！
+======================================
+```
+
+### 方法二：使用 manage.sh
 
 ```bash
 ./manage.sh update
@@ -60,7 +154,7 @@ cat CHANGELOG.md | head -50
 3. 停止旧容器
 4. 启动新容器
 
-### 方法二：手动更新
+### 方法三：手动更新
 
 如果需要更多控制，可以手动执行每个步骤：
 
@@ -79,7 +173,7 @@ docker compose build
 docker compose up -d --force-recreate
 ```
 
-### 方法三：指定版本更新
+### 方法四：指定版本更新
 
 如果需要更新到特定版本：
 
@@ -94,6 +188,8 @@ git checkout v1.2.3
 docker compose build
 docker compose up -d --force-recreate
 ```
+
+---
 
 ## 更新后验证
 
@@ -136,6 +232,8 @@ docker logs emby-telegram-bot --tail 50
 ls -la /app/data/
 exit
 ```
+
+---
 
 ## 回滚方法
 
@@ -184,6 +282,8 @@ docker compose down
 # 然后重新启动
 docker compose up -d
 ```
+
+---
 
 ## 常见问题
 
@@ -251,28 +351,7 @@ nano .env
 docker compose restart
 ```
 
-## 自动更新（可选）
-
-如果希望自动更新，可以设置 cron 任务：
-
-```bash
-# 编辑 crontab
-crontab -e
-
-# 添加每天凌晨 3 点检查更新（不自动安装）
-0 3 * * * cd /path/to/YiMao && git fetch origin && git diff HEAD origin/master | grep -q "." && echo "New version available" | telegram-cli
-
-# 或者直接更新（谨慎使用）
-0 3 * * * cd /path/to/YiMao && ./manage.sh update >> /var/log/bot-update.log 2>&1
-```
-
-## 更新通知
-
-建议关注以下渠道获取更新信息：
-
-- GitHub Releases: https://github.com/xzb177/YiMao/releases
-- GitHub Commits: https://github.com/xzb177/YiMao/commits/master
-- CHANGELOG.md: 项目更新日志
+---
 
 ## 更新检查清单
 
@@ -292,6 +371,8 @@ crontab -e
 - [ ] Bot 响应正常
 - [ ] 数据完整性检查通过
 - [ ] 功能测试通过
+
+---
 
 ## 获取帮助
 
