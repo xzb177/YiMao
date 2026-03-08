@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -79,6 +78,9 @@ type MediaNotificationService struct {
 	// Daily pending items (key: adminID -> date -> items)
 	pendingItems map[string]map[string][]*MediaItem // "adminID" -> "YYYY-MM-DD" -> items
 
+	// Title resolver
+	titleResolver *TitleResolver
+
 	mu sync.RWMutex
 
 	// Channels
@@ -91,14 +93,15 @@ func NewMediaNotificationService(dataDir string, telegram *TelegramClient, admin
 	dataFile := fmt.Sprintf("%s/media_notifications.json", dataDir)
 
 	service := &MediaNotificationService{
-		dataFile:     dataFile,
-		telegram:     telegram,
-		adminService: adminService,
-		groupChatID:  groupChatID,
-		settings:     make(map[int64]*AdminNotificationSettings),
-		pendingItems: make(map[string]map[string][]*MediaItem),
-		itemChan:     make(chan *MediaItem, 100),
-		doneChan:     make(chan struct{}),
+		dataFile:      dataFile,
+		telegram:      telegram,
+		adminService:  adminService,
+		groupChatID:   groupChatID,
+		settings:      make(map[int64]*AdminNotificationSettings),
+		pendingItems:  make(map[string]map[string][]*MediaItem),
+		titleResolver: NewTitleResolver(),
+		itemChan:      make(chan *MediaItem, 100),
+		doneChan:      make(chan struct{}),
 	}
 
 	service.load()
@@ -639,103 +642,126 @@ func (s *MediaNotificationService) sendDailySummary(adminID int64, items []*Medi
 // formatDailySummary formats a daily summary message
 func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*MediaItem) string {
 	var builder strings.Builder
-	builder.WriteString(fmt.Sprintf("📅 %s 总入库目录\n\n", date.Format("2006-01-02")))
+	builder.WriteString(fmt.Sprintf("📅 %s 入库汇总\n\n", date.Format("2006-01-02")))
 
-	// 按媒体类型分桶（避免仅按库名判断导致剧集跑到电影库）
-	type bucketMeta struct {
-		Label string
-		Emoji string
-		Type  MediaType
-	}
-	order := []bucketMeta{
-		{Label: "动画库", Emoji: "🎬", Type: MediaTypeAnime},
-		{Label: "剧集库", Emoji: "📺", Type: MediaTypeSeries},
-		{Label: "电影库", Emoji: "🎥", Type: MediaTypeMovie},
-	}
+	// Separate movies and series
+	movies := make([]*MediaItem, 0)
+	series := make([]*MediaItem, 0)
 
-	byType := make(map[MediaType][]*MediaItem)
 	for _, item := range items {
-		mt := item.MediaType
-		if mt == "" {
-			mt = MediaTypeMovie
+		if item.SeriesName != "" {
+			series = append(series, item)
+		} else {
+			movies = append(movies, item)
 		}
-		byType[mt] = append(byType[mt], item)
 	}
 
-	for _, meta := range order {
-		typeItems := byType[meta.Type]
-		if len(typeItems) == 0 {
-			continue
+	// Aggregate series by (SeriesName, SeasonNumber)
+	seriesAggregations := make(map[SeriesAggregationKey]*AggregatedSeries)
+	for _, item := range series {
+		key := SeriesAggregationKey{
+			SeriesName:   item.SeriesName,
+			SeasonNumber: item.SeasonNumber,
 		}
 
-		builder.WriteString(fmt.Sprintf("├─ %s %s\n", meta.Emoji, meta.Label))
-
-		// 类型内按库名分组
-		libGroups := make(map[string][]*MediaItem)
-		for _, item := range typeItems {
-			libName := strings.TrimSpace(item.LibraryName)
-			if libName == "" {
-				libName = "其他"
+		if existing, exists := seriesAggregations[key]; exists {
+			// Add to existing aggregation
+			if item.EpisodeStart > 0 {
+				existing.Episodes = append(existing.Episodes, item.EpisodeStart)
 			}
-			libGroups[libName] = append(libGroups[libName], item)
-		}
-
-		libNames := make([]string, 0, len(libGroups))
-		for name := range libGroups {
-			libNames = append(libNames, name)
-		}
-		sort.Strings(libNames)
-
-		for i, libName := range libNames {
-			libItems := libGroups[libName]
-			sort.Slice(libItems, func(a, b int) bool {
-				return s.formatItemForSummary(libItems[a]) < s.formatItemForSummary(libItems[b])
-			})
-
-			isLastLib := i == len(libNames)-1
-			libPrefix := "│   ├─"
-			if isLastLib {
-				libPrefix = "│   └─"
-			}
-			builder.WriteString(fmt.Sprintf("%s %s (%d部)\n", libPrefix, libName, len(libItems)))
-
-			for j, item := range libItems {
-				isLastItem := j == len(libItems)-1
-				itemPrefix := "│   │   ├─"
-				if isLastLib {
-					itemPrefix = "│       ├─"
+			if item.EpisodeEnd > 0 {
+				for ep := item.EpisodeStart; ep <= item.EpisodeEnd; ep++ {
+					existing.Episodes = append(existing.Episodes, ep)
 				}
-				if isLastItem {
-					if isLastLib {
-						itemPrefix = "│       └─"
-					} else {
-						itemPrefix = "│   │   └─"
-					}
-				}
-				builder.WriteString(fmt.Sprintf("%s %s\n", itemPrefix, s.formatItemForSummary(item)))
 			}
+			existing.Count = len(uniqueSortedInts(existing.Episodes))
+			if len(existing.Episodes) > 0 {
+				existing.MinEpisode = existing.Episodes[0]
+				existing.MaxEpisode = existing.Episodes[len(existing.Episodes)-1]
+			}
+		} else {
+			seriesAggregations[key] = NewAggregatedSeries([]*MediaItem{item})
 		}
-		builder.WriteString("│\n")
 	}
 
-	stats := s.calculateStats(items)
-	total := stats[MediaTypeAnime] + stats[MediaTypeSeries] + stats[MediaTypeMovie]
-	builder.WriteString("入库总览：\n")
-	builder.WriteString(fmt.Sprintf("总计：%d 部\n", total))
-	if stats[MediaTypeAnime] > 0 {
-		builder.WriteString(fmt.Sprintf("动画：%d 部\n", stats[MediaTypeAnime]))
+	// Aggregate movies by title
+	uniqueMovies := make(map[MovieAggregationKey]*AggregatedMovie)
+	for _, item := range movies {
+		// Resolve title with filename fallback
+		displayTitle := s.titleResolver.ResolveMovieTitle(item, "")
+
+		key := MovieAggregationKey{
+			Title: displayTitle,
+			Year:  item.Year,
+		}
+
+		if existing, exists := uniqueMovies[key]; exists {
+			existing.Count++
+		} else {
+			uniqueMovies[key] = &AggregatedMovie{
+				Title:      displayTitle,
+				Year:       item.Year,
+				LibraryName: item.LibraryName,
+				Count:      1,
+			}
+		}
 	}
-	if stats[MediaTypeSeries] > 0 {
-		builder.WriteString(fmt.Sprintf("剧集：%d 部\n", stats[MediaTypeSeries]))
+
+	// Sort series by title
+	sortedSeriesKeys := make([]SeriesAggregationKey, 0, len(seriesAggregations))
+	for key := range seriesAggregations {
+		sortedSeriesKeys = append(sortedSeriesKeys, key)
 	}
-	if stats[MediaTypeMovie] > 0 {
-		builder.WriteString(fmt.Sprintf("电影：%d 部\n", stats[MediaTypeMovie]))
+	sortSeriesKeys(sortedSeriesKeys, seriesAggregations)
+
+	// Sort movies by title
+	sortedMovieKeys := make([]MovieAggregationKey, 0, len(uniqueMovies))
+	for key := range uniqueMovies {
+		sortedMovieKeys = append(sortedMovieKeys, key)
+	}
+	sortMovieKeys(sortedMovieKeys, uniqueMovies)
+
+	// Build message
+	if len(sortedSeriesKeys) > 0 {
+		builder.WriteString(fmt.Sprintf("📺 剧集更新（%d 部）\n", len(sortedSeriesKeys)))
+		for _, key := range sortedSeriesKeys {
+			agg := seriesAggregations[key]
+			builder.WriteString(fmt.Sprintf("• %s\n", agg.FormatForSummary()))
+		}
+		builder.WriteString("\n")
+	}
+
+	if len(sortedMovieKeys) > 0 {
+		builder.WriteString(fmt.Sprintf("🎥 新增电影（%d 部）\n", len(sortedMovieKeys)))
+		for _, key := range sortedMovieKeys {
+			movie := uniqueMovies[key]
+			builder.WriteString(fmt.Sprintf("• %s\n", movie.FormatForSummary()))
+		}
+		builder.WriteString("\n")
+	}
+
+	// Summary statistics
+	builder.WriteString("📌 今日总览\n")
+	totalWorks := len(sortedSeriesKeys) + len(sortedMovieKeys)
+	builder.WriteString(fmt.Sprintf("合计：%d 部作品\n", totalWorks))
+	if len(sortedSeriesKeys) > 0 {
+		builder.WriteString(fmt.Sprintf("剧集更新：%d 部作品\n", len(sortedSeriesKeys)))
+	}
+	if len(sortedMovieKeys) > 0 {
+		builder.WriteString(fmt.Sprintf("新增电影：%d 部作品\n", len(sortedMovieKeys)))
+	}
+
+	// Add record count in detailed mode (optional)
+	totalRecords := len(items)
+	if totalRecords != totalWorks {
+		builder.WriteString(fmt.Sprintf("\n（处理记录：%d 条）", totalRecords))
 	}
 
 	return builder.String()
 }
 
 // formatItemForSummary formats a single item for the daily summary
+// Note: This is now mainly used for instant notifications and sorting
 func (s *MediaNotificationService) formatItemForSummary(item *MediaItem) string {
 	var title string
 
@@ -764,24 +790,39 @@ func (s *MediaNotificationService) formatItemForSummary(item *MediaItem) string 
 			title += "（完结）"
 		}
 	} else {
-		// Movie or standalone item
-		title = item.Title
-		if title == "" {
-			// No title available - use year with prefix or generic text
-			if item.Year > 1900 && item.Year < 2100 {
-				title = fmt.Sprintf("[%d年电影]", item.Year)
-			} else {
-				title = "[未命名电影]"
-			}
-		} else {
-			// Has title - add year if available
-			if item.Year > 1900 && item.Year < 2100 {
-				title += fmt.Sprintf(" (%d)", item.Year)
-			}
-		}
+		// Movie or standalone item - use title resolver
+		title = s.titleResolver.ResolveMovieTitle(item, "")
 	}
 
 	return title
+}
+
+// sortSeriesKeys sorts series aggregation keys by their display names
+func sortSeriesKeys(keys []SeriesAggregationKey, aggregations map[SeriesAggregationKey]*AggregatedSeries) {
+	// Simple bubble sort for small slices
+	n := len(keys)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			a := aggregations[keys[j]]
+			b := aggregations[keys[j+1]]
+			if a.SeriesName > b.SeriesName {
+				keys[j], keys[j+1] = keys[j+1], keys[j]
+			}
+		}
+	}
+}
+
+// sortMovieKeys sorts movie aggregation keys by their display titles
+func sortMovieKeys(keys []MovieAggregationKey, aggregations map[MovieAggregationKey]*AggregatedMovie) {
+	// Simple bubble sort for small slices
+	n := len(keys)
+	for i := 0; i < n-1; i++ {
+		for j := 0; j < n-i-1; j++ {
+			if aggregations[keys[j]].Title > aggregations[keys[j+1]].Title {
+				keys[j], keys[j+1] = keys[j+1], keys[j]
+			}
+		}
+	}
 }
 
 // detectLibraryCategory detects the category of a library
