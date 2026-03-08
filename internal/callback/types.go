@@ -121,6 +121,7 @@ var validActions = map[Action]bool{
 	"search_clear_all":        true,
 	"search_popular_refresh":  true,
 	"search_trends_refresh":   true,
+	"search_input":            true, // 快速搜索输入
 
 	// Request related actions
 	"force_subscribe": true,

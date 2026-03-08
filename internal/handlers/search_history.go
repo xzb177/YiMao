@@ -25,7 +25,7 @@ func NewSearchHistoryHandler(
 	return &SearchHistoryHandler{
 		telegram:       telegram,
 		searchHistory: searchHistory,
-		uiBuilder:     ui.NewHistoryBuilder(ui.StyleNeon), // 使用暗黑霓虹风
+		uiBuilder:     ui.NewHistoryBuilder(ui.StyleCard), // 使用极简卡片风
 	}
 }
 
@@ -99,9 +99,10 @@ func (h *SearchHistoryHandler) showHistoryMenu(ctx *callback.Context) (*callback
 	keyboard := h.uiBuilder.BuildHistoryKeyboard(history, ctx.UserID)
 
 	return &callback.Response{
-		Text:     message,
-		Edit:     true,
-		Keyboard: keyboard,
+		Text:      message,
+		Edit:      true,
+		Keyboard:  keyboard,
+		ParseMode: "HTML",
 	}, nil
 }
 

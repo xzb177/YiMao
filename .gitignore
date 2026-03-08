@@ -5,6 +5,11 @@
 *.json
 !binding_requests.json.example
 
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
 # Logs
 *.log
 *.pid
@@ -18,6 +23,10 @@ bot
 
 # Claude Code
 .claude/
+
+# Backup directories and files
+backup-*/
+*.bak
 
 # OS
 .DS_Store

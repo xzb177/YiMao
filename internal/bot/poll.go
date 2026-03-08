@@ -136,7 +136,15 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
 		log.Printf("[Poll] User %d in feedback process: %v", msg.From.ID, inFeedback)
 		if inFeedback {
-			if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, sanitizedText); err != nil {
+			// Check if user sent a photo with feedback
+			var photoFileID string
+			if msg.Photo != nil && len(msg.Photo) > 0 {
+				// Get the largest photo (last element in array)
+				photoFileID = msg.Photo[len(msg.Photo)-1].FileID
+				log.Printf("[Poll] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
+			}
+
+			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, sanitizedText, photoFileID); err != nil {
 				log.Printf("[Poll] Failed to handle feedback: %v", err)
 			}
 			return
@@ -619,6 +627,10 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 		parseMode = "HTML"
 	}
 
+	// Log parse mode for debugging
+	log.Printf("[Callback] Using parse_mode=%s for chat %d, text preview=%.50s",
+		parseMode, ctx.ChatID, resp.Text)
+
 	// Check if we need to send a photo
 	if resp.Photo != "" {
 		// Delete the original message first
@@ -626,17 +638,17 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 			log.Printf("[Callback] DeleteMessage error: %v", delErr)
 		}
 		// Send photo with caption and keyboard
-		// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
+		// First try URL method (most reliable)
 		caption := resp.PhotoCaption
 		if caption == "" {
 			caption = resp.Text
 		}
-		log.Printf("[Callback] Sending photo via proxy upload: %s", resp.Photo)
-		if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
-			log.Printf("[Callback] SendPhotoWithAuth error: %v, trying URL method", sendErr)
-			// Fallback to URL method if proxy upload fails
-			if _, fallbackErr := telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard); fallbackErr != nil {
-				log.Printf("[Callback] SendPhoto fallback also failed: %v", fallbackErr)
+		log.Printf("[Callback] Sending photo via URL: %s with parse_mode=%s", resp.Photo, parseMode)
+		if _, sendErr := telegram.SendPhotoWithParseMode(ctx.ChatID, resp.Photo, caption, parseMode, keyboard); sendErr != nil {
+			log.Printf("[Callback] SendPhoto URL method error: %v, trying proxy upload", sendErr)
+			// Fallback to proxy upload if URL method fails
+			if _, fallbackErr := telegram.SendPhotoWithAuthAndParseMode(ctx.ChatID, resp.Photo, caption, parseMode, nil, keyboard); fallbackErr != nil {
+				log.Printf("[Callback] SendPhoto proxy upload also failed: %v", fallbackErr)
 			}
 		}
 	} else if resp.Text != "" {

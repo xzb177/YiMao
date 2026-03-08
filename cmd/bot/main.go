@@ -404,6 +404,7 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 		registry.RegisterFunc("search_clear_all", searchHistoryHandler.Handle)
 		registry.RegisterFunc("search_popular_refresh", searchHistoryHandler.Handle)
 		registry.RegisterFunc("search_trends_refresh", searchHistoryHandler.Handle)
+		registry.RegisterFunc("search_input", searchHandler.Handle)
 		log.Println("    - Search History callbacks registered")
 	}
 

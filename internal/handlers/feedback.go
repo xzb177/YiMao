@@ -165,7 +165,7 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	sess.Set("feedback_issue_type", issueType)
 	sess.Set("feedback_step", "description")
 	sess.Set("feedback_tmdb_id", tmdbID)
-	sess.Set("feedback_media_type", mediaType)  // Store media type too
+	sess.Set("feedback_media_type", mediaType)
 
 	// Get type label
 	typeLabels := map[string]string{
@@ -192,6 +192,8 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	msg.Text("• 发生的时间或场景").Newline()
 	msg.Text("• 任何有助于解决问题的信息").Newline()
 	msg.Newline()
+	msg.Italic("💡 支持发送图片截图").Newline()
+	msg.Newline()
 	msg.Italic("⏰ 请在 5 分钟内完成描述").Newline()
 
 	// Update keyboard to show cancel button
@@ -212,6 +214,11 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 
 // HandleFeedbackText handles user's feedback description text
 func (h *FeedbackHandler) HandleFeedbackText(userID int64, chatID int64, text string) error {
+	return h.HandleFeedbackWithPhoto(userID, chatID, text, "")
+}
+
+// HandleFeedbackWithPhoto handles user's feedback with photo attachment
+func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, text, photoFileID string) error {
 	sess := h.sessMgr.GetOrCreate(userID)
 
 	// Check if user is in feedback process
@@ -274,16 +281,31 @@ func (h *FeedbackHandler) HandleFeedbackText(userID int64, chatID int64, text st
 		}
 	}
 
-	// Create issue
-	issue, err := h.issueService.CreateIssue(
-		userID,
-		userName,
-		typeLabel,
-		text,
-		mediaType,
-		tmdbID,
-		mediaTitle,
-	)
+	// Create issue with photo if provided
+	var issue *services.Issue
+	var err error
+	if photoFileID != "" {
+		issue, err = h.issueService.CreateIssueWithPhoto(
+			userID,
+			userName,
+			typeLabel,
+			text,
+			mediaType,
+			tmdbID,
+			mediaTitle,
+			photoFileID,
+		)
+	} else {
+		issue, err = h.issueService.CreateIssue(
+			userID,
+			userName,
+			typeLabel,
+			text,
+			mediaType,
+			tmdbID,
+			mediaTitle,
+		)
+	}
 	if err != nil {
 		log.Printf("[FeedbackHandler] Failed to create issue: %v", err)
 		h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil)
@@ -352,11 +374,25 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 	kb.AddButton("🚫 关闭", fmt.Sprintf("admin_issue_close:id:%d", issue.ID))
 
 	message := msg.Build()
+	keyboard := kb.Build()
 
 	// Send to all admins with error handling
 	for _, adminID := range adminIDs {
-		if _, err := h.telegram.SendMessage(adminID, message, "HTML", kb.Build()); err != nil {
-			log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+		// If issue has photo, send photo with caption
+		if issue.PhotoFileID != "" {
+			// Send photo with the message as caption
+			// Use SendPhotoByFileID to send using Telegram's file_id
+			if _, err := h.telegram.SendPhotoByFileID(adminID, issue.PhotoFileID, message, keyboard); err != nil {
+				log.Printf("[FeedbackHandler] Failed to send photo to admin %d: %v", adminID, err)
+				// Fallback to text message
+				if _, err2 := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err2 != nil {
+					log.Printf("[FeedbackHandler] Failed to send fallback message to admin %d: %v", adminID, err2)
+				}
+			}
+		} else {
+			if _, err := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err != nil {
+				log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+			}
 		}
 	}
 }

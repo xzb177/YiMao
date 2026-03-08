@@ -13,10 +13,43 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/pkg/types"
 )
+
+// sanitizeUTF8 ensures the string contains only valid UTF-8 characters
+// Invalid UTF-8 sequences are replaced with the replacement character
+func sanitizeUTF8(s string) string {
+	valid := true
+	for i, r := range s {
+		if r == utf8.RuneError {
+			// Check if it's a real error or just the character
+			if !utf8.ValidRune(r) {
+				valid = false
+				break
+			}
+		}
+		// Also check for null bytes which Telegram doesn't like
+		if r == 0 {
+			s = s[:i] + s[i+1:]
+		}
+	}
+	if valid && utf8.ValidString(s) {
+		return s
+	}
+	// If invalid, rebuild with only valid runes
+	var result strings.Builder
+	result.Grow(len(s))
+	for _, r := range s {
+		if r == utf8.RuneError || r == 0 {
+			continue
+		}
+		result.WriteRune(r)
+	}
+	return result.String()
+}
 
 // TelegramClient provides access to Telegram Bot API
 type TelegramClient struct {
@@ -141,16 +174,21 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 
 // SendPhoto sends a photo with caption to a chat
 func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return c.SendPhotoWithParseMode(chatID, photoURL, caption, "HTML", keyboard)
+}
+
+// SendPhotoWithParseMode sends a photo with caption and specified parse mode
+func (c *TelegramClient) SendPhotoWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	// Use URL method first to avoid multipart encoding issues with Chinese characters
 	// Telegram will download the image directly
-	msg, err := c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+	msg, err := c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
 	if err == nil {
 		return msg, nil
 	}
 
 	// If URL method fails, try downloading and sending as file
-	log.Printf("[Telegram] URL method failed: %v, trying file upload", err)
-	return c.SendPhotoFromURL(chatID, photoURL, caption, keyboard)
+	log.Printf("[Telegram] URL method failed: %v, trying file upload with parse_mode=%s", err, parseMode)
+	return c.SendPhotoFromURLWithParseMode(chatID, photoURL, caption, parseMode, nil, keyboard)
 }
 
 // SendPhotoWithAuth sends a photo with caption, using custom headers for image download
@@ -159,6 +197,11 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 // 实现图片代理上传：机器人下载图片后，通过 multipart/form-data 上传到 Telegram
 // 支持本地缓存：相同图片优先从缓存读取，减少带宽消耗
 func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return c.SendPhotoWithAuthAndParseMode(chatID, photoURL, caption, "HTML", headers, keyboard)
+}
+
+// SendPhotoWithAuthAndParseMode sends a photo with caption, parse mode, and custom headers
+func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	// 优先使用缓存（如果有）
 	var imageData []byte
 	var fromCache bool
@@ -241,9 +284,13 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 	// Add chat_id
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
 
-	// Add caption
+	// Add parse_mode
+	writer.WriteField("parse_mode", parseMode)
+
+	// Add caption (sanitize to ensure valid UTF-8)
 	if caption != "" {
-		writer.WriteField("caption", caption)
+		sanitized := sanitizeUTF8(caption)
+		writer.WriteField("caption", sanitized)
 	}
 
 	// Add photo file (从内存字节流上传)
@@ -263,8 +310,11 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 			log.Printf("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
 		} else {
+			log.Printf("[Telegram] Adding keyboard to photo: %s", string(keyboardJSON))
 			writer.WriteField("reply_markup", string(keyboardJSON))
 		}
+	} else {
+		log.Printf("[Telegram] No keyboard to add to photo")
 	}
 
 	writer.Close()
@@ -289,6 +339,11 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 		log.Printf("[Telegram] Failed to read response body: %v", err)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
+	previewLen := len(body)
+	if previewLen > 500 {
+		previewLen = 500
+	}
+	log.Printf("[Telegram] sendPhoto response status: %d, body preview: %s", resp2.StatusCode, string(body[:previewLen]))
 
 	var result struct {
 		OK      bool                     `json:"ok"`
@@ -297,14 +352,16 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("[Telegram] Failed to decode response: %v", err)
+		log.Printf("[Telegram] Failed to decode response: %v, body: %s", err, string(body))
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	if !result.OK {
 		if result.Error != nil {
+			log.Printf("[Telegram] sendPhoto API error: %s", result.Error.Message)
 			return nil, result.Error
 		}
+		log.Printf("[Telegram] sendPhoto API error (no error details): %s", string(body))
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
 	}
 
@@ -312,27 +369,49 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 	if fromCache {
 		logPrefix = "[缓存上传]"
 	}
-	log.Printf("[Telegram] %s 成功发送图片到 Telegram", logPrefix)
+	if result.Result != nil {
+		log.Printf("[Telegram] %s 成功发送图片, message_id=%d", logPrefix, result.Result.MessageID)
+	} else {
+		log.Printf("[Telegram] %s 成功发送图片 (no message id)", logPrefix)
+	}
 	return result.Result, nil
 }
 
 // SendPhotoFromURL downloads photo from URL and sends it to Telegram
 func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	log.Printf("[Telegram] Downloading photo from: %s", photoURL)
+	return c.SendPhotoFromURLWithParseMode(chatID, photoURL, caption, "HTML", nil, keyboard)
+}
+
+// SendPhotoFromURLWithParseMode downloads photo from URL and sends it to Telegram with specified parse mode
+func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	log.Printf("[Telegram] Downloading photo from: %s with parse_mode=%s", photoURL, parseMode)
 
 	// Download the image
-	resp, err := c.httpClient.Get(photoURL)
+	var resp *http.Response
+	var err error
+
+	if headers != nil {
+		// Create request with custom headers (for Emby auth)
+		req, _ := http.NewRequest("GET", photoURL, nil)
+		for k, v := range headers {
+			req.Header.Set(k, v)
+		}
+		resp, err = c.httpClient.Do(req)
+	} else {
+		resp, err = c.httpClient.Get(photoURL)
+	}
+
 	if err != nil {
 		log.Printf("[Telegram] Failed to download photo: %v", err)
 		// Fallback to URL method if download fails
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("[Telegram] Photo download status: %d", resp.StatusCode)
 		// Fallback to URL method
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
 	}
 
 	log.Printf("[Telegram] Photo downloaded, size: %d bytes", resp.ContentLength)
@@ -347,20 +426,24 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 	// Add chat_id
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
 
-	// Add caption
+	// Add parse_mode
+	writer.WriteField("parse_mode", parseMode)
+
+	// Add caption (sanitize to ensure valid UTF-8)
 	if caption != "" {
-		writer.WriteField("caption", caption)
+		sanitized := sanitizeUTF8(caption)
+		writer.WriteField("caption", sanitized)
 	}
 
 	// Add photo file
 	part, err := writer.CreateFormFile("photo", "photo.jpg")
 	if err != nil {
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
 	}
 
 	_, err = io.Copy(part, resp.Body)
 	if err != nil {
-		return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
 	}
 
 	// Add keyboard if provided
@@ -370,8 +453,11 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 			log.Printf("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
 		} else {
+			log.Printf("[Telegram] Adding keyboard to photo: %s", string(keyboardJSON))
 			writer.WriteField("reply_markup", string(keyboardJSON))
 		}
+	} else {
+		log.Printf("[Telegram] No keyboard to add to photo")
 	}
 
 	writer.Close()
@@ -417,18 +503,54 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
 	}
 
-	log.Printf("[Telegram] Multipart sendPhoto successful")
+	log.Printf("[Telegram] Multipart sendPhoto successful with parse_mode=%s", parseMode)
 	return result.Result, nil
 }
 
 // SendPhotoByURL sends photo by URL (Telegram will download it)
 func (c *TelegramClient) SendPhotoByURL(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, "HTML", keyboard)
+}
+
+// SendPhotoByURLWithParseMode sends photo by URL with specified parse mode
+func (c *TelegramClient) SendPhotoByURLWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
 	payload := map[string]interface{}{
-		"chat_id": chatID,
-		"photo":   photoURL,
-		"caption": caption,
+		"chat_id":    chatID,
+		"photo":      photoURL,
+		"caption":    caption,
+		"parse_mode": parseMode,
+	}
+
+	// Add keyboard if provided
+	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
+		payload["reply_markup"] = keyboard
+		if kbJSON, err := json.Marshal(keyboard); err == nil {
+			log.Printf("[Telegram] sendPhoto payload: chat_id=%d, photo=%s, caption=%d chars, parse_mode=%s, keyboard=%s",
+				chatID, photoURL, len(caption), parseMode, string(kbJSON))
+		}
+	}
+
+	log.Printf("[Telegram] Calling sendPhoto API with parse_mode=%s...", parseMode)
+	return c.makeRequest(apiURL, payload)
+}
+
+// SendPhotoByFileID sends a photo using Telegram's file_id
+// This is the most efficient way to resend a photo that was previously uploaded to Telegram
+func (c *TelegramClient) SendPhotoByFileID(chatID int64, fileID, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return c.SendPhotoByFileIDWithParseMode(chatID, fileID, caption, "HTML", keyboard)
+}
+
+// SendPhotoByFileIDWithParseMode sends a photo using Telegram's file_id with specified parse mode
+func (c *TelegramClient) SendPhotoByFileIDWithParseMode(chatID int64, fileID, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
+
+	payload := map[string]interface{}{
+		"chat_id":    chatID,
+		"photo":      fileID,
+		"caption":    caption,
+		"parse_mode": parseMode,
 	}
 
 	// Add keyboard if provided
@@ -436,6 +558,7 @@ func (c *TelegramClient) SendPhotoByURL(chatID int64, photoURL, caption string, 
 		payload["reply_markup"] = keyboard
 	}
 
+	log.Printf("[Telegram] Sending photo by file_id to chat %d with parse_mode=%s", chatID, parseMode)
 	return c.makeRequest(apiURL, payload)
 }
 
@@ -570,6 +693,14 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		}
 		log.Printf("[Telegram] API 未知错误: %s", string(body))
 		return nil, fmt.Errorf("telegram API error: %s", string(body))
+	}
+
+	// Log success for sendPhoto
+	if result.Result != nil {
+		log.Printf("[Telegram] %s 成功, message_id=%d, has_photo=%v", method, result.Result.MessageID, result.Result.Photo != nil)
+		if len(result.Result.Photo) > 0 {
+			log.Printf("[Telegram]   返回 %d 张图片", len(result.Result.Photo))
+		}
 	}
 
 	return result.Result, nil

@@ -153,6 +153,7 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Check if this is a search history query
 	if query, hasQuery := ctx.Callback.Params["query"]; hasQuery {
+		log.Printf("[SearchHandler] Quick search from history: query=%s", query)
 		// Execute search from history
 		h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
 		return &callback.Response{
@@ -211,8 +212,8 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return err
 	}
 
-	// Check for empty results
-	if results == nil {
+	// Check for empty results - ensure Results slice is never nil
+	if results == nil || results.Results == nil {
 		log.Printf("[SearchHandler] Search results is nil for query: %s", query)
 		h.sendNoResultsMessage(chatID, query)
 		return nil
@@ -226,7 +227,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		if fbErr != nil {
 			log.Printf("[SearchHandler] Fallback search failed: %v", fbErr)
 		}
-		if len(fallbackResults) > 0 {
+		if fallbackResults != nil && len(fallbackResults) > 0 {
 			log.Printf("[SearchHandler] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
 			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults})
 			h.telegram.SendMessage(chatID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
@@ -259,68 +260,24 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜索影片").Newline()
 	msg.Newline()
-
-	// Show search history if available
-	if h.searchHistory != nil {
-		history := h.searchHistory.GetHistory(ctx.UserID)
-		if len(history) > 0 {
-			msg.Text("📜 最近搜索：").Newline()
-			msg.Newline()
-
-			// Show up to 5 recent searches
-			displayCount := 5
-			if len(history) < displayCount {
-				displayCount = len(history)
-			}
-
-			kb := services.NewKeyboardBuilder()
-
-			for i := 0; i < displayCount; i++ {
-				entry := history[i]
-				msg.Textf("%d. %s", i+1, entry.Query).Newline()
-				// Add button for quick search
-				kb.AddButton(fmt.Sprintf("🔎 %s", truncateString(entry.Query, 15)), fmt.Sprintf("search:query:%s", entry.Query))
-				// 2 buttons per row
-				if (i+1)%2 == 0 {
-					kb.NewRow()
-				}
-			}
-
-			// Add clear history button
-			if len(history) > 0 {
-				kb.NewRow()
-				kb.AddButton("🗑️ 清空历史", "search:clear_history:1")
-			}
-			kb.NewRow()
-			kb.AddButton("📊 更多历史", "search_history_menu")
-			kb.NewRow()
-			kb.AddButton("⬅️ 返回主菜单", "start")
-
-			msg.Newline()
-			msg.Italic("💡 点击按钮快速搜索，或输入新影片名称")
-
-			return &callback.Response{
-				Text:     msg.Build(),
-				Edit:     true,
-				Keyboard: convertKeyboard(kb.Build()),
-			}, nil
-		}
-	}
-
-	// No history, show prompt
-	msg.Text("请输入影片名称，支持中文/英文").Newline()
+	msg.Text("支持搜索电影和电视剧，输入名称即可开始").Newline()
 	msg.Newline()
-	msg.Italic("💡 输入影片名称后自动搜索")
+	msg.Text("📝 支持中英文片名").Newline()
+	msg.Text("🎬 支持模糊搜索").Newline()
+	msg.Text("📺 可查看详情后订阅").Newline()
+	msg.Newline()
+	msg.Italic("💡 直接输入影片名称开始搜索").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回主菜单", "start")
-	kb.NewRow()
 	kb.AddButton("📊 搜索历史", "search_history_menu")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}, nil
 }
 

@@ -50,21 +50,21 @@ func BuildMenu(title, subtitle string) string {
 	return builder.BuildMenu(title, subtitle)
 }
 
-// BuildSearchResults 构建搜索结果（使用暗黑霓虹风格）
+// BuildSearchResults 构建搜索结果（使用极简卡片风格）
 func BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
-	builder := NewBuilder(StyleNeon)
+	builder := NewBuilder(StyleCard)
 	return builder.BuildSearchResults(query, results, page, total)
 }
 
-// BuildMediaDetail 构建媒体详情（使用暗黑霓虹风格）
+// BuildMediaDetail 构建媒体详情（使用极简卡片风格）
 func BuildMediaDetail(result *services.SearchResult) string {
-	builder := NewBuilder(StyleNeon)
+	builder := NewBuilder(StyleCard)
 	return builder.BuildMediaDetail(result)
 }
 
-// BuildRecommendation 构建推荐内容（使用文艺胶片风格）
+// BuildRecommendation 构建推荐内容（使用极简卡片风格）
 func BuildRecommendation(title string, results []services.SearchResult, mood string) string {
-	builder := NewBuilder(StyleFilm)
+	builder := NewBuilder(StyleCard)
 	return builder.BuildRecommendation(title, results, mood)
 }
 

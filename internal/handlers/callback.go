@@ -655,9 +655,10 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -735,9 +736,10 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -869,23 +871,20 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 
 	// Check for poster URL to display photo
 	if posterURL != "" {
-		// For photo captions, we need plain text (no Markdown formatting)
-		// Build a simple plain text caption
-		caption := buildPlainCaption(tvDetails.ID, title, tvDetails.FirstAirDate, tvDetails.VoteAverage,
-			tvDetails.Genres, tvDetails.NumberOfSeasons, tvDetails.NumberOfEpisodes,
-			tvDetails.Overview, mpNotAvailable)
 		return &callback.Response{
 			Photo:        posterURL,
-			PhotoCaption: caption,
+			PhotoCaption: msg.Build(),
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
+			ParseMode:    "HTML",
 		}
 	}
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -929,23 +928,20 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 
 	// Check for poster URL to display photo
 	if posterURL != "" {
-		// Build plain text caption for photo
-		caption := fmt.Sprintf("📺 %s\n\n暂无法获取季数信息，请尝试直接订阅全季", title)
-		if mpNotAvailable {
-			caption += "\n\n⚠️ 资源库暂无\n当前资源库中暂无此剧集，求片后将尝试自动搜索"
-		}
 		return &callback.Response{
 			Photo:        posterURL,
-			PhotoCaption: caption,
+			PhotoCaption: msg.Build(),
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
+			ParseMode:    "HTML",
 		}
 	}
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -1015,9 +1011,10 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -1234,13 +1231,15 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 			PhotoCaption: msg.Build(),
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
+			ParseMode:    "HTML",
 		}
 	}
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -1383,20 +1382,22 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 	}
 
 	if photoURL != "" {
-		// Build plain text caption for photo (Telegram doesn't support Markdown in photo captions)
+		// Build HTML caption for photo
 		caption := buildPlainCaptionFromItem(item, mpNotAvailable)
 		return &callback.Response{
 			Photo:        photoURL,
 			PhotoCaption: caption,
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
+			ParseMode:    "HTML",
 		}
 	}
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -1437,9 +1438,10 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}
 }
 
@@ -1540,9 +1542,10 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	kb.AddButton("🏠 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}, nil
 }
 
@@ -1674,6 +1677,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			Edit:          false,
 			DeleteMessage: true,
 			Keyboard:      convertKeyboard(kb.Build()),
+			ParseMode:     "HTML",
 		}, nil
 
 	case "search":
@@ -1715,9 +1719,10 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 
 		return &callback.Response{
-			Text:     baseMsg,
-			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			Text:      baseMsg,
+			Edit:      true,
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			ParseMode: "HTML",
 		}, nil
 	}
 }
@@ -1736,9 +1741,10 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
-			Text:     baseMsg,
-			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			Text:      baseMsg,
+			Edit:      true,
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			ParseMode: "HTML",
 		}, nil
 	}
 
@@ -1798,10 +1804,11 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	log.Printf("[BackHandler] Restoring search results: query=%s, items=%d", query, len(items))
 	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
-		Text:         text,
-		Edit:         false,
+		Text:          text,
+		Edit:          false,
 		DeleteMessage: true,
-		Keyboard:     convertKeyboard(keyboard),
+		Keyboard:      convertKeyboard(keyboard),
+		ParseMode:     "HTML",
 	}, nil
 }
 
@@ -1912,6 +1919,7 @@ func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType 
 		Edit:          false,
 		DeleteMessage: true,
 		Keyboard:      convertKeyboard(keyboard),
+		ParseMode:     "HTML",
 	}, nil
 }
 

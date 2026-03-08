@@ -458,11 +458,25 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 		}
 	}
 
-	message := fmt.Sprintf("❌ 问题已关闭\n\n问题ID: %d", issueID)
+	// Delete the message to remove keyboard, then send new confirmation message
+	go func() {
+		if err := h.telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); err != nil {
+			log.Printf("[AdminHandler] Failed to delete message: %v", err)
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold("🚫 问题已关闭").Newline()
+		msg.Newline()
+		msg.Textf("问题ID: #%d", issueID).Newline()
+		msg.Text("状态: 已关闭").Newline()
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回", "start")
+
+		h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
+	}()
 
 	return &callback.Response{
-		Text: message,
-		Edit: true,
+		CallbackMsg: "问题已关闭",
 	}, nil
 }
 

@@ -2826,3 +2826,58 @@ watchlist_add:{tmdbID}  # 加入片单
 - **结果**: 无重复订阅
 
 ---
+
+### fix: 修复用户反馈图片附件功能 ✅
+- **问题**: 用户在反馈中发送图片，管理员无法看到
+- **根本原因**: 
+  - `Issue` 结构缺少 `PhotoFileID` 字段存储图片
+  - `poll.go` 和 `webhook.go` 只处理 `msg.Text`，未处理 `msg.Photo`
+  - `notifyAdmins` 未发送图片给管理员
+- **修复内容**:
+  1. `internal/services/issue.go`: 
+     - 添加 `PhotoFileID string` 字段
+     - 新增 `CreateIssueWithPhoto()` 方法
+  2. `internal/handlers/feedback.go`:
+     - 新增 `HandleFeedbackWithPhoto()` 方法
+     - 修改 `notifyAdmins()` 发送图片给管理员
+  3. `internal/services/telegram.go`:
+     - 新增 `SendPhotoByFileID()` 方法（使用 Telegram file_id）
+  4. `internal/bot/poll.go`:
+     - 检测 `msg.Photo` 并提取最大图片的 FileID
+  5. `internal/bot/webhook.go`:
+     - 同步更新图片检测逻辑
+- **测试**: 服务已重新构建并启动
+- **状态**: ✅ 需要用户测试发送带图片的反馈
+
+
+### feat: 统一 UI 为极简卡片风格 ✅
+- **日期**: 2026-03-08
+- **修改内容**:
+  1. `internal/ui/ui.go`: 
+     - 所有 Build 函数默认使用 `StyleCard`
+     - BuildSearchResults / BuildMediaDetail / BuildRecommendation 改为卡片风格
+  2. `internal/handlers/search_history.go`:
+     - HistoryBuilder 初始化使用 `ui.StyleCard`
+  3. `internal/ui/history_builder.go`:
+     - 添加 `buildCardHistoryUI` 极简卡片风格实现
+     - 添加 `buildCardHistoryKeyboard` 极简卡片风格键盘
+     - 更新所有 Build*UI 方法使用 `cardSeparator` 和 `cardBoxStart/End`
+  4. `internal/ui/card.go`:
+     - 已有完整的极简卡片风格构建器
+- **风格特点**:
+  - 分隔符: `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`
+  - 卡片框: `┌─────────────────────────────┐`
+  - 简洁布局，每条目清晰分组
+- **状态**: ✅ 已部署
+
+
+### fix: 修复管理员通知 HTML 乱码和关闭按钮问题 ✅
+- **日期**: 2026-03-08
+- **问题1**: 管理员收到反馈通知时 HTML 标签原样显示（`<b>`, `<i>`）
+  - **原因**: `SendPhotoByFileID` 缺少 `parse_mode` 参数
+  - **修复**: 添加 `SendPhotoByFileIDWithParseMode` 函数，支持指定解析模式
+- **问题2**: 关闭按钮点击后报错 "there is no text in the message to edit"
+  - **原因**: 尝试编辑消息但没有正确移除键盘
+  - **修复**: 改为删除原消息 + 发送新确认消息（使用 goroutine 避免阻塞）
+- **状态**: ✅ 已部署
+

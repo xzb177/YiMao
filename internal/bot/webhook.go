@@ -195,8 +195,16 @@ func HandleWebhookMessage(
 		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
 		log.Printf("[Webhook] User %d in feedback process: %v", msg.From.ID, inFeedback)
 		if inFeedback {
-			// 用户正在反馈流程中，处理反馈文本并返回
-			if err := deps.FeedbackHandler.HandleFeedbackText(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
+			// Check if user sent a photo with feedback
+			var photoFileID string
+			if msg.Photo != nil && len(msg.Photo) > 0 {
+				// Get the largest photo (last element in array)
+				photoFileID = msg.Photo[len(msg.Photo)-1].FileID
+				log.Printf("[Webhook] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
+			}
+
+			// 用户正在反馈流程中，处理反馈文本/图片并返回
+			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, msg.Text, photoFileID); err != nil {
 				log.Printf("[Webhook] Failed to handle feedback: %v", err)
 			}
 			w.WriteHeader(http.StatusOK)

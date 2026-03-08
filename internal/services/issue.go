@@ -43,6 +43,7 @@ type Issue struct {
 	MediaID     string        `json:"media_id"`
 	MediaTitle   string        `json:"media_title"`
 	TmdbID      int           `json:"tmdb_id"`
+	PhotoFileID string        `json:"photo_file_id,omitempty"` // 用户反馈附带的图片
 	CreatedAt   time.Time     `json:"created_at"`
 	UpdatedAt   time.Time     `json:"updated_at"`
 	Replies     []IssueReply `json:"replies"`
@@ -125,6 +126,11 @@ func (s *IssueService) save() error {
 
 // CreateIssue creates a new issue
 func (s *IssueService) CreateIssue(userID int64, userName, title, description string, mediaType, mediaID, mediaTitle string) (*Issue, error) {
+	return s.CreateIssueWithPhoto(userID, userName, title, description, mediaType, mediaID, mediaTitle, "")
+}
+
+// CreateIssueWithPhoto creates a new issue with photo attachment
+func (s *IssueService) CreateIssueWithPhoto(userID int64, userName, title, description, mediaType, mediaID, mediaTitle, photoFileID string) (*Issue, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -141,6 +147,7 @@ func (s *IssueService) CreateIssue(userID int64, userName, title, description st
 		MediaType:    mediaType,
 		MediaID:     mediaID,
 		MediaTitle:   mediaTitle,
+		PhotoFileID: photoFileID,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Replies:     []IssueReply{},
