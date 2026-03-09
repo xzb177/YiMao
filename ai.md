@@ -2932,3 +2932,53 @@ watchlist_add:{tmdbID}  # 加入片单
   - **修复**: 改为删除原消息 + 发送新确认消息（使用 goroutine 避免阻塞）
 - **状态**: ✅ 已部署
 
+---
+
+### fix: 我的请求列表显示为空 - 订阅过滤逻辑深度修复 ✅
+- **时间**: 2026-03-09 10:16
+- **问题**: "我的请求"显示"暂无记录"，但实际有 80+ 个订阅
+- **日志证据**:
+  ```
+  [MoviePilot] Subscription item: id=160, name=爱·回家之开心速递, username="rouxin9", user_id='\x00', state=R
+  [MoviePilot] GetUserRequests: userID=1, user.Username="1", total_items=80, filtered=0
+  ```
+- **根本原因分析**:
+  1. **User 结构体字段映射错误**: `Username` 映射到 `json:"name"`，但 MoviePilot API 返回的 `name` 可能是用户ID而非用户名
+  2. **SubscribeItem.UserID 解析失败**: `int64` 类型无法处理 API 返回的 null/字符串/脏值，解析为 `'\x00'` (0)
+  3. **GetUserRequests 过滤逻辑缺陷**:
+     - 依赖错误的 `user.Username` 值（"1"）进行 API 查询
+     - 本地过滤逻辑过于简单，单一字段匹配失败就跳过记录
+- **修复方案**:
+  1. **新增 FlexibleInt64 类型** (类似 FlexibleYear):
+     - 支持 int/string/float/null 多种格式解析
+     - 无效值时返回 0 而非报错
+     - 提供 `Int64()`, `IsZero()`, `String()` 方法
+  2. **增强 SubscribeItem 结构体**:
+     - `UserID` 从 `int64` 改为 `FlexibleInt64`
+  3. **增强 User 结构体**:
+     - 保留 `Username string json:"name"` (主字段)
+     - 新增 `UserNameAlt string json:"username"` (备选字段)
+     - 新增 `DisplayName string json:"display_name"` (显示名称)
+  4. **重写 GetUserRequests 过滤逻辑**:
+     - 移除 API 端 username 参数（可能不支持）
+     - 获取全部订阅后在本地过滤
+     - **多重匹配策略** (OR 逻辑):
+       1. user_id 精确匹配 (最可靠)
+       2. username 精确匹配
+       3. username 与 userID 字符串匹配 (某些 API 存储格式)
+       4. username 大小写不敏感匹配
+       5. UserNameAlt 备选字段匹配
+     - 详细调试日志显示每条记录的 username/user_id 和匹配原因
+- **修改文件**:
+  - `internal/services/moviepilot.go`:
+    - 新增 `FlexibleInt64` 类型 (+60 行)
+    - 修改 `SubscribeItem.UserID` 类型
+    - 增强 `User` 结构体
+    - 重写 `GetUserRequests` 方法 (+80 行)
+- **验证方式**:
+  - 检查日志中 `filtered` 数量是否大于 0
+  - Telegram Bot "我的请求" 应显示实际订阅列表
+- **状态**: ✅ 代码已修复并部署
+- **镜像**: `yimao-emby-telegram-bot:latest` (sha256:6ba984aaac8f)
+- **部署时间**: 2026-03-09 10:16
+

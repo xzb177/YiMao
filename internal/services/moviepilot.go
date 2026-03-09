@@ -68,6 +68,66 @@ func (fy FlexibleYear) IsZero() bool {
 	return int(fy) == 0
 }
 
+// FlexibleInt64 handles int64 fields that can be string, int, float, or null
+// Used for user_id fields that may come in various formats from MoviePilot API
+type FlexibleInt64 int64
+
+func (fi *FlexibleInt64) UnmarshalJSON(b []byte) error {
+	// Handle null or empty
+	if len(b) == 0 || string(b) == "null" {
+		*fi = 0
+		return nil
+	}
+	// Handle string
+	if b[0] == '"' {
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		if s == "" {
+			*fi = 0
+			return nil
+		}
+		// Parse int64 from string
+		i, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+		if err != nil {
+			// Invalid number - return 0 instead of error
+			*fi = 0
+			return nil
+		}
+		*fi = FlexibleInt64(i)
+		return nil
+	}
+	// Handle float (some APIs return numbers as floats)
+	if b[0] >= '0' && b[0] <= '9' || b[0] == '-' {
+		var f float64
+		if err := json.Unmarshal(b, &f); err != nil {
+			return err
+		}
+		*fi = FlexibleInt64(int64(f))
+		return nil
+	}
+	// Handle int
+	var i int64
+	if err := json.Unmarshal(b, &i); err != nil {
+		return err
+	}
+	*fi = FlexibleInt64(i)
+	return nil
+}
+
+func (fi FlexibleInt64) Int64() int64 {
+	return int64(fi)
+}
+
+func (fi FlexibleInt64) IsZero() bool {
+	return int64(fi) == 0
+}
+
+func (fi FlexibleInt64) String() string {
+	return strconv.FormatInt(int64(fi), 10)
+}
+
 // MoviePilotClient provides access to MoviePilot API.
 //
 // The client handles authentication via API key and manages HTTP connection pooling
@@ -182,17 +242,17 @@ type SearchResponse struct {
 
 // SubscribeItem represents a subscription item from MoviePilot API
 type SubscribeItem struct {
-	ID           int    `json:"id"`
-	Name         string `json:"name"`
-	Year         string `json:"year"`
-	Type         string `json:"type"`
-	Poster       string `json:"poster"`
-	State        string `json:"state"`
-	Username     string `json:"username"`
-	UserID       int64  `json:"user_id"` // Add user_id field for filtering
-	Date         string `json:"date"`
-	Season       int    `json:"season"`
-	TotalEpisode int    `json:"total_episode"`
+	ID           int            `json:"id"`
+	Name         string         `json:"name"`
+	Year         string         `json:"year"`
+	Type         string         `json:"type"`
+	Poster       string         `json:"poster"`
+	State        string         `json:"state"`
+	Username     string         `json:"username"`
+	UserID       FlexibleInt64  `json:"user_id"` // Use FlexibleInt64 for robust parsing
+	Date         string         `json:"date"`
+	Season       int            `json:"season"`
+	TotalEpisode int            `json:"total_episode"`
 }
 
 // Request represents a media request
@@ -207,11 +267,15 @@ type Request struct {
 }
 
 // User represents a MoviePilot user
+// MoviePilot API may return different field names, so we support multiple tags
 type User struct {
 	ID       int64  `json:"id"`
-	Username string `json:"name"`
+	Username string `json:"name"`         // Primary: MoviePilot uses "name" for username
 	Email    string `json:"email"`
 	Admin    bool   `json:"is_admin"`
+	// Additional fields for API compatibility - parsed if present
+	UserNameAlt string `json:"username"`  // Alternative: some endpoints use "username"
+	DisplayName string `json:"display_name"` // Alternative: display name
 }
 
 // makeRequest makes an API request to MoviePilot
@@ -603,9 +667,23 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		return nil, fmt.Errorf("user not found: %d", userID)
 	}
 
+	// Determine effective username - try alternative fields if primary is empty
+	effectiveUsername := user.Username
+	if effectiveUsername == "" || effectiveUsername == fmt.Sprintf("%d", userID) {
+		// If primary username looks like an ID, try alternatives
+		if user.UserNameAlt != "" {
+			effectiveUsername = user.UserNameAlt
+		} else if user.DisplayName != "" {
+			effectiveUsername = user.DisplayName
+		}
+	}
+
+	log.Printf("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, user.UserNameAlt=%q, effectiveUsername=%q",
+		userID, user.Username, user.UserNameAlt, effectiveUsername)
+
 	// MoviePilot uses /api/v1/subscribe/ endpoint
-	// Try to filter by username
-	endpoint := fmt.Sprintf("/api/v1/subscribe/?page=1&count=100&username=%s", user.Username)
+	// Fetch all subscriptions without username filter (the API may not support it properly)
+	endpoint := "/api/v1/subscribe/?page=1&count=1000"
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
@@ -618,32 +696,71 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	// If API doesn't support filtering, filter client-side
+	log.Printf("[MoviePilot] GetUserRequests: fetched %d total subscriptions from API", len(items))
+
+	// Client-side filtering with multiple matching strategies
 	var filtered []SubscribeItem
-	for _, item := range items {
-		// Log first few items for debugging
-		if len(filtered) < 3 {
-			log.Printf("[MoviePilot] Subscription item: id=%d, name=%s, username=%q, user_id=%q, state=%s",
-				item.ID, item.Name, item.Username, item.UserID, item.State)
+	userIDStr := fmt.Sprintf("%d", userID)
+
+	for i, item := range items {
+		// Log first few items for debugging to understand the data format
+		if i < 5 {
+			log.Printf("[MoviePilot] Subscription item[%d]: id=%d, name=%s, username=%q, user_id=%d, state=%s",
+				i, item.ID, item.Name, item.Username, item.UserID.Int64(), item.State)
 		}
-		// Try multiple matching strategies:
-		// 1. Direct username match
-		// 2. User ID match (if SubscribeItem has UserID field)
-		// 3. Name match as fallback
-		if item.Username == user.Username || item.Username == fmt.Sprintf("%d", userID) ||
-			item.Name == user.Username || item.UserID == userID {
+
+		// Multiple matching strategies - use OR logic, any match is enough
+		matched := false
+		var matchReason string
+
+		// Strategy 1: Direct user_id match (most reliable if available)
+		if !item.UserID.IsZero() && item.UserID.Int64() == userID {
+			matched = true
+			matchReason = "user_id"
+		}
+
+		// Strategy 2: username field matches effective username
+		if !matched && effectiveUsername != "" && item.Username == effectiveUsername {
+			matched = true
+			matchReason = "username"
+		}
+
+		// Strategy 3: username field matches userID as string (some APIs store it this way)
+		if !matched && item.Username == userIDStr {
+			matched = true
+			matchReason = "username_as_id"
+		}
+
+		// Strategy 4: Case-insensitive username match
+		if !matched && effectiveUsername != "" &&
+			strings.EqualFold(strings.TrimSpace(item.Username), strings.TrimSpace(effectiveUsername)) {
+			matched = true
+			matchReason = "username_casefold"
+		}
+
+		// Strategy 5: Check if UserNameAlt field matches
+		if !matched && user.UserNameAlt != "" && item.Username == user.UserNameAlt {
+			matched = true
+			matchReason = "username_alt"
+		}
+
+		if matched {
 			filtered = append(filtered, item)
+			if len(filtered) <= 3 {
+				log.Printf("[MoviePilot] Matched item id=%d (%s): %s", item.ID, matchReason, item.Name)
+			}
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, total_items=%d, filtered=%d", userID, user.Username, len(items), len(filtered))
+	log.Printf("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
+		userID, effectiveUsername, len(items), len(filtered))
 
-	// Log state values of first few items
+	// Log state values of first few filtered items
 	for i, item := range filtered {
 		if i >= 5 {
 			break
 		}
-		log.Printf("[MoviePilot] Item %d: name=%s, state=%q", item.ID, item.Name, item.State)
+		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q", i, item.ID, item.Name, item.State)
 	}
 
 	return filtered, nil
