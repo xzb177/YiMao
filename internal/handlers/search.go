@@ -121,11 +121,15 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return h.showSearchHistory(userID, chatID)
 	}
 
-	// Add to search history
+	// Add to search history - prefer DB version (new), fallback to legacy
 	if h.searchHistoryDB != nil {
 		h.searchHistoryDB.AddSearch(userID, query)
+		log.Printf("[SearchHandler] Search added to SearchHistoryDB: userID=%d, query=%s", userID, query)
 	} else if h.searchHistory != nil {
 		h.searchHistory.AddSearch(userID, query)
+		log.Printf("[SearchHandler] Search added to SearchHistory (legacy): userID=%d, query=%s", userID, query)
+	} else {
+		log.Printf("[SearchHandler] WARNING: No search history service available, query not saved: %s", query)
 	}
 
 	// Perform search

@@ -43,7 +43,8 @@ type PollDeps struct {
 	AdminService    *services.AdminService
 	AdminHandler    *handlers.AdminHandler // For admin management flows
 	QuotaService    *services.QuotaService
-	SearchHistory   *services.SearchHistoryService
+	SearchHistory   *services.SearchHistoryService  // Legacy, for backward compatibility
+	SearchHistoryDB *services.SearchHistoryDB        // New, advanced features
 	TMDB            *services.TMDBClient
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
@@ -63,17 +64,18 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		AdminHandler:   deps.AdminHandler,
-		QuotaService:   deps.QuotaService,
-		SearchHistory:  deps.SearchHistory,
-		TMDB:           deps.TMDB,
-		IssueService:   deps.IssueService,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		AdminHandler:    deps.AdminHandler,
+		QuotaService:    deps.QuotaService,
+		SearchHistory:   deps.SearchHistory,
+		SearchHistoryDB: deps.SearchHistoryDB,
+		TMDB:            deps.TMDB,
+		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
 		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 	}
@@ -287,7 +289,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
 		msg.Text = sanitizedText // Update with sanitized text
-		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.FallbackService)
+		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
 }
 
@@ -333,13 +335,19 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
-func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, fallbackSvc *services.SearchFallbackService) {
+func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, searchHistoryDB *services.SearchHistoryDB, tmdb *services.TMDBClient, fallbackSvc *services.SearchFallbackService) {
 	// Sanitize search query
 	query := validation.SanitizeSearchQuery(msg.Text)
 
-	// Add to search history
-	if searchHistory != nil && query != "" {
+	// Add to search history - prefer DB version (new), fallback to legacy
+	if searchHistoryDB != nil && query != "" {
+		searchHistoryDB.AddSearch(msg.From.ID, query)
+		log.Printf("[Poll] Search added to SearchHistoryDB: userID=%d, query=%s", msg.From.ID, query)
+	} else if searchHistory != nil && query != "" {
 		searchHistory.AddSearch(msg.From.ID, query)
+		log.Printf("[Poll] Search added to SearchHistory (legacy): userID=%d, query=%s", msg.From.ID, query)
+	} else if query != "" {
+		log.Printf("[Poll] WARNING: No search history service available, query not saved: %s", query)
 	}
 
 	// Search in MoviePilot

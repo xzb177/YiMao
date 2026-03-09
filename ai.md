@@ -2982,3 +2982,36 @@ watchlist_add:{tmdbID}  # 加入片单
 - **镜像**: `yimao-emby-telegram-bot:latest` (sha256:6ba984aaac8f)
 - **部署时间**: 2026-03-09 10:16
 
+---
+
+### fix: 搜索历史记录未保存 - SearchHistoryDB 集成修复 ✅
+- **时间**: 2026-03-09 10:22
+- **问题**: 用户搜索后，"历史记录"页面显示"暂无搜索记录"
+- **根本原因**:
+  - `poll.go` 中的 `HandlePollSearchQuery` 使用旧版 `SearchHistoryService`
+  - `PollDeps` 结构体缺少 `SearchHistoryDB` 字段
+  - 新版 `SearchHistoryDB` 未传递给轮询处理流程
+- **修复方案**:
+  1. **更新 `PollDeps` 结构体**: 添加 `SearchHistoryDB *services.SearchHistoryDB` 字段
+  2. **更新 `StartPolling`**: 将 `deps.SearchHistoryDB` 传递给 `PollDeps`
+  3. **更新 `HandlePollSearchQuery` 签名**: 添加 `searchHistoryDB` 参数
+  4. **优先使用 SearchHistoryDB**:
+     ```go
+     if searchHistoryDB != nil {
+         searchHistoryDB.AddSearch(userID, query)
+     } else if searchHistory != nil {
+         searchHistory.AddSearch(userID, query)
+     }
+     ```
+  5. **添加调试日志**: 记录搜索保存到哪个服务
+- **修改文件**:
+  - `internal/bot/poll.go` - PollDeps 结构体、StartPolling、HandlePollSearchQuery
+  - `internal/handlers/search.go` - HandleSearchQuery 添加日志
+- **验证日志**:
+  ```
+  [Poll] Search added to SearchHistoryDB: userID=5779291957, query=择天记
+  ```
+- **状态**: ✅ 搜索历史正确记录到 SearchHistoryDB
+- **镜像**: `yimao-emby-telegram-bot:latest` (sha256:df8545ade)
+- **部署时间**: 2026-03-09 10:22
+
