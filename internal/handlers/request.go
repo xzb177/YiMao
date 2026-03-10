@@ -18,6 +18,7 @@ type RequestHandler struct {
 	sessMgr        *session.Manager
 	telegram       *services.TelegramClient
 	moviepilot     *services.MoviePilotClient
+	tmdbClient     *services.TMDBClient
 	adminService   *services.AdminService
 	webhookService *services.WebhookService
 	userMapping    *services.UserMappingService
@@ -30,6 +31,7 @@ func NewRequestHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
 	moviepilot *services.MoviePilotClient,
+	tmdbClient *services.TMDBClient,
 	adminService *services.AdminService,
 	webhookService *services.WebhookService,
 	userMapping *services.UserMappingService,
@@ -40,6 +42,7 @@ func NewRequestHandler(
 		sessMgr:        sessMgr,
 		telegram:       telegram,
 		moviepilot:     moviepilot,
+		tmdbClient:     tmdbClient,
 		adminService:   adminService,
 		webhookService: webhookService,
 		userMapping:    userMapping,
@@ -178,6 +181,27 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			mediaTitle = cachedItem.Title
 			mediaYear = cachedItem.Year
 			overview = cachedItem.Overview
+		}
+	}
+
+	// Try TMDB API if still no title
+	if mediaTitle == "" && h.tmdbClient != nil {
+		log.Printf("[RequestHandler] Fetching media info from TMDB for ID: %d", tmdbID)
+		mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
+		if err == nil && mediaInfo != nil {
+			mediaTitle = mediaInfo.GetTitle()
+			if mediaYear == 0 {
+				mediaYear = mediaInfo.GetYear()
+			}
+			if overview == "" {
+				overview = mediaInfo.Overview
+			}
+			if posterPath == "" {
+				posterPath = mediaInfo.PosterPath
+			}
+			log.Printf("[RequestHandler] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
+		} else {
+			log.Printf("[RequestHandler] TMDB API failed: %v", err)
 		}
 	}
 
@@ -530,6 +554,21 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
 			mediaTitle = cachedItem.Title
 			mediaYear = cachedItem.Year
+		}
+	}
+
+	// Try TMDB API if still no title
+	if mediaTitle == "" && h.tmdbClient != nil {
+		log.Printf("[HandleForceSubscribe] Fetching media info from TMDB for ID: %d", tmdbID)
+		mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
+		if err == nil && mediaInfo != nil {
+			mediaTitle = mediaInfo.GetTitle()
+			if mediaYear == 0 {
+				mediaYear = mediaInfo.GetYear()
+			}
+			log.Printf("[HandleForceSubscribe] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
+		} else {
+			log.Printf("[HandleForceSubscribe] TMDB API failed: %v", err)
 		}
 	}
 

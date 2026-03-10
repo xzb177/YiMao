@@ -2,6 +2,59 @@
 
 ---
 
+### fix: 求片审核标题显示为 "TMDB:xxx" ✅
+- **时间**: 2026-03-10 13:10
+- **问题**: 求片审核通知显示 "📺 TMDB:1100" 而不是真实的剧集名称
+- **根本原因**:
+  - 用户提交请求时，搜索结果缓存中无匹配的 TMDB ID
+  - 代码直接使用备选格式 `fmt.Sprintf("TMDB:%d", tmdbID)` 作为标题
+  - 未调用 TMDB API 获取真实媒体信息
+- **修复内容**:
+  1. **`RequestHandler` 结构体**: 添加 `tmdbClient *services.TMDBClient` 字段
+  2. **`NewRequestHandler` 构造函数**: 添加 `tmdbClient` 参数
+  3. **标题获取逻辑增强**: 在使用备选格式前调用 TMDB API
+     ```go
+     // Try TMDB API if still no title
+     if mediaTitle == "" && h.tmdbClient != nil {
+         mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
+         if err == nil && mediaInfo != nil {
+             mediaTitle = mediaInfo.GetTitle()
+             if mediaYear == 0 { mediaYear = mediaInfo.GetYear() }
+             if overview == "" { overview = mediaInfo.Overview }
+             if posterPath == "" { posterPath = mediaInfo.PosterPath }
+         }
+     }
+     ```
+  4. **两处修改位置**:
+     - `HandleRequest` 方法（常规求片流程）
+     - `HandleForceSubscribe` 方法（强制订阅流程）
+  5. **依赖注入更新**: `cmd/bot/main.go` 传递 TMDBClient 给 RequestHandler
+- **修改文件**:
+  - `internal/handlers/request.go` - RequestHandler 结构体、构造函数、两处标题获取逻辑
+  - `cmd/bot/main.go` - 依赖注入
+- **效果**:
+  - 审核通知现在显示完整中文标题：《老爸老妈的浪漫史》
+  - 年份、简介、海报等信息也会同步获取
+  - 不再显示 "TMDB:xxx" 格式
+- **状态**: ✅ 已部署
+
+---
+
+### review: 批准求片 - 老爸老妈的浪漫史 S1 ✅
+- **时间**: 2026-03-10 12:36
+- **媒体**: 《老爸老妈的浪漫史》 How I Met Your Mother
+- **TMDB**: 1100
+- **类型**: 剧集 第1季
+- **用户 ID**: 5779291957
+- **请求 ID**: review_5779291957_1773116601
+- **订阅 ID**: 3543
+- **订阅状态**: N (新订阅)
+- **备注**:
+  - 之前订阅 (3528) 已回收，用户重新请求
+  - MoviePilot/Emby 媒体库无此内容，批准通过
+
+---
+
 ### fix: 我的请求列表显示为空 - 订阅过滤逻辑修复 ✅
 - **时间**: 2026-03-08 23:23
 - **问题**: "我的请求"显示"暂无记录"，但实际有 81 个订阅
