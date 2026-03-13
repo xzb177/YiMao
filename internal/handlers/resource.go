@@ -285,12 +285,9 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 		close(resultChan)
 	}()
 
-	// Collect results with timeout
+	// Collect results
 	var resources []CandidateResource
 	var sitesSearched []string
-
-	// Set overall timeout (5 seconds max for all sites)
-	timeout := time.After(5 * time.Second)
 	collectedResults := 0
 
 	for result := range resultChan {
@@ -350,7 +347,7 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 	sess.Set(resourceListSessionKey, resourceList)
 
 	// Update cache info
-	searchKey := fmt.Sprintf("%d_%s_%s", tmdbID, mediaType, sortBy)
+	searchKey = fmt.Sprintf("%d_%s_%s", tmdbID, mediaType, sortBy)
 	sess.Set(resourceSearchCacheKey, searchKey)
 	sess.Set(resourceSearchCacheTime, int(time.Now().Unix()))
 
