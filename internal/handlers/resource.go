@@ -238,12 +238,16 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 	// Get available sites from MoviePilot
 	sites, err := h.moviepilot.GetSites()
 	if err == nil {
+		fmt.Printf("[Resource] Found %d sites from MoviePilot\n", len(sites))
 		// Launch concurrent searches for each site
 		for _, site := range sites {
+			fmt.Printf("[Resource] Trying site: %s (ID: %d)\n", site.Name, site.ID)
 			adapter, ok := h.siteReg.GetBySiteID(site.ID, sites)
 			if !ok {
+				fmt.Printf("[Resource] No adapter found for site: %s\n", site.Name)
 				continue
 			}
+			fmt.Printf("[Resource] Using adapter: %s for site: %s\n", adapter.Name(), site.Name)
 
 			wg.Add(1)
 			go func(adapter services.SiteAdapter) {

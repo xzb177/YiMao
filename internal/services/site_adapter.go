@@ -79,22 +79,33 @@ func (r *SiteRegistry) GetBySiteID(siteID int, sites []SiteInfo) (SiteAdapter, b
 		return nil, false
 	}
 
-	// Map site names to domains
-	siteDomainMap := map[string]string{
-		"天空":     "hdsky.me",
-		"朱雀":     "zhuque.in",
-		"馒头":     "m-team.cc",
-		"HD-Sky": "hdsky.me",
-		"ZhuQue": "zhuque.in",
-		"M-Team": "m-team.cc",
+	// Normalize site name for matching (lowercase, remove spaces)
+	siteNameLower := strings.ToLower(strings.TrimSpace(siteName))
+
+	// Map site names to domains - more flexible matching
+	siteDomainMap := map[string][]string{
+		"hdsky.me": {"天空", "hd-sky", "hdsky", "hd sky", "sky"},
+		"zhuque.in": {"朱雀", "zhuque", "zhu-que", "zhu que"},
+		"m-team.cc": {"馒头", "m-team", "mteam", "m team", "m-team.cc"},
 	}
 
-	domain, ok := siteDomainMap[siteName]
-	if !ok {
-		return nil, false
+	// Try to find matching domain
+	for domain, keywords := range siteDomainMap {
+		for _, keyword := range keywords {
+			if strings.Contains(siteNameLower, strings.ToLower(keyword)) {
+				if adapter, ok := r.Get(domain); ok {
+					return adapter, true
+				}
+			}
+		}
 	}
 
-	return r.Get(domain)
+	// Try exact match as fallback
+	if adapter, ok := r.Get(siteNameLower); ok {
+		return adapter, true
+	}
+
+	return nil, false
 }
 
 // SearchAll searches across all registered sites
@@ -407,9 +418,9 @@ type MTeamAdapter struct {
 // NewMTeamAdapter creates a new M-Team adapter
 func NewMTeamAdapter(client *http.Client) *MTeamAdapter {
 	return &MTeamAdapter{
-		baseURL:    "https://m-team.cc",
-		apiURL:     "https://m-team.cc/api/torrent/search",
-		rssURL:     "https://m-team.cc/torrentrss.php",
+		baseURL:    "https://kp.m-team.cc",
+		apiURL:     "https://kp.m-team.cc/api/torrent/search",
+		rssURL:     "https://kp.m-team.cc/torrentrss.php",
 		httpClient: client,
 	}
 }
