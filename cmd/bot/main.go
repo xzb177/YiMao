@@ -280,7 +280,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 }
 
 // initRegistry initializes the callback registry and handlers
-func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
+func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry := callback.NewRegistry()
 
 	// Apply middleware
@@ -289,39 +289,82 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.Use(middleware.Validator)
 
 	// Create handlers
-	startHandler := handlers.NewStartHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot)
-	detailHandler := handlers.NewDetailHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
-	backHandler := handlers.NewBackHandler(services.SessionMgr)
+	startHandler := handlers.NewStartHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot)
+	detailHandler := handlers.NewDetailHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
+	backHandler := handlers.NewBackHandler(deps.SessionMgr)
 	cancelHandler := handlers.NewCancelHandler()
-	requestHandler := handlers.NewRequestHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient, services.AdminService, services.WebhookService, services.UserMapping, services.QuotaService, services.ReviewService)
-	searchHandler := handlers.NewSearchHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.TMDBClient)
-	if services.SearchHistoryDB != nil {
-		searchHandler.SetSearchHistoryDB(services.SearchHistoryDB)
+	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
+	searchHandler := handlers.NewSearchHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
+	if deps.SearchHistoryDB != nil {
+		searchHandler.SetSearchHistoryDB(deps.SearchHistoryDB)
 	}
-	myRequestsHandler := handlers.NewMyRequestsHandler(services.SessionMgr, services.Telegram, services.MoviePilot)
-	linkHandler := handlers.NewLinkHandler(nil, services.SessionMgr, services.Telegram, services.MoviePilot, services.UserMapping, services.BindingRequest)
+	myRequestsHandler := handlers.NewMyRequestsHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot)
+	linkHandler := handlers.NewLinkHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
-	adminHandler := handlers.NewAdminHandler(services.Cfg, services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.QuotaService)
-	reviewHandler := handlers.NewReviewHandler(services.SessionMgr, services.Telegram, services.MoviePilot, services.AdminService, services.ReviewService, services.QuotaService, services.WebhookService)
-	feedbackHandler := handlers.NewFeedbackHandler(services.SessionMgr, services.Telegram, services.AdminService)
+	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
+	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService)
+	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
+
+	// Initialize site adapter registry for resource candidates
+	siteRegistry := services.NewSiteRegistry()
+	// Register site adapters with passkeys from config
+	hdskyAdapter := services.NewSkyIslandAdapter(siteRegistry.HTTPClient())
+	zhuqueAdapter := services.NewZhuQueAdapter(siteRegistry.HTTPClient())
+	mteamAdapter := services.NewMTeamAdapter(siteRegistry.HTTPClient())
+
+	// Set passkeys from config
+	if deps.Cfg.HDSkyPasskey != "" {
+		hdskyAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.HDSkyPasskey})
+		log.Println("    - HD-Sky passkey configured")
+	}
+	// ZhuQue: support both legacy passkey and new RSS key format
+	if deps.Cfg.ZhuQueRSSKey1 != "" && deps.Cfg.ZhuQueRSSKey2 != "" {
+		zhuqueAdapter.SetCredentials(map[string]string{
+			"rss_key1": deps.Cfg.ZhuQueRSSKey1,
+			"rss_key2": deps.Cfg.ZhuQueRSSKey2,
+		})
+		log.Println("    - ZhuQue RSS new format configured")
+	} else if deps.Cfg.ZhuQuePasskey != "" {
+		zhuqueAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.ZhuQuePasskey})
+		log.Println("    - ZhuQue passkey configured (legacy)")
+	}
+	// M-Team: support both legacy passkey and new RSS format
+	if deps.Cfg.MTeamRSSUID != "" && deps.Cfg.MTeamRSSSign != "" {
+		mteamAdapter.SetCredentials(map[string]string{
+			"rss_uid":  deps.Cfg.MTeamRSSUID,
+			"rss_sign": deps.Cfg.MTeamRSSSign,
+		})
+		log.Println("    - M-Team RSS new format configured")
+	} else if deps.Cfg.MTeamPasskey != "" {
+		mteamAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.MTeamPasskey})
+		log.Println("    - M-Team passkey configured (legacy)")
+	}
+
+	siteRegistry.Register(hdskyAdapter)
+	siteRegistry.Register(zhuqueAdapter)
+	siteRegistry.Register(mteamAdapter)
+	log.Println("    - SiteRegistry initialized with 3 adapters (HD-Sky, ZhuQue, M-Team)")
+
+	resourceHandler := handlers.NewResourceHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, siteRegistry)
 
 	// Search History Handler (if DB is available)
 	var searchHistoryHandler *handlers.SearchHistoryHandler
-	if services.SearchHistoryDB != nil {
-		searchHistoryHandler = handlers.NewSearchHistoryHandler(services.Telegram, services.SearchHistoryDB)
+	if deps.SearchHistoryDB != nil {
+		searchHistoryHandler = handlers.NewSearchHistoryHandler(deps.Telegram, deps.SearchHistoryDB)
 		log.Println("    - SearchHistoryHandler created")
 	} else {
 		log.Println("    - SearchHistoryHandler skipped (DB not available)")
 	}
 
 	// Inject dependencies
-	startHandler.SetAdminService(services.AdminService)
-	backHandler.SetAdminService(services.AdminService)
-	adminHandler.SetMediaNotificationService(services.MediaNotification)
-	adminHandler.SetIssueService(services.IssueService)
-	myRequestsHandler.SetUserMapping(services.UserMapping)
-	searchHandler.SetSearchHistory(services.SearchHistory)
-	feedbackHandler.SetIssueService(services.IssueService)
+	startHandler.SetAdminService(deps.AdminService)
+	backHandler.SetAdminService(deps.AdminService)
+	adminHandler.SetMediaNotificationService(deps.MediaNotification)
+	adminHandler.SetIssueService(deps.IssueService)
+	myRequestsHandler.SetUserMapping(deps.UserMapping)
+	searchHandler.SetSearchHistory(deps.SearchHistory)
+	feedbackHandler.SetIssueService(deps.IssueService)
+	feedbackHandler.SetTMDBClient(deps.TMDBClient)
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
@@ -431,33 +474,42 @@ func initRegistry(services *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("feedback_rate_4", feedbackHandler.Handle)
 	registry.RegisterFunc("feedback_rate_5", feedbackHandler.Handle)
 
+	// Resource candidate callbacks
+	registry.RegisterFunc(callback.ActionResourceList, resourceHandler.Handle)
+	registry.RegisterFunc(callback.ActionResourcePick, resourceHandler.Handle)
+	registry.RegisterFunc(callback.ActionResourceSort, resourceHandler.Handle)
+	registry.RegisterFunc(callback.ActionResourcePrev, resourceHandler.Handle)
+	registry.RegisterFunc(callback.ActionResourceNext, resourceHandler.Handle)
+	// Short format callback for resource pick (to stay under 64 bytes)
+	registry.RegisterFunc("rp", resourceHandler.Handle)
+
 	log.Println("✅ Callback handlers registered")
 
-	// Build full dependencies
-	deps := &Dependencies{
-		Cfg:               services.Cfg,
-		Telegram:          services.Telegram,
-		MoviePilot:        services.MoviePilot,
-		SessionMgr:        services.SessionMgr,
-		UserMapping:       services.UserMapping,
-		BindingRequest:    services.BindingRequest,
-		Preferences:       services.Preferences,
-		IssueService:      services.IssueService,
-		AdminService:      services.AdminService,
+	// Build full dependencies with handlers included
+	resultDeps := &Dependencies{
+		Cfg:               deps.Cfg,
+		Telegram:          deps.Telegram,
+		MoviePilot:        deps.MoviePilot,
+		SessionMgr:        deps.SessionMgr,
+		UserMapping:       deps.UserMapping,
+		BindingRequest:    deps.BindingRequest,
+		Preferences:       deps.Preferences,
+		IssueService:      deps.IssueService,
+		AdminService:      deps.AdminService,
 		AdminHandler:      adminHandler,
-		QuotaService:      services.QuotaService,
-		ReviewService:     services.ReviewService,
-		MediaNotification: services.MediaNotification,
-		WebhookService:    services.WebhookService,
-		TMDBClient:        services.TMDBClient,
-		Notification:      services.Notification,
-		Scheduler:         services.Scheduler,
-		SearchHistory:     services.SearchHistory,
-		SearchHistoryDB:   services.SearchHistoryDB,
+		QuotaService:      deps.QuotaService,
+		ReviewService:     deps.ReviewService,
+		MediaNotification: deps.MediaNotification,
+		WebhookService:    deps.WebhookService,
+		TMDBClient:        deps.TMDBClient,
+		Notification:      deps.Notification,
+		Scheduler:         deps.Scheduler,
+		SearchHistory:     deps.SearchHistory,
+		SearchHistoryDB:   deps.SearchHistoryDB,
 		FeedbackHandler:   feedbackHandler,
 	}
 
-	return registry, deps
+	return registry, resultDeps
 }
 
 // setupBotCommands sets up the bot command menu

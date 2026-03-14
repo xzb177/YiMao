@@ -175,6 +175,7 @@ func (a *SkyIslandAdapter) Search(keyword string, page int) ([]TorrentResource, 
 	// Build RSS URL with search parameter
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
+	fmt.Printf("[HD-Sky] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	// Fetch RSS feed
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -233,6 +234,18 @@ func (a *SkyIslandAdapter) parseRSS(r io.Reader) ([]TorrentResource, error) {
 		results = append(results, resource)
 	}
 
+	// Log first few titles for debugging
+	if len(results) > 0 {
+		maxShow := 5
+		if len(results) < maxShow {
+			maxShow = len(results)
+		}
+		fmt.Printf("[%s] Sample titles (first %d):\n", a.Name(), maxShow)
+		for i := 0; i < maxShow; i++ {
+			fmt.Printf("  - %s\n", results[i].Title)
+		}
+	}
+
 	return results, nil
 }
 
@@ -248,6 +261,8 @@ type ZhuQueAdapter struct {
 	httpClient *http.Client
 	apiKey     string
 	passkey    string
+	rssKey1    string // First part of RSS key (uid)
+	rssKey2    string // Second part of RSS key (passkey)
 }
 
 // NewZhuQueAdapter creates a new ZhuQue adapter
@@ -255,7 +270,7 @@ func NewZhuQueAdapter(client *http.Client) *ZhuQueAdapter {
 	return &ZhuQueAdapter{
 		baseURL:    "https://zhuque.in",
 		apiURL:     "https://zhuque.in/api/torrent/search",
-		rssURL:     "https://zhuque.in/torrentrss.php",
+		rssURL:     "https://zhuque.in/api/torrent/rss",
 		httpClient: client,
 	}
 }
@@ -278,13 +293,100 @@ func (a *ZhuQueAdapter) SetCredentials(creds map[string]string) {
 	}
 	if passkey, ok := creds["passkey"]; ok {
 		a.passkey = passkey
+		// Also try to parse as "key1/key2" format for new RSS
+		parts := strings.Split(passkey, "/")
+		if len(parts) == 2 && a.rssKey1 == "" {
+			a.rssKey1 = parts[0]
+			a.rssKey2 = parts[1]
+		}
+	}
+	// Support new RSS key format: rss_key1 and rss_key2
+	if key1, ok := creds["rss_key1"]; ok {
+		a.rssKey1 = key1
+	}
+	if key2, ok := creds["rss_key2"]; ok {
+		a.rssKey2 = key2
 	}
 }
 
-// Search searches via API with RSS fallback
+// Search searches via RSS with search parameter
 func (a *ZhuQueAdapter) Search(keyword string, page int) ([]TorrentResource, error) {
-	// Try RSS first (more reliable for PT sites)
-	return a.searchRSS(keyword, page)
+	var rssURL string
+
+	// Use new RSS URL format if keys are available
+	if a.rssKey1 != "" && a.rssKey2 != "" {
+		// New format: https://zhuque.in/api/torrent/rss/{key1}/{key2}
+		rssURL = fmt.Sprintf("%s/%s/%s", a.rssURL, a.rssKey1, a.rssKey2)
+		fmt.Printf("[ZhuQue] Using new RSS format\n")
+	} else if a.passkey != "" {
+		// Legacy format: https://zhuque.in/torrentrss.php?passkey=xxx
+		rssURL = fmt.Sprintf("https://zhuque.in/torrentrss.php?passkey=%s&rows=100&search=%s",
+			a.passkey, url.QueryEscape(keyword))
+		fmt.Printf("[ZhuQue] Using legacy RSS format\n")
+	} else {
+		return nil, fmt.Errorf("no RSS credentials configured")
+	}
+
+	fmt.Printf("[ZhuQue] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+
+	// Make HTTP request
+	req, err := http.NewRequest("GET", rssURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch rss: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status: %d", resp.StatusCode)
+	}
+
+	// Read response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	items, err := parseRSSItems(string(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse rss: %w", err)
+	}
+
+	var results []TorrentResource
+	for _, item := range items {
+		resource := TorrentResource{
+			SiteName:  a.Name(),
+			Title:     item.Title,
+			Size:      float64(item.Size),
+			Seeders:   item.Seeders,
+			Peers:     item.Peers,
+			PageURL:   item.Link,
+			Enclosure: item.Enclosure,
+			PubDate:   item.PubDate.Format("2006-01-02 15:04:05"),
+		}
+		results = append(results, resource)
+	}
+
+	// Log first few titles for debugging
+	if len(results) > 0 {
+		maxShow := 5
+		if len(results) < maxShow {
+			maxShow = len(results)
+		}
+		fmt.Printf("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
+		for i := 0; i < maxShow; i++ {
+			fmt.Printf("  - %s\n", results[i].Title)
+		}
+	}
+
+	// Filter results by keyword
+	return filterByKeyword(results, keyword), nil
 }
 
 // searchAPI uses ZhuQue's API endpoint
@@ -353,6 +455,7 @@ func (a *ZhuQueAdapter) searchAPI(keyword string, page int) ([]TorrentResource, 
 func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
+	fmt.Printf("[ZhuQue] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -407,12 +510,15 @@ func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, 
 
 // MTeamAdapter searches M-Team (m-team.cc) via API or RSS
 type MTeamAdapter struct {
-	baseURL    string
-	apiURL     string
-	rssURL     string
-	httpClient *http.Client
-	apiKey     string
-	passkey    string
+	baseURL      string
+	apiURL       string
+	rssURL       string
+	httpClient   *http.Client
+	apiKey       string
+	passkey      string
+	rssBaseURL   string // New RSS base URL
+	rssUID       string // RSS user ID
+	rssSign      string // RSS signature (dynamic)
 }
 
 // NewMTeamAdapter creates a new M-Team adapter
@@ -421,6 +527,7 @@ func NewMTeamAdapter(client *http.Client) *MTeamAdapter {
 		baseURL:    "https://kp.m-team.cc",
 		apiURL:     "https://kp.m-team.cc/api/torrent/search",
 		rssURL:     "https://kp.m-team.cc/torrentrss.php",
+		rssBaseURL: "https://rss.m-team.cc/api/rss/fetch",
 		httpClient: client,
 	}
 }
@@ -443,16 +550,104 @@ func (a *MTeamAdapter) SetCredentials(creds map[string]string) {
 	}
 	if passkey, ok := creds["passkey"]; ok {
 		a.passkey = passkey
+		// Also try to parse as "uid/sign" format for new RSS
+		parts := strings.Split(passkey, "/")
+		if len(parts) == 2 && a.rssUID == "" {
+			a.rssUID = parts[0]
+			a.rssSign = parts[1]
+		}
+	}
+	// Support new RSS credentials: rss_uid and rss_sign
+	if uid, ok := creds["rss_uid"]; ok {
+		a.rssUID = uid
+	}
+	if sign, ok := creds["rss_sign"]; ok {
+		a.rssSign = sign
 	}
 }
 
-// Search searches via API with RSS fallback
+// Search searches via RSS with search parameter
 func (a *MTeamAdapter) Search(keyword string, page int) ([]TorrentResource, error) {
-	// Try RSS first (more reliable for PT sites)
-	return a.searchRSS(keyword, page)
+	var rssURL string
+
+	// Try new RSS format first (if uid and sign are available)
+	if a.rssUID != "" && a.rssSign != "" {
+		// New format: https://rss.m-team.cc/api/rss/fetch?uid=xxx&sign=xxx&pageSize=100
+		rssURL = fmt.Sprintf("%s?uid=%s&sign=%s&pageSize=100&dl=1&tkeys=ttitle,tcat,tsmalldescr,tuploader,tsize",
+			a.rssBaseURL, a.rssUID, a.rssSign)
+		fmt.Printf("[M-Team] Using new RSS format\n")
+	} else if a.passkey != "" {
+		// Legacy format: https://kp.m-team.cc/torrentrss.php?passkey=xxx
+		rssURL = fmt.Sprintf("%s?passkey=%s&rows=100&search=%s",
+			a.rssURL, a.passkey, url.QueryEscape(keyword))
+		fmt.Printf("[M-Team] Using legacy RSS format\n")
+	} else {
+		return nil, fmt.Errorf("no RSS credentials configured")
+	}
+
+	fmt.Printf("[M-Team] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+
+	// Make HTTP request
+	req, err := http.NewRequest("GET", rssURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+
+	resp, err := a.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch rss: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("http status: %d", resp.StatusCode)
+	}
+
+	// Read response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	items, err := parseRSSItems(string(bodyBytes))
+	if err != nil {
+		return nil, fmt.Errorf("parse rss: %w", err)
+	}
+
+	var results []TorrentResource
+	for _, item := range items {
+		resource := TorrentResource{
+			SiteName:  a.Name(),
+			Title:     item.Title,
+			Size:      float64(item.Size),
+			Seeders:   item.Seeders,
+			Peers:     item.Peers,
+			PageURL:   item.Link,
+			Enclosure: item.Enclosure,
+			PubDate:   item.PubDate.Format("2006-01-02 15:04:05"),
+		}
+		results = append(results, resource)
+	}
+
+	// Log first few titles for debugging
+	if len(results) > 0 {
+		maxShow := 5
+		if len(results) < maxShow {
+			maxShow = len(results)
+		}
+		fmt.Printf("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
+		for i := 0; i < maxShow; i++ {
+			fmt.Printf("  - %s\n", results[i].Title)
+		}
+	}
+
+	// Filter results by keyword
+	return filterByKeyword(results, keyword), nil
 }
 
-// searchAPI uses M-Team's API endpoint
+// searchAPI uses M-Team's API endpoint (kept for future use)
 func (a *MTeamAdapter) searchAPI(keyword string, page int) ([]TorrentResource, error) {
 	apiURL := fmt.Sprintf("%s?page=%d&search=%s",
 		a.apiURL, page, url.QueryEscape(keyword))
@@ -518,6 +713,7 @@ func (a *MTeamAdapter) searchAPI(keyword string, page int) ([]TorrentResource, e
 func (a *MTeamAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
+	fmt.Printf("[M-Team] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -586,6 +782,34 @@ type RSSItem struct {
 // parseRSSItems parses RSS items from a reader
 // Supports both standard RSS and Atom formats
 func parseRSSItems(data string) ([]RSSItem, error) {
+	fmt.Printf("[RSS] Parsing %d bytes of data\n", len(data))
+
+	// Check if data looks like HTML (error response)
+	if strings.HasPrefix(data, "<!doctype html>") || strings.HasPrefix(data, "<!DOCTYPE html>") || strings.HasPrefix(data, "<html>") {
+		fmt.Printf("[RSS] Got HTML response instead of RSS - RSS URL may be incorrect\n")
+		return []RSSItem{}, nil
+	}
+
+	// Check if data looks like XML/RSS
+	if len(data) > 100 {
+		previewLen := 200
+		if len(data) < previewLen {
+			previewLen = len(data)
+		}
+		preview := data[:previewLen]
+		if strings.Contains(preview, "<?xml") || strings.Contains(preview, "<rss") {
+			fmt.Printf("[RSS] Looks like valid RSS feed\n")
+		}
+		// Show sample of RSS structure
+		if strings.Contains(data, "<item>") {
+			itemStart := strings.Index(data, "<item>")
+			if itemStart > 0 && len(data) > itemStart+800 {
+				itemSample := data[itemStart:itemStart+800]
+				fmt.Printf("[RSS] Sample item structure:\n%s\n", itemSample)
+			}
+		}
+	}
+
 	var items []RSSItem
 
 	// Simple XML parsing - look for <item> tags in RSS
@@ -621,8 +845,17 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 			end := strings.Index(line, "</title>")
 			if end > start {
 				currentItem.Title = strings.TrimSpace(line[start:end])
+				// Handle CDATA sections: <![CDATA[...]]>
+				if strings.Contains(currentItem.Title, "[CDATA[") {
+					cdataStart := strings.Index(currentItem.Title, "[CDATA[") + 7
+					cdataEnd := strings.Index(currentItem.Title, "]]")
+					if cdataEnd > cdataStart {
+						currentItem.Title = currentItem.Title[cdataStart:cdataEnd]
+					}
+				}
 				// Unescape HTML entities
 				currentItem.Title = htmlUnescape(currentItem.Title)
+				fmt.Printf("[RSS] Parsed title: %s\n", currentItem.Title)
 			}
 			continue
 		}
@@ -701,6 +934,7 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 		}
 	}
 
+	fmt.Printf("[RSS] Parsed %d items from feed\n", len(items))
 	return items, nil
 }
 
@@ -863,16 +1097,38 @@ func extractSeedersPeers(desc string) (seeders, peers int) {
 
 // filterByKeyword filters results by keyword, keeping only matching results
 func filterByKeyword(results []TorrentResource, keyword string) []TorrentResource {
+	fmt.Printf("[Filter] Filtering %d results by keyword: %s\n", len(results), keyword)
+
+	// Show sample titles for debugging
+	if len(results) > 0 {
+		maxShow := 5
+		if len(results) < maxShow {
+			maxShow = len(results)
+		}
+		fmt.Printf("[Filter] Sample titles (first %d):\n", maxShow)
+		for i := 0; i < maxShow; i++ {
+			fmt.Printf("  - %s\n", results[i].Title)
+		}
+	}
+
 	if keyword == "" {
 		return results
 	}
 
-	// Split keyword into parts (e.g., "绿液惊魂 2026" -> ["绿液惊魂", "2026"])
-	keywordParts := strings.Fields(strings.ToLower(keyword))
+	// Clean keyword: remove punctuation, extra spaces
+	cleanKeyword := strings.ReplaceAll(keyword, "。", "")
+	cleanKeyword = strings.ReplaceAll(cleanKeyword, ".", "")
+	cleanKeyword = strings.ReplaceAll(cleanKeyword, ",", "")
+	cleanKeyword = strings.TrimSpace(cleanKeyword)
+
+	// Split keyword into parts (e.g., "你的名字 2016" -> ["你的名字", "2016"])
+	keywordParts := strings.Fields(strings.ToLower(cleanKeyword))
 
 	var filtered []TorrentResource
 	for _, res := range results {
 		titleLower := strings.ToLower(res.Title)
+		titleLower = strings.ReplaceAll(titleLower, ".", "")
+		titleLower = strings.ReplaceAll(titleLower, "。", "")
 
 		// Check if all keyword parts are present in the title
 		matches := true
@@ -888,5 +1144,6 @@ func filterByKeyword(results []TorrentResource, keyword string) []TorrentResourc
 		}
 	}
 
+	fmt.Printf("[Filter] After filtering: %d results\n", len(filtered))
 	return filtered
 }

@@ -35,6 +35,11 @@ services:
       # Timezone
       - TZ=Asia/Shanghai
 
+      # PT Site Passkeys (for candidate list feature)
+      - HDSKY_PASSKEY=${HDSKY_PASSKEY}
+      - ZHUQUE_PASSKEY=${ZHUQUE_PASSKEY}
+      - MTEAM_PASSKEY=${MTEAM_PASSKEY}
+
       # User ID/Group ID for file permissions
       - PUID=${PUID:-0}
       - PGID=${PGID:-0}

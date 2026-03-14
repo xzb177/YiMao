@@ -2,6 +2,208 @@
 
 ---
 
+### feat: 站点名称模糊化 - 动态编号保护隐私 ✅
+- **时间**: 2026-03-14 23:35
+- **背景**: 避免因截图泄露导致站点账号被封
+- **方案**: 动态编号 + 隐藏具体站点名
+  - 站点列表只显示数量：`🌐 已搜索 3 个站点`
+  - 资源列表显示动态编号：`🌐 站点1`、`站点2`、`站点3`
+  - 编号按搜索顺序动态分配，每次不同，无法反推
+- **修改文件**:
+  - `internal/handlers/resource.go`
+    - 新增 `obscureSiteName()` 动态编号函数
+    - 更新站点列表显示逻辑
+- **状态**: ✅ 已部署
+
+---
+
+### fix: 修复 UTF-8 多字节字符切片问题 - 关键词提取 ✅
+- **时间**: 2026-03-14 23:27
+- **问题**: 关键词提取逻辑不工作
+  - 搜索词 `"Dou kyu sei – Classmates"` 应该提取为 `"Classmates"` 但没有生效
+- **根本原因**: `strings.IndexAny` 返回**字节索引**，而 `–` (U+2013) 是多字节 UTF-8 字符
+  - 在字节位置切片会破坏 UTF-8 编码
+  - `s[idx+1:]` 产生无效的 UTF-8 序列
+- **修复内容**: 使用 `strings.FieldsFunc` 代替 `IndexAny`
+  ```go
+  // 修改前（错误）
+  if idx := strings.IndexAny(cleanTitle, "–—:："); idx > 0 {
+      afterSeparator := strings.TrimSpace(cleanTitle[idx+1:])  // ❌ 字节切片
+  }
+
+  // 修改后（正确）
+  separators := func(r rune) bool {
+      return r == '–' || r == '—' || r == ':' || r == '：' || r == '|'
+  }
+  parts := strings.FieldsFunc(cleanTitle, separators)  // ✅ 按 rune 分割
+  ```
+- **修改文件**:
+  - `internal/handlers/resource.go` (line 236-260)
+- **状态**: ✅ 已修复并部署
+
+---
+
+### fix: 简化搜索关键词 - 提取主标题提高匹配率 ✅
+- **时间**: 2026-03-14 23:22
+- **问题**: 复杂标题导致搜索返回 0 条结果
+  - 原搜索词: `"Dou kyu sei – Classmates 2016"` → 0 条
+  - 简化后: `"Classmates"` → 2 条 ✅
+- **根本原因**:
+  1. 代码自动添加年份到搜索词
+  2. 部分标题包含分隔符（如 `–—:：`），需要提取主要部分
+  3. PT 站点通常使用简化的英文标题
+- **修复内容**:
+  1. 移除自动添加年份的逻辑
+  2. 提取分隔符后的主要英文部分
+  3. 使用正则表达式清理末尾年份
+- **代码逻辑**:
+  ```go
+  // 提取分隔符后的主要部分
+  // "Dou kyu sei – Classmates" -> "Classmates"
+  if idx := strings.IndexAny(cleanTitle, "–—:："); idx > 0 {
+      afterSeparator := strings.TrimSpace(cleanTitle[idx+1:])
+      if len(afterSeparator) > 2 && afterSeparator[0] < 128 {
+          keyword = afterSeparator
+      }
+  }
+
+  // 移除年份
+  keyword = regexp.MustCompile(`\s+\d{4}$`).ReplaceAllString(keyword, "")
+  keyword = regexp.MustCompile(`\(\d{4}\)`).ReplaceAllString(keyword, "")
+  ```
+- **修改文件**:
+  - `internal/handlers/resource.go`
+    - 导入 `regexp` 包
+    - 修改关键词提取逻辑 (line 236-250)
+- **状态**: ✅ 已修复并部署
+
+---
+
+### fix: 修复候选列表分页问题 - MoviePilot API 使用 0-based 页码 ✅
+- **时间**: 2026-03-14 23:20
+- **问题**: 候选列表一直返回 0 条资源
+- **根本原因**: MoviePilot API 使用 0-based 分页（从 0 开始），但代码使用 1-based（从 1 开始）
+  - 当用户请求第 1 页时，代码传 `page=1` 给 API
+  - API 实际期望 `page=0` 表示第一页
+  - API 返回第 2 页结果（可能为空）
+- **验证**:
+  ```bash
+  # page=1 返回 0 条
+  curl "http://167.17.76.115:4500/api/v1/site/resource/5?keyword=肯德&page=1"
+  # 返回: []
+
+  # page=0 返回 40 条
+  curl "http://167.17.76.115:4500/api/v1/site/resource/5?keyword=肯德&page=0"
+  # 返回: 40 条结果
+  ```
+- **修复内容**:
+  1. 引入 `userPage` 变量存储用户可见的页码（1-based）
+  2. API 调用时使用 `page = userPage - 1` 转换为 0-based
+  3. `ResourceList.CurrentPage` 使用 `userPage` 保持 UI 一致性
+  4. 修改两处赋值：`rl.CurrentPage = userPage`
+- **修改文件**:
+  - `internal/handlers/resource.go` (line 127-133, 270, 417)
+- **代码差异**:
+  ```go
+  // 修改前
+  page := 1
+  if pageStr := ctx.Callback.Params["page"]; pageStr != "" {
+      if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+          page = p
+      }
+  }
+
+  // 修改后
+  userPage := 1
+  if pageStr := ctx.Callback.Params["page"]; pageStr != "" {
+      if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+          userPage = p
+      }
+  }
+  // Convert to 0-based for MoviePilot API
+  page := userPage - 1
+  ```
+- **状态**: ✅ 已修复并部署
+
+---
+
+### refactor: 候选列表搜索改用 MoviePilot API 代理模式 ✅
+- **时间**: 2026-03-14 22:55
+- **背景**: M-Team RSS 签名有效期仅约 10 分钟，无法长期使用
+- **问题**:
+  - 直接访问 M-Team RSS 需要 `sign` 参数
+  - `sign` 参数会快速过期，导致频繁认证失败
+  - 用户需要定期手动更新 RSS 链接
+- **解决方案**: 使用 MoviePilot 作为代理
+  - MoviePilot 已内置与各 PT 站点的集成
+  - 通过 MP API `/api/v1/site/resource/{siteID}?keyword=xxx` 搜索
+  - MP 负责处理所有站点的认证和签名问题
+- **修改内容**:
+  1. 主要搜索逻辑改用 `MoviePilotClient.GetSiteResources()`
+  2. 移除 SiteAdapter 的直接 RSS 调用
+  3. 添加 `searchViaSiteAdapter()` 作为备用方案（MP API 不可用时）
+  4. 增加站点搜索超时时间：5s → 8s
+- **修改文件**:
+  - `internal/handlers/resource.go` - 搜索逻辑重构
+- **好处**:
+  - ✅ 无需处理 RSS 签名过期问题
+  - ✅ 支持所有 MoviePilot 已配置的站点
+  - ✅ 统一的搜索接口，简化代码维护
+  - ✅ 更好的稳定性（MoviePilot 负责站点适配）
+- **API 端点**: `/api/v1/site/resource/{siteID}?keyword={keyword}&page={page}`
+- **状态**: ✅ 已部署
+- **日志输出**: `[Resource] Found X sites from MoviePilot, searching via MP API`
+
+---
+
+### feat: 候选列表 RSS 搜索修复 - 支持朱雀和馒头新格式 ✅
+- **时间**: 2026-03-14 22:30
+- **背景**: 朱雀和馒头站点的 RSS URL 格式已更改，旧格式不再工作
+- **问题**:
+  - 朱雀旧格式: `https://zhuque.in/torrentrss.php?passkey=xxx`
+  - 馒头旧格式: `https://kp.m-team.cc/torrentrss.php?passkey=xxx`
+- **新格式**:
+  - 朱雀新格式: `https://zhuque.in/api/torrent/rss/{key1}/{key2}`
+  - 馒头新格式: `https://rss.m-team.cc/api/rss/fetch?uid=xxx&sign=xxx&pageSize=100`
+- **修复内容**:
+  1. **ZhuQueAdapter**:
+     - 添加 `rssKey1` 和 `rssKey2` 字段
+     - 更新 `SetCredentials()` 支持新格式
+     - 更新 `Search()` 使用新 RSS URL 格式
+     - 保留旧格式兼容性
+  2. **MTeamAdapter**:
+     - 添加 `rssBaseURL`, `rssUID`, `rssSign` 字段
+     - 更新 `SetCredentials()` 支持新格式
+     - 更新 `Search()` 使用新 RSS URL 格式
+     - 保留旧格式兼容性
+  3. **配置更新**:
+     - 添加 `ZHUQUE_RSS_KEY1`, `ZHUQUE_RSS_KEY2` 环境变量
+     - 添加 `MTEAM_RSS_UID`, `MTEAM_RSS_SIGN` 环境变量
+  4. **初始化更新**:
+     - `main.go` 优先使用新格式，回退到旧格式
+- **修改文件**:
+  - `internal/services/site_adapter.go` - ZhuQueAdapter 和 MTeamAdapter 重构
+  - `internal/config/config.go` - 新增配置字段
+  - `cmd/bot/main.go` - 凭据传递逻辑更新
+- **配置示例**:
+  ```bash
+  # 朱雀新格式
+  ZHUQUE_RSS_KEY1=14fe42ba87314bcc91b2f7022cf7a2a2
+  ZHUQUE_RSS_KEY2=805ca05dcd2e4009aa5ee8036f5ffad1
+
+  # 馒头新格式
+  MTEAM_RSS_UID=377311
+  MTEAM_RSS_SIGN=54ecfa3452422c4c0be5ebb62bff98a5
+  ```
+- **状态**: ✅ 已部署
+- **日志**:
+  ```
+  [ZhuQue] Using new RSS format
+  [M-Team] Using new RSS format
+  ```
+
+---
+
 ### fix: 求片审核标题显示为 "TMDB:xxx" ✅
 - **时间**: 2026-03-10 13:10
 - **问题**: 求片审核通知显示 "📺 TMDB:1100" 而不是真实的剧集名称
@@ -3067,4 +3269,191 @@ watchlist_add:{tmdbID}  # 加入片单
 - **状态**: ✅ 搜索历史正确记录到 SearchHistoryDB
 - **镜像**: `yimao-emby-telegram-bot:latest` (sha256:df8545ade)
 - **部署时间**: 2026-03-09 10:22
+
+
+
+## 2026-03-14
+
+### feat: 加强反馈交互体验和增强管理员通知 ✅
+- **时间**: 2026-03-14
+- **改进内容**:
+  
+  **1. 反馈交互体验增强** (`internal/handlers/feedback.go`):
+  - 添加快捷问题选项（每种问题类型 4-5 个常见描述）
+  - 改进引导提示文本，更清晰地说明用户可以做什么
+  - 延长描述时间从 5 分钟到 10 分钟
+  - 添加 `handleQuickSelect` 处理快捷选项选择
+  - 提交后支持继续添加图片或补充说明
+  - 使用标准 URL 编码处理快捷选项文本
+  
+  **2. 管理员通知详细信息增强** (`internal/handlers/feedback.go`):
+  - 添加优先级图标指示器（🔴紧急 🟡中等 🟢低）
+  - 显示用户 ID（可点击复制）
+  - 显示 TMDB ID 和 Media ID
+  - 添加分隔线使信息更清晰
+  - 显示完整时间（含秒）
+  - 添加"查看详情"按钮快速跳转到详情页
+  
+  **3. 回调白名单更新** (`internal/callback/types.go`):
+  - 添加 `feedback_add_photo` - 支持为已提交反馈添加图片
+  - 添加 `feedback_quick` - 支持快捷选项选择
+
+- **快捷问题选项分类**:
+  - **画质问题**: 画面模糊、卡顿掉帧、色彩异常、有水印、画质不符
+  - **音频问题**: 没有声音、声音不同步、音质差、缺少音轨
+  - **字幕问题**: 没有字幕、不同步、翻译错误、缺少中文
+  - **搜索不到**: 结果为空、剧集不完整、版本不对、缺少季集
+  - **播放问题**: 无法播放、播放中断、加载缓慢、无法拖动
+  - **其他问题**: 下载失败、订阅问题、账号问题、改进建议
+
+- **状态**: ✅ 已构建并测试通过
+- **镜像**: `yimao-emby-telegram-bot:test` (sha256:78d89d44)
+
+
+### deploy: 反馈功能增强部署 ✅
+- **时间**: 2026-03-14 18:17
+- **状态**: ✅ 服务已部署并正常运行
+- **容器**: emby-telegram-bot
+- **验证**: 
+  - 服务正常启动
+  - 所有服务初始化完成
+  - 回调处理器已注册
+  - Bot 命令菜单已设置
+  - 轮询模式运行中
+
+
+### feat: 增强用户追问功能 ✅
+- **时间**: 2026-03-14 18:26
+- **问题**: 用户反馈后，管理员回复时用户不知道如何继续追问
+- **改进内容**:
+  
+  **1. 反馈详情页优化** (`internal/handlers/feedback.go`):
+  - 修复重复代码（重复的按钮和提示）
+  - 添加"停止追问"按钮让用户可以主动退出对话模式
+  - 改进追问提示，明确告知用户"直接在下方输入框发送消息即可回复"
+  - 添加分隔线使界面更清晰
+  
+  **2. 新增 handleStopFollowUp 函数**:
+  - 处理用户点击"停止追问"按钮
+  - 清除 session 中的 conversation ID
+  - 显示确认消息和"继续追问"选项
+  
+  **3. 回调白名单更新** (`internal/callback/types.go`):
+  - 添加 `feedback_stop_follow` 回调支持
+
+- **用户体验流程**:
+  1. 用户查看反馈详情页
+  2. 如果有管理员回复，显示"💬 回复管理员"提示
+  3. 用户直接在输入框发送消息即可回复
+  4. 可点击"⏹️ 停止追问"退出对话模式
+
+- **状态**: ✅ 已部署
+- **容器**: emby-telegram-bot
+
+
+---
+
+# 🚀 新用户部署指南
+
+## 环境要求
+
+- Docker 和 Docker Compose
+- MoviePilot 服务（用于 PT 站点资源搜索代理）
+- Telegram Bot Token（从 @BotFather 获取）
+
+## 配置说明
+
+### 必需配置项
+
+```bash
+# Telegram Bot 配置
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+
+# MoviePilot 配置（候选资源搜索必需）
+MOVIEPILOT_URL=http://your-moviepilot-url:4500
+MOVIEPILOT_API_KEY=your_moviepilot_api_key
+```
+
+### 可选配置项
+
+```bash
+# Emby 配置（媒体库功能）
+EMBY_URL=http://your-emby-url:8096
+EMBY_API_KEY=your_emby_api_key
+
+# TMDB 配置（媒体信息）
+TMDB_API_KEY=your_tmdb_api_key
+
+# 用户权限（逗号分隔）
+ADMIN_USER_IDS=123456789,987654321
+```
+
+## ⚠️ 重要注意事项
+
+### 1. 站点隐私保护
+
+**候选资源搜索功能已内置站点名称模糊化**：
+- 站点列表只显示数量，不显示具体名称
+- 资源列表使用动态编号（站点1、站点2...）
+- 编号每次搜索都不同，无法从截图反推
+
+**额外建议**：
+- 不要在公共场合分享候选列表截图
+- 即使已模糊化，也请谨慎分享
+
+### 2. MoviePilot 集成
+
+候选资源搜索依赖 MoviePilot：
+- 确保 MoviePilot 已正确配置 PT 站点
+- MoviePilot API Key 需要有站点资源访问权限
+- 推荐使用 MoviePilot 作为代理，避免直接处理 RSS 签名过期问题
+
+### 3. 网络配置
+
+```yaml
+# docker-compose.yml
+network_mode: "host"  # 使用宿主机网络，便于访问本地服务
+```
+
+### 4. 数据持久化
+
+```yaml
+volumes:
+  - ./data:/app/data  # 搜索历史、缓存等数据
+```
+
+## 快速启动
+
+```bash
+# 1. 克隆仓库
+git clone <repo_url>
+cd YiMao
+
+# 2. 配置环境变量
+cp .env.example .env
+vi .env  # 填写必需配置
+
+# 3. 启动服务
+docker compose up -d
+
+# 4. 查看日志
+docker logs -f emby-telegram-bot
+```
+
+## 常见问题
+
+**Q: 候选列表返回 0 条资源？**
+- 检查 MoviePilot 是否正常运行
+- 确认 MoviePilot 中已配置 PT 站点
+- 尝试简化搜索关键词
+
+**Q: Bot 无响应？**
+- 检查 TELEGRAM_BOT_TOKEN 是否正确
+- 确认容器正常运行：`docker ps`
+- 查看日志排查错误
+
+**Q: 如何获取 Chat ID？**
+- 给 bot 发送 /start 命令
+- 访问 `https://api.telegram.org/bot<token>/getUpdates` 查看
 

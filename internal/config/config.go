@@ -73,6 +73,15 @@ type Config struct {
 
 	// Review/Resubscribe
 	EnableAutoResubscribe bool
+
+	// PT Site Passkeys for RSS feeds
+	HDSkyPasskey  string // HD-Sky passkey
+	ZhuQuePasskey string // ZhuQue passkey (or "key1/key2" for new format)
+	ZhuQueRSSKey1 string // ZhuQue RSS key part 1 (new format)
+	ZhuQueRSSKey2 string // ZhuQue RSS key part 2 (new format)
+	MTeamPasskey  string // M-Team passkey (legacy format)
+	MTeamRSSUID   string // M-Team RSS user ID (new format)
+	MTeamRSSSign  string // M-Team RSS signature (new format, dynamic)
 }
 
 // Load loads configuration from environment variables and files
@@ -111,6 +120,14 @@ func Load() (*Config, error) {
 		BlockDuration:         getEnvInt("BLOCK_DURATION", 30),           // minutes
 		NotificationFormat:    getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
 		EnableAutoResubscribe: getEnvBool("ENABLE_AUTO_RESUBSCRIBE", false),
+		// PT Site Passkeys
+		HDSkyPasskey:          getEnv("HDSKY_PASSKEY", ""),
+		ZhuQuePasskey:         getEnv("ZHUQUE_PASSKEY", ""),
+		ZhuQueRSSKey1:         getEnv("ZHUQUE_RSS_KEY1", ""),
+		ZhuQueRSSKey2:         getEnv("ZHUQUE_RSS_KEY2", ""),
+		MTeamPasskey:          getEnv("MTEAM_PASSKEY", ""),
+		MTeamRSSUID:           getEnv("MTEAM_RSS_UID", ""),
+		MTeamRSSSign:          getEnv("MTEAM_RSS_SIGN", ""),
 	}
 
 	// Set file paths

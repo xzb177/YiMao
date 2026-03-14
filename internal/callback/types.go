@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 )
@@ -13,64 +14,71 @@ import (
 type Action string
 
 const (
-	ActionSearch       Action = "search"
-	ActionSubscribe    Action = "subscribe"
-	ActionDownload     Action = "download"
-	ActionPage         Action = "page"
-	ActionCancel       Action = "cancel"
-	ActionSelect       Action = "select"
-	ActionBack         Action = "back"
-	ActionDetail       Action = "detail"
+	ActionSearch        Action = "search"
+	ActionSubscribe     Action = "subscribe"
+	ActionDownload      Action = "download"
+	ActionPage          Action = "page"
+	ActionCancel        Action = "cancel"
+	ActionSelect        Action = "select"
+	ActionBack          Action = "back"
+	ActionDetail        Action = "detail"
 	ActionDetailSeasons Action = "detail_seasons"
-	ActionRequest      Action = "request"
-	ActionFeedback     Action = "feedback"
-	ActionStart        Action = "start"
-	ActionRandom       Action = "random"
-	ActionRequests     Action = "requests"
-	ActionLink         Action = "link"
-	ActionHelp         Action = "help"
-	ActionHelpTopic    Action = "help_topic"
-	ActionSettings     Action = "settings"
-	ActionAI           Action = "ai"
-	ActionMood         Action = "mood"
-	ActionMoodPick     Action = "moodpick"
-	ActionQuickPick    Action = "quickpick"
-	ActionHot          Action = "hot"
-	ActionNew          Action = "new"
+	ActionRequest       Action = "request"
+	ActionFeedback      Action = "feedback"
+	ActionStart         Action = "start"
+	ActionRandom        Action = "random"
+	ActionRequests      Action = "requests"
+	ActionLink          Action = "link"
+	ActionHelp          Action = "help"
+	ActionHelpTopic     Action = "help_topic"
+	ActionSettings      Action = "settings"
+	ActionAI            Action = "ai"
+	ActionMood          Action = "mood"
+	ActionMoodPick      Action = "moodpick"
+	ActionQuickPick     Action = "quickpick"
+	ActionHot           Action = "hot"
+	ActionNew           Action = "new"
 
 	// My Requests pagination actions
-	ActionMyReqsPage  Action = "myreqs_page"
-	ActionMyReqsItem  Action = "myreqs_item"
+	ActionMyReqsPage Action = "myreqs_page"
+	ActionMyReqsItem Action = "myreqs_item"
+
+	// Resource candidate actions
+	ActionResourceList Action = "res_list" // Show candidate list
+	ActionResourcePick Action = "res_pick" // Pick a resource
+	ActionResourceSort Action = "res_sort" // Sort resources
+	ActionResourcePrev Action = "res_prev" // Previous page
+	ActionResourceNext Action = "res_next" // Next page
 )
 
 // validActions is the whitelist of allowed callback actions
 var validActions = map[Action]bool{
 	// Standard actions
-	ActionStart:        true,
-	ActionSearch:       true,
-	ActionAI:           true,
-	ActionMood:         true,
-	ActionMoodPick:     true,
-	ActionQuickPick:    true,
-	ActionHot:          true,
-	ActionNew:          true,
-	ActionDetail:       true,
+	ActionStart:         true,
+	ActionSearch:        true,
+	ActionAI:            true,
+	ActionMood:          true,
+	ActionMoodPick:      true,
+	ActionQuickPick:     true,
+	ActionHot:           true,
+	ActionNew:           true,
+	ActionDetail:        true,
 	ActionDetailSeasons: true,
-	ActionRequest:      true,
-	ActionPage:         true,
-	ActionSelect:       true,
-	ActionBack:         true,
-	ActionCancel:       true,
-	ActionRequests:     true,
-	ActionLink:         true,
-	ActionHelp:         true,
-	ActionHelpTopic:    true,
-	ActionSettings:     true,
-	ActionFeedback:     true,
-	ActionRandom:       true,
-	"my_feedback":      true, // User feedback list
-	"start_settings":   true, // Settings page
-	"start_ai":         true, // AI recommendations page (renamed from start_mood)
+	ActionRequest:       true,
+	ActionPage:          true,
+	ActionSelect:        true,
+	ActionBack:          true,
+	ActionCancel:        true,
+	ActionRequests:      true,
+	ActionLink:          true,
+	ActionHelp:          true,
+	ActionHelpTopic:     true,
+	ActionSettings:      true,
+	ActionFeedback:      true,
+	ActionRandom:        true,
+	"my_feedback":       true, // User feedback list
+	"start_settings":    true, // Settings page
+	"start_ai":          true, // AI recommendations page (renamed from start_mood)
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,
@@ -87,21 +95,21 @@ var validActions = map[Action]bool{
 	"rv_r": true, // reject by token
 
 	// Admin actions
-	"admin_approve":                true,
-	"admin_decline":                true,
-	"admin_pending":                true,
-	"admin_issue_reply":            true,
-	"admin_issue_fixed":            true,
-	"admin_issue_processing":       true,
-	"admin_issue_close":            true,
-	"admin_menu":                   true,
-	"admin_notif_settings":         true,
-	"admin_notif_toggle_instant":   true,
-	"admin_notif_toggle_daily":     true,
-	"admin_notif_toggle":           true,
-	"admin_notif_settime":          true,
-	"admin_notif_format_simple":    true,
-	"admin_notif_format_detailed":  true,
+	"admin_approve":               true,
+	"admin_decline":               true,
+	"admin_pending":               true,
+	"admin_issue_reply":           true,
+	"admin_issue_fixed":           true,
+	"admin_issue_processing":      true,
+	"admin_issue_close":           true,
+	"admin_menu":                  true,
+	"admin_notif_settings":        true,
+	"admin_notif_toggle_instant":  true,
+	"admin_notif_toggle_daily":    true,
+	"admin_notif_toggle":          true,
+	"admin_notif_settime":         true,
+	"admin_notif_format_simple":   true,
+	"admin_notif_format_detailed": true,
 	// 新的 V2 通知设置回调 - 状态融合按钮
 	"admin_notif_toggle_single_v2": true,
 	"admin_notif_toggle_daily_v2":  true,
@@ -116,34 +124,34 @@ var validActions = map[Action]bool{
 	"admin_notif_custom_time": true, // 自定义每日汇总时间输入
 
 	// Search History actions
-	"search_history_menu":     true,
-	"search_stats":            true,
-	"search_popular":          true,
-	"popular_week":            true,
-	"popular_all":             true,
-	"search_trends":           true,
-	"search_manage":           true,
-	"search_delete":           true,
-	"search_clear_all":        true,
-	"search_popular_refresh":  true,
-	"search_trends_refresh":   true,
-	"search_input":            true, // 快速搜索输入
+	"search_history_menu":    true,
+	"search_stats":           true,
+	"search_popular":         true,
+	"popular_week":           true,
+	"popular_all":            true,
+	"search_trends":          true,
+	"search_manage":          true,
+	"search_delete":          true,
+	"search_clear_all":       true,
+	"search_popular_refresh": true,
+	"search_trends_refresh":  true,
+	"search_input":           true, // 快速搜索输入
 
 	// Request related actions
 	"force_subscribe": true,
 	"cancel_request":  true,
 
 	// Admin Feedback Panel actions
-	"admin_feedback":         true, // Feedback management main panel
-	"admin_feedback_stats":   true, // Feedback statistics
-	"admin_feedback_list":    true, // Feedback list
-	"admin_feedback_filter":  true, // Filter by status
-	"admin_feedback_close":   true, // Admin force close
-	"admin_feedback_priority": true, // Adjust priority
+	"admin_feedback":               true, // Feedback management main panel
+	"admin_feedback_stats":         true, // Feedback statistics
+	"admin_feedback_list":          true, // Feedback list
+	"admin_feedback_filter":        true, // Filter by status
+	"admin_feedback_close":         true, // Admin force close
+	"admin_feedback_priority":      true, // Adjust priority
 	"admin_feedback_priority_menu": true, // Priority selection menu
-	"admin_feedback_detail":  true, // View feedback detail
-	"admin_feedback_reply":   true, // Reply to feedback
-	"admin_feedback_template": true, // Quick reply template
+	"admin_feedback_detail":        true, // View feedback detail
+	"admin_feedback_reply":         true, // Reply to feedback
+	"admin_feedback_template":      true, // Quick reply template
 
 	// User Feedback actions
 	"feedback_follow_up": true, // User follow-up message
@@ -153,6 +161,17 @@ var validActions = map[Action]bool{
 	"feedback_rate_3":    true, // 3 star rating
 	"feedback_rate_4":    true, // 4 star rating
 	"feedback_rate_5":    true, // 5 star rating
+	"feedback_add_photo": true, // Add photo to existing feedback
+	"feedback_quick":     true, // Quick option selection (with encoded text)
+	"feedback_stop_follow": true, // Stop follow-up mode
+
+	// Resource candidate actions
+	ActionResourceList: true,
+	ActionResourcePick: true,
+	ActionResourceSort: true,
+	ActionResourcePrev: true,
+	ActionResourceNext: true,
+	"rp":               true, // Short format for resource pick (rp:%d)
 }
 
 // isValidAction checks if an action is in the whitelist
@@ -165,9 +184,9 @@ var actionWhiteListMu sync.RWMutex
 
 // Callback represents a standardized callback query
 type Callback struct {
-	Action Action                 `json:"action"`
-	Params map[string]string      `json:"params,omitempty"`
-	Raw    string                 `json:"-"`
+	Action Action            `json:"action"`
+	Params map[string]string `json:"params,omitempty"`
+	Raw    string            `json:"-"`
 }
 
 // Handler handles a specific callback action
@@ -200,15 +219,15 @@ type Context struct {
 
 // Response represents the result of callback handling
 type Response struct {
-	Text         string
-	Edit         bool
-	ShowAlert    bool
-	Keyboard     *Keyboard
-	CallbackMsg  string
-	Photo        string  // Photo URL to send (will send as new message, not edit)
-	PhotoCaption string  // Caption for the photo
+	Text          string
+	Edit          bool
+	ShowAlert     bool
+	Keyboard      *Keyboard
+	CallbackMsg   string
+	Photo         string // Photo URL to send (will send as new message, not edit)
+	PhotoCaption  string // Caption for the photo
 	DeleteMessage bool   // If true, delete the current message before sending new one
-	ParseMode    string  // Parse mode for formatting (HTML, Markdown, or empty for none)
+	ParseMode     string // Parse mode for formatting (HTML, Markdown, or empty for none)
 }
 
 // Keyboard represents an inline keyboard
@@ -344,8 +363,15 @@ func (p *Parser) formatColon(action Action, params map[string]string) string {
 	}
 
 	parts := []string{string(action)}
-	for key, value := range params {
-		parts = append(parts, key, value)
+	// Sort keys to ensure consistent order
+	keys := make([]string, 0, len(params))
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		parts = append(parts, k, params[k])
 	}
 	return strings.Join(parts, ":")
 }
@@ -357,9 +383,9 @@ func (p *Parser) FormatSimple(action Action) string {
 
 // Registry manages callback handlers
 type Registry struct {
-	handlers map[Action]Handler
+	handlers   map[Action]Handler
 	middleware []Middleware
-	parser *Parser
+	parser     *Parser
 }
 
 // Middleware is a function that wraps a handler
@@ -368,9 +394,9 @@ type Middleware func(Handler) Handler
 // NewRegistry creates a new callback registry
 func NewRegistry() *Registry {
 	return &Registry{
-		handlers: make(map[Action]Handler),
+		handlers:   make(map[Action]Handler),
 		middleware: make([]Middleware, 0),
-		parser: NewParser(),
+		parser:     NewParser(),
 	}
 }
 
@@ -486,7 +512,7 @@ func BuildRequestCallback(mediaID, mediaType string, season int) string {
 // BuildPageCallback builds a page navigation callback
 func BuildPageCallback(page int, source string) string {
 	return BuildCallback(ActionPage, map[string]string{
-		"num":   fmt.Sprintf("%d", page),
+		"num":    fmt.Sprintf("%d", page),
 		"source": source,
 	})
 }

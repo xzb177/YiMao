@@ -615,7 +615,7 @@ func (h *SearchHandler) showSearchHistory(userID int64, chatID int64) error {
 		if i >= 10 {
 			break
 		}
-		msg.Textf("%d. %s", i+1, item).Newline()
+		msg.Textf("%d. %s", i+1, item.Query).Newline()
 	}
 
 	kb := services.NewKeyboardBuilder()

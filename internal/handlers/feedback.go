@@ -3,6 +3,8 @@ package handlers
 import (
 	"fmt"
 	"log"
+	"net/url"
+	"strings"
 
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/services"
@@ -15,6 +17,7 @@ type FeedbackHandler struct {
 	telegram     *services.TelegramClient
 	adminService *services.AdminService
 	issueService *services.IssueService
+	tmdbClient   *services.TMDBClient
 }
 
 // NewFeedbackHandler creates a new feedback handler
@@ -35,10 +38,44 @@ func (h *FeedbackHandler) SetIssueService(issueSvc *services.IssueService) {
 	h.issueService = issueSvc
 }
 
+// SetTMDBClient sets the TMDB client
+func (h *FeedbackHandler) SetTMDBClient(tmdb *services.TMDBClient) {
+	h.tmdbClient = tmdb
+}
+
+// getMediaTitle retrieves the media title, using TMDB API if not provided
+func (h *FeedbackHandler) getMediaTitle(tmdbIDStr, mediaType, providedTitle string) string {
+	// If title is already provided, use it
+	if providedTitle != "" {
+		return providedTitle
+	}
+
+	// Parse TMDB ID
+	var tmdbID int
+	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
+	if tmdbID == 0 || h.tmdbClient == nil {
+		return ""
+	}
+
+	// Fetch from TMDB
+	mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
+	if err != nil {
+		log.Printf("[FeedbackHandler] Failed to get media title from TMDB: %v", err)
+		return ""
+	}
+
+	return mediaInfo.GetTitle()
+}
+
 // Handle handles feedback callbacks
 func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	log.Printf("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
+
+	// Check if this is a quick option selection (feedback:quick:encoded_text:id:xxx)
+	if quickText, hasQuick := ctx.Callback.Params["quick"]; hasQuick {
+		return h.handleQuickSelect(ctx, quickText)
+	}
 
 	// Check if this is the "my_feedback" menu button - show list directly
 	if ctx.Callback.Action == "my_feedback" {
@@ -58,6 +95,11 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 	// Check if user is closing feedback
 	if _, hasClose := ctx.Callback.Params["close"]; hasClose {
 		return h.handleCloseByUser(ctx)
+	}
+
+	// Check if user wants to stop follow-up mode
+	if _, hasStopFollow := ctx.Callback.Params["stop_follow"]; hasStopFollow {
+		return h.handleStopFollowUp(ctx)
 	}
 
 	// Check if user is rating satisfaction
@@ -177,49 +219,159 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	sess.Set("feedback_tmdb_id", tmdbID)
 	sess.Set("feedback_media_type", mediaType)
 
-	// Get type label
-	typeLabels := map[string]string{
-		"quality":   "画质问题",
-		"audio":     "音频问题",
-		"subtitle":  "字幕问题",
-		"not_found": "搜索不到",
-		"playback":  "播放问题",
-		"other":     "其他问题",
-	}
-	typeLabel := typeLabels[issueType]
+	// Get type label and quick options
+	typeInfo := getTypeInfo(issueType)
+	typeLabel := typeInfo.label
 	if typeLabel == "" {
 		typeLabel = "问题反馈"
 	}
 
-	// Build message asking for description
+	// Build enhanced message with quick options
 	msg := services.NewMessageBuilder()
 	msg.Bold(fmt.Sprintf("🐛 %s", typeLabel)).Newline()
 	msg.Newline()
-	msg.Italic("💬 请描述您遇到的问题").Newline()
-	msg.Newline()
-	msg.Text("您可以直接发送问题描述，包含：").Newline()
-	msg.Text("• 问题的具体表现").Newline()
-	msg.Text("• 发生的时间或场景").Newline()
-	msg.Text("• 任何有助于解决问题的信息").Newline()
-	msg.Newline()
-	msg.Italic("💡 支持发送图片截图").Newline()
-	msg.Newline()
-	msg.Italic("⏰ 请在 5 分钟内完成描述").Newline()
 
-	// Update keyboard to show cancel button
+	// Show quick options if available
+	if len(typeInfo.quickOptions) > 0 {
+		msg.Italic("📋 快捷选择 (点击快速填写):").Newline()
+		msg.Newline()
+		for i, opt := range typeInfo.quickOptions {
+			msg.Textf("%d. %s", i+1, opt).Newline()
+		}
+		msg.Newline()
+	}
+
+	msg.Bold("💬 请描述您遇到的问题").Newline()
+	msg.Newline()
+	msg.Text("您可以：").Newline()
+	msg.Text("• 点击上方快捷选项").Newline()
+	msg.Text("• 自由输入问题描述").Newline()
+	msg.Text("• 发送图片截图辅助说明").Newline()
+	msg.Newline()
+	msg.Italic("📝 详细描述有助于快速定位问题").Newline()
+	msg.Newline()
+	msg.Italic("⏰ 请在 10 分钟内完成描述").Newline()
+
+	// Build keyboard with quick options and cancel
 	kb := services.NewKeyboardBuilder()
+
+	// Add quick option buttons (2 per row)
+	if len(typeInfo.quickOptions) > 0 {
+		for i, opt := range typeInfo.quickOptions {
+			// Truncate long options for button text
+			buttonText := opt
+			if len(buttonText) > 15 {
+				buttonText = buttonText[:12] + "..."
+			}
+			// Use callback data with special prefix "quick:" to indicate quick selection
+			callbackData := fmt.Sprintf("feedback:quick:%s:id:%s", urlEncode(opt), tmdbID)
+			kb.AddButton(buttonText, callbackData)
+			if i%2 == 1 {
+				kb.NewRow()
+			}
+		}
+		if len(typeInfo.quickOptions)%2 != 0 {
+			kb.NewRow()
+		}
+	}
+
 	kb.AddButton("❌ 取消反馈", "cancel")
 
-	// Send message (don't edit, send new message for user to reply)
+	// Send message with options (don't edit, send new message for user to reply)
 	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
 
 	// Update original message to show waiting state
 	return &callback.Response{
-		Text:        "等待您描述问题...",
-		CallbackMsg: "请发送问题描述",
+		Text:        "请描述您遇到的问题",
+		CallbackMsg: "请发送问题描述或选择快捷选项",
 		Edit:        true,
 		Keyboard:    &callback.Keyboard{},
 	}, nil
+}
+
+// getTypeInfo returns type label and quick options for each issue type
+func getTypeInfo(issueType string) struct {
+	label         string
+	quickOptions []string
+} {
+	typeMap := map[string]struct {
+		label         string
+		quickOptions []string
+	}{
+		"quality": {
+			label: "画质问题",
+			quickOptions: []string{
+				"画面模糊/分辨率低",
+				"画面卡顿/掉帧",
+				"色彩异常/偏色",
+				"有水印/广告",
+				"画质与标注不符",
+			},
+		},
+		"audio": {
+			label: "音频问题",
+			quickOptions: []string{
+				"没有声音",
+				"声音不同步",
+				"音质差/有杂音",
+				"缺少音轨",
+				"没有中文字幕配音",
+			},
+		},
+		"subtitle": {
+			label: "字幕问题",
+			quickOptions: []string{
+				"没有字幕",
+				"字幕不同步",
+				"字幕翻译错误",
+				"缺少中文字幕",
+				"字幕显示乱码",
+			},
+		},
+		"not_found": {
+			label: "搜索不到",
+			quickOptions: []string{
+				"搜索结果为空",
+				"剧集不完整",
+				"版本不对(导演剪辑版等)",
+				"缺少特定季/集",
+			},
+		},
+		"playback": {
+			label: "播放问题",
+			quickOptions: []string{
+				"无法播放",
+				"播放中断/自动停止",
+				"加载缓慢/一直转圈",
+				"进度条无法拖动",
+				"无法快进/快退",
+			},
+		},
+		"other": {
+			label: "其他问题",
+			quickOptions: []string{
+				"下载失败",
+				"订阅问题",
+				"账号问题",
+				"建议/改进意见",
+			},
+		},
+	}
+
+	info, ok := typeMap[issueType]
+	if !ok {
+		return struct {
+			label         string
+			quickOptions []string
+		}{label: "问题反馈", quickOptions: []string{}}
+	}
+	return info
+}
+
+// urlEncode simple URL encoding for callback data
+func urlEncode(s string) string {
+	// Use standard URL encoding for proper handling
+	return url.QueryEscape(s)
 }
 
 // HandleFeedbackText handles user's feedback description text
@@ -291,7 +443,8 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 		}
 	}
 
-	// Create issue with photo if provided
+	// Get media title - fetch from TMDB if not provided
+	mediaTitle = h.getMediaTitle(tmdbID, mediaType, mediaTitle)
 	var issue *services.Issue
 	var err error
 	if photoFileID != "" {
@@ -353,14 +506,24 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 		return
 	}
 
-	// Build message
+	// Build detailed message for admins
 	msg := services.NewMessageBuilder()
-	msg.Bold("🐛 新问题反馈").Newline()
+
+	// Header with priority indicator
+	priorityIcon := "🟡"
+	if issue.Priority == services.PriorityHigh || issue.Priority == services.PriorityUrgent {
+		priorityIcon = "🔴"
+	} else if issue.Priority == services.PriorityLow {
+		priorityIcon = "🟢"
+	}
+
+	msg.Bold(fmt.Sprintf("%s 🐛 新问题反馈", priorityIcon)).Newline()
 	msg.Newline()
-	msg.Textf("📋 问题编号: #%d", issue.ID).Newline()
-	msg.Textf("👤 用户: %s", issue.UserName).Newline()
+	msg.Textf("📋 问题编号: <code>#%d</code>", issue.ID).Newline()
+	msg.Textf("👤 用户: <code>%s</code> (<b>ID: %d</b>)", issue.UserName, issue.UserID).Newline()
 	msg.Textf("🏷️ 类型: %s", typeLabel).Newline()
 
+	// Media info with TMDB ID
 	if issue.MediaTitle != "" {
 		mediaType := "电影"
 		if issue.MediaType == "tv" {
@@ -368,19 +531,27 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 		}
 		msg.Textf("🎬 媒体: %s (%s)", issue.MediaTitle, mediaType).Newline()
 	}
+	if issue.TmdbID > 0 {
+		msg.Textf("🆔 TMDB ID: <code>%d</code>", issue.TmdbID).Newline()
+	}
+	if issue.MediaID != "" {
+		msg.Textf("🆔 Media ID: <code>%s</code>", issue.MediaID).Newline()
+	}
 
 	msg.Newline()
 	msg.Bold("📝 问题描述:").Newline()
 	msg.Text(issue.Description).Newline()
 	msg.Newline()
-	msg.Italic(fmt.Sprintf("🕐 %s", issue.CreatedAt.Format("2006-01-02 15:04"))).Newline()
+	msg.Italic(fmt.Sprintf("🕐 %s", issue.CreatedAt.Format("2006-01-02 15:04:05"))).Newline()
 
 	// Build keyboard for admin actions
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("💬 回复", fmt.Sprintf("admin_issue_reply:id:%d", issue.ID))
-	kb.AddButton("🔧 处理中", fmt.Sprintf("admin_issue_processing:id:%d", issue.ID))
+	kb.AddButton("🔍 查看详情", fmt.Sprintf("admin_feedback_detail:id:%d", issue.ID))
+	kb.AddButton("💬 回复", fmt.Sprintf("admin_feedback_reply:id:%d", issue.ID))
 	kb.NewRow()
+	kb.AddButton("🔧 处理中", fmt.Sprintf("admin_issue_processing:id:%d", issue.ID))
 	kb.AddButton("✅ 已解决", fmt.Sprintf("admin_issue_fixed:id:%d", issue.ID))
+	kb.NewRow()
 	kb.AddButton("🚫 关闭", fmt.Sprintf("admin_issue_close:id:%d", issue.ID))
 
 	message := msg.Build()
@@ -391,8 +562,8 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 		// If issue has photo, send photo with caption
 		if issue.PhotoFileID != "" {
 			// Send photo with the message as caption
-			// Use SendPhotoByFileID to send using Telegram's file_id
-			if _, err := h.telegram.SendPhotoByFileID(adminID, issue.PhotoFileID, message, keyboard); err != nil {
+			// Use SendPhotoByFileIDWithParseMode to send using Telegram's file_id with HTML parsing
+			if _, err := h.telegram.SendPhotoByFileIDWithParseMode(adminID, issue.PhotoFileID, message, "HTML", keyboard); err != nil {
 				log.Printf("[FeedbackHandler] Failed to send photo to admin %d: %v", adminID, err)
 				// Fallback to text message
 				if _, err2 := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err2 != nil {
@@ -601,19 +772,35 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 		kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
 	}
 
-	// 最后一行：返回按钮
-	if len(issue.Replies) > 0 && issue.Status != services.IssueStatusClosed {
+	// 追加回复功能提示
+	if issue.Status != services.IssueStatusClosed {
 		kb.NewRow()
-		msg.Italic("💬 您可以回复此消息进行追问").Newline()
-	}
-	kb.AddButton("⬅️ 返回列表", "feedback:view")
-	if len(issue.Replies) > 0 && issue.Status != services.IssueStatusClosed {
+		kb.AddButton("⏹️ 停止追问", fmt.Sprintf("feedback:stop_follow:%d", issue.ID))
+
 		msg.Newline()
-		msg.Italic("💬 您可以直接回复此消息进行追问").Newline()
+		msg.Text("━━━━━━━━━━━━━━━━━━━━━━━━").Newline()
+
+		// 如果有管理员回复，显示追问提示
+		hasAdminReply := false
+		for _, reply := range issue.Replies {
+			if reply.Type == "admin" {
+				hasAdminReply = true
+				break
+			}
+		}
+
+		if hasAdminReply {
+			msg.Bold("💬 回复管理员").Newline()
+			msg.Italic("👆 直接在下方输入框发送消息即可回复").Newline()
+			msg.Italic("👆 点击「停止追问」退出对话模式").Newline()
+		} else {
+			msg.Italic("💡 管理员回复后，可直接在此回复").Newline()
+		}
+		msg.Newline()
 	}
 
-	kb.AddButton("⬅️ 返回列表", "feedback:view")
 	kb.NewRow()
+	kb.AddButton("⬅️ 返回列表", "feedback:view")
 	kb.AddButton("🏠 返回主菜单", "start")
 
 	return &callback.Response{
@@ -878,5 +1065,177 @@ func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingSt
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		CallbackMsg: "感谢评价",
+	}, nil
+}
+
+// handleQuickSelect handles quick option selection from user
+func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText string) (*callback.Response, error) {
+	// Decode the URL-encoded text
+	decodedText, err := url.QueryUnescape(encodedText)
+	if err != nil {
+		// Fallback to simple replacement decoding
+		decodedText = strings.ReplaceAll(encodedText, "_", " ")
+		decodedText = strings.ReplaceAll(decodedText, "\\c", ":")
+		decodedText = strings.ReplaceAll(decodedText, "\\s", ";")
+	}
+
+	// Get tmdbID from params
+	tmdbID := ctx.Callback.Params["id"]
+	if tmdbID == "" {
+		return &callback.Response{
+			CallbackMsg: "参数错误",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Get feedback context from session
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+
+	issueTypeVal, _ := sess.Get("feedback_issue_type")
+	issueType, _ := issueTypeVal.(string)
+
+	mediaTypeVal, _ := sess.Get("feedback_media_type")
+	mediaType, _ := mediaTypeVal.(string)
+
+	mediaTitleVal, _ := sess.Get("feedback_media_title")
+	mediaTitle, _ := mediaTitleVal.(string)
+
+	// Get type label
+	typeLabels := map[string]string{
+		"quality":   "画质问题",
+		"audio":     "音频问题",
+		"subtitle":  "字幕问题",
+		"not_found": "搜索不到",
+		"playback":  "播放问题",
+		"other":     "其他问题",
+	}
+	typeLabel := typeLabels[issueType]
+	if typeLabel == "" {
+		typeLabel = "问题反馈"
+	}
+
+	// Get user name
+	userName := "用户"
+	if nameVal, ok := sess.Get("name"); ok && nameVal != "" {
+		if name, ok := nameVal.(string); ok {
+			userName = name
+		}
+	}
+
+	// Get media title - fetch from TMDB if not provided
+	mediaTitle = h.getMediaTitle(tmdbID, mediaType, mediaTitle)
+
+	// Clear feedback session
+	sess.Delete("feedback_step")
+	sess.Delete("feedback_tmdb_id")
+	sess.Delete("feedback_media_type")
+	sess.Delete("feedback_media_title")
+	sess.Delete("feedback_issue_type")
+
+	// Create issue with quick option text
+	if h.issueService == nil {
+		return &callback.Response{
+			CallbackMsg: "功能暂不可用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	issue, err := h.issueService.CreateIssue(
+		ctx.UserID,
+		userName,
+		typeLabel,
+		decodedText,
+		mediaType,
+		tmdbID,
+		mediaTitle,
+	)
+	if err != nil {
+		log.Printf("[FeedbackHandler] Failed to create issue: %v", err)
+		return &callback.Response{
+			CallbackMsg: "提交失败，请稍后重试",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Build confirmation message
+	msg := services.NewMessageBuilder()
+	msg.Bold("✅ 反馈已提交").Newline()
+	msg.Newline()
+	msg.Textf("问题编号: <code>#%d</code>", issue.ID).Newline()
+	msg.Textf("问题类型: %s", typeLabel).Newline()
+	msg.Newline()
+	msg.Bold("📝 已选择:").Newline()
+	msg.Text(decodedText).Newline()
+	msg.Newline()
+	msg.Italic("💡 您可以继续发送图片或补充说明").Newline()
+	msg.Newline()
+	msg.Italic("💡 管理员已收到通知，会尽快处理").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📷 添加图片", fmt.Sprintf("feedback:add_photo:id:%d", issue.ID))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	// Send confirmation message
+	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
+
+	// Notify admins
+	go h.notifyAdmins(issue, typeLabel)
+
+	// Update original message
+	return &callback.Response{
+		Text:        "✅ 已提交",
+		CallbackMsg: "反馈已提交",
+		Edit:        true,
+		Keyboard:    &callback.Keyboard{},
+	}, nil
+}
+
+// handleStopFollowUp handles user request to stop follow-up mode
+func (h *FeedbackHandler) handleStopFollowUp(ctx *callback.Context) (*callback.Response, error) {
+	// Parse issue ID from params
+	issueIDStr := ctx.Callback.Params["stop_follow"]
+	if issueIDStr == "" {
+		return &callback.Response{
+			CallbackMsg: "无效的反馈ID",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	var issueID int64
+	fmt.Sscanf(issueIDStr, "%d", &issueID)
+
+	// Clear the follow-up session
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Delete("feedback_conversation_issue_id")
+
+	// Get issue for display
+	issue, exists := h.issueService.GetIssue(issueID)
+	if !exists || issue.UserID != ctx.UserID {
+		return &callback.Response{
+			CallbackMsg: "反馈不存在",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Build confirmation message
+	msg := services.NewMessageBuilder()
+	msg.Bold("⏹️ 已退出追问模式").Newline()
+	msg.Newline()
+	msg.Textf("反馈编号: #%d", issue.ID).Newline()
+	msg.Newline()
+	msg.Italic("💡 如需继续反馈，请重新进入此反馈详情页").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔄 继续追问", fmt.Sprintf("feedback:detail_id:%d", issue.ID))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回列表", "feedback:view")
+	kb.AddButton("🏠 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		CallbackMsg: "已退出追问模式",
 	}, nil
 }

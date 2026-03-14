@@ -242,17 +242,17 @@ type SearchResponse struct {
 
 // SubscribeItem represents a subscription item from MoviePilot API
 type SubscribeItem struct {
-	ID           int            `json:"id"`
-	Name         string         `json:"name"`
-	Year         string         `json:"year"`
-	Type         string         `json:"type"`
-	Poster       string         `json:"poster"`
-	State        string         `json:"state"`
-	Username     string         `json:"username"`
-	UserID       FlexibleInt64  `json:"user_id"` // Use FlexibleInt64 for robust parsing
-	Date         string         `json:"date"`
-	Season       int            `json:"season"`
-	TotalEpisode int            `json:"total_episode"`
+	ID           int           `json:"id"`
+	Name         string        `json:"name"`
+	Year         string        `json:"year"`
+	Type         string        `json:"type"`
+	Poster       string        `json:"poster"`
+	State        string        `json:"state"`
+	Username     string        `json:"username"`
+	UserID       FlexibleInt64 `json:"user_id"` // Use FlexibleInt64 for robust parsing
+	Date         string        `json:"date"`
+	Season       int           `json:"season"`
+	TotalEpisode int           `json:"total_episode"`
 }
 
 // Request represents a media request
@@ -270,11 +270,11 @@ type Request struct {
 // MoviePilot API may return different field names, so we support multiple tags
 type User struct {
 	ID       int64  `json:"id"`
-	Username string `json:"name"`         // Primary: MoviePilot uses "name" for username
+	Username string `json:"name"` // Primary: MoviePilot uses "name" for username
 	Email    string `json:"email"`
 	Admin    bool   `json:"is_admin"`
 	// Additional fields for API compatibility - parsed if present
-	UserNameAlt string `json:"username"`  // Alternative: some endpoints use "username"
+	UserNameAlt string `json:"username"`     // Alternative: some endpoints use "username"
 	DisplayName string `json:"display_name"` // Alternative: display name
 }
 
@@ -986,4 +986,84 @@ func (c *MoviePilotClient) Authenticate(username, password string) (int64, error
 	}
 
 	return newUser.ID, nil
+}
+
+// SiteInfo represents a torrent site in MoviePilot
+type SiteInfo struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetSites retrieves all configured torrent sites from MoviePilot
+func (c *MoviePilotClient) GetSites() ([]SiteInfo, error) {
+	endpoint := "/api/v1/site/"
+
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var sites []SiteInfo
+	if err := json.Unmarshal(body, &sites); err != nil {
+		return nil, fmt.Errorf("failed to decode sites response: %w", err)
+	}
+
+	return sites, nil
+}
+
+// TorrentResource represents a torrent resource from a site
+type TorrentResource struct {
+	SiteName  string   `json:"site_name"`
+	Title     string   `json:"title"`
+	Size      float64  `json:"size"` // May be float like 306683023.0
+	Seeders   int      `json:"seeders"`
+	Peers     int      `json:"peers"`
+	Grabs     int      `json:"grabs"`
+	PubDate   string   `json:"pubdate"`
+	Enclosure string   `json:"enclosure"` // Torrent/magnet link
+	PageURL   string   `json:"page_url"`
+	Labels    []string `json:"labels"`
+}
+
+// GetSiteResources searches for resources on a specific site
+// siteID: the site ID to search
+// keyword: search keyword
+// page: page number (starts from 1)
+func (c *MoviePilotClient) GetSiteResources(siteID int, keyword string, page int) ([]TorrentResource, error) {
+	endpoint := fmt.Sprintf("/api/v1/site/resource/%d?keyword=%s&page=%d",
+		siteID, url.QueryEscape(keyword), page)
+
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resources []TorrentResource
+	if err := json.Unmarshal(body, &resources); err != nil {
+		return nil, fmt.Errorf("failed to decode resources response: %w", err)
+	}
+
+	return resources, nil
+}
+
+// SearchAllResources searches all sites for resources matching the keyword
+func (c *MoviePilotClient) SearchAllResources(keyword string, page int) (map[string][]TorrentResource, error) {
+	sites, err := c.GetSites()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sites: %w", err)
+	}
+
+	result := make(map[string][]TorrentResource)
+	for _, site := range sites {
+		resources, err := c.GetSiteResources(site.ID, keyword, page)
+		if err != nil {
+			log.Printf("[MoviePilot] Failed to get resources from site %s: %v", site.Name, err)
+			continue
+		}
+		if len(resources) > 0 {
+			result[site.Name] = resources
+		}
+	}
+
+	return result, nil
 }

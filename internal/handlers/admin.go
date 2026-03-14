@@ -1673,6 +1673,12 @@ func (h *AdminHandler) handleFeedbackDetail(ctx *callback.Context) (*callback.Re
 		}
 		msg.Textf("媒体: %s (%s)", issue.MediaTitle, mediaType).Newline()
 	}
+	if issue.TmdbID > 0 {
+		msg.Textf("TMDB ID: %d", issue.TmdbID).Newline()
+	}
+	if issue.MediaID != "" {
+		msg.Textf("Media ID: %s", issue.MediaID).Newline()
+	}
 
 	msg.Newline()
 	msg.Bold("📝 问题描述:").Newline()
@@ -1800,13 +1806,18 @@ func (h *AdminHandler) handleFeedbackReply(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 
-	// Add reply template buttons - 单列显示更清晰
+	// Add reply template buttons - 两列显示
 	templates := services.GetReplyTemplates()
 	for i, tmpl := range templates {
 		callbackData := fmt.Sprintf("admin_feedback_template:id:%d:template:%d", issueID, i)
 		kb.AddButton(tmpl.Name, callbackData)
+		if i%2 == 1 {
+			kb.NewRow()
+		}
 	}
-	kb.NewRow()
+	if len(templates)%2 != 0 {
+		kb.NewRow()
+	}
 
 	kb.AddButton("❌ 取消", "admin_feedback")
 

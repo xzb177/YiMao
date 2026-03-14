@@ -18,7 +18,7 @@ import (
 // Message formatting constants
 const (
 	MaxOverviewLength = 300
-	MaxDisplayCount  = 8
+	MaxDisplayCount   = 8
 	MaxSeasonsDisplay = 4
 )
 
@@ -71,6 +71,12 @@ func getPosterURL(poster string) string {
 		return "https://image.tmdb.org/t/p/w500" + poster
 	}
 	return "https://image.tmdb.org/t/p/w500/" + poster
+}
+
+// cacheMediaInfo saves media info to session for later use (e.g., resource list)
+func cacheMediaInfo(sess *session.Session, tmdbID int, title string, year int) {
+	sess.Set(fmt.Sprintf("media_title_%d", tmdbID), title)
+	sess.Set(fmt.Sprintf("media_year_%d", tmdbID), year)
 }
 
 // buildPlainCaption builds a plain text caption for photo messages (Telegram doesn't support Markdown in photo captions)
@@ -207,10 +213,10 @@ func buildPlainCaptionFromItem(item session.SearchItem, mpNotAvailable bool) str
 
 // StartHandler handles start menu callbacks
 type StartHandler struct {
-	cfg         *config.Config
-	sessMgr     *session.Manager
-	telegram    *services.TelegramClient
-	moviepilot  *services.MoviePilotClient
+	cfg          *config.Config
+	sessMgr      *session.Manager
+	telegram     *services.TelegramClient
+	moviepilot   *services.MoviePilotClient
 	adminService *services.AdminService
 }
 
@@ -408,11 +414,11 @@ func (h *StartHandler) HandleMoodPick(ctx *callback.Context) (*callback.Response
 	sess.Set("pref_mood_last_type", typeName)
 
 	moodLabel := map[string]string{
-		"relax":    "解压轻松",
-		"mindblow": "烧脑刺激",
+		"relax":     "解压轻松",
+		"mindblow":  "烧脑刺激",
 		"emotional": "情绪共鸣",
-		"healing":  "治愈慢节奏",
-		"random":   "随机盲选",
+		"healing":   "治愈慢节奏",
+		"random":    "随机盲选",
 	}[mood]
 	if moodLabel == "" {
 		moodLabel = "随机盲选"
@@ -451,17 +457,17 @@ func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Respons
 	prefMood, _ := sess.GetString("pref_mood_last")
 
 	// 默认心情映射
-	steadyMood := "mindblow"  // 稳妥高口碑 → 烧脑刺激（高评分）
-	stimMood := "excited"     // 刺激高热度 → 兴奋（热门）
-	nicheMood := "random"     // 冷门盲盒 → 随机
+	steadyMood := "mindblow" // 稳妥高口碑 → 烧脑刺激（高评分）
+	stimMood := "excited"    // 刺激高热度 → 兴奋（热门）
+	nicheMood := "random"    // 冷门盲盒 → 随机
 
 	// 根据用户心情偏好调整
 	if prefMood == "relax" || prefMood == "healing" {
-		steadyMood = "healing"   // 治愈类用户 → 治愈推荐
-		stimMood = "relax"       // 放松推荐
-		nicheMood = "cozy"       // 温馨推荐
+		steadyMood = "healing" // 治愈类用户 → 治愈推荐
+		stimMood = "relax"     // 放松推荐
+		nicheMood = "cozy"     // 温馨推荐
 	} else if prefMood == "mindblow" || prefMood == "excited" {
-		steadyMood = "mindblow"  // 保持
+		steadyMood = "mindblow" // 保持
 		stimMood = "excited"
 		nicheMood = "random"
 	}
@@ -689,6 +695,9 @@ func isAIRecommendationQuery(query string) bool {
 }
 
 func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
+	// Cache media info for resource list
+	cacheMediaInfo(sess, item.TmdbID, item.Title, item.Year)
+
 	msg := services.NewMessageBuilder()
 
 	// Type icon and label
@@ -760,6 +769,9 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 }
 
 func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
+	// Cache media info for resource list
+	cacheMediaInfo(sess, media.ID, media.GetTitle(), media.GetYear())
+
 	// For TV shows, fetch full details with seasons
 	if media.MediaType == "tv" && h.tmdb != nil {
 		// From TMDB directly, assume MoviePilot availability is unknown (default to false to show warning)
@@ -830,6 +842,8 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
 	kb.NewRow()
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
@@ -849,6 +863,13 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		// Fallback to simple detail
 		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable, posterURL)
 	}
+
+	// Cache media info for resource list
+	year := 0
+	if tvDetails.FirstAirDate != "" && len(tvDetails.FirstAirDate) >= 4 {
+		fmt.Sscanf(tvDetails.FirstAirDate[:4], "%d", &year)
+	}
+	cacheMediaInfo(sess, tmdbID, title, year)
 
 	msg := services.NewMessageBuilder()
 
@@ -939,7 +960,11 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	}
 	kb.NewRow()
 
-	// Second row: navigation buttons
+	// Resource list button
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tvDetails.ID), "type": "tv"}))
+	kb.NewRow()
+
+	// Third row: navigation buttons
 	kb.AddButton("⬅️ 返回", "back")
 	if len(tvDetails.Seasons) > 9 {
 		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", regularSeasonCount), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
@@ -1020,7 +1045,11 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 	}
 	kb.NewRow()
 
-	// Second row: navigation
+	// Resource list button
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": "tv"}))
+	kb.NewRow()
+
+	// Third row: navigation
 	kb.AddButton("⬅️ 返回", "back")
 
 	// Check for poster URL to display photo
@@ -1105,6 +1134,8 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, mediaTypeStr, media.Title))
 	kb.NewRow()
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": mediaTypeStr}))
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
 
 	return &callback.Response{
@@ -1153,11 +1184,22 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 	// Fallback to basic detail view from session data
 	// Note: If GetSearchResults fails, query will be empty string (acceptable for back button)
 	_, _, query, _ := sess.GetSearchResults()
+
+	// Cache media info for resource list before building basic detail
+	tmdbID := 0
+	fmt.Sscanf(item.ID, "%d", &tmdbID)
+	if tmdbID > 0 {
+		cacheMediaInfo(sess, tmdbID, item.Title, item.Year)
+	}
+
 	return h.buildBasicDetailFromSearch(item, mediaType, query, false) // Treat as available
 }
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
 func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query string) *callback.Response {
+	// Cache media info for resource list
+	cacheMediaInfo(sess, info.ID, info.Title, info.Year.Int())
+
 	msg := services.NewMessageBuilder()
 
 	// Determine media type
@@ -1266,7 +1308,11 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", info.ID, info.Title))
 		kb.NewRow()
 
-		// Second row: navigation buttons
+		// Second row: resource list button
+		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": "tv"}))
+		kb.NewRow()
+
+		// Third row: navigation buttons
 		// Use "back" callback for all cases - BackHandler will handle correctly
 		kb.AddButton("⬅️ 返回", "back")
 		if len(seasons) > 6 {
@@ -1297,6 +1343,8 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
+		kb.NewRow()
+		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": "movie"}))
 		kb.NewRow()
 		// Back button - use "back" callback, BackHandler will handle correctly
 		kb.AddButton("⬅️ 返回", "back")
@@ -1430,7 +1478,11 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		}
 		kb.NewRow()
 
-		// Second row: navigation - use "back" callback
+		// Second row: resource list button
+		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": item.ID, "type": "tv"}))
+		kb.NewRow()
+
+		// Third row: navigation - use "back" callback
 		kb.AddButton("⬅️ 返回", "back")
 		if len(item.Seasons) > 6 {
 			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
@@ -1460,6 +1512,10 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		} else {
 			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		}
+		kb.NewRow()
+
+		// Resource list button
+		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": item.ID, "type": item.Type}))
 		kb.NewRow()
 
 		// Back button - use "back" callback
@@ -1531,6 +1587,8 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s", tmdbID, mediaType))
+	kb.NewRow()
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": mediaType}))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "back")
 
@@ -1632,6 +1690,10 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	// Action row: subscribe + feedback
 	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", targetItem.ID, targetItem.Title))
+	kb.NewRow()
+
+	// Resource list button
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": targetItem.ID, "type": "tv"}))
 	kb.NewRow()
 
 	// Navigation row
@@ -1786,10 +1848,10 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		// For any other source, return to AI recommendation or start menu
 		if isAIRecommendationQuery(entry.Source) || isAIRecommendationQuery(entry.Query) {
 			return &callback.Response{
-				Text:         "",
-				CallbackMsg:  "",
-				ShowAlert:    false,
-				Keyboard:     nil,
+				Text:        "",
+				CallbackMsg: "",
+				ShowAlert:   false,
+				Keyboard:    nil,
 			}, nil
 		}
 
