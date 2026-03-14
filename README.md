@@ -6,7 +6,7 @@
 
 **🔄 部署用户请注意**：更新前请务必查看 [📘 更新指南](UPDATE.md) 以避免数据丢失！
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Last Commit](https://img.shields.io/github/last-commit/xzb177/YiMao)](https://github.com/xzb177/YiMao/commits/master)
@@ -64,6 +64,16 @@ curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | ba
 
 ## 🚀 一键部署
 
+### 部署前检查清单
+
+- [ ] 已从 @BotFather 获取 `TELEGRAM_BOT_TOKEN`
+- [ ] MoviePilot 已安装并可访问
+- [ ] 已从 MoviePilot 获取 API Key
+- [ ] 确认 MoviePilot 地址（跨机器部署勿用 localhost）
+- [ ] （可选）Emby/Jellyfin 地址和 API Key
+
+### 快速安装
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash
 ```
@@ -87,18 +97,28 @@ docker compose up -d
 | 变量名 | 说明 | 获取方式 |
 |---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Telegram 机器人 Token | [@BotFather](https://t.me/BotFather) |
-| `MOVIEPILOT_URL` | MoviePilot 地址 | 例如 `http://localhost:4500` |
-| `MOVIEPILOT_API_KEY` | MoviePilot API Key | MoviePilot 后台 |
-| `ADMINS` | 管理员 Telegram ID | [@userinfobot](https://t.me/userinfobot) |
+| `MOVIEPILOT_URL` | MoviePilot 地址 | 例如 `http://192.168.1.100:4500` |
+| `MOVIEPILOT_API_KEY` | MoviePilot API Key | MoviePilot 设置→安全设置 |
+
+> ⚠️ **注意**：候选资源列表功能依赖 MoviePilot，请确保正确配置 MOVIEPILOT_URL 和 API_KEY
+
+### 可选环境变量
+
+| 变量名 | 说明 | 默认值 |
+|---|---|---|
+| `ADMIN_USER_IDS` | 管理员 Telegram ID（逗号分隔） | 首个绑定用户自动成为管理员 |
 
 ### 常用可选变量
 
 | 变量名 | 说明 | 默认值 |
 |---|---|---|
-| `EMBY_URL` | Emby 地址 | - |
+| `ADMIN_USER_IDS` | 管理员 Telegram ID | 首个绑定用户自动成为管理员 |
+| `EMBY_URL` | Emby/Jellyfin 地址 | - |
 | `EMBY_API_KEY` | Emby API Key | - |
-| `TMDB_API_KEY` | TMDB Key（可替换） | 内置默认 |
-| `ENABLE_AUTO_RESUBSCRIBE` | 自动处理回收订阅（建议关闭） | `false` |
+| `TMDB_API_KEY` | TMDB API Key | 内置默认值 |
+| `TELEGRAM_CHAT_ID` | 群组 Chat ID（通知用） | - |
+| `ZHIPU_API_KEY` | 智谱 AI Key（推荐功能） | - |
+| `CLAUDE_API_KEY` | Claude API Key（AI 功能） | - |
 | `TZ` | 时区 | `Asia/Shanghai` |
 
 ---
