@@ -2,6 +2,38 @@
 
 ---
 
+### feat: 多服务器部署 - 下载目录配置支持 ✅
+- **时间**: 2026-03-15 00:30
+- **背景**: 用户有多个服务实例共用一个 MoviePilot，需要为每个实例指定不同的下载目录
+- **新增功能**:
+  - 新增环境变量 `DOWNLOAD_SAVE_PATH`，可选配置下载保存目录
+  - MoviePilot 订阅请求时自动带上 `save_path` 参数
+- **使用场景**:
+  - 服务器A: `DOWNLOAD_SAVE_PATH=/downloads/server1`
+  - 服务器B: `DOWNLOAD_SAVE_PATH=/downloads/server2`
+  - 共用一个 MoviePilot，下载到不同目录
+- **修改文件**:
+  - `internal/config/config.go` - 添加 DownloadSavePath 字段和读取逻辑
+  - `internal/services/moviepilot.go` - 添加 downloadSavePath 字段，NewMoviePilotClient 增加参数
+  - `internal/services/moviepilot.go` - RequestMedia 函数支持 save_path 参数
+  - `cmd/bot/main.go` - 传递 cfg.DownloadSavePath 到 NewMoviePilotClient
+  - `internal/bot/command.go` - Link 命令认证时传递 DownloadSavePath
+  - `.env.example` - 添加 DOWNLOAD_SAVE_PATH 配置说明
+- **状态**: ✅ 编译通过
+
+---
+
+### git: 提交 README 优化变更 ✅
+- **时间**: 2026-03-15 00:05
+- **提交**: 6061337
+- **范围**: +152/-101 行 (2 文件变更)
+- **修改内容**:
+  - README.md - 全面重写
+  - ai.md - 添加更新日志
+- **状态**: ✅ 已推送到 origin/master
+
+---
+
 ### feat: Docker 镜像构建与 README 优化 ✅
 - **时间**: 2026-03-15 00:00
 - **背景**: 用户要求打包 Docker 并优化仓库简介

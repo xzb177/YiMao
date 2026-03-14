@@ -116,7 +116,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	log.Printf("[LinkCommand] Sanitized inputs: %s / ***", sanitizedUsername)
 
 	// Verify credentials with MoviePilot
-	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
+	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
 	log.Printf("[LinkCommand] Calling Authenticate with MoviePilot URL: %s", cfg.MoviePilotURL)
 	userID, err := mpClient.Authenticate(sanitizedUsername, sanitizedPassword)
 	if err != nil {

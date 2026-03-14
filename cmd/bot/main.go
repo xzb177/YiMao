@@ -158,7 +158,10 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	imageCache := services.NewImageCache(cfg.DataDir, 7*24*time.Hour) // 7天缓存
 	telegramClient.SetImageCache(imageCache)
 	log.Println("    - MoviePilotClient...")
-	moviepilotClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey)
+	moviepilotClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
+	if cfg.DownloadSavePath != "" {
+		log.Printf("    - Download save path configured: %s", cfg.DownloadSavePath)
+	}
 	log.Println("    - SessionManager...")
 	sessMgr := session.NewManager(time.Duration(cfg.MaxSessionAge)*time.Hour, cfg.MaxSessions)
 	log.Println("    - UserMappingService...")

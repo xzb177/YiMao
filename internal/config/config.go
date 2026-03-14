@@ -14,8 +14,9 @@ type Config struct {
 	TelegramChatID   string
 
 	// MoviePilot
-	MoviePilotURL    string
-	MoviePilotAPIKey string
+	MoviePilotURL      string
+	MoviePilotAPIKey   string
+	DownloadSavePath   string // Download save path for subscriptions (optional)
 
 	// Emby (optional)
 	EmbyURL    string
@@ -89,8 +90,9 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:   getEnv("TELEGRAM_CHAT_ID", ""),
-		MoviePilotURL:    getEnv("MOVIEPILOT_URL", ""),
-		MoviePilotAPIKey: getEnv("MOVIEPILOT_API_KEY", ""),
+		MoviePilotURL:      getEnv("MOVIEPILOT_URL", ""),
+		MoviePilotAPIKey:   getEnv("MOVIEPILOT_API_KEY", ""),
+		DownloadSavePath:   getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
 		EmbyURL:          getEnv("EMBY_URL", ""),
 		EmbyAPIKey:       getEnv("EMBY_API_KEY", ""),
 		TMDBAPIKey:       getEnv("TMDB_API_KEY", ""),

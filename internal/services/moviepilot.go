@@ -136,9 +136,10 @@ func (fi FlexibleInt64) String() string {
 //
 // API Base URL format: http://host:port (e.g., http://192.168.1.1:4500)
 type MoviePilotClient struct {
-	baseURL    string
-	apiKey     string
-	httpClient *http.Client
+	baseURL          string
+	apiKey           string
+	downloadSavePath string // Optional: download save path for subscriptions
+	httpClient       *http.Client
 }
 
 // NewMoviePilotClient creates a new MoviePilot client with optimized HTTP settings.
@@ -148,15 +149,17 @@ type MoviePilotClient struct {
 // - Connection pooling (100 max idle connections)
 // - HTTP/2 support for better performance
 // - Keep-alive connections (90s idle timeout)
-func NewMoviePilotClient(baseURL, apiKey string) *MoviePilotClient {
+// - Optional download save path for subscriptions
+func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotClient {
 	// Ensure baseURL doesn't have trailing slash
 	for len(baseURL) > 0 && baseURL[len(baseURL)-1] == '/' {
 		baseURL = baseURL[:len(baseURL)-1]
 	}
 
 	return &MoviePilotClient{
-		baseURL: baseURL,
-		apiKey:  apiKey,
+		baseURL:          baseURL,
+		apiKey:           apiKey,
+		downloadSavePath: downloadSavePath,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -440,6 +443,12 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 	} else if mediaType == MediaTypeTV {
 		// Default to season 1 if no seasons specified
 		payload["season"] = 1
+	}
+
+	// Add save_path if configured (for multi-server deployments)
+	if c.downloadSavePath != "" {
+		payload["save_path"] = c.downloadSavePath
+		log.Printf("[MoviePilot] Using custom save_path: %s", c.downloadSavePath)
 	}
 
 	endpoint := "/api/v1/subscribe"
