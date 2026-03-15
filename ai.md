@@ -2,6 +2,47 @@
 
 ---
 
+### fix: 电影识别问题 - 文件名提取 ✅
+- **时间**: 2026-03-16 10:00
+- **背景**: 用户报告 2026-03-15 入库汇总中有 1 部电影显示为"未识别电影"
+- **根本原因**:
+  - Emby webhook 包含 `FileName` 字段但未被使用
+  - `MediaItem` 结构体没有存储文件名
+  - `formatDailySummary` 调用 `ResolveMovieTitle` 时传递空字符串作为文件名参数
+  - 当 `Title` 为空或无效时，无法从文件名提取电影名称
+- **修复内容**:
+  1. `MediaItem` 结构体新增 `FileName` 字段用于存储原始文件名
+  2. `addMediaItemToSummary` 函数提取文件名（优先使用 `FileName` 字段，其次从 `Path` 提取）
+  3. `formatDailySummary` 传递 `item.FileName` 给 `ResolveMovieTitle`
+  4. 增强 `extractFromFilename` 函数：
+     - 支持中文文件名
+     - 增加 WEBDL、Max、Opus 等更多清理模式
+     - 支持中文括号 `【】`
+     - 年份提取支持 1900-2099 范围
+- **修改文件**:
+  - `internal/services/media_notification.go` - 添加 FileName 字段，修改 formatDailySummary
+  - `internal/services/webhook.go` - 提取并传递文件名
+  - `internal/services/title_resolver.go` - 增强文件名解析逻辑
+  - `go.mod` - 修复 go 版本格式（1.24.0 → 1.15）
+- **部署**:
+  - Docker: ✅ 构建并推送到 xzb177/yimao:latest
+  - Digest: `sha256:77b4a512c288f108106bf6893668434d19769c59faaa7c13598299dd66f6931b`
+  - 镜像大小: 14.3MB (压缩后) / 44.6MB (磁盘占用)
+- **状态**: ✅ 已部署，等待验证
+
+---
+
+### git: 推送多服务器部署功能 ✅
+- **时间**: 2026-03-15 00:35
+- **提交**: f25b6a9
+- **操作**:
+  - Git: ✅ 推送到 origin/master (6061337..f25b6a9)
+  - Docker: ✅ 构建并推送到 xzb177/yimao:latest
+  - Digest: `sha256:5a513af9d8d20f5af862c0d300beae3f0b70cdf3626d01f2333dfcc665f4d4b1`
+- **状态**: ✅ 全部完成
+
+---
+
 ### feat: 多服务器部署 - 下载目录配置支持 ✅
 - **时间**: 2026-03-15 00:30
 - **背景**: 用户有多个服务实例共用一个 MoviePilot，需要为每个实例指定不同的下载目录

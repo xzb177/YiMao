@@ -48,9 +48,10 @@ type MediaItem struct {
 	Overview string   `json:"overview,omitempty"`
 	ImageURL string   `json:"image_url,omitempty"`
 	// File info
-	FileSize  int64 `json:"file_size,omitempty"`
-	FileCount int   `json:"file_count,omitempty"`
-	IsWEBDL   bool  `json:"is_webdl,omitempty"`
+	FileSize  int64  `json:"file_size,omitempty"`
+	FileCount int    `json:"file_count,omitempty"`
+	IsWEBDL   bool   `json:"is_webdl,omitempty"`
+	FileName  string `json:"file_name,omitempty"` // Original filename for title extraction
 	// Timestamp
 	AddedAt time.Time `json:"added_at"`
 }
@@ -687,8 +688,8 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 	// Aggregate movies by title
 	uniqueMovies := make(map[MovieAggregationKey]*AggregatedMovie)
 	for _, item := range movies {
-		// Resolve title with filename fallback
-		displayTitle := s.titleResolver.ResolveMovieTitle(item, "")
+		// Resolve title with filename fallback (now uses item.FileName)
+		displayTitle := s.titleResolver.ResolveMovieTitle(item, item.FileName)
 
 		key := MovieAggregationKey{
 			Title: displayTitle,
@@ -699,10 +700,10 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 			existing.Count++
 		} else {
 			uniqueMovies[key] = &AggregatedMovie{
-				Title:      displayTitle,
-				Year:       item.Year,
+				Title:       displayTitle,
+				Year:        item.Year,
 				LibraryName: item.LibraryName,
-				Count:      1,
+				Count:       1,
 			}
 		}
 	}

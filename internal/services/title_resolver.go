@@ -51,8 +51,9 @@ func (r *TitleResolver) ResolveMovieTitle(item *MediaItem, filename string) stri
 
 // extractFromFilename extracts a clean title from a filename
 // Examples:
-//   "Oppenheimer.2023.1080p.BluRay.x265.mkv" -> "Oppenheimer"
+//   "Oppenheimer.2023.1080p.BluRay.x265.mkv" -> "Oppenheimer (2023)"
 //   "Dune.Part.Two.2024.2160p.WEB-DL.HEVC.mkv" -> "Dune Part Two (2024)"
+//   "流浪地球2.2023.4K.mkv" -> "流浪地球2 (2023)"
 func (r *TitleResolver) extractFromFilename(filename string) string {
 	// Get base filename (remove path and extension)
 	base := filename
@@ -71,27 +72,31 @@ func (r *TitleResolver) extractFromFilename(filename string) string {
 		pattern string
 		repl    string
 	}{
-		// Resolution tags
+		// Resolution tags (before codec to avoid partial matches)
 		{`\.(?:2160p|1080p|720p|480p|4K)\b`, ""},
 		{`\.(?:x265|x264|h264|h265|hevc|avc)\b`, ""},
 		{`\.(?:10bit|8bit)\b`, ""},
 
 		// Source/quality tags
-		{`\.(?:BluRay|WEB-DL|WEBRip|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`, ""},
+		{`\.(?:BluRay|WEBDL|WEB-DL|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`, ""},
 		{`\.(?:Remux|REMUX)\b`, ""},
-		{`\.(?:AMZN|NF|Disney|Hulu|HBO)\b`, ""},
+		{`\.(?:AMZN|NF|Disney|Hulu|HBO|Max)\b`, ""},
 
 		// Audio tags
-		{`\.(?:DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC)\b`, ""},
-
-		// Release group patterns (common patterns at end)
-		{`-[\w\.]+$`, ""},
+		{`\.(?:DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC|Opus)\b`, ""},
 
 		// Codec profiles
-		{`\.(?:Hi10P|Hi10P)\b`, ""},
+		{`\.(?:Hi10P|Hi10)\b`, ""},
 
-		// Other common patterns
+		// Release group patterns (common patterns at end)
+		{`-[\w\.\-]+$`, ""},
+
+		// Chinese release groups
+		{`-\s*[^\s]+\s*$`, ""},
+
+		// Other common patterns (brackets)
 		{`\[.*?\]`, ""},
+		{`【.*?】`, ""},
 		{`\(.*?\)`, " "},
 
 		// Replace dots with spaces
@@ -112,8 +117,8 @@ func (r *TitleResolver) extractFromFilename(filename string) string {
 
 	cleaned = strings.TrimSpace(cleaned)
 
-	// Extract year if present
-	yearRe := regexp.MustCompile(`\b(19\d{2}|20[0-3]\d)\b`)
+	// Extract year if present (support 1900-2099)
+	yearRe := regexp.MustCompile(`\b(19\d{2}|20\d{2})\b`)
 	yearMatch := yearRe.FindStringSubmatch(cleaned)
 	year := ""
 	if len(yearMatch) > 1 {
@@ -122,7 +127,6 @@ func (r *TitleResolver) extractFromFilename(filename string) string {
 		cleaned = strings.TrimSpace(cleaned)
 	}
 
-	// Clean trailing "Part X" text
 	cleaned = strings.TrimSpace(cleaned)
 	if cleaned != "" {
 		if year != "" {
@@ -151,7 +155,7 @@ func (r *TitleResolver) formatYearTitle(year int) string {
 // formatYearInt formats a year as integer
 func (r *TitleResolver) formatYearInt(year int) string {
 	if year > 1900 && year < 2000 {
-		return string(rune('0' + (year-1900)/100)) + string(rune('0'+(year-1900)%100))
+		return string(rune('0'+(year-1900)/100)) + string(rune('0'+(year-1900)%100))
 	}
 	if year >= 2000 && year < 2100 {
 		return "20" + string(rune('0'+(year-2000)/10)) + string(rune('0'+(year-2000)%10))
@@ -317,10 +321,10 @@ func (k MovieAggregationKey) String() string {
 
 // AggregatedMovie represents an aggregated movie
 type AggregatedMovie struct {
-	Title      string
-	Year       int
+	Title       string
+	Year        int
 	LibraryName string
-	Count      int // Number of records (should be 1 after aggregation)
+	Count       int // Number of records (should be 1 after aggregation)
 }
 
 // FormatForSummary formats the aggregated movie for display

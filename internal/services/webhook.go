@@ -21,56 +21,56 @@ import (
 // Emby uses camelCase starting with lowercase
 type EmbyWebhookPayload struct {
 	Event      string `json:"NotificationType"` // Emby uses NotificationType
-	EventField string `json:"Event"`             // Alternative event field
+	EventField string `json:"Event"`            // Alternative event field
 	ItemID     string `json:"ItemId"`
 	ItemName   string `json:"ItemName"`
 	ItemType   string `json:"ItemType"`
 	Library    string `json:"LibraryName"`
 	SeriesName string `json:"SeriesName"`
-	Season     int    `json:"SeasonNumber"`       // Deprecated: use ParentIndexNumber
-	Episode    int    `json:"IndexNumber"`        // Deprecated: use IndexNumber in Item
+	Season     int    `json:"SeasonNumber"` // Deprecated: use ParentIndexNumber
+	Episode    int    `json:"IndexNumber"`  // Deprecated: use IndexNumber in Item
 	Overview   string `json:"Overview"`
 	Timestamp  string `json:"Timestamp"`
 	UserID     string `json:"UserId"`
 	UserName   string `json:"UserName"`
 	Year       *int   `json:"Year"` // ProductionYear
 	// Nested Item object (some Emby versions use this)
-	Item     *EmbyItem `json:"Item"`
+	Item *EmbyItem `json:"Item"`
 }
 
 // EmbyItem represents a nested item in Emby webhook
 type EmbyItem struct {
-	Id          string `json:"Id"`                 // Item ID
-	Name        string `json:"Name"`
-	Type        string `json:"Type"`
-	Year        *int   `json:"Year"`
-	Overview    string `json:"Overview"`
-	Genres      []string `json:"Genres"`
-	CommunityRating float64 `json:"CommunityRating"`
-	Path        string `json:"Path"`         // File path
-	FileName    string `json:"FileName"`     // File name
-	ProviderIds map[string]string `json:"ProviderIds"` // TMDB, IMDb, TVDB IDs
-	MediaSources []EmbyMediaSource `json:"MediaSources"` // Media sources with file size
+	Id              string            `json:"Id"` // Item ID
+	Name            string            `json:"Name"`
+	Type            string            `json:"Type"`
+	Year            *int              `json:"Year"`
+	Overview        string            `json:"Overview"`
+	Genres          []string          `json:"Genres"`
+	CommunityRating float64           `json:"CommunityRating"`
+	Path            string            `json:"Path"`         // File path
+	FileName        string            `json:"FileName"`     // File name
+	ProviderIds     map[string]string `json:"ProviderIds"`  // TMDB, IMDb, TVDB IDs
+	MediaSources    []EmbyMediaSource `json:"MediaSources"` // Media sources with file size
 	// Parent/ Series info for episodes
-	SeriesId             string   `json:"SeriesId"`
-	SeriesName           string   `json:"SeriesName"`           // Series name for episodes
-	SeasonName           string   `json:"SeasonName"`           // Season name
-	ParentIndexNumber    *int     `json:"ParentIndexNumber"`    // Season number (correct field for episodes)
-	IndexNumber          *int     `json:"IndexNumber"`          // Episode number (correct field for episodes)
-	ParentBackdropItemId string   `json:"ParentBackdropItemId"`
-	ParentBackdropImageTags []string `json:"ParentBackdropImageTags"`
-	SeriesPrimaryImageTag string   `json:"SeriesPrimaryImageTag"`
-	ParentThumbItemId     string   `json:"ParentThumbItemId"`
-	ParentThumbImageTag   string   `json:"ParentThumbImageTag"`
-	PrimaryImageAspectRatio float64 `json:"PrimaryImageAspectRatio"`
-	ImageTags            map[string]string `json:"ImageTags"`
-	BackdropImageTags    []string `json:"BackdropImageTags"`
+	SeriesId                string            `json:"SeriesId"`
+	SeriesName              string            `json:"SeriesName"`        // Series name for episodes
+	SeasonName              string            `json:"SeasonName"`        // Season name
+	ParentIndexNumber       *int              `json:"ParentIndexNumber"` // Season number (correct field for episodes)
+	IndexNumber             *int              `json:"IndexNumber"`       // Episode number (correct field for episodes)
+	ParentBackdropItemId    string            `json:"ParentBackdropItemId"`
+	ParentBackdropImageTags []string          `json:"ParentBackdropImageTags"`
+	SeriesPrimaryImageTag   string            `json:"SeriesPrimaryImageTag"`
+	ParentThumbItemId       string            `json:"ParentThumbItemId"`
+	ParentThumbImageTag     string            `json:"ParentThumbImageTag"`
+	PrimaryImageAspectRatio float64           `json:"PrimaryImageAspectRatio"`
+	ImageTags               map[string]string `json:"ImageTags"`
+	BackdropImageTags       []string          `json:"BackdropImageTags"`
 }
 
 // EmbyMediaSource represents a media source with file information
 type EmbyMediaSource struct {
-	Size int64  `json:"Size"`    // File size in bytes
-	Path string `json:"Path"`    // File path
+	Size int64  `json:"Size"` // File size in bytes
+	Path string `json:"Path"` // File path
 }
 
 // JellyseerrWebhookPayload represents a Jellyseerr webhook payload
@@ -104,11 +104,11 @@ type JellyseerrMedia struct {
 
 // JellyseerrRequest represents a request in Jellyseerr
 type JellyseerrRequest struct {
-	ID          int    `json:"id"`
-	Status      string `json:"status"`
-	MediaID     int    `json:"mediaId"`
-	MediaType   string `json:"mediaType"`
-	CreatedAt   string `json:"createdAt"`
+	ID        int    `json:"id"`
+	Status    string `json:"status"`
+	MediaID   int    `json:"mediaId"`
+	MediaType string `json:"mediaType"`
+	CreatedAt string `json:"createdAt"`
 }
 
 // JellyseerrUserWebhook represents a user in webhook
@@ -122,18 +122,18 @@ type JellyseerrUserWebhook struct {
 type MoviePilotWebhookPayload struct {
 	Event string `json:"event"` // subscribe, download, complete
 	Data  struct {
-		ID             int    `json:"id"`
-		Name           string `json:"name"`
-		Year           string `json:"year"`
-		Type           string `json:"type"` // 电影, 电视剧
-		Season         int    `json:"season"`
-		TotalEpisode   int    `json:"total_episode"`
-		State          string `json:"state"` // P, S, D, C, F, X
-		StatusText     string `json:"status_text"`
-		Username       string `json:"username"`
-		MediaID        int    `json:"media_id"`
-		Poster         string `json:"poster"`
-		Overview       string `json:"overview"`
+		ID           int    `json:"id"`
+		Name         string `json:"name"`
+		Year         string `json:"year"`
+		Type         string `json:"type"` // 电影, 电视剧
+		Season       int    `json:"season"`
+		TotalEpisode int    `json:"total_episode"`
+		State        string `json:"state"` // P, S, D, C, F, X
+		StatusText   string `json:"status_text"`
+		Username     string `json:"username"`
+		MediaID      int    `json:"media_id"`
+		Poster       string `json:"poster"`
+		Overview     string `json:"overview"`
 	} `json:"data"`
 }
 
@@ -152,59 +152,59 @@ type WebhookService struct {
 	notificationFormat   string // "simple" or "detailed"
 	tmdbAPIKey           string // TMDB API key for fetching images
 	// Episode aggregation - 每个剧集独立的防抖动机制
-	epAggregation        map[string]*EpisodeAggregation  // key: seriesName_season
-	epAggregationMu      sync.RWMutex
-	aggregationDelay     time.Duration                  // 聚合延迟时间 (默认60秒)
+	epAggregation    map[string]*EpisodeAggregation // key: seriesName_season
+	epAggregationMu  sync.RWMutex
+	aggregationDelay time.Duration // 聚合延迟时间 (默认60秒)
 	// 文件信息缓存 - 避免频繁调用 Emby API
-	fileInfoCache        map[string]*cachedFileInfo      // key: itemID
-	fileInfoCacheMu      sync.RWMutex
-	fileInfoCacheTTL     time.Duration                  // 缓存过期时间 (默认1小时)
+	fileInfoCache    map[string]*cachedFileInfo // key: itemID
+	fileInfoCacheMu  sync.RWMutex
+	fileInfoCacheTTL time.Duration // 缓存过期时间 (默认1小时)
 }
 
 // cachedFileInfo 缓存的文件信息
 type cachedFileInfo struct {
-	fileSize   int64
-	fileCount  int
-	cachedAt   time.Time
+	fileSize  int64
+	fileCount int
+	cachedAt  time.Time
 }
 
 // EpisodeAggregation holds aggregated episode info
 type EpisodeAggregation struct {
 	SeriesName   string
-	SeriesID     string                  // Series ID for fetching images
+	SeriesID     string // Series ID for fetching images
 	Year         int
 	Season       int
-	Episodes     []int                   // episode numbers
+	Episodes     []int // episode numbers
 	FirstAdded   time.Time
 	Quality      string
 	FileSize     int64
 	FileCount    int
 	ImageURL     string
 	EnhancedInfo *EmbyEnhancedInfo
-	LibraryName  string                  // Library name for category detection
-	timer        *time.Timer             // Independent timer for this aggregation
-	mu           sync.Mutex              // Mutex for this specific aggregation
+	LibraryName  string      // Library name for category detection
+	timer        *time.Timer // Independent timer for this aggregation
+	mu           sync.Mutex  // Mutex for this specific aggregation
 }
 
 // NewWebhookService creates a new webhook service
 func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
 	svc := &WebhookService{
-		telegram:           telegram,
-		moviepilot:         moviepilot,
-		userMapping:        userMapping,
-		adminService:       adminService,
-		preferences:        preferences,
-		chatID:             chatID,
-		embyURL:            embyURL,
-		embyAPIKey:         embyAPIKey,
+		telegram:             telegram,
+		moviepilot:           moviepilot,
+		userMapping:          userMapping,
+		adminService:         adminService,
+		preferences:          preferences,
+		chatID:               chatID,
+		embyURL:              embyURL,
+		embyAPIKey:           embyAPIKey,
 		mediaNotificationSvc: mediaNotificationSvc,
-		messageCache:       NewMessageCache(5 * time.Minute),
-		notificationFormat: notificationFormat,
-		tmdbAPIKey:         tmdbAPIKey,
-		epAggregation:      make(map[string]*EpisodeAggregation),
-		aggregationDelay:   60 * time.Second,  // 默认60秒聚合延迟
-		fileInfoCache:      make(map[string]*cachedFileInfo),
-		fileInfoCacheTTL:   1 * time.Hour,     // 缓存1小时
+		messageCache:         NewMessageCache(5 * time.Minute),
+		notificationFormat:   notificationFormat,
+		tmdbAPIKey:           tmdbAPIKey,
+		epAggregation:        make(map[string]*EpisodeAggregation),
+		aggregationDelay:     60 * time.Second, // 默认60秒聚合延迟
+		fileInfoCache:        make(map[string]*cachedFileInfo),
+		fileInfoCacheTTL:     1 * time.Hour, // 缓存1小时
 	}
 
 	// 启动缓存清理协程
@@ -355,8 +355,8 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 				// Create minimal enhanced info from webhook payload
 				enhancedPayload = &EmbyEnhancedInfo{
 					Quality: quality,
-					Format:   format,
-					IsWEBDL:  isWEBDL,
+					Format:  format,
+					IsWEBDL: isWEBDL,
 				}
 				// Copy available fields
 				if payload.Item.Name != "" {
@@ -610,8 +610,8 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 					// Create minimal enhanced info from webhook payload
 					enhancedInfo = &EmbyEnhancedInfo{
 						Quality: quality,
-						Format:   format,
-						IsWEBDL:  isWEBDL,
+						Format:  format,
+						IsWEBDL: isWEBDL,
 					}
 					// Copy available fields
 					if payload.Item.Name != "" {
@@ -669,15 +669,15 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 
 		// Create new aggregation with independent timer
 		agg = &EpisodeAggregation{
-			SeriesName:   seriesName,  // 使用已处理的 seriesName (带 fallback)
-			SeriesID:     seriesID,    // 保存 SeriesID 用于后续获取图片
+			SeriesName:   seriesName, // 使用已处理的 seriesName (带 fallback)
+			SeriesID:     seriesID,   // 保存 SeriesID 用于后续获取图片
 			Year:         year,
 			Season:       season,
 			Episodes:     []int{},
 			FirstAdded:   time.Now(),
 			EnhancedInfo: enhancedInfo,
 			LibraryName:  payload.Library,
-			FileSize:     0,  // 初始化为0，后续通过累加获取
+			FileSize:     0, // 初始化为0，后续通过累加获取
 		}
 		if enhancedInfo != nil {
 			agg.ImageURL = enhancedInfo.ImageURL
@@ -721,7 +721,7 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 			// 即使 Size 为 0 或很小（如 strm 文件），也要记录
 			thisFileSize = ms.Size
 			thisFileCount = 1
-			break  // 使用第一个 MediaSource
+			break // 使用第一个 MediaSource
 		}
 
 		// 【黑科技】如果文件大小为 0 或很小（strm 文件），调用 Emby API 获取真实大小
@@ -1264,14 +1264,14 @@ type EmbyEnhancedInfo struct {
 	Overview     string
 	RunTimeTicks int64
 	ImageURL     string
-	Quality      string    // Resolution (1080p, 2160p, etc.)
-	Format       string    // Release format (BluRay, WEB-DL, WEBRip, HDTV, etc.)
+	Quality      string // Resolution (1080p, 2160p, etc.)
+	Format       string // Release format (BluRay, WEB-DL, WEBRip, HDTV, etc.)
 	FileSize     int64
 	FileCount    int
-	IsWEBDL      bool      // Deprecated: kept for compatibility, use Format instead
-	Container    string    // Container format (mkv, mp4, etc.)
-	TMDBID       string    // TMDB ID for fetching images
-	Type         string    // Item type (Movie, Series, Episode) for TMDB API
+	IsWEBDL      bool   // Deprecated: kept for compatibility, use Format instead
+	Container    string // Container format (mkv, mp4, etc.)
+	TMDBID       string // TMDB ID for fetching images
+	Type         string // Item type (Movie, Series, Episode) for TMDB API
 }
 
 // getEmbyEnhancedInfoForEpisode fetches enhanced information from Emby API for episodes
@@ -1699,13 +1699,13 @@ func (s *WebhookService) detectWEBDL(path string) bool {
 func (s *WebhookService) detectQuality(width int) string {
 	switch {
 	case width >= 3800:
-		return "2160p"  // 4K统一显示为2160p
+		return "2160p" // 4K统一显示为2160p
 	case width >= 1900:
 		return "1080p"
 	case width >= 1200:
 		return "720p"
 	default:
-		return ""  // 无法确定时返回空字符串，严禁伪造数据
+		return "" // 无法确定时返回空字符串，严禁伪造数据
 	}
 }
 
@@ -1826,7 +1826,7 @@ func (s *WebhookService) inferFileCount(path string) int {
 
 	// 检测多CD/Part/Disc标记
 	multiFilePatterns := []struct {
-		pattern string
+		pattern    string
 		multiplier int
 	}{
 		{"cd1", 2}, {"cd2", 2}, {"cd3", 3}, {"cd4", 4},
@@ -2577,6 +2577,25 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		year = enhanced.Year
 	}
 
+	// Get filename for better movie title extraction
+	fileName := ""
+	if payload.Item != nil {
+		// Try FileName field first, then extract from Path
+		if payload.Item.FileName != "" {
+			fileName = payload.Item.FileName
+		} else if payload.Item.Path != "" {
+			// Extract filename from path
+			path := payload.Item.Path
+			if idx := strings.LastIndex(path, "/"); idx != -1 {
+				fileName = path[idx+1:]
+			} else if idx := strings.LastIndex(path, "\\"); idx != -1 {
+				fileName = path[idx+1:]
+			} else {
+				fileName = path
+			}
+		}
+	}
+
 	// Get season and episode from correct fields
 	season := 0
 	episode := 0
@@ -2597,16 +2616,17 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 
 	// Create media item
 	item := &MediaItem{
-		Title:         payload.ItemName,
-		Year:          year,
-		LibraryName:   libraryName,
-		MediaType:     mediaType,
-		SeriesName:    payload.SeriesName,
-		SeasonNumber:  season,
-		EpisodeStart:  episode,
-		EpisodeEnd:    episode,
-		EpisodeCount:  1,
-		IsCompleted:   false,
+		Title:        payload.ItemName,
+		Year:         year,
+		LibraryName:  libraryName,
+		MediaType:    mediaType,
+		SeriesName:   payload.SeriesName,
+		SeasonNumber: season,
+		EpisodeStart: episode,
+		EpisodeEnd:   episode,
+		EpisodeCount: 1,
+		IsCompleted:  false,
+		FileName:     fileName,
 	}
 
 	s.mediaNotificationSvc.AddItem(item)
@@ -2644,16 +2664,16 @@ func (s *WebhookService) addAggregatedEpisodeToSummary(agg *EpisodeAggregation, 
 
 	// Create media item
 	item := &MediaItem{
-		Title:         agg.SeriesName,
-		Year:          agg.Year,
-		LibraryName:   agg.LibraryName,
-		MediaType:     mediaType,
-		SeriesName:    agg.SeriesName,
-		SeasonNumber:  agg.Season,
-		EpisodeStart:  episodeStart,
-		EpisodeEnd:    episodeEnd,
-		EpisodeCount:  episodeCount,
-		IsCompleted:   false,
+		Title:        agg.SeriesName,
+		Year:         agg.Year,
+		LibraryName:  agg.LibraryName,
+		MediaType:    mediaType,
+		SeriesName:   agg.SeriesName,
+		SeasonNumber: agg.Season,
+		EpisodeStart: episodeStart,
+		EpisodeEnd:   episodeEnd,
+		EpisodeCount: episodeCount,
+		IsCompleted:  false,
 	}
 
 	s.mediaNotificationSvc.AddItem(item)
@@ -3071,8 +3091,8 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 
 	// Emby API returns an object with Items array
 	var response struct {
-		Items []map[string]interface{} `json:"Items"`
-		TotalRecordCount int            `json:"TotalRecordCount"`
+		Items            []map[string]interface{} `json:"Items"`
+		TotalRecordCount int                      `json:"TotalRecordCount"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return nil, err
@@ -3131,7 +3151,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 			} else if yearDiff >= -2 && yearDiff <= 2 {
 				score += 15 // Close year (±2 years)
 			} else if yearDiff >= -5 && yearDiff <= 5 {
-				score += 5  // Somewhat close
+				score += 5 // Somewhat close
 			}
 		}
 
@@ -3166,13 +3186,13 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 
 // EmbySearchResult represents a search result from Emby
 type EmbySearchResult struct {
-	ID       string
-	Title    string
-	Year     int
-	Type     string
+	ID        string
+	Title     string
+	Year      int
+	Type      string
 	PosterURL string
-	Overview string
-	RunTime  int64 // in ticks
+	Overview  string
+	RunTime   int64 // in ticks
 }
 
 // convertToSearchResult converts Emby item to search result
@@ -3536,4 +3556,3 @@ func (s *WebhookService) handleMoviePilotComplete(payload MoviePilotWebhookPaylo
 
 	return nil
 }
-
