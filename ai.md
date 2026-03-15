@@ -2,6 +2,172 @@
 
 ---
 
+### refactor: 代码质量优化 - 全部修复 ✅
+- **时间**: 2026-03-16 15:00
+- **任务**: 项目全面代码审查后的优化修复
+- **修复内容**:
+
+#### 1. Go 版本统一 ✅
+- **问题**: go.mod 声明 1.15，Dockerfile 使用 1.25
+- **修复**: 统一为 Go 1.21
+- **修改文件**:
+  - `go.mod` - 更新版本声明
+  - `Dockerfile` - 同步构建镜像版本
+
+#### 2. 清理调试代码 ✅
+- **问题**: fmt.Printf 调试代码残留 (53 处)
+- **修复**: 替换为 log.Printf
+- **修改文件**:
+  - `internal/handlers/resource.go` - 添加 log 导入，替换 22 处
+  - `internal/services/site_adapter.go` - 添加 log 导入，替换 26 处
+
+#### 3. HTTP 重试机制 ✅
+- **问题**: 网络抖动时功能失败
+- **修复**: 实现指数退避重试机制
+- **新增文件**:
+  - `internal/services/retry.go` - 通用重试包装器
+    - `RetryHTTP()` - HTTP 请求重试
+    - `Retry()` - 通用函数重试
+    - `HTTPError` - HTTP 错误类型
+    - 默认配置: 3 次尝试, 100ms 基础延迟, 5s 最大延迟
+- **修改文件**:
+  - `internal/services/tmdb.go` - 集成重试机制
+  - `internal/services/moviepilot.go` - 集成重试机制
+
+#### 4. 统一日志系统 ✅
+- **问题**: 日志系统不统一，缺少级别控制
+- **修复**: 扩展 pkg/logger 支持结构化日志
+- **修改文件**:
+  - `pkg/logger/logger.go` - 添加日志级别功能
+    - `LogLevel` - DEBUG/INFO/WARN/ERROR
+    - `Debug/Info/Warn/Error` - 全局日志函数
+    - `WithPrefix()` - 带前缀的日志实例
+    - `InitLogger()` - 初始化配置
+    - 保留原有 `Sanitize()` 功能
+  - `internal/config/config.go` - 添加日志配置字段
+    - `LOG_LEVEL` - 日志级别
+    - `LOG_PREFIX` - 日志前缀
+    - `LOG_COLOR` - 彩色输出
+  - `.env.example` - 添加日志配置说明
+  - `cmd/bot/main.go` - 初始化日志系统
+
+#### 特性说明
+- **重试机制**: 自动重试 5xx 错误和 429 (Too Many Requests)
+- **日志脱敏**: 自动屏蔽 API 密钥、Token 等敏感信息
+- **彩色日志**: 支持 ANSI 颜色代码 (可选)
+- **向后兼容**: 保留原有 Sanitize 功能
+
+#### 状态**: ✅ 全部完成，待部署测试
+
+---
+
+### review: 项目全面代码审查与优化建议 📋
+- **时间**: 2026-03-16 14:00
+- **审查范围**: 全项目代码库分析
+- **审查结论**: 项目整体质量较高，架构清晰，但存在一些可优化项
+
+#### 📊 项目概况
+- **语言**: Go (声明 1.15，实际使用 1.25 - 存在不一致)
+- **架构**: 分层架构 (Bot → Handlers → Services → Config)
+- **核心模块**: 9 个 (bot, handlers, services, config, session, ui, api, middleware, presenters)
+- **测试覆盖**: 2 个测试文件 (callback_test.go, resource_test.go)
+
+#### ✅ 优点
+1. **架构设计优秀**
+   - 清晰的分层结构，职责分离明确
+   - 依赖注入模式，便于测试和维护
+   - 会话管理器实现了 LRU 淘汰和自动清理
+
+2. **并发安全完善**
+   - 广泛使用 sync.RWMutex 保护共享资源
+   - HTTP 客户端配置了连接池和超时
+
+3. **错误处理健全**
+   - 自定义错误类型 (pkg/errors)
+   - 统一的错误码和恢复机制
+
+#### ⚠️ 发现的问题 (已全部修复)
+
+##### 高优先级问题
+1. **Go 版本不一致** 🔴
+   - `go.mod`: `go 1.15`
+   - `Dockerfile`: `FROM golang:1.25-alpine`
+   - **影响**: 可能导致兼容性问题
+   - **建议**: 统一为 `go 1.21` 或更高版本
+
+2. **日志系统不统一** 🟡
+   - 混用 `log.Printf()` 和 `fmt.Print()` (53 处)
+   - 缺少日志级别控制
+   - **建议**: 统一使用结构化日志 (如 `log/slog`)
+
+3. **缺少 HTTP 重试机制** 🟡
+   - 所有 HTTP 请求均无重试
+   - 网络抖动时会导致功能失败
+   - **建议**: 实现通用重试包装器
+
+##### 中优先级问题
+4. **测试覆盖率低** 🟡
+   - 仅 2 个测试文件
+   - 核心业务逻辑无测试覆盖
+   - **建议**: 逐步增加单元测试
+
+5. **调试代码残留** 🟡
+   - `internal/handlers/resource.go`: 22 处 fmt.Print
+   - `internal/services/site_adapter.go`: 26 处 fmt.Print
+   - **建议**: 清理或替换为日志
+
+##### 低优先级问题
+6. **配置验证不完整**
+   - URL 格式验证缺失
+   - **建议**: 添加 URL 正则验证
+
+7. **缓存策略可优化**
+   - 图片缓存无大小限制
+   - API 响应无缓存
+   - **建议**: 实现 LRU 缓存限制
+
+#### 🔧 优化建议
+
+##### 立即可做
+1. 修复 Go 版本不一致
+2. 清理 fmt.Print 调试代码
+3. 添加 HTTP 请求重试机制
+
+##### 短期规划
+4. 统一日志系统
+5. 增加核心功能单元测试
+6. 添加配置 URL 验证
+
+##### 长期规划
+7. 实现完善的监控指标
+8. 优化缓存策略 (LRU + 大小限制)
+9. 性能分析和优化
+
+#### 📁 关键文件
+- `go.mod` - 版本声明
+- `Dockerfile` - 构建配置
+- `internal/services/telegram.go` - Telegram API 客户端
+- `internal/services/moviepilot.go` - MoviePilot API 客户端
+- `internal/session/manager.go` - 会话管理
+- `internal/config/config.go` - 配置管理
+
+#### 🎯 下一步行动
+- 用户确认优先级后，可依次实施优化
+- 建议从高优先级问题开始修复
+
+---
+
+### git: 推送电影识别修复 ✅
+- **时间**: 2026-03-16 00:11
+- **提交**: 080e4a8
+- **操作**:
+  - Git: ✅ 推送到 origin/master (f25b6a9..080e4a8)
+  - Docker: ✅ 容器已重启（健康状态 running）
+  - 镜像: xzb177/yimao:latest
+- **状态**: ✅ 全部完成
+
+---
+
 ### fix: 电影识别问题 - 文件名提取 ✅
 - **时间**: 2026-03-16 10:00
 - **背景**: 用户报告 2026-03-15 入库汇总中有 1 部电影显示为"未识别电影"

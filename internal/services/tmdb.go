@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,9 +13,10 @@ import (
 
 // TMDBClient provides access to TMDB API
 type TMDBClient struct {
-	apiKey     string
-	baseURL    string
-	httpClient *http.Client
+	apiKey      string
+	baseURL     string
+	httpClient  *http.Client
+	retryConfig *RetryConfig
 }
 
 // NewTMDBClient creates a new TMDB client
@@ -25,6 +27,7 @@ func NewTMDBClient(apiKey string) *TMDBClient {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		retryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -66,7 +69,7 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB API request failed: %w", err)
 	}
@@ -95,7 +98,7 @@ func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB API request failed: %w", err)
 	}
@@ -126,7 +129,7 @@ func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, err
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB search failed: %w", err)
 	}
@@ -147,10 +150,10 @@ func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, err
 
 // TMDBSearchResult represents TMDB search results
 type TMDBSearchResult struct {
-	Page         int              `json:"page"`
-	Results      []TMDBMediaInfo  `json:"results"`
-	TotalPages   int              `json:"total_pages"`
-	TotalResults int              `json:"total_results"`
+	Page         int             `json:"page"`
+	Results      []TMDBMediaInfo `json:"results"`
+	TotalPages   int             `json:"total_pages"`
+	TotalResults int             `json:"total_results"`
 }
 
 // GetMediaByType retrieves media info by type (movie or tv)
@@ -264,14 +267,14 @@ func (m *TMDBMediaInfo) ConvertToMediaInfo() *MediaInfo {
 	}
 
 	return &MediaInfo{
-		ID:          m.ID,
-		Title:       m.GetTitle(),
-		Year:        FlexibleYear(year),
-		Overview:    m.Overview,
-		Poster:      poster,
-		Backdrop:    backdrop,
-		Rating:      m.VoteAverage,
-		Type:        mediaType,
+		ID:       m.ID,
+		Title:    m.GetTitle(),
+		Year:     FlexibleYear(year),
+		Overview: m.Overview,
+		Poster:   poster,
+		Backdrop: backdrop,
+		Rating:   m.VoteAverage,
+		Type:     mediaType,
 	}
 }
 
@@ -299,37 +302,37 @@ func NewTMDBClientWithDefaultKey(apiKey string) *TMDBClient {
 
 // TMDBTrendingResult represents trending movies/TV shows
 type TMDBTrendingResult struct {
-	Page    int                      `json:"page"`
-	Results []TMDBTrendingMediaInfo `json:"results"`
-	TotalPages int                  `json:"total_pages"`
-	TotalResults int                 `json:"total_results"`
+	Page         int                     `json:"page"`
+	Results      []TMDBTrendingMediaInfo `json:"results"`
+	TotalPages   int                     `json:"total_pages"`
+	TotalResults int                     `json:"total_results"`
 }
 
 // TMDBTrendingMediaInfo represents a media item in trending results
 type TMDBTrendingMediaInfo struct {
-	ID             int     `json:"id"`
-	Title          string  `json:"title"`
-	Name           string  `json:"name"`
-	OriginalTitle  string  `json:"original_title"`
-	OriginalName   string  `json:"original_name"`
-	PosterPath     string  `json:"poster_path"`
-	BackdropPath   string  `json:"backdrop_path"`
-	VoteAverage    float64 `json:"vote_average"`
-	VoteCount      int     `json:"vote_count"`
-	ReleaseDate    string  `json:"release_date"`
-	FirstAirDate   string  `json:"first_air_date"`
-	Genres         []TMDBGenre `json:"genres"`
-	Overview       string  `json:"overview"`
-	MediaType      string  `json:"media_type"`
-	Popularity     float64 `json:"popularity"`
+	ID            int         `json:"id"`
+	Title         string      `json:"title"`
+	Name          string      `json:"name"`
+	OriginalTitle string      `json:"original_title"`
+	OriginalName  string      `json:"original_name"`
+	PosterPath    string      `json:"poster_path"`
+	BackdropPath  string      `json:"backdrop_path"`
+	VoteAverage   float64     `json:"vote_average"`
+	VoteCount     int         `json:"vote_count"`
+	ReleaseDate   string      `json:"release_date"`
+	FirstAirDate  string      `json:"first_air_date"`
+	Genres        []TMDBGenre `json:"genres"`
+	Overview      string      `json:"overview"`
+	MediaType     string      `json:"media_type"`
+	Popularity    float64     `json:"popularity"`
 }
 
 // TMDBPopularResult represents popular movies/TV shows
 type TMDBPopularResult struct {
-	Page         int                  `json:"page"`
-	Results     []TMDBTrendingMediaInfo `json:"results"`
-	TotalPages   int                  `json:"total_pages"`
-	TotalResults int                  `json:"total_results"`
+	Page         int                     `json:"page"`
+	Results      []TMDBTrendingMediaInfo `json:"results"`
+	TotalPages   int                     `json:"total_pages"`
+	TotalResults int                     `json:"total_results"`
 }
 
 // GetTrendingMovies gets trending movies from TMDB
@@ -342,7 +345,7 @@ func (c *TMDBClient) GetTrendingMovies(timeWindow string) (*TMDBTrendingResult, 
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB trending request failed: %w", err)
 	}
@@ -375,7 +378,7 @@ func (c *TMDBClient) GetTrendingTV(timeWindow string) (*TMDBTrendingResult, erro
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB trending TV request failed: %w", err)
 	}
@@ -408,7 +411,7 @@ func (c *TMDBClient) GetPopularMovies(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB popular movies request failed: %w", err)
 	}
@@ -436,7 +439,7 @@ func (c *TMDBClient) GetPopularTV(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB popular TV request failed: %w", err)
 	}
@@ -464,7 +467,7 @@ func (c *TMDBClient) GetNowPlayingMovies(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB now playing request failed: %w", err)
 	}
@@ -492,7 +495,7 @@ func (c *TMDBClient) GetTopRatedMovies(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB top rated request failed: %w", err)
 	}
@@ -520,7 +523,7 @@ func (c *TMDBClient) GetTopRatedTV(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB top rated TV request failed: %w", err)
 	}
@@ -548,7 +551,7 @@ func (c *TMDBClient) GetUpcomingMovies(page int) (*TMDBPopularResult, error) {
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB upcoming request failed: %w", err)
 	}
@@ -579,19 +582,19 @@ type TVSeason struct {
 
 // TVDetailsWithSeasons represents TV show details with seasons
 type TVDetailsWithSeasons struct {
-	ID             int        `json:"id"`
-	Name           string     `json:"name"`
-	OriginalName   string     `json:"original_name"`
-	Overview       string     `json:"overview"`
-	FirstAirDate   string     `json:"first_air_date"`
-	PosterPath     string     `json:"poster_path"`
-	BackdropPath   string     `json:"backdrop_path"`
-	VoteAverage    float64    `json:"vote_average"`
-	VoteCount      int        `json:"vote_count"`
-	Genres         []TMDBGenre `json:"genres"`
-	NumberOfSeasons int        `json:"number_of_seasons"`
-	NumberOfEpisodes int       `json:"number_of_episodes"`
-	Seasons        []TVSeason `json:"seasons"`
+	ID               int         `json:"id"`
+	Name             string      `json:"name"`
+	OriginalName     string      `json:"original_name"`
+	Overview         string      `json:"overview"`
+	FirstAirDate     string      `json:"first_air_date"`
+	PosterPath       string      `json:"poster_path"`
+	BackdropPath     string      `json:"backdrop_path"`
+	VoteAverage      float64     `json:"vote_average"`
+	VoteCount        int         `json:"vote_count"`
+	Genres           []TMDBGenre `json:"genres"`
+	NumberOfSeasons  int         `json:"number_of_seasons"`
+	NumberOfEpisodes int         `json:"number_of_episodes"`
+	Seasons          []TVSeason  `json:"seasons"`
 }
 
 // GetTVDetailsWithSeasons retrieves TV show details with season information from TMDB
@@ -603,7 +606,7 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 		return nil, err
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("TMDB API request failed: %w", err)
 	}
@@ -620,4 +623,19 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	}
 
 	return &details, nil
+}
+
+// doRequest executes an HTTP request with retry logic
+func (c *TMDBClient) doRequest(req *http.Request) (*http.Response, error) {
+	ctx := context.Background()
+	resp, err := RetryHTTP(ctx, c.httpClient, req, c.retryConfig)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// SetRetryConfig sets custom retry configuration
+func (c *TMDBClient) SetRetryConfig(cfg *RetryConfig) {
+	c.retryConfig = cfg
 }

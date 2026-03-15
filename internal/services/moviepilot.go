@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -140,6 +141,7 @@ type MoviePilotClient struct {
 	apiKey           string
 	downloadSavePath string // Optional: download save path for subscriptions
 	httpClient       *http.Client
+	retryConfig      *RetryConfig
 }
 
 // NewMoviePilotClient creates a new MoviePilot client with optimized HTTP settings.
@@ -181,6 +183,7 @@ func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotCl
 				ExpectContinueTimeout: 1 * time.Second,
 			},
 		},
+		retryConfig: DefaultRetryConfig(),
 	}
 }
 
@@ -303,7 +306,7 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 
 	log.Printf("[MoviePilot] %s %s", method, url)
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.doRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -1075,4 +1078,19 @@ func (c *MoviePilotClient) SearchAllResources(keyword string, page int) (map[str
 	}
 
 	return result, nil
+}
+
+// doRequest executes an HTTP request with retry logic
+func (c *MoviePilotClient) doRequest(req *http.Request) (*http.Response, error) {
+	ctx := context.Background()
+	resp, err := RetryHTTP(ctx, c.httpClient, req, c.retryConfig)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// SetRetryConfig sets custom retry configuration
+func (c *MoviePilotClient) SetRetryConfig(cfg *RetryConfig) {
+	c.retryConfig = cfg
 }

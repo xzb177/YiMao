@@ -75,6 +75,11 @@ type Config struct {
 	// Review/Resubscribe
 	EnableAutoResubscribe bool
 
+	// Logging
+	LogLevel  string // "debug", "info", "warn", "error"
+	LogColor  bool   // Enable colored log output
+	LogPrefix string // Log prefix for module identification
+
 	// PT Site Passkeys for RSS feeds
 	HDSkyPasskey  string // HD-Sky passkey
 	ZhuQuePasskey string // ZhuQue passkey (or "key1/key2" for new format)
@@ -122,6 +127,10 @@ func Load() (*Config, error) {
 		BlockDuration:         getEnvInt("BLOCK_DURATION", 30),           // minutes
 		NotificationFormat:    getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
 		EnableAutoResubscribe: getEnvBool("ENABLE_AUTO_RESUBSCRIBE", false),
+		// Logging
+		LogLevel:  getEnv("LOG_LEVEL", "info"),
+		LogColor:  getEnvBool("LOG_COLOR", false),
+		LogPrefix: getEnv("LOG_PREFIX", "YiMao"),
 		// PT Site Passkeys
 		HDSkyPasskey:          getEnv("HDSKY_PASSKEY", ""),
 		ZhuQuePasskey:         getEnv("ZHUQUE_PASSKEY", ""),

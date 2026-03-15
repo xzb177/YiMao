@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"regexp"
@@ -234,18 +235,18 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 	if tmdbID > 0 && originalTitle != "" {
 		// Check if we need to get English title
 		needEnglishTitle := !h.isLikelyEnglish(originalTitle)
-		fmt.Printf("[Resource] Checking if need English title: originalTitle='%s', isLikelyEnglish=%v, needEnglishTitle=%v\n",
+		log.Printf("[Resource] Checking if need English title: originalTitle='%s', isLikelyEnglish=%v, needEnglishTitle=%v\n",
 			originalTitle, !needEnglishTitle, needEnglishTitle)
 
 		if needEnglishTitle {
 			englishTitle := h.getEnglishTitle(originalTitle, tmdbID, mediaType)
 			if englishTitle != "" && englishTitle != originalTitle {
-				fmt.Printf("[Resource] Using English title for search: '%s' (original was: '%s')\n", englishTitle, originalTitle)
+				log.Printf("[Resource] Using English title for search: '%s' (original was: '%s')\n", englishTitle, originalTitle)
 				originalTitle = englishTitle
 				// Update cache with English title
 				sess.Set(fmt.Sprintf("media_original_title_%d", tmdbID), originalTitle)
 			} else {
-				fmt.Printf("[Resource] Failed to get different English title, keeping original\n")
+				log.Printf("[Resource] Failed to get different English title, keeping original\n")
 			}
 		}
 	}
@@ -256,7 +257,7 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 		searchTitle = title
 	}
 
-	fmt.Printf("[Resource] Media info - ID:%d, Title:'%s', OriginalTitle:'%s', Using:'%s'\n",
+	log.Printf("[Resource] Media info - ID:%d, Title:'%s', OriginalTitle:'%s', Using:'%s'\n",
 		tmdbID, title, originalTitle, searchTitle)
 
 	if title == "" {
@@ -363,11 +364,11 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 	// Get available sites from MoviePilot and search via MP API
 	sites, err := h.moviepilot.GetSites()
 	if err != nil {
-		fmt.Printf("[Resource] Failed to get sites from MoviePilot: %v\n", err)
+		log.Printf("[Resource] Failed to get sites from MoviePilot: %v\n", err)
 		// Fallback to SiteAdapter if available
 		h.searchViaSiteAdapter(keyword, page, &resources, &sitesSearched)
 	} else {
-		fmt.Printf("[Resource] Found %d sites from MoviePilot, searching via MP API\n", len(sites))
+		log.Printf("[Resource] Found %d sites from MoviePilot, searching via MP API\n", len(sites))
 
 		// Launch concurrent searches for each site using MoviePilot API
 		for _, site := range sites {
@@ -417,14 +418,14 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 
 	for result := range resultChan {
 		if result.err != nil {
-			fmt.Printf("[Resource] Error searching %s: %v\n", result.siteName, result.err)
+			log.Printf("[Resource] Error searching %s: %v\n", result.siteName, result.err)
 			collectedResults++
 			continue
 		}
 
 		if len(result.results) > 0 {
 			sitesSearched = append(sitesSearched, result.siteName)
-			fmt.Printf("[Resource] %s returned %d results\n", result.siteName, len(result.results))
+			log.Printf("[Resource] %s returned %d results\n", result.siteName, len(result.results))
 
 			// Convert to CandidateResource
 			for _, res := range result.results {
@@ -456,7 +457,7 @@ func (h *ResourceHandler) handleShowList(ctx *callback.Context) (*callback.Respo
 	// Check for timeout
 	select {
 	case <-timeout:
-		fmt.Printf("[Resource] Search timeout, collected %d/%d sites\n", collectedResults, len(sitesMap))
+		log.Printf("[Resource] Search timeout, collected %d/%d sites\n", collectedResults, len(sitesMap))
 	default:
 	}
 
@@ -766,17 +767,17 @@ func (h *ResourceHandler) sortResources(resources []CandidateResource, sortBy st
 
 // getEnglishTitle fetches the English title from TMDB
 func (h *ResourceHandler) getEnglishTitle(originalTitle string, tmdbID int, mediaType string) string {
-	fmt.Printf("[Resource] getEnglishTitle called: originalTitle='%s', tmdbID=%d, mediaType=%s\n", originalTitle, tmdbID, mediaType)
+	log.Printf("[Resource] getEnglishTitle called: originalTitle='%s', tmdbID=%d, mediaType=%s\n", originalTitle, tmdbID, mediaType)
 
 	// If original title looks like English (contains Latin characters), use it
 	if h.isLikelyEnglish(originalTitle) {
-		fmt.Printf("[Resource] Original title looks like English, using it: '%s'\n", originalTitle)
+		log.Printf("[Resource] Original title looks like English, using it: '%s'\n", originalTitle)
 		return originalTitle
 	}
 
 	// Use TMDB client's API key to fetch English title
 	if h.tmdb == nil {
-		fmt.Printf("[Resource] TMDB client not available\n")
+		log.Printf("[Resource] TMDB client not available\n")
 		return originalTitle
 	}
 
@@ -794,7 +795,7 @@ func (h *ResourceHandler) getEnglishTitle(originalTitle string, tmdbID int, medi
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Printf("[Resource] Failed to create request: %v\n", err)
+		log.Printf("[Resource] Failed to create request: %v\n", err)
 		return originalTitle
 	}
 
@@ -809,22 +810,22 @@ func (h *ResourceHandler) getEnglishTitle(originalTitle string, tmdbID int, medi
 
 	httpResp, err := client.Do(req)
 	if err != nil {
-		fmt.Printf("[Resource] Failed to fetch from TMDB: %v\n", err)
+		log.Printf("[Resource] Failed to fetch from TMDB: %v\n", err)
 		return originalTitle
 	}
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode != 200 {
-		fmt.Printf("[Resource] TMDB returned status %d\n", httpResp.StatusCode)
+		log.Printf("[Resource] TMDB returned status %d\n", httpResp.StatusCode)
 		return originalTitle
 	}
 
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
-		fmt.Printf("[Resource] Failed to decode response: %v\n", err)
+		log.Printf("[Resource] Failed to decode response: %v\n", err)
 		return originalTitle
 	}
 
-	fmt.Printf("[Resource] TMDB en-US returned: Title='%s', Name='%s'\n", resp.Title, resp.Name)
+	log.Printf("[Resource] TMDB en-US returned: Title='%s', Name='%s'\n", resp.Title, resp.Name)
 
 	if resp.Title != "" {
 		return resp.Title
@@ -886,11 +887,11 @@ func (h *ResourceHandler) searchViaSiteAdapter(keyword string, page int, resourc
 
 	sites, err := h.moviepilot.GetSites()
 	if err != nil {
-		fmt.Printf("[Resource] Fallback failed: cannot get sites: %v\n", err)
+		log.Printf("[Resource] Fallback failed: cannot get sites: %v\n", err)
 		return
 	}
 
-	fmt.Printf("[Resource] Using SiteAdapter fallback for %d sites\n", len(sites))
+	log.Printf("[Resource] Using SiteAdapter fallback for %d sites\n", len(sites))
 
 	// Simple sequential search with timeout
 	for _, site := range sites {
@@ -914,12 +915,12 @@ func (h *ResourceHandler) searchViaSiteAdapter(keyword string, page int, resourc
 		select {
 		case r := <-searchChan:
 			if r.err != nil {
-				fmt.Printf("[Resource] SiteAdapter %s error: %v\n", adapter.Name(), r.err)
+				log.Printf("[Resource] SiteAdapter %s error: %v\n", adapter.Name(), r.err)
 				continue
 			}
 			if len(r.results) > 0 {
 				*sitesSearched = append(*sitesSearched, adapter.Name())
-				fmt.Printf("[Resource] %s returned %d results (SiteAdapter)\n", adapter.Name(), len(r.results))
+				log.Printf("[Resource] %s returned %d results (SiteAdapter)\n", adapter.Name(), len(r.results))
 
 				for _, res := range r.results {
 					*resources = append(*resources, CandidateResource{
@@ -936,7 +937,7 @@ func (h *ResourceHandler) searchViaSiteAdapter(keyword string, page int, resourc
 				}
 			}
 		case <-time.After(5 * time.Second):
-			fmt.Printf("[Resource] SiteAdapter %s timeout\n", adapter.Name())
+			log.Printf("[Resource] SiteAdapter %s timeout\n", adapter.Name())
 		}
 
 		// Limit total results

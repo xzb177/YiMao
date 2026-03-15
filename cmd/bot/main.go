@@ -18,6 +18,7 @@ import (
 	"emby-telegram-bot/internal/server"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
+	"emby-telegram-bot/pkg/logger"
 )
 
 func main() {
@@ -28,6 +29,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+
+	// Initialize logger with configuration
+	logLevel := logger.ParseLevel(cfg.LogLevel)
+	logger.InitLogger(logLevel, cfg.LogPrefix, cfg.LogColor)
+	logger.Info("✅ Logger initialized: level=%s, prefix=%s, color=%v", cfg.LogLevel, cfg.LogPrefix, cfg.LogColor)
 
 	log.Printf("✅ Configuration loaded")
 	log.Printf("   MoviePilot: %s", cfg.MoviePilotURL)

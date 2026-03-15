@@ -1,6 +1,6 @@
 module emby-telegram-bot
 
-go 1.15
+go 1.21
 
 require modernc.org/sqlite v1.46.1
 

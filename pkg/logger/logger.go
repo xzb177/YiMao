@@ -2,8 +2,12 @@ package logger
 
 import (
 	"fmt"
+	"log"
+	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Sensitive patterns that should be masked in logs
@@ -75,4 +79,211 @@ func SanitizePayload(payload interface{}) string {
 		msg = fmt.Sprintf("%+v", v)
 	}
 	return Sanitize(msg)
+}
+
+// LogLevel represents the severity level of a log message
+type LogLevel int
+
+const (
+	// DEBUG level for detailed debugging information
+	DEBUG LogLevel = iota
+	// INFO level for general informational messages
+	INFO
+	// WARN level for warning messages
+	WARN
+	// ERROR level for error messages
+	ERROR
+)
+
+// String returns the string representation of the log level
+func (l LogLevel) String() string {
+	switch l {
+	case DEBUG:
+		return "DEBUG"
+	case INFO:
+		return "INFO"
+	case WARN:
+		return "WARN"
+	case ERROR:
+		return "ERROR"
+	default:
+		return "UNKNOWN"
+	}
+}
+
+// Logger provides structured logging with levels
+type Logger struct {
+	mu       sync.Mutex
+	level    LogLevel
+	prefix   string
+	logger   *log.Logger
+	useColor bool
+}
+
+// Default logger instance
+var defaultLogger = &Logger{
+	level:    INFO,
+	prefix:   "",
+	logger:   log.New(os.Stdout, "", log.LstdFlags),
+	useColor: false,
+}
+
+// SetLevel sets the global log level
+func SetLevel(level LogLevel) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	defaultLogger.level = level
+}
+
+// GetLevel returns the current global log level
+func GetLevel() LogLevel {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	return defaultLogger.level
+}
+
+// SetPrefix sets the global log prefix
+func SetPrefix(prefix string) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	defaultLogger.prefix = prefix
+}
+
+// SetColor enables or disables colored output
+func SetColor(enabled bool) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+	defaultLogger.useColor = enabled
+}
+
+// Debug logs a debug message
+func Debug(format string, args ...interface{}) {
+	defaultLogger.log(DEBUG, format, args...)
+}
+
+// Info logs an info message
+func Info(format string, args ...interface{}) {
+	defaultLogger.log(INFO, format, args...)
+}
+
+// Warn logs a warning message
+func Warn(format string, args ...interface{}) {
+	defaultLogger.log(WARN, format, args...)
+}
+
+// Error logs an error message
+func Error(format string, args ...interface{}) {
+	defaultLogger.log(ERROR, format, args...)
+}
+
+// WithPrefix returns a new logger with the given prefix
+func WithPrefix(prefix string) *Logger {
+	return &Logger{
+		level:    defaultLogger.level,
+		prefix:   prefix,
+		logger:   defaultLogger.logger,
+		useColor: defaultLogger.useColor,
+	}
+}
+
+// log logs a message at the specified level
+func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if level < l.level {
+		return
+	}
+
+	// Build the log message
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	levelStr := level.String()
+
+	// Add color if enabled
+	if l.useColor {
+		levelStr = l.colorizeLevel(level)
+	}
+
+	// Build prefix with module
+	prefix := ""
+	if l.prefix != "" {
+		prefix = fmt.Sprintf("[%s] ", l.prefix)
+	}
+
+	// Format the message and sanitize
+	message := fmt.Sprintf(format, args...)
+	message = Sanitize(message)
+
+	// Output: [timestamp] LEVEL [prefix] message
+	l.logger.Printf("[%s] %s [%s]%s\n", timestamp, levelStr, prefix, message)
+}
+
+// colorizeLevel adds ANSI color codes to the level string
+func (l *Logger) colorizeLevel(level LogLevel) string {
+	const (
+		reset  = "\033[0m"
+		gray   = "\033[90m"
+		green  = "\033[32m"
+		yellow = "\033[33m"
+		red    = "\033[31m"
+	)
+
+	switch level {
+	case DEBUG:
+		return gray + "DEBUG" + reset
+	case INFO:
+		return green + "INFO" + reset
+	case WARN:
+		return yellow + "WARN" + reset
+	case ERROR:
+		return red + "ERROR" + reset
+	default:
+		return level.String()
+	}
+}
+
+// Debug logs a debug message with the logger's prefix
+func (l *Logger) Debug(format string, args ...interface{}) {
+	l.log(DEBUG, format, args...)
+}
+
+// Info logs an info message with the logger's prefix
+func (l *Logger) Info(format string, args ...interface{}) {
+	l.log(INFO, format, args...)
+}
+
+// Warn logs a warning message with the logger's prefix
+func (l *Logger) Warn(format string, args ...interface{}) {
+	l.log(WARN, format, args...)
+}
+
+// Error logs an error message with the logger's prefix
+func (l *Logger) Error(format string, args ...interface{}) {
+	l.log(ERROR, format, args...)
+}
+
+// InitLogger initializes the global logger with the given settings
+func InitLogger(level LogLevel, prefix string, useColor bool) {
+	defaultLogger.mu.Lock()
+	defer defaultLogger.mu.Unlock()
+
+	defaultLogger.level = level
+	defaultLogger.prefix = prefix
+	defaultLogger.useColor = useColor
+}
+
+// ParseLevel parses a string into a LogLevel
+func ParseLevel(s string) LogLevel {
+	switch s {
+	case "DEBUG", "debug":
+		return DEBUG
+	case "INFO", "info":
+		return INFO
+	case "WARN", "warn", "WARNING", "warning":
+		return WARN
+	case "ERROR", "error":
+		return ERROR
+	default:
+		return INFO
+	}
 }
