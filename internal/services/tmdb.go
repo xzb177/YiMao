@@ -9,6 +9,24 @@ import (
 	"net/http"
 	"net/url"
 	"time"
+
+	"emby-telegram-bot/pkg/logger"
+	"emby-telegram-bot/pkg/validation"
+)
+
+const (
+	// TMDB API constants
+	TMDBBaseURL      = "https://api.themoviedb.org/3"
+	TMDBImageBaseURL = "https://image.tmdb.org/t/p"
+	TMDBPosterSize   = "w500"
+	TMDBBackdropSize = "original"
+
+	// TMDB media types
+	TMDBMediaTypeMovie = "movie"
+	TMDBMediaTypeTV    = "tv"
+
+	// TMDB API parameters
+	TMDBDefaultLanguage = "zh-CN"
 )
 
 // TMDBClient provides access to TMDB API
@@ -23,7 +41,7 @@ type TMDBClient struct {
 func NewTMDBClient(apiKey string) *TMDBClient {
 	return &TMDBClient{
 		apiKey:  apiKey,
-		baseURL: "https://api.themoviedb.org/3",
+		baseURL: TMDBBaseURL,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -62,7 +80,7 @@ type TMDBGenre struct {
 
 // GetMovieDetails retrieves movie details from TMDB
 func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
-	url := fmt.Sprintf("%s/movie/%d?api_key=%s&language=zh-CN", c.baseURL, tmdbID, c.apiKey)
+	url := c.buildURL(fmt.Sprintf("/movie/%d", tmdbID))
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -85,13 +103,13 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 		return nil, fmt.Errorf("failed to decode TMDB response: %w", err)
 	}
 
-	media.MediaType = "movie"
+	media.MediaType = TMDBMediaTypeMovie
 	return &media, nil
 }
 
 // GetTVDetails retrieves TV show details from TMDB
 func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
-	url := fmt.Sprintf("%s/tv/%d?api_key=%s&language=zh-CN", c.baseURL, tmdbID, c.apiKey)
+	url := c.buildURL(fmt.Sprintf("/tv/%d", tmdbID))
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -114,15 +132,20 @@ func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
 		return nil, fmt.Errorf("failed to decode TMDB response: %w", err)
 	}
 
-	media.MediaType = "tv"
+	media.MediaType = TMDBMediaTypeTV
 	return &media, nil
 }
 
 // SearchMedia searches for media by title
 func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, error) {
+	// Sanitize and validate input
+	query = validation.SanitizeSearchQuery(query)
+	if query == "" {
+		return nil, fmt.Errorf("search query cannot be empty")
+	}
+
 	encodedQuery := url.QueryEscape(query)
-	url := fmt.Sprintf("%s/search/multi?api_key=%s&language=zh-CN&query=%s&page=%d",
-		c.baseURL, c.apiKey, encodedQuery, page)
+	url := c.buildURL("/search/multi", "query", encodedQuery, "page", fmt.Sprintf("%d", page))
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -169,7 +192,7 @@ func (c *TMDBClient) GetPosterURL(posterPath string) string {
 	if posterPath == "" {
 		return ""
 	}
-	return "https://image.tmdb.org/t/p/w500" + posterPath
+	return fmt.Sprintf("%s/%s%s", TMDBImageBaseURL, TMDBPosterSize, posterPath)
 }
 
 // GetBackdropURL returns full backdrop URL
@@ -177,7 +200,7 @@ func (c *TMDBClient) GetBackdropURL(backdropPath string) string {
 	if backdropPath == "" {
 		return ""
 	}
-	return "https://image.tmdb.org/t/p/original" + backdropPath
+	return fmt.Sprintf("%s/%s%s", TMDBImageBaseURL, TMDBBackdropSize, backdropPath)
 }
 
 // GetTitle returns the title of the media
@@ -243,19 +266,19 @@ func (m *TMDBMediaInfo) ConvertToMediaInfo() *MediaInfo {
 	}
 
 	mediaType := MediaTypeMovie
-	if m.MediaType == "tv" {
+	if m.MediaType == TMDBMediaTypeTV {
 		mediaType = MediaTypeTV
 	}
 
 	// Build poster URL
 	poster := ""
 	if m.PosterPath != "" {
-		poster = "https://image.tmdb.org/t/p/w500" + m.PosterPath
+		poster = fmt.Sprintf("%s/%s%s", TMDBImageBaseURL, TMDBPosterSize, m.PosterPath)
 	}
 
 	backdrop := ""
 	if m.BackdropPath != "" {
-		backdrop = "https://image.tmdb.org/t/p/original" + m.BackdropPath
+		backdrop = fmt.Sprintf("%s/%s%s", TMDBImageBaseURL, TMDBBackdropSize, m.BackdropPath)
 	}
 
 	// Get year from date
@@ -296,7 +319,7 @@ func SetAPIKeyFromEnv(apiKey string) string {
 // NewTMDBClientWithDefaultKey creates a TMDB client with default or provided API key
 func NewTMDBClientWithDefaultKey(apiKey string) *TMDBClient {
 	key := SetAPIKeyFromEnv(apiKey)
-	log.Printf("[TMDB] Client initialized with API key")
+	logger.Info("[TMDB] Client initialized with API key: %s", logger.Sanitizef("api_key=%s", key))
 	return NewTMDBClient(key)
 }
 
@@ -623,6 +646,19 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	}
 
 	return &details, nil
+}
+
+// buildURL constructs a TMDB API URL with authentication and language
+func (c *TMDBClient) buildURL(endpoint string, params ...string) string {
+	base := fmt.Sprintf("%s%s?api_key=%s&language=%s", c.baseURL, endpoint, c.apiKey, TMDBDefaultLanguage)
+	if len(params) > 0 {
+		for i := 0; i < len(params); i += 2 {
+			if i+1 < len(params) {
+				base += fmt.Sprintf("&%s=%s", params[i], params[i+1])
+			}
+		}
+	}
+	return base
 }
 
 // doRequest executes an HTTP request with retry logic

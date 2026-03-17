@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/pkg/validation"
 )
 
@@ -304,7 +305,7 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", c.apiKey)
 
-	log.Printf("[MoviePilot] %s %s", method, url)
+	logger.Debug("[MoviePilot] %s %s", method, logger.Sanitize(url))
 
 	resp, err := c.doRequest(req)
 	if err != nil {
@@ -317,7 +318,7 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
-	log.Printf("[MoviePilot] Response status: %d", resp.StatusCode)
+	logger.Debug("[MoviePilot] Response status: %d", resp.StatusCode)
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("API error: status %d, body: %s", resp.StatusCode, string(respBody))
