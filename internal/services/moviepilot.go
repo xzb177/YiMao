@@ -493,27 +493,19 @@ func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	// 等待一小段时间确保订阅已保存
 	time.Sleep(500 * time.Millisecond)
 
-	// 调用 MoviePilot 的订阅搜索 API，带重试机制
+	// 调用 MoviePilot 的订阅搜索 API，使用统一的重试机制
 	endpoint := "/api/v1/subscribe/search"
-	maxRetries := 3
-	var lastErr error
 
-	for attempt := 1; attempt <= maxRetries; attempt++ {
+	err := Retry(func() error {
 		_, err := c.makeRequest("GET", endpoint, nil)
-		if err == nil {
-			log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d (尝试 %d/%d)", subID, attempt, maxRetries)
-			return
-		}
-		lastErr = err
-		log.Printf("[MoviePilot] 触发订阅搜索失败 (尝试 %d/%d): %v", attempt, maxRetries, err)
+		return err
+	}, &RetryConfig{MaxAttempts: 3, BaseDelay: 1 * time.Second, Multiplier: 1.5})
 
-		// 最后一次失败后不再等待
-		if attempt < maxRetries {
-			time.Sleep(time.Duration(attempt) * time.Second)
-		}
+	if err == nil {
+		log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
+	} else {
+		log.Printf("[MoviePilot] 触发订阅搜索失败，订阅 ID: %d: %v", subID, err)
 	}
-
-	log.Printf("[MoviePilot] 触发订阅搜索最终失败，订阅 ID: %d: %v", subID, lastErr)
 }
 
 // RequestMediaBySearchResult creates a subscription from a search result

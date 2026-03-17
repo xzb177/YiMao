@@ -10,6 +10,18 @@ import (
 	"time"
 )
 
+const (
+	// Log timestamp format
+	LogTimestampFormat = "2006-01-02 15:04:05"
+
+	// ANSI color codes for colored output
+	ColorReset = "\033[0m"
+	ColorGray  = "\033[90m"
+	ColorGreen = "\033[32m"
+	ColorYellow = "\033[33m"
+	ColorRed   = "\033[31m"
+)
+
 // Sensitive patterns that should be masked in logs
 var sensitivePatterns = []*regexp.Regexp{
 	// API keys
@@ -196,7 +208,7 @@ func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 	}
 
 	// Build the log message
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	timestamp := time.Now().Format(LogTimestampFormat)
 	levelStr := level.String()
 
 	// Add color if enabled
@@ -220,23 +232,15 @@ func (l *Logger) log(level LogLevel, format string, args ...interface{}) {
 
 // colorizeLevel adds ANSI color codes to the level string
 func (l *Logger) colorizeLevel(level LogLevel) string {
-	const (
-		reset  = "\033[0m"
-		gray   = "\033[90m"
-		green  = "\033[32m"
-		yellow = "\033[33m"
-		red    = "\033[31m"
-	)
-
 	switch level {
 	case DEBUG:
-		return gray + "DEBUG" + reset
+		return ColorGray + "DEBUG" + ColorReset
 	case INFO:
-		return green + "INFO" + reset
+		return ColorGreen + "INFO" + ColorReset
 	case WARN:
-		return yellow + "WARN" + reset
+		return ColorYellow + "WARN" + ColorReset
 	case ERROR:
-		return red + "ERROR" + reset
+		return ColorRed + "ERROR" + ColorReset
 	default:
 		return level.String()
 	}

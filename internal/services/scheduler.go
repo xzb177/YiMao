@@ -162,7 +162,7 @@ func (s *Scheduler) shuffleAndPick(results []SearchResult, n int) []SearchResult
 	shuffled := make([]SearchResult, len(results))
 	copy(shuffled, results)
 
-	rand.Seed(time.Now().UnixNano())
+	// Note: Go 1.20+ automatically seeds the global random generator
 	rand.Shuffle(len(shuffled), func(i, j int) {
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	})
