@@ -297,9 +297,8 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 		return nil, fmt.Errorf("invalid or expired approve token")
 	}
 
-	// Clear the token after use (one-time use)
-	review.ApproveToken = ""
-
+	// Don't clear the token - keep it for status tracking
+	// The status check above prevents duplicate approvals
 	review.Status = "approved"
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
