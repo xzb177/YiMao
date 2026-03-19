@@ -595,6 +595,10 @@ func (h *FeedbackHandler) handleViewList(ctx *callback.Context) (*callback.Respo
 		}, nil
 	}
 
+	// Clear follow-up session when returning to list
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Delete("feedback_conversation_issue_id")
+
 	issues := h.issueService.GetUserIssues(ctx.UserID)
 
 	msg := services.NewMessageBuilder()
@@ -696,9 +700,25 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 		}, nil
 	}
 
-	// Set session for follow-up
+	// Check if user can follow-up (only when issue has admin reply and is not closed)
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Set("feedback_conversation_issue_id", float64(issueID))
+	canFollowUp := false
+	if issue.Status != services.IssueStatusClosed {
+		for _, reply := range issue.Replies {
+			if reply.Type == "admin" {
+				canFollowUp = true
+				break
+			}
+		}
+	}
+
+	// Only set follow-up session if admin has replied
+	if canFollowUp {
+		sess.Set("feedback_conversation_issue_id", float64(issueID))
+	} else {
+		// Clear any existing follow-up session
+		sess.Delete("feedback_conversation_issue_id")
+	}
 
 	msg := services.NewMessageBuilder()
 	msg.Bold("🐛 反馈详情").Newline()
