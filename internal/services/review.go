@@ -331,8 +331,8 @@ func GetSubscriptionStateText(state string) string {
 	switch state {
 	case "N": // New
 		return "⏳ 等待搜索"
-	case "R": // Recycled
-		return "🔄 重新搜索"
+	case "R": // Recycled/Running - 订阅进行中，等待资源或下载
+		return "🔄 订阅中"
 	case "S": // Searching
 		return "🔍 搜索中"
 	case "D": // Downloading
