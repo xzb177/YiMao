@@ -2,6 +2,35 @@
 
 ---
 
+### feat: 周报服务与追问优化部署 ✅
+- **时间**: 2026-03-20
+- **提交**: 35f252f
+- **功能**:
+  - 新增 WeeklyReportService（每周观影报告）
+    - 统计用户搜索、求片、批准数据
+    - 生成行为标签和个性化推荐
+    - 定时周一上午9点推送
+    - 媒体上线提醒功能
+  - 优化反馈追问模式
+    - 仅在管理员回复后启用追问
+    - 添加 FollowupDisabled 配置项
+    - 用户可自主停止追问
+  - UI更新：设置页新增"📊 观影周报"入口
+- **修改文件**:
+  - `internal/services/weekly_report.go` (新文件, +603行)
+  - `internal/services/quota.go` - 添加 FollowupDisabled 字段
+  - `internal/handlers/feedback.go` - 追问禁用检查
+  - `internal/handlers/callback.go` - 周报页面处理
+  - `cmd/bot/main.go` - 服务初始化
+- **操作**:
+  - Git: ✅ 推送到 origin/master (4b40052..35f252f)
+  - Docker: ✅ 构建并推送到 xzb177/yimao:latest
+  - 容器: ✅ 已重新构建和启动（健康状态 healthy）
+  - 镜像: yimao-emby-telegram-bot:latest (本地构建)
+- **状态**: ✅ 全部完成
+
+---
+
 ### git: 推送代码质量优化 ✅
 - **时间**: 2026-03-16 00:42
 - **提交**: 81248ed, 07718a2

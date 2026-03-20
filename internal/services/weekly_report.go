@@ -177,43 +177,26 @@ func (s *WeeklyReportService) GenerateReport(userID int64, userName string) (*We
 	}
 
 	report := &WeeklyReport{
-		UserID:    userID,
-		UserName:  userName,
-		WeekStart: weekStart,
-		WeekEnd:   weekEnd,
+		UserID:     userID,
+		UserName:   userName,
+		WeekStart:  weekStart,
+		WeekEnd:    weekEnd,
 		GenrePrefs: make(map[string]int),
 	}
 
 	// Get search history from database
 	if s.searchHistory != nil {
-		history, err := s.searchHistory.GetHistoryByDateRange(userID, weekStart, weekEnd)
+		history, err := s.searchHistory.GetHistory(userID, 100) // Get recent history
 		if err == nil {
-			report.SearchCount = len(history)
-
-			// Analyze searches
+			// Filter by week range and count
 			searchFreq := make(map[string]int)
 			for _, entry := range history {
-				searchFreq[entry.Query]++
-
-				// Extract genre/year from context if available
-				if entry.Context != "" {
-					// Simple genre extraction (can be enhanced)
-					if containsGenre(entry.Context, "动作") {
-						report.GenrePrefs["动作"]++
-					}
-					if containsGenre(entry.Context, "喜剧") {
-						report.GenrePrefs["喜剧"]++
-					}
-					if containsGenre(entry.Context, "悬疑") {
-						report.GenrePrefs["悬疑"]++
-					}
-					if containsGenre(entry.Context, "爱情") {
-						report.GenrePrefs["爱情"]++
-					}
-					if containsGenre(entry.Context, "科幻") {
-						report.GenrePrefs["科幻"]++
-					}
+				// Filter entries within the week range
+				if (entry.Timestamp.Before(weekStart) || entry.Timestamp.After(weekEnd)) {
+					continue
 				}
+				report.SearchCount += entry.Count
+				searchFreq[entry.Query] += entry.Count
 			}
 
 			// Get top searches
@@ -227,9 +210,13 @@ func (s *WeeklyReportService) GenerateReport(userID int64, userName string) (*We
 
 	// Get request count from review service
 	if s.reviewService != nil {
-		requests := s.reviewService.GetUserRequests(userID, weekStart, weekEnd)
-		report.RequestCount = len(requests)
-		for _, req := range requests {
+		allRequests := s.reviewService.GetUserRequests(userID)
+		for _, req := range allRequests {
+			// Filter by week range
+			if req.CreatedAt.Before(weekStart) || req.CreatedAt.After(weekEnd) {
+				continue
+			}
+			report.RequestCount++
 			if req.Status == "approved" {
 				report.ApprovedCount++
 			}
@@ -454,15 +441,19 @@ func (s *WeeklyReportService) weeklyRoutine() {
 
 // sendWeeklyReports sends reports to all active users
 func (s *WeeklyReportService) sendWeeklyReports() {
-	log.Printf("[WeeklyReport] Starting weekly report sending")
+	log.Printf("[WeeklyReport] Starting weekly report sending - using existing report data")
 
-	// Get active users from search history
-	if s.searchHistory == nil {
-		return
+	// Send reports for users who already have generated reports
+	s.mu.RLock()
+	var userIDs []int64
+	for _, report := range s.reports {
+		if !report.IsSent {
+			userIDs = append(userIDs, report.UserID)
+		}
 	}
+	s.mu.RUnlock()
 
-	activeUsers := s.searchHistory.GetActiveUsers(time.Now().AddDate(0, 0, -7))
-	for _, userID := range activeUsers {
+	for _, userID := range userIDs {
 		userName := "用户" // Can be fetched from session
 		if err := s.SendReport(userID, userName); err != nil {
 			log.Printf("[WeeklyReport] Failed to send report to %d: %v", userID, err)
@@ -471,7 +462,7 @@ func (s *WeeklyReportService) sendWeeklyReports() {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Printf("[WeeklyReport] Sent %d weekly reports", len(activeUsers))
+	log.Printf("[WeeklyReport] Sent %d weekly reports", len(userIDs))
 }
 
 // reminderRoutine checks for media availability reminders hourly
@@ -586,18 +577,4 @@ func containsGenre(s, genre string) bool {
 	// Simple genre matching
 	return len(s) >= len(genre) && (s == genre ||
 		fmt.Sprintf("%s", s) == genre)
-}
-
-// GetUserRequests helper for review service
-func (s *ReviewService) GetUserRequests(userID int64, start, end time.Time) []*ReviewRequest {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	var requests []*ReviewRequest
-	for _, req := range s.reviews {
-		if req.TelegramID == userID && req.CreatedAt.After(start) && req.CreatedAt.Before(end) {
-			requests = append(requests, req)
-		}
-	}
-	return requests
 }

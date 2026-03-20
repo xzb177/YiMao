@@ -607,15 +607,6 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 
 // HandleWeeklyReport shows the weekly report
 func (h *StartHandler) HandleWeeklyReport(ctx *callback.Context) (*callback.Response, error) {
-	// Get user name from session
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	userName := "用户"
-	if nameVal, ok := sess.Get("name"); ok && nameVal != nil {
-		if name, ok := nameVal.(string); ok && name != "" {
-			userName = name
-		}
-	}
-
 	// Build a simple report message (full implementation would use WeeklyReportService)
 	msg := services.NewMessageBuilder()
 	msg.Bold("📊 每周观影报告").Newline()
@@ -628,10 +619,10 @@ func (h *StartHandler) HandleWeeklyReport(ctx *callback.Context) (*callback.Resp
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-	}
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
 
 // HandleWeeklyReportSend sends the weekly report to user
@@ -639,7 +630,7 @@ func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.
 	return &callback.Response{
 		CallbackMsg: "📊 报告已生成",
 		ShowAlert:   true,
-	}
+	}, nil
 }
 
 // DetailHandler handles media detail callbacks

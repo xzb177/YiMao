@@ -560,6 +560,17 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 					}
 				}
 			}
+		} else {
+			// Subscription not found in MoviePilot - it may have been deleted
+			if review, ok := s.reviews[item.requestID]; ok {
+				if review.SubscriptionState != "" {
+					oldState := review.SubscriptionState
+					// Mark as cancelled/removed
+					review.SubscriptionState = "X"
+					log.Printf("[ReviewService] Subscription %d not found in MoviePilot, marked as cancelled: %s (was: %s)",
+						item.subID, item.requestID, oldState)
+				}
+			}
 		}
 	}
 
