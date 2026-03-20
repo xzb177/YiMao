@@ -260,6 +260,7 @@ type SubscribeItem struct {
 	Date         string        `json:"date"`
 	Season       int           `json:"season"`
 	TotalEpisode int           `json:"total_episode"`
+	LackEpisode  int           `json:"lack_episode"` // Missing episodes
 }
 
 // Request represents a media request
@@ -760,12 +761,25 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	log.Printf("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
 		userID, effectiveUsername, len(items), len(filtered))
 
+	// Adjust state based on lack_episode - MoviePilot doesn't have "C" state
+	for i := range filtered {
+		item := &filtered[i]
+		// If all episodes are downloaded, mark as completed
+		if item.LackEpisode == 0 && item.TotalEpisode > 0 {
+			item.State = StateCompleted
+		} else if item.TotalEpisode == 0 && item.LackEpisode == 0 {
+			// Movie with no episodes (movies are always 0 episodes)
+			// Keep original state for movies
+		}
+	}
+
 	// Log state values of first few filtered items
 	for i, item := range filtered {
 		if i >= 5 {
 			break
 		}
-		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q", i, item.ID, item.Name, item.State)
+		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d",
+			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode)
 	}
 
 	return filtered, nil
