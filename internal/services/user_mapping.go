@@ -506,3 +506,30 @@ func (s *BindingRequestService) CleanupExpiredRequests() int {
 
 	return removed
 }
+
+// GetAllTelegramUsers returns all Telegram user IDs that have mappings
+func (s *UserMappingService) GetAllTelegramUsers() []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var users []int64
+	for telegramKey := range s.mappings {
+		var telegramID int64
+		fmt.Sscanf(telegramKey, "%d", &telegramID)
+		users = append(users, telegramID)
+	}
+	return users
+}
+
+// GetAllMappings returns all user mappings
+func (s *UserMappingService) GetAllMappings() map[string]int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	result := make(map[string]int64, len(s.mappings))
+	for k, v := range s.mappings {
+		result[k] = v
+	}
+	return result
+}
