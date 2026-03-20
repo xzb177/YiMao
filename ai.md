@@ -2,6 +2,32 @@
 
 ---
 
+### fix: 我的请求状态 - 添加 Emby 集成判断电影完成状态 ✅
+- **时间**: 2026-03-20 22:43
+- **问题**: "我的请求"列表中所有订阅都显示"进行中"，没有"已完成"状态
+- **根本原因**:
+  1. MoviePilot 订阅系统只有 P/R/S 三种状态，没有"完成"状态
+  2. 电视剧可通过 `lack_episode == 0` 判断完成
+  3. **电影的 `total_episode` 和 `lack_episode` 都是 `null`，无法判断是否已下载完成**
+  4. MoviePilot 的 `mediaid` 字段永远是 `null`，不关联已入库媒体
+- **修复内容**:
+  1. 在 `MoviePilotClient` 中添加 `SetEmbyConfig()` 方法设置 Emby 凭证
+  2. 添加 `EmbyMediaExists()` 方法，通过 Emby API 检查媒体是否存在
+  3. 在 `SubscribeItem` 结构体中添加 `TMDBID` 字段
+  4. 修改 `GetUserRequests()` 逻辑：
+     - 电视剧：`lack_episode == 0 && total_episode > 0` → 已完成
+     - **电影：通过 Emby API 搜索 TMDB ID 判断是否存在 → 已完成**
+  5. main.go 启动时自动配置 Emby 集成
+- **修改文件**:
+  - `internal/services/moviepilot.go` - 添加 Emby 检查方法和逻辑
+  - `cmd/bot/main.go` - 配置 Emby 集成
+  - `go.mod` - 修复 Go 版本格式（1.24.0 → 1.23）
+- **Docker**: ✅ 已推送 xzb177/yimao:latest
+- **Digest**: `sha256:783be6a0cb52a8ae75436fa1edea0dd9a4b9aabde84a33cd879f4853b6adceb8`
+- **状态**: ✅ 已部署，等待用户验证
+
+---
+
 ### fix: 订阅状态完整修复 ✅
 - **时间**: 2026-03-20
 - **问题**: "我的求片"中订阅状态永远显示"进行中"，不更新

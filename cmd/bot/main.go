@@ -169,6 +169,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	if cfg.DownloadSavePath != "" {
 		log.Printf("    - Download save path configured: %s", cfg.DownloadSavePath)
 	}
+	// Set Emby config for checking media availability
+	if cfg.EmbyURL != "" && cfg.EmbyAPIKey != "" {
+		moviepilotClient.SetEmbyConfig(cfg.EmbyURL, cfg.EmbyAPIKey)
+		log.Printf("    - Emby integration enabled for completion status")
+	}
 	log.Println("    - SessionManager...")
 	sessMgr := session.NewManager(time.Duration(cfg.MaxSessionAge)*time.Hour, cfg.MaxSessions)
 	log.Println("    - UserMappingService...")

@@ -141,6 +141,8 @@ type MoviePilotClient struct {
 	baseURL          string
 	apiKey           string
 	downloadSavePath string // Optional: download save path for subscriptions
+	embyURL          string // Optional: Emby URL for checking media availability
+	embyAPIKey       string // Optional: Emby API key for checking media availability
 	httpClient       *http.Client
 	retryConfig      *RetryConfig
 }
@@ -153,6 +155,7 @@ type MoviePilotClient struct {
 // - HTTP/2 support for better performance
 // - Keep-alive connections (90s idle timeout)
 // - Optional download save path for subscriptions
+// - Optional Emby URL and API key for checking media availability
 func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotClient {
 	// Ensure baseURL doesn't have trailing slash
 	for len(baseURL) > 0 && baseURL[len(baseURL)-1] == '/' {
@@ -186,6 +189,12 @@ func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotCl
 		},
 		retryConfig: DefaultRetryConfig(),
 	}
+}
+
+// SetEmbyConfig sets the Emby configuration for checking media availability
+func (c *MoviePilotClient) SetEmbyConfig(embyURL, embyAPIKey string) {
+	c.embyURL = embyURL
+	c.embyAPIKey = embyAPIKey
 }
 
 // MediaType represents media type (movie or tv)
@@ -261,6 +270,7 @@ type SubscribeItem struct {
 	Season       int           `json:"season"`
 	TotalEpisode int           `json:"total_episode"`
 	LackEpisode  int           `json:"lack_episode"` // Missing episodes
+	TMDBID       int           `json:"tmdbid"`       // TMDB ID for Emby lookup
 }
 
 // Request represents a media request
@@ -761,25 +771,43 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	log.Printf("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
 		userID, effectiveUsername, len(items), len(filtered))
 
-	// Adjust state based on lack_episode - MoviePilot doesn't have "C" state
+	// Adjust state based on lack_episode and Emby availability
+	// MoviePilot doesn't have "C" (Completed) state for subscriptions
+	completedCount := 0
 	for i := range filtered {
 		item := &filtered[i]
-		// If all episodes are downloaded, mark as completed
+		originalState := item.State
+
+		// For TV shows: if all episodes are downloaded, mark as completed
 		if item.LackEpisode == 0 && item.TotalEpisode > 0 {
 			item.State = StateCompleted
-		} else if item.TotalEpisode == 0 && item.LackEpisode == 0 {
-			// Movie with no episodes (movies are always 0 episodes)
-			// Keep original state for movies
+			completedCount++
+		} else if item.TotalEpisode == 0 || item.LackEpisode == 0 {
+			// For movies (total_episode is 0/null): check Emby
+			if item.Type == "电影" || item.Type == "movie" {
+				if item.TMDBID > 0 && c.EmbyMediaExists(item.TMDBID, MediaTypeMovie) {
+					item.State = StateCompleted
+					completedCount++
+				}
+			}
+		}
+
+		if item.State != originalState {
+			log.Printf("[MoviePilot] Marked as completed: %s (TMDB:%d, was:%s, now:%s)",
+				item.Name, item.TMDBID, originalState, item.State)
 		}
 	}
+
+	log.Printf("[MoviePilot] GetUserRequests: marked %d/%d as completed (via Emby check)",
+		completedCount, len(filtered))
 
 	// Log state values of first few filtered items
 	for i, item := range filtered {
 		if i >= 5 {
 			break
 		}
-		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d",
-			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode)
+		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d, tmdbid=%d",
+			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode, item.TMDBID)
 	}
 
 	return filtered, nil
@@ -1101,4 +1129,103 @@ func (c *MoviePilotClient) doRequest(req *http.Request) (*http.Response, error) 
 // SetRetryConfig sets custom retry configuration
 func (c *MoviePilotClient) SetRetryConfig(cfg *RetryConfig) {
 	c.retryConfig = cfg
+}
+
+// EmbyMediaExists checks if media exists in Emby library by TMDB ID
+// Returns true if media is found in Emby (indicating it's downloaded and available to watch)
+func (c *MoviePilotClient) EmbyMediaExists(tmdbID int, mediaType MediaType) bool {
+	if c.embyURL == "" || c.embyAPIKey == "" {
+		return false
+	}
+
+	// Normalize Emby URL
+	embyBaseURL := c.embyURL
+	for len(embyBaseURL) > 0 && embyBaseURL[len(embyBaseURL)-1] == '/' {
+		embyBaseURL = embyBaseURL[:len(embyBaseURL)-1]
+	}
+
+	// Try multiple approaches to find the media
+	// Approach 1: Search by TMDB ID directly using Items endpoint with ProviderIds filter
+	searchURL := fmt.Sprintf("%s/Items?SortBy=SortName&SortOrder=Ascending&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10",
+		embyBaseURL)
+
+	req, err := http.NewRequest("GET", searchURL, nil)
+	if err != nil {
+		log.Printf("[MoviePilot] Emby check failed: create request: %v", err)
+		return false
+	}
+
+	req.Header.Set("X-Emby-Token", c.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		log.Printf("[MoviePilot] Emby check failed: request error: %v", err)
+		return false
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		log.Printf("[MoviePilot] Emby check failed: status %d", resp.StatusCode)
+		return false
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false
+	}
+
+	// Parse response
+	var result struct {
+		TotalRecordCount int `json:"TotalRecordCount"`
+		Items            []struct {
+			Name        string            `json:"Name"`
+			Id          string            `json:"Id"`
+			ProviderIds map[string]string `json:"ProviderIds"`
+			Type        string            `json:"Type"`
+		} `json:"Items"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[MoviePilot] Emby check failed: parse error: %v", err)
+		return false
+	}
+
+	// Check if any item matches by TMDB ID
+	tmdbIDStr := fmt.Sprintf("%d", tmdbID)
+	for _, item := range result.Items {
+		if item.ProviderIds != nil {
+			if tmdbStr, ok := item.ProviderIds["Tmdb"]; ok && tmdbStr == tmdbIDStr {
+				// Also check type matches
+				itemType := "Movie"
+				if mediaType == MediaTypeTV {
+					itemType = "Series"
+				}
+				if item.Type == itemType || item.Type == "Episode" || item.Type == "Season" {
+					log.Printf("[MoviePilot] Emby check: TMDB %d found in Emby as '%s' (type=%s)", tmdbID, item.Name, item.Type)
+					return true
+				}
+			}
+		}
+	}
+
+	log.Printf("[MoviePilot] Emby check: TMDB %d not found (checked %d items)", tmdbID, result.TotalRecordCount)
+	return false
+}
+
+// CheckMediaCompletion checks if a subscription's media is completed and available in Emby
+// For TV shows: checks if lack_episode == 0
+// For movies: checks if media exists in Emby
+func (c *MoviePilotClient) CheckMediaCompletion(item SubscribeItem, tmdbID int) bool {
+	// For TV shows with episode info: use lack_episode
+	if item.TotalEpisode > 0 && item.LackEpisode == 0 {
+		return true
+	}
+
+	// For movies (total_episode is 0/null): check Emby
+	if item.Type == "电影" || item.Type == "movie" {
+		return c.EmbyMediaExists(tmdbID, MediaTypeMovie)
+	}
+
+	return false
 }
