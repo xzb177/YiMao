@@ -963,6 +963,7 @@ type SubscribeStatus struct {
 	Downloader     string `json:"downloader"`
 	TotalEpisode   int    `json:"total_episode"`
 	CurrentEpisode int    `json:"current_episode"`
+	LackEpisode    int    `json:"lack_episode"` // Missing episodes
 	Percent        int    `json:"percent"`
 	ErrorMessage   string `json:"error_message,omitempty"`
 }

@@ -540,13 +540,25 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	for _, item := range toUpdate {
 		if sub, exists := subMap[item.subID]; exists {
 			if review, ok := s.reviews[item.requestID]; ok {
-				if review.SubscriptionState != sub.State {
+				// Determine the actual subscription state
+				// MoviePilot doesn't have "C" (Completed) state, so we check lack_episode
+				actualState := sub.State
+				if sub.LackEpisode == 0 && sub.TotalEpisode > 0 {
+					// All episodes downloaded - mark as completed
+					actualState = "C"
+				} else if sub.TotalEpisode == 0 {
+					// Unknown total episodes, keep original state
+					actualState = sub.State
+				}
+
+				if review.SubscriptionState != actualState {
 					oldState := review.SubscriptionState
-					review.SubscriptionState = sub.State
-					log.Printf("[ReviewService] Updated %s: %s -> %s", item.requestID, oldState, sub.State)
+					review.SubscriptionState = actualState
+					log.Printf("[ReviewService] Updated %s: %s -> %s (lack=%d/%d)", item.requestID, oldState, actualState, sub.LackEpisode, sub.TotalEpisode)
 
 					// If state is "R" (Recycled), mark for resubscription (dedupe by subscription ID)
-					if sub.State == "R" {
+					// Only trigger resubscribe if not completed
+					if sub.State == "R" && actualState != "C" {
 						if !review.LastResubscribeAt.IsZero() && time.Since(review.LastResubscribeAt) < resubscribeCooldown {
 							log.Printf("[ReviewService] Skip recycle trigger in cooldown: request=%s, last=%s", item.requestID, review.LastResubscribeAt.Format(time.RFC3339))
 							continue
