@@ -771,7 +771,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	log.Printf("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
 		userID, effectiveUsername, len(items), len(filtered))
 
-	// Adjust state based on lack_episode and Emby availability
+	// Adjust state based on lack_episode, Emby availability, and subscription activity
 	// MoviePilot doesn't have "C" (Completed) state for subscriptions
 	completedCount := 0
 	for i := range filtered {
@@ -782,23 +782,44 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		if item.LackEpisode == 0 && item.TotalEpisode > 0 {
 			item.State = StateCompleted
 			completedCount++
-		} else if item.TotalEpisode == 0 || item.LackEpisode == 0 {
-			// For movies (total_episode is 0/null): check Emby
+		} else if item.TotalEpisode > 0 {
+			// TV show with episodes - calculate progress and determine status
+			// If lack_episode < total_episode, some episodes are downloaded - mark as downloading
+			if item.LackEpisode < item.TotalEpisode {
+				item.State = StateDownloading
+			}
+			// Otherwise keep R (searching/recycled) or S (searching)
+		} else {
+			// For movies (total_episode is 0/null): check Emby by name
 			if item.Type == "电影" || item.Type == "movie" {
-				if item.TMDBID > 0 && c.EmbyMediaExists(item.TMDBID, MediaTypeMovie) {
+				if c.EmbyMediaExists(item.Name, item.Year, MediaTypeMovie) {
 					item.State = StateCompleted
 					completedCount++
+				} else {
+					// Movie not in Emby - check if it's actively being searched
+					// Parse the subscription date to check age
+					if item.Date != "" {
+						// Try to parse the date
+						subDate, err := time.Parse("2006-01-02 15:04:05", item.Date)
+						if err == nil {
+							daysSinceSub := int(time.Since(subDate).Hours() / 24)
+							if daysSinceSub > 30 {
+								// Subscription older than 30 days and not in Emby - likely failed
+								item.State = StateFailed
+							}
+						}
+					}
 				}
 			}
 		}
 
 		if item.State != originalState {
-			log.Printf("[MoviePilot] Marked as completed: %s (TMDB:%d, was:%s, now:%s)",
-				item.Name, item.TMDBID, originalState, item.State)
+			log.Printf("[MoviePilot] State changed: %s (year:%s, was:%s, now:%s)",
+				item.Name, item.Year, originalState, item.State)
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: marked %d/%d as completed (via Emby check)",
+	log.Printf("[MoviePilot] GetUserRequests: completed=%d/%d",
 		completedCount, len(filtered))
 
 	// Log state values of first few filtered items
@@ -806,8 +827,8 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		if i >= 5 {
 			break
 		}
-		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d, tmdbid=%d",
-			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode, item.TMDBID)
+		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d",
+			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode)
 	}
 
 	return filtered, nil
@@ -1131,9 +1152,9 @@ func (c *MoviePilotClient) SetRetryConfig(cfg *RetryConfig) {
 	c.retryConfig = cfg
 }
 
-// EmbyMediaExists checks if media exists in Emby library by TMDB ID
+// EmbyMediaExists checks if media exists in Emby library by name and year
 // Returns true if media is found in Emby (indicating it's downloaded and available to watch)
-func (c *MoviePilotClient) EmbyMediaExists(tmdbID int, mediaType MediaType) bool {
+func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType MediaType) bool {
 	if c.embyURL == "" || c.embyAPIKey == "" {
 		return false
 	}
@@ -1144,14 +1165,18 @@ func (c *MoviePilotClient) EmbyMediaExists(tmdbID int, mediaType MediaType) bool
 		embyBaseURL = embyBaseURL[:len(embyBaseURL)-1]
 	}
 
-	// Try multiple approaches to find the media
-	// Approach 1: Search by TMDB ID directly using Items endpoint with ProviderIds filter
-	searchURL := fmt.Sprintf("%s/Items?SortBy=SortName&SortOrder=Ascending&IncludeItemTypes=Movie,Series&Recursive=true&Limit=10",
-		embyBaseURL)
+	// Determine item type for Emby search
+	includeItemTypes := "Movie"
+	if mediaType == MediaTypeTV {
+		includeItemTypes = "Series"
+	}
+
+	// Use SearchHints endpoint which is more reliable for finding media
+	searchURL := fmt.Sprintf("%s/Users/eb3f23ce5bf54b42980dc2ddf14d52ea/Items?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
+		embyBaseURL, url.QueryEscape(name), includeItemTypes)
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
-		log.Printf("[MoviePilot] Emby check failed: create request: %v", err)
 		return false
 	}
 
@@ -1160,13 +1185,11 @@ func (c *MoviePilotClient) EmbyMediaExists(tmdbID int, mediaType MediaType) bool
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		log.Printf("[MoviePilot] Emby check failed: request error: %v", err)
 		return false
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		log.Printf("[MoviePilot] Emby check failed: status %d", resp.StatusCode)
 		return false
 	}
 
@@ -1179,52 +1202,61 @@ func (c *MoviePilotClient) EmbyMediaExists(tmdbID int, mediaType MediaType) bool
 	var result struct {
 		TotalRecordCount int `json:"TotalRecordCount"`
 		Items            []struct {
-			Name        string            `json:"Name"`
-			Id          string            `json:"Id"`
-			ProviderIds map[string]string `json:"ProviderIds"`
-			Type        string            `json:"Type"`
+			Name            string `json:"Name"`
+			Id              string `json:"Id"`
+			Type            string `json:"Type"`
+			ProductionYear  int    `json:"ProductionYear"`
+			PremiereDate    string `json:"PremiereDate"`
 		} `json:"Items"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("[MoviePilot] Emby check failed: parse error: %v", err)
 		return false
 	}
 
-	// Check if any item matches by TMDB ID
-	tmdbIDStr := fmt.Sprintf("%d", tmdbID)
+	if result.TotalRecordCount == 0 {
+		return false
+	}
+
+	// Try to find exact name match
 	for _, item := range result.Items {
-		if item.ProviderIds != nil {
-			if tmdbStr, ok := item.ProviderIds["Tmdb"]; ok && tmdbStr == tmdbIDStr {
-				// Also check type matches
-				itemType := "Movie"
-				if mediaType == MediaTypeTV {
-					itemType = "Series"
+		// Exact name match (case-insensitive)
+		if strings.EqualFold(item.Name, name) {
+			// If year is provided, check if it matches
+			if year != "" && year != "0" {
+				yearInt := 0
+				if y, err := strconv.Atoi(year); err == nil {
+					yearInt = y
 				}
-				if item.Type == itemType || item.Type == "Episode" || item.Type == "Season" {
-					log.Printf("[MoviePilot] Emby check: TMDB %d found in Emby as '%s' (type=%s)", tmdbID, item.Name, item.Type)
+				// Check ProductionYear or PremiereDate
+				if item.ProductionYear == yearInt {
 					return true
 				}
+				if item.PremiereDate != "" && strings.HasPrefix(item.PremiereDate, year) {
+					return true
+				}
+				// Year mismatch, continue searching
+				continue
 			}
+			// No year check needed or year matches
+			return true
 		}
 	}
 
-	log.Printf("[MoviePilot] Emby check: TMDB %d not found (checked %d items)", tmdbID, result.TotalRecordCount)
-	return false
-}
-
-// CheckMediaCompletion checks if a subscription's media is completed and available in Emby
-// For TV shows: checks if lack_episode == 0
-// For movies: checks if media exists in Emby
-func (c *MoviePilotClient) CheckMediaCompletion(item SubscribeItem, tmdbID int) bool {
-	// For TV shows with episode info: use lack_episode
-	if item.TotalEpisode > 0 && item.LackEpisode == 0 {
-		return true
-	}
-
-	// For movies (total_episode is 0/null): check Emby
-	if item.Type == "电影" || item.Type == "movie" {
-		return c.EmbyMediaExists(tmdbID, MediaTypeMovie)
+	// No exact match - try fuzzy match for Chinese titles
+	// If only 1-2 results and search term is Chinese, it's likely a match
+	if result.TotalRecordCount <= 2 {
+		// Check if search term contains Chinese characters
+		hasChinese := false
+		for _, r := range name {
+			if r >= 0x4e00 && r <= 0x9fff {
+				hasChinese = true
+				break
+			}
+		}
+		if hasChinese {
+			return true
+		}
 	}
 
 	return false
