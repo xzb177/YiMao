@@ -263,6 +263,10 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleSettings(ctx)
 	case callback.ActionHelpTopic:
 		return h.HandleHelpTopic(ctx)
+	case "weekly_report":
+		return h.HandleWeeklyReport(ctx)
+	case "weekly_report_send":
+		return h.HandleWeeklyReportSend(ctx)
 	default:
 		return nil, errors.CallbackInvalid(fmt.Sprintf("unknown start action: %s", action))
 	}
@@ -521,6 +525,7 @@ func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response
 	kb.AddButton("🔗 绑定账号", "start_link")
 	kb.AddButton("🐞 我的反馈", "my_feedback")
 	kb.NewRow()
+	kb.AddButton("📊 观影周报", "weekly_report")
 	kb.AddButton("❓ 帮助", "help")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
@@ -598,6 +603,43 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// HandleWeeklyReport shows the weekly report
+func (h *StartHandler) HandleWeeklyReport(ctx *callback.Context) (*callback.Response, error) {
+	// Get user name from session
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	userName := "用户"
+	if nameVal, ok := sess.Get("name"); ok && nameVal != nil {
+		if name, ok := nameVal.(string); ok && name != "" {
+			userName = name
+		}
+	}
+
+	// Build a simple report message (full implementation would use WeeklyReportService)
+	msg := services.NewMessageBuilder()
+	msg.Bold("📊 每周观影报告").Newline()
+	msg.Newline()
+	msg.Text("报告功能开发中...").Newline()
+	msg.Newline()
+	msg.Italic("💡 每周一上午9点自动推送您的观影统计")
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:      msg.Build(),
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+	}
+}
+
+// HandleWeeklyReportSend sends the weekly report to user
+func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.Response, error) {
+	return &callback.Response{
+		CallbackMsg: "📊 报告已生成",
+		ShowAlert:   true,
+	}
 }
 
 // DetailHandler handles media detail callbacks

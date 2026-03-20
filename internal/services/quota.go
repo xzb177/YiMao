@@ -11,15 +11,16 @@ import (
 
 // UserQuota represents a user's quota usage
 type UserQuota struct {
-	TelegramID      int64     `json:"telegram_id"`
-	MoviePilotID    int64     `json:"moviepilot_id"`
-	JellyseerrID    int64     `json:"jellyseerr_id,omitempty"` // Legacy field for compatibility
-	MovieUsed       int       `json:"movie_used"`
-	MovieLimit      int       `json:"movie_limit"`
-	TVUsed          int       `json:"tv_used"`
-	TVLimit         int       `json:"tv_limit"`
-	LastSync        time.Time `json:"last_sync"`
-	LastResetDate   string    `json:"last_reset_date"` // YYYY-MM-DD format
+	TelegramID        int64     `json:"telegram_id"`
+	MoviePilotID      int64     `json:"moviepilot_id"`
+	JellyseerrID      int64     `json:"jellyseerr_id,omitempty"` // Legacy field for compatibility
+	MovieUsed         int       `json:"movie_used"`
+	MovieLimit        int       `json:"movie_limit"`
+	TVUsed            int       `json:"tv_used"`
+	TVLimit           int       `json:"tv_limit"`
+	LastSync          time.Time `json:"last_sync"`
+	LastResetDate     string    `json:"last_reset_date"` // YYYY-MM-DD format
+	FollowupDisabled  bool      `json:"followup_disabled"` // 禁用追问功能
 }
 
 // QuotaService manages user quotas
@@ -566,4 +567,40 @@ func (s *QuotaService) FormatQuotaStatus(telegramID int64) string {
 	}
 
 	return fmt.Sprintf("%s 今日配额: %s", emoji, status)
+}
+
+// IsFollowupDisabled checks if follow-up is disabled for a user
+func (s *QuotaService) IsFollowupDisabled(telegramID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	quota := s.quotas[telegramID]
+	if quota == nil {
+		return false
+	}
+	return quota.FollowupDisabled
+}
+
+// SetFollowupDisabled enables or disables follow-up for a user
+func (s *QuotaService) SetFollowupDisabled(telegramID int64, disabled bool) error {
+	s.mu.Lock()
+
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
+	quota.FollowupDisabled = disabled
+
+	// Make a copy for async save
+	quotasCopy := make(map[int64]*UserQuota)
+	for k, v := range s.quotas {
+		quotasCopy[k] = v
+	}
+	s.mu.Unlock()
+
+	s.saveAsync(quotasCopy)
+
+	if disabled {
+		log.Printf("[QuotaService] Follow-up disabled for user %d", telegramID)
+	} else {
+		log.Printf("[QuotaService] Follow-up enabled for user %d", telegramID)
+	}
+	return nil
 }

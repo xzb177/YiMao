@@ -18,6 +18,7 @@ type FeedbackHandler struct {
 	adminService *services.AdminService
 	issueService *services.IssueService
 	tmdbClient   *services.TMDBClient
+	quotaService *services.QuotaService
 }
 
 // NewFeedbackHandler creates a new feedback handler
@@ -41,6 +42,11 @@ func (h *FeedbackHandler) SetIssueService(issueSvc *services.IssueService) {
 // SetTMDBClient sets the TMDB client
 func (h *FeedbackHandler) SetTMDBClient(tmdb *services.TMDBClient) {
 	h.tmdbClient = tmdb
+}
+
+// SetQuotaService sets the quota service
+func (h *FeedbackHandler) SetQuotaService(quota *services.QuotaService) {
+	h.quotaService = quota
 }
 
 // getMediaTitle retrieves the media title, using TMDB API if not provided
@@ -792,8 +798,9 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 		kb.AddButton("🚫 关闭反馈", fmt.Sprintf("feedback:close:%d", issue.ID))
 	}
 
-	// 追加回复功能提示
-	if issue.Status != services.IssueStatusClosed {
+	// 追加回复功能提示（仅当用户未禁用追问时显示）
+	followupDisabled := h.quotaService != nil && h.quotaService.IsFollowupDisabled(ctx.UserID)
+	if issue.Status != services.IssueStatusClosed && !followupDisabled {
 		kb.NewRow()
 		kb.AddButton("⏹️ 停止追问", fmt.Sprintf("feedback:stop_follow:%d", issue.ID))
 
@@ -872,6 +879,13 @@ func getStatusText(status services.IssueStatus) string {
 
 // handleUserFollowUp handles user follow-up messages to an existing feedback
 func (h *FeedbackHandler) HandleUserFollowUp(userID int64, chatID int64, text string) error {
+	// Check if follow-up is disabled for this user
+	if h.quotaService != nil && h.quotaService.IsFollowupDisabled(userID) {
+		// Don't process follow-up, just ignore it
+		log.Printf("[FeedbackHandler] Follow-up disabled for user %d, ignoring message", userID)
+		return nil
+	}
+
 	sess := h.sessMgr.GetOrCreate(userID)
 
 	// Check if user has an active feedback conversation

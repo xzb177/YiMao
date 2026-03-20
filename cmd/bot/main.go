@@ -153,6 +153,7 @@ type Dependencies struct {
 	SearchHistory     *services.SearchHistoryService
 	SearchHistoryDB   *services.SearchHistoryDB
 	FeedbackHandler   *handlers.FeedbackHandler
+	WeeklyReportSvc   *services.WeeklyReportService
 }
 
 // initServices initializes all services
@@ -248,6 +249,13 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		log.Println("    - SearchHistoryDB initialized")
 	}
 
+	// Initialize Weekly Report Service
+	log.Println("    - WeeklyReportService...")
+	var weeklyReportSvc *services.WeeklyReportService
+	if searchHistoryDB != nil {
+		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, telegramClient, tmdbClient)
+	}
+
 	// Start cleanup routines
 	go func() {
 		defer func() {
@@ -285,6 +293,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		Scheduler:         scheduler,
 		SearchHistory:     searchHistory,
 		SearchHistoryDB:   searchHistoryDB,
+		WeeklyReportSvc:   weeklyReportSvc,
 	}
 }
 
@@ -374,6 +383,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	searchHandler.SetSearchHistory(deps.SearchHistory)
 	feedbackHandler.SetIssueService(deps.IssueService)
 	feedbackHandler.SetTMDBClient(deps.TMDBClient)
+	feedbackHandler.SetQuotaService(deps.QuotaService)
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
@@ -463,6 +473,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		registry.RegisterFunc("search_input", searchHandler.Handle)
 		log.Println("    - Search History callbacks registered")
 	}
+
+	// Weekly Report callbacks
+	registry.RegisterFunc("weekly_report", startHandler.Handle)
+	registry.RegisterFunc("weekly_report_send", startHandler.Handle)
 
 	// Admin Feedback Panel callbacks
 	registry.RegisterFunc("admin_feedback", adminHandler.Handle)

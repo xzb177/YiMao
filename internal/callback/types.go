@@ -165,6 +165,10 @@ var validActions = map[Action]bool{
 	"feedback_quick":     true, // Quick option selection (with encoded text)
 	"feedback_stop_follow": true, // Stop follow-up mode
 
+	// Weekly Report actions
+	"weekly_report":       true, // Show weekly report
+	"weekly_report_send":  true, // Send weekly report
+
 	// Resource candidate actions
 	ActionResourceList: true,
 	ActionResourcePick: true,
