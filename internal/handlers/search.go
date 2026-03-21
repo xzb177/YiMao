@@ -262,7 +262,7 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 		}, nil
 	}
 
-	return h.buildRecommendationResponse(results, tType, ctx.Callback), nil
+	return h.buildRecommendationResponse(results, tType, ctx.Callback, ctx.UserID), nil
 }
 
 func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType, mood string) (*callback.Response, error) {
@@ -321,10 +321,10 @@ func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType,
 		}, nil
 	}
 
-	return h.buildMoodRecommendationResponse(results, recType, mood, moodLabel), nil
+	return h.buildMoodRecommendationResponse(results, recType, mood, moodLabel, ctx.UserID), nil
 }
 
-func (h *SearchHandler) buildRecommendationResponse(results []services.SearchResult, recType string, cb *callback.Callback) *callback.Response {
+func (h *SearchHandler) buildRecommendationResponse(results []services.SearchResult, recType string, cb *callback.Callback, userID int64) *callback.Response {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🎬 精选推荐").Newline()
 	msg.Newline()
@@ -361,6 +361,27 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 	if displayCount > 8 {
 		displayCount = 8
 	}
+
+	// Store recommendation results in session for detail view
+	sess := h.sessMgr.GetOrCreate(userID)
+	searchItems := make([]session.SearchItem, 0, displayCount)
+	for _, item := range results[:displayCount] {
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+		searchItems = append(searchItems, session.SearchItem{
+			ID:       fmt.Sprintf("%d", item.ID),
+			Title:    item.Title,
+			Year:     item.Year.Int(),
+			Type:     mediaType,
+			Rating:   item.Rating,
+			Poster:   item.Poster,
+			Overview: item.Overview,
+		})
+	}
+	sess.SetSearchResults(searchItems, 1, recType)
+	log.Printf("[SearchHandler] Stored %d recommendation results in session for user %d", len(searchItems), userID)
 
 	kb := services.NewKeyboardBuilder()
 	for i, item := range results[:displayCount] {
@@ -415,7 +436,7 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 	}
 }
 
-func (h *SearchHandler) buildMoodRecommendationResponse(results []services.SearchResult, recType, mood, moodLabel string) *callback.Response {
+func (h *SearchHandler) buildMoodRecommendationResponse(results []services.SearchResult, recType, mood, moodLabel string, userID int64) *callback.Response {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🤖 AI 心情推荐").Newline()
 	msg.Newline()
@@ -427,6 +448,27 @@ func (h *SearchHandler) buildMoodRecommendationResponse(results []services.Searc
 	if displayCount > 6 {
 		displayCount = 6
 	}
+
+	// Store recommendation results in session for detail view
+	sess := h.sessMgr.GetOrCreate(userID)
+	searchItems := make([]session.SearchItem, 0, displayCount)
+	for _, item := range results[:displayCount] {
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+		searchItems = append(searchItems, session.SearchItem{
+			ID:       fmt.Sprintf("%d", item.ID),
+			Title:    item.Title,
+			Year:     item.Year.Int(),
+			Type:     mediaType,
+			Rating:   item.Rating,
+			Poster:   item.Poster,
+			Overview: item.Overview,
+		})
+	}
+	sess.SetSearchResults(searchItems, 1, fmt.Sprintf("mood_%s", mood))
+	log.Printf("[SearchHandler] Stored %d mood recommendation results in session for user %d", len(searchItems), userID)
 
 	kb := services.NewKeyboardBuilder()
 	for i, item := range results[:displayCount] {
