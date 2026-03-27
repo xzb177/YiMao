@@ -79,6 +79,7 @@ var validActions = map[Action]bool{
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page
 	"start_ai":          true, // AI recommendations page (renamed from start_mood)
+	"ai_chat":           true, // AI chat recommendation
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,

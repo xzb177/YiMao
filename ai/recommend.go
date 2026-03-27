@@ -678,7 +678,7 @@ func (r *MediaRecommendationAI) ExplainMovie(title string) (string, error) {
 
 	userMessage := fmt.Sprintf(`愚蠢的人类想了解《%s》？本座给你介绍一下喵...`, title)
 
-	return r.claude.Send(userMessage, systemPrompt)
+	return r.send(userMessage, systemPrompt)
 }
 
 // buildSystemPrompt builds the system prompt for recommendations

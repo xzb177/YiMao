@@ -166,7 +166,7 @@ func NewZhipuClient(apiKey string) *ZhipuClient {
 	return &ZhipuClient{
 		apiKey:  apiKey,
 		baseURL: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-		model:   "glm-4-flash",
+		model:   "glm-5.1",
 		enabled: true,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,

@@ -18,52 +18,76 @@ type Manager struct {
 var (
 	globalManager *Manager
 	once          sync.Once
+	managerMu     sync.RWMutex
 )
 
 // Initialize initializes the global AI manager
 func Initialize(apiKey string) *Manager {
 	once.Do(func() {
 		agent := NewAgent(apiKey)
-		globalManager = &Manager{
+		mgr := &Manager{
 			agent:   agent,
 			enabled: agent.IsEnabled(),
 		}
+		managerMu.Lock()
+		globalManager = mgr
+		managerMu.Unlock()
 	})
+	managerMu.RLock()
+	defer managerMu.RUnlock()
 	return globalManager
 }
 
 // GetManager returns the global AI manager
 func GetManager() *Manager {
-	if globalManager == nil {
-		// Try to initialize from environment -优先使用智谱 AI
-		apiKey := os.Getenv("ZHIPU_API_KEY")
-		if apiKey == "" {
-			apiKey = os.Getenv("CLAUDE_API_KEY")
-		}
-		if apiKey == "" {
-			// Read from .env file
-			data, err := os.ReadFile("/root/emby-telegram-bot/.env")
-			if err == nil {
-				lines := strings.Split(string(data), "\n")
-				for _, line := range lines {
+	managerMu.RLock()
+	if globalManager != nil {
+		managerMu.RUnlock()
+		return globalManager
+	}
+	managerMu.RUnlock()
+
+	// Try to initialize from environment - 优先使用智谱 AI
+	apiKey := os.Getenv("ZHIPU_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("CLAUDE_API_KEY")
+	}
+	if apiKey == "" {
+		// Read from .env file (try multiple paths)
+		for _, path := range []string{"/root/YiMao/.env", ".env", "/app/data/.env"} {
+			if data, err := os.ReadFile(path); err == nil {
+				for _, line := range strings.Split(string(data), "\n") {
+					line = strings.TrimSpace(line)
 					if strings.HasPrefix(line, "ZHIPU_API_KEY=") {
-						apiKey = strings.TrimPrefix(line, "ZHIPU_API_KEY=")
-						apiKey = strings.TrimSpace(apiKey)
+						apiKey = strings.TrimSpace(strings.TrimPrefix(line, "ZHIPU_API_KEY="))
 						break
 					}
 					if apiKey == "" && strings.HasPrefix(line, "CLAUDE_API_KEY=") {
-						apiKey = strings.TrimPrefix(line, "CLAUDE_API_KEY=")
-						apiKey = strings.TrimSpace(apiKey)
+						apiKey = strings.TrimSpace(strings.TrimPrefix(line, "CLAUDE_API_KEY="))
 					}
+				}
+				if apiKey != "" {
+					break
 				}
 			}
 		}
-		agent := NewAgent(apiKey)
-		globalManager = &Manager{
-			agent:   agent,
-			enabled: agent.IsEnabled(),
-		}
 	}
+
+	agent := NewAgent(apiKey)
+	mgr := &Manager{
+		agent:   agent,
+		enabled: agent.IsEnabled(),
+	}
+
+	managerMu.Lock()
+	// Double-check in case another goroutine initialized first
+	if globalManager == nil {
+		globalManager = mgr
+	}
+	managerMu.Unlock()
+
+	managerMu.RLock()
+	defer managerMu.RUnlock()
 	return globalManager
 }
 
@@ -175,10 +199,10 @@ func formatRecommendations(results []*RecommendationResult) string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("🤖 **AI 智能推荐**\n\n")
+	sb.WriteString("🤖 <b>AI 智能推荐</b>\n\n")
 
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("%d. 🎬 **%s**", i+1, r.Title))
+		sb.WriteString(fmt.Sprintf("%d. 🎬 <b>%s</b>", i+1, r.Title))
 		if r.Year > 0 {
 			sb.WriteString(fmt.Sprintf(" (%d)", r.Year))
 		}

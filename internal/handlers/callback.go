@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"emby-telegram-bot/ai"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
@@ -253,6 +254,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleMood(ctx)
 	case callback.ActionMoodPick:
 		return h.HandleMoodPick(ctx)
+	case "ai_chat":
+		return h.HandleAIChat(ctx)
 	case callback.ActionQuickPick:
 		return h.HandleQuickPick(ctx)
 	case callback.ActionHot:
@@ -280,6 +283,8 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		// Clear AI chat mode when returning to main menu
+		sess.Delete("ai_chat_mode")
 		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
 			moodMap := map[string]string{
 				"relax":     "解压轻松",
@@ -310,6 +315,10 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 }
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
+	// Clear AI chat mode when entering search mode
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Delete("ai_chat_mode")
+
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜影片").Newline()
 	msg.Newline()
@@ -336,23 +345,35 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
+	// Check if AI is enabled
+	if !ai.GetManager().IsEnabled() {
+		return &callback.Response{
+			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY",
+			CallbackMsg: "AI 未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 直接进入 AI 聊天模式
 	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 看推荐").Newline()
+	msg.Bold("🤖 AI 智能推荐").Newline()
 	msg.Newline()
-	msg.Text("不知道看什么？我来帮你挑").Newline()
+	msg.Text("直接告诉我想看什么类型的影片").Newline()
 	msg.Newline()
-	msg.Italic("👇 选一个方式")
+	msg.Text("例如：").Newline()
+	msg.Text("• 想看一部烧脑的悬疑片").Newline()
+	msg.Text("• 心情不好，推荐点治愈的").Newline()
+	msg.Text("• 最近有什么好看的科幻片").Newline()
+	msg.Newline()
+	msg.Italic("💬 直接发送消息即可开始对话")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门", "search:type:trending")
-	kb.AddButton("⭐ 高分", "search:type:toprated")
-	kb.NewRow()
-	kb.AddButton("🆕 新片", "search:type:new")
-	kb.AddButton("🎲 随机", "search:type:random")
-	kb.NewRow()
-	kb.AddButton("😊 按心情", "start_mood")
-	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	// Set session mode to AI chat
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("ai_chat_mode", true)
+	log.Printf("[HandleAI] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -386,6 +407,56 @@ func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, er
 	kb.AddButton("🧘 治愈慢节奏", "moodpick:type:new:mood:healing")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "start_ai")
+
+	return &callback.Response{
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// HandleAIChat provides AI-powered chat recommendation entry
+func (h *StartHandler) HandleAIChat(ctx *callback.Context) (*callback.Response, error) {
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
+			CallbackMsg: "请私聊使用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Check if AI is enabled
+	if !ai.GetManager().IsEnabled() {
+		return &callback.Response{
+			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY",
+			CallbackMsg: "AI 未启用",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("🤖 AI 智能推荐").Newline()
+	msg.Newline()
+	msg.Text("直接告诉我想看什么类型的影片").Newline()
+	msg.Newline()
+	msg.Text("例如：").Newline()
+	msg.Text("• 想看一部烧脑的悬疑片").Newline()
+	msg.Text("• 心情不好，推荐点治愈的").Newline()
+	msg.Text("• 最近有什么好看的科幻片").Newline()
+	msg.Newline()
+	msg.Italic("💬 直接发送消息即可开始对话")
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔥 热门", "search:type:trending")
+	kb.AddButton("⭐ 高分", "search:type:toprated")
+	kb.NewRow()
+	kb.AddButton("😊 按心情", "start_mood")
+	kb.AddButton("⬅️ 返回", "start_ai")
+
+	// Set session mode to AI chat
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	sess.Set("ai_chat_mode", true)
+	log.Printf("[HandleAIChat] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
 		Text:     msg.Build(),

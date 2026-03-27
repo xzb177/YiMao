@@ -403,6 +403,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
 	registry.RegisterFunc("start_ai", startHandler.Handle)
+	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequest, requestHandler.Handle)

@@ -2,6 +2,50 @@
 
 ---
 
+### feat: AI 智能推荐整合与部署 ✅
+- **时间**: 2026-03-25 21:00
+- **任务**: 部署 YiMao 项目并整合 AI 推荐功能
+- **操作内容**:
+  1. **环境准备**:
+     - 安装 Docker 和 Docker Compose
+     - 克隆 YiMao 仓库
+     - 配置 .env 文件（Telegram Bot、MoviePilot、Emby、TMDB）
+  2. **AI 功能配置**:
+     - 启用智谱 AI (ZHIPU_API_KEY)
+     - 模型: glm-4-flash
+  3. **代码修改**:
+     - `internal/handlers/callback.go`:
+       - HandleAI 函数重构，直接进入 AI 聊天模式
+       - 移除热门、高分、新片、随机、按心情等传统推荐按钮
+       - 添加 HandleAIChat 函数处理 AI 对话入口
+     - `internal/bot/poll.go`:
+       - 添加 ai 包导入
+       - 添加 AI 聊天模式检测逻辑
+       - 添加 handleAIChatMessage 函数处理 AI 推荐消息
+     - `internal/callback/types.go`:
+       - 添加 "ai_chat" 到 validActions 白名单
+     - `cmd/bot/main.go`:
+       - 注册 "ai_chat" 回调处理
+  4. **管理员配置**:
+     - 创建 data/admins.json
+     - 添加用户 5779291957 为 root 管理员
+- **配置文件**: 在 `.env` 中配置以下环境变量（敏感信息已脱敏）
+  ```
+  TELEGRAM_BOT_TOKEN=<your_bot_token>
+  ADMIN_USER_IDS=<your_admin_id>
+  TELEGRAM_CHAT_ID=<your_chat_id>
+  EMBY_URL=<your_emby_url>
+  EMBY_API_KEY=<your_emby_api_key>
+  MOVIEPILOT_URL=<your_moviepilot_url>
+  MOVIEPILOT_API_KEY=<your_moviepilot_api_key>
+  TMDB_API_KEY=<your_tmdb_api_key>
+  ZHIPU_API_KEY=<your_zhipu_api_key>
+  ```
+- **Docker**: ✅ 构建并运行 emby-telegram-bot 容器
+- **状态**: ✅ 已部署，AI 推荐功能正常工作
+
+---
+
 ### feat: 群发用户通知 - 重新绑定账户 ✅
 - **时间**: 2026-03-20 23:05
 - **操作**: 向所有 19 个绑定用户发送私信

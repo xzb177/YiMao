@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"emby-telegram-bot/ai"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/handlers"
@@ -252,6 +253,18 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		msg.Text = sanitizedText // Update with sanitized text
 		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping)
 		return
+	}
+
+	// Check if user is in AI chat mode
+	sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+	if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
+		if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
+			if aiEnabled, ok := aiChatMode.(bool); ok && aiEnabled {
+				log.Printf("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
+				handleAIChatMessage(msg.From.ID, msg.Chat.ID, sanitizedText, deps.Telegram, deps.SessionMgr)
+				return
+			}
+		}
 	}
 
 	// Check if user is not linked and input looks like credentials (userID + password)
@@ -721,4 +734,36 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	}
 
 	return result
+}
+
+// handleAIChatMessage handles messages in AI chat mode
+func handleAIChatMessage(userID, chatID int64, text string, telegram *services.TelegramClient, sessMgr *session.Manager) {
+	// Check if AI is enabled
+	if !ai.GetManager().IsEnabled() {
+		telegram.SendMessage(chatID, "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY", "", nil)
+		return
+	}
+
+	// Get AI recommendations based on user input
+	response, err := ai.GetAIRecommendations(text, 5)
+	if err != nil {
+		log.Printf("[AIChat] Failed to get AI recommendations: %v", err)
+		telegram.SendMessage(chatID, fmt.Sprintf("😓 AI 推荐暂时不可用: %v\n\n💡 请稍后再试或使用普通搜索", err), "", nil)
+		return
+	}
+
+	// Build response message
+	msg := services.NewMessageBuilder()
+	msg.Text(response).Newline()
+	msg.Newline()
+	msg.Italic("💬 继续发送消息获取更多推荐，或点击下方按钮切换模式")
+
+	// Build keyboard
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔍 搜索模式", "start_search")
+	kb.AddButton("🎬 看推荐", "start_ai")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
 }
