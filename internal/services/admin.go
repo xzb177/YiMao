@@ -1,12 +1,14 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // AdminRole represents the role of an admin user
@@ -50,6 +52,7 @@ func NewAdminService(dataDir string) *AdminService {
 	}
 
 	service.load()
+	service.loadFromEnv() // Also load from ADMIN_USER_IDS env var
 
 	return service
 }
@@ -116,10 +119,43 @@ func (s *AdminService) load() error {
 	return nil
 }
 
-// loadFromEnv loads admins from environment variable (legacy support)
+// loadFromEnv loads admins from ADMIN_USER_IDS environment variable.
+// Supports comma-separated IDs. First ID becomes root admin.
 func (s *AdminService) loadFromEnv() error {
-	// This is a fallback for migrations from .env
-	// In production, admins should be in admins.json
+	envVal := os.Getenv("ADMIN_USER_IDS")
+	if envVal == "" {
+		return nil
+	}
+
+	for _, idStr := range strings.Split(envVal, ",") {
+		idStr = strings.TrimSpace(idStr)
+		if idStr == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		if _, exists := s.admins[id]; !exists {
+			role := AdminRoleNormal
+			if len(s.admins) == 0 {
+				role = AdminRoleRoot
+				s.rootUserID = id
+			}
+			s.admins[id] = &AdminInfo{
+				UserID: id,
+				Name:   "Admin",
+				Role:   role,
+			}
+			logger.Info("[AdminService] Loaded admin from env: %d (role=%s)", id, role)
+		}
+	}
+
+	// Save to file for persistence
+	if len(s.admins) > 0 {
+		s.save()
+	}
+
 	return nil
 }
 
