@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -76,7 +76,7 @@ func (s *AdminService) load() error {
 	if err := json.Unmarshal(data, &fileData); err == nil && len(fileData.Admins) > 0 {
 		s.admins = fileData.Admins
 		s.rootUserID = fileData.RootID
-		log.Printf("[AdminService] Loaded %d admins (new format), root=%d", len(s.admins), s.rootUserID)
+		logger.Info("[AdminService] Loaded %d admins (new format), root=%d", len(s.admins), s.rootUserID)
 		return nil
 	}
 
@@ -91,7 +91,7 @@ func (s *AdminService) load() error {
 		for idStr, name := range legacyData.Admins {
 			id, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil {
-				log.Printf("[AdminService] Invalid admin ID '%s' in legacy data, skipping", idStr)
+				logger.Info("[AdminService] Invalid admin ID '%s' in legacy data, skipping", idStr)
 				continue
 			}
 			s.admins[id] = &AdminInfo{
@@ -109,7 +109,7 @@ func (s *AdminService) load() error {
 			s.admins[firstID].Role = AdminRoleRoot
 		}
 		s.save() // Save in new format
-		log.Printf("[AdminService] Migrated %d admins from legacy format, root=%d", len(s.admins), s.rootUserID)
+		logger.Info("[AdminService] Migrated %d admins from legacy format, root=%d", len(s.admins), s.rootUserID)
 		return nil
 	}
 
@@ -180,7 +180,7 @@ func (s *AdminService) SetRootAdmin(userID int64, name string) error {
 	}
 	s.rootUserID = userID
 
-	log.Printf("[AdminService] Set root admin: %s (%d)", name, userID)
+	logger.Info("[AdminService] Set root admin: %s (%d)", name, userID)
 	return s.save()
 }
 
@@ -210,7 +210,7 @@ func (s *AdminService) AddAdminWithRole(userID int64, name string, role AdminRol
 		}
 	}
 
-	log.Printf("[AdminService] Added admin: %s (%d, role=%s)", name, userID, role)
+	logger.Info("[AdminService] Added admin: %s (%d, role=%s)", name, userID, role)
 	return s.save()
 }
 
@@ -224,7 +224,7 @@ func (s *AdminService) RemoveAdmin(userID int64) error {
 			return fmt.Errorf("cannot remove root admin")
 		}
 		delete(s.admins, userID)
-		log.Printf("[AdminService] Removed admin: %d", userID)
+		logger.Info("[AdminService] Removed admin: %d", userID)
 		return s.save()
 	}
 

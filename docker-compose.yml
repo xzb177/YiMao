@@ -1,11 +1,8 @@
 services:
-  emby-telegram-bot:
+  yimao:
     build: .
-    container_name: emby-telegram-bot
+    container_name: yimao
     restart: unless-stopped
-
-    # Run as specified user (default: root for compatibility)
-    user: "${PUID:-0}:${PGID:-0}"
 
     environment:
       # Telegram Bot Configuration
@@ -28,16 +25,11 @@ services:
 
       # AI Configuration (Optional)
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
-      # Claude/Anthropic API Key - supports both CLAUDE_API_KEY and ANTHROPIC_API_KEY
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
       # Timezone
       - TZ=Asia/Shanghai
-
-      # User ID/Group ID for file permissions
-      - PUID=${PUID:-0}
-      - PGID=${PGID:-0}
 
     # Use host network for better network access
     network_mode: "host"
@@ -53,13 +45,3 @@ services:
         max-size: "10m"
         max-file: "3"
         compress: "true"
-
-    # Resource limits (optional)
-    # deploy:
-    #   resources:
-    #     limits:
-    #       cpus: '1.0'
-    #       memory: 512M
-    #     reservations:
-    #       cpus: '0.5'
-    #       memory: 256M

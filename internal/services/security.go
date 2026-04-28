@@ -1,8 +1,8 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"crypto/subtle"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -85,20 +85,20 @@ func (s *SecurityService) SetConfig(requests int, windowSecs int, maxAttempts in
 	s.ctx.maxFailedAttempts = maxAttempts
 	s.ctx.blockDuration = time.Duration(blockMins) * time.Minute
 
-	log.Printf("[Security] Config updated: requests=%d/%ds, maxAttempts=%d, block=%dm",
+	logger.Info("[Security] Config updated: requests=%d/%ds, maxAttempts=%d, block=%dm",
 		requests, windowSecs, maxAttempts, blockMins)
 }
 
 // Start initializes the security service
 func (s *SecurityService) Start() {
 	go s.ctx.cleanupLoop()
-	log.Printf("[Security] Service initialized")
+	logger.Info("[Security] Service initialized")
 }
 
 // Stop stops the security service
 func (s *SecurityService) Stop() {
 	close(s.ctx.cleanupDone)
-	log.Printf("[Security] Service stopped")
+	logger.Info("[Security] Service stopped")
 }
 
 // SetAPIKeys sets the API keys for authentication
@@ -107,7 +107,7 @@ func (s *SecurityService) SetAPIKeys(keys map[string]string) {
 	defer s.ctx.apiKeys.mu.Unlock()
 	s.ctx.apiKeys.Keys = keys
 	s.ctx.apiKeys.Enabled = len(keys) > 0
-	log.Printf("[Security] API keys configured: %d keys", len(keys))
+	logger.Info("[Security] API keys configured: %d keys", len(keys))
 }
 
 // EnableAPIAuth enables/disables API key authentication
@@ -115,7 +115,7 @@ func (s *SecurityService) EnableAPIAuth(enabled bool) {
 	s.ctx.apiKeys.mu.Lock()
 	defer s.ctx.apiKeys.mu.Unlock()
 	s.ctx.apiKeys.Enabled = enabled
-	log.Printf("[Security] API auth %v", map[bool]string{true: "enabled", false: "disabled"}[enabled])
+	logger.Info("[Security] API auth %v", map[bool]string{true: "enabled", false: "disabled"}[enabled])
 }
 
 // getClientIP extracts the real client IP from request
@@ -188,7 +188,7 @@ func (s *SecurityService) RecordFailedAttempt(ip string) {
 	if s.ctx.failedAttempts[ip] >= s.ctx.maxFailedAttempts {
 		// Block this IP
 		s.ctx.blockedIPs[ip] = time.Now().Add(s.ctx.blockDuration)
-		log.Printf("[Security] IP %s blocked after %d failed attempts", ip, s.ctx.failedAttempts[ip])
+		logger.Info("[Security] IP %s blocked after %d failed attempts", ip, s.ctx.failedAttempts[ip])
 		// Reset counter
 		delete(s.ctx.failedAttempts, ip)
 	}
@@ -248,7 +248,7 @@ func (s *SecurityContext) cleanupLoop() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("[Security] Panic in cleanup: %v", r)
+						logger.Info("[Security] Panic in cleanup: %v", r)
 					}
 				}()
 				s.cleanup()
@@ -309,7 +309,7 @@ func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check if IP is blocked
 		if s.IsIPBlocked(ip) {
-			log.Printf("[Security] Blocked request from %s", ip)
+			logger.Info("[Security] Blocked request from %s", ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte(`{"error":"too_many_requests","message":"IP address temporarily blocked due to repeated failed attempts"}`))
@@ -323,7 +323,7 @@ func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if !s.validateAPIKey(apiKey) {
-			log.Printf("[Security] Invalid API key from %s", ip)
+			logger.Info("[Security] Invalid API key from %s", ip)
 			s.RecordFailedAttempt(ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusUnauthorized)
@@ -336,7 +336,7 @@ func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
 
 		// Check rate limit
 		if s.CheckRateLimit(ip) {
-			log.Printf("[Security] Rate limit exceeded for %s", ip)
+			logger.Info("[Security] Rate limit exceeded for %s", ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte(`{"error":"rate_limit_exceeded","message":"Too many requests. Please try again later."}`))
@@ -357,7 +357,7 @@ func (s *SecurityService) PublicMiddleware(next http.HandlerFunc) http.HandlerFu
 
 		// Check if IP is blocked (even for public endpoints)
 		if s.IsIPBlocked(ip) {
-			log.Printf("[Security] Blocked request from %s (public endpoint)", ip)
+			logger.Info("[Security] Blocked request from %s (public endpoint)", ip)
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
 			w.Write([]byte(`{"error":"too_many_requests","message":"IP address temporarily blocked"}`))

@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -45,7 +45,7 @@ func NewSearchHistoryDB(dataDir string) (*SearchHistoryDB, error) {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	log.Printf("[SearchHistoryDB] Initialized database at %s", dbPath)
+	logger.Info("[SearchHistoryDB] Initialized database at %s", dbPath)
 
 	return &SearchHistoryDB{db: db}, nil
 }
@@ -98,7 +98,7 @@ func (s *SearchHistoryDB) cleanupOldEntries(userID int64, limit int) {
 	`, userID, limit)
 
 	if err != nil {
-		log.Printf("[SearchHistoryDB] Failed to cleanup old entries: %v", err)
+		logger.Info("[SearchHistoryDB] Failed to cleanup old entries: %v", err)
 	}
 }
 
@@ -205,7 +205,7 @@ func (s *SearchHistoryDB) ClearHistory(userID int64) error {
 		return fmt.Errorf("failed to clear history: %w", err)
 	}
 
-	log.Printf("[SearchHistoryDB] Cleared history for user %d", userID)
+	logger.Info("[SearchHistoryDB] Cleared history for user %d", userID)
 	return nil
 }
 

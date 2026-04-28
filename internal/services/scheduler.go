@@ -1,7 +1,7 @@
 package services
 
 import (
-	"log"
+	"emby-telegram-bot/pkg/logger"
 	"math/rand"
 	"time"
 )
@@ -43,29 +43,29 @@ func NewScheduler(
 func (s *Scheduler) SetDailyTime(hour, minute int) {
 	s.dailyHour = hour
 	s.dailyMinute = minute
-	log.Printf("[Scheduler] Daily recommendation time set to %02d:%02d", hour, minute)
+	logger.Info("[Scheduler] Daily recommendation time set to %02d:%02d", hour, minute)
 }
 
 // SetEnabled enables or disables the scheduler
 func (s *Scheduler) SetEnabled(enabled bool) {
 	s.enabled = enabled
 	if enabled {
-		log.Printf("[Scheduler] Scheduler enabled")
+		logger.Info("[Scheduler] Scheduler enabled")
 	} else {
-		log.Printf("[Scheduler] Scheduler disabled")
+		logger.Info("[Scheduler] Scheduler disabled")
 	}
 }
 
 // Start starts the scheduler
 func (s *Scheduler) Start() {
 	go s.run()
-	log.Printf("[Scheduler] Started (daily recommendation at %02d:%02d)", s.dailyHour, s.dailyMinute)
+	logger.Info("[Scheduler] Started (daily recommendation at %02d:%02d)", s.dailyHour, s.dailyMinute)
 }
 
 // Stop stops the scheduler
 func (s *Scheduler) Stop() {
 	close(s.stopCh)
-	log.Printf("[Scheduler] Stopped")
+	logger.Info("[Scheduler] Stopped")
 }
 
 // run is the main scheduler loop
@@ -101,17 +101,17 @@ func (s *Scheduler) nextDailyRun() time.Time {
 
 // sendDailyRecommendations sends daily recommendations to all users
 func (s *Scheduler) sendDailyRecommendations() {
-	log.Printf("[Scheduler] Sending daily recommendations...")
+	logger.Info("[Scheduler] Sending daily recommendations...")
 
 	// Get trending movies
 	trending, err := s.moviepilot.GetTrending(MediaTypeMovie, 1)
 	if err != nil {
-		log.Printf("[Scheduler] Failed to get trending movies: %v", err)
+		logger.Info("[Scheduler] Failed to get trending movies: %v", err)
 		return
 	}
 
 	if len(trending.Results) == 0 {
-		log.Printf("[Scheduler] No trending movies found")
+		logger.Info("[Scheduler] No trending movies found")
 		return
 	}
 
@@ -121,7 +121,7 @@ func (s *Scheduler) sendDailyRecommendations() {
 	// Get all users to notify
 	userIDs := s.getActiveUsers()
 	if len(userIDs) == 0 {
-		log.Printf("[Scheduler] No active users to notify")
+		logger.Info("[Scheduler] No active users to notify")
 		return
 	}
 
@@ -139,17 +139,21 @@ func (s *Scheduler) sendDailyRecommendations() {
 
 	// Send notifications
 	if err := s.notification.SendDailyRecommendation(userIDs, items); err != nil {
-		log.Printf("[Scheduler] Failed to send daily recommendations: %v", err)
+		logger.Info("[Scheduler] Failed to send daily recommendations: %v", err)
 	} else {
-		log.Printf("[Scheduler] Sent daily recommendations to %d users", len(userIDs))
+		logger.Info("[Scheduler] Sent daily recommendations to %d users", len(userIDs))
 	}
 }
 
-// getActiveUsers returns a list of active user IDs
+// getActiveUsers returns a list of all user IDs who should receive daily recommendations.
+// Includes all mapped Telegram users (admins + regular users).
 func (s *Scheduler) getActiveUsers() []int64 {
-	// For now, just return admin IDs
-	// In the future, this could be extended to include all active users
-	return s.adminService.GetAdminIDs()
+	users := s.userMapping.GetAllTelegramUsers()
+	if len(users) == 0 {
+		// Fallback to admins if no users are mapped yet
+		return s.adminService.GetAdminIDs()
+	}
+	return users
 }
 
 // shuffleAndPick shuffles the results and picks n items

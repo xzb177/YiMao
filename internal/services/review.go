@@ -1,10 +1,10 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
-	"log"
 	"math/big"
 	"os"
 	"sync"
@@ -91,7 +91,7 @@ func (s *ReviewService) load() error {
 		return err
 	}
 
-	log.Printf("[ReviewService] Loaded %d review requests", len(s.reviews))
+	logger.Info("[ReviewService] Loaded %d review requests", len(s.reviews))
 	return nil
 }
 
@@ -99,16 +99,16 @@ func (s *ReviewService) load() error {
 func (s *ReviewService) saveLocked() error {
 	data, err := json.MarshalIndent(s.reviews, "", "  ")
 	if err != nil {
-		log.Printf("[ReviewService] 序列化失败: %v", err)
+		logger.Info("[ReviewService] 序列化失败: %v", err)
 		return err
 	}
 
 	if err := os.WriteFile(s.reviewsFile, data, 0644); err != nil {
-		log.Printf("[ReviewService] 写入文件失败: %v", err)
+		logger.Info("[ReviewService] 写入文件失败: %v", err)
 		return err
 	}
 
-	log.Printf("[ReviewService] 保存 %d 条审核请求", len(s.reviews))
+	logger.Info("[ReviewService] 保存 %d 条审核请求", len(s.reviews))
 	return nil
 }
 
@@ -141,7 +141,7 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 		priorityText = review.Priority
 	}
 
-	log.Printf("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s, 令牌: %s",
+	logger.Info("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s, 令牌: %s",
 		review.RequestID, review.TelegramID, priorityText, review.MediaTitle, review.ApproveToken)
 
 	return s.saveLocked()
@@ -285,7 +285,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 	if review.Status != "pending" {
 		// Return the review without error so caller can handle duplicate approval gracefully
 		if review.Status == "approved" {
-			log.Printf("[ReviewService] 请求已被批准: %s, 由: %d", requestID, review.ReviewedBy)
+			logger.Info("[ReviewService] 请求已被批准: %s, 由: %d", requestID, review.ReviewedBy)
 			return review, fmt.Errorf("already_approved")
 		}
 		return nil, fmt.Errorf("请求状态为 %s, 无法批准", review.Status)
@@ -293,7 +293,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 
 	// Verify token to prevent duplicate approvals
 	if review.ApproveToken == "" || review.ApproveToken != token {
-		log.Printf("[ReviewService] 无效的批准令牌")
+		logger.Info("[ReviewService] 无效的批准令牌")
 		return nil, fmt.Errorf("invalid or expired approve token")
 	}
 
@@ -303,7 +303,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
 
-	log.Printf("[ReviewService] Approved review request: %s by admin: %d", requestID, reviewedBy)
+	logger.Info("[ReviewService] Approved review request: %s by admin: %d", requestID, reviewedBy)
 
 	return review, s.saveLocked()
 }
@@ -321,7 +321,7 @@ func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID 
 	review.SubscriptionID = subscriptionID
 	review.SubscriptionState = state
 
-	log.Printf("[ReviewService] Updated subscription info for %s: ID=%d, State=%s", requestID, subscriptionID, state)
+	logger.Info("[ReviewService] Updated subscription info for %s: ID=%d, State=%s", requestID, subscriptionID, state)
 
 	return s.saveLocked()
 }
@@ -363,7 +363,7 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 	review.ReviewedBy = reviewedBy
 	review.RejectionReason = reason
 
-	log.Printf("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
+	logger.Info("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
 
 	return review, s.saveLocked()
 }
@@ -379,7 +379,7 @@ func (s *ReviewService) DeleteRequest(requestID string) error {
 
 	delete(s.reviews, requestID)
 
-	log.Printf("[ReviewService] Deleted review request: %s", requestID)
+	logger.Info("[ReviewService] Deleted review request: %s", requestID)
 
 	return s.saveLocked()
 }
@@ -393,7 +393,7 @@ func (s *ReviewService) cleanupRoutine() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[ReviewService] Panic in cleanup routine: %v, recovering...", r)
+					logger.Info("[ReviewService] Panic in cleanup routine: %v, recovering...", r)
 				}
 			}()
 			s.cleanup()
@@ -413,7 +413,7 @@ func (s *ReviewService) cleanup() {
 		// Also delete approved reviews without subscription ID (old data before tracking)
 		if review.Status == "approved" && review.SubscriptionID == 0 && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
 			toDelete = append(toDelete, id)
-			log.Printf("[ReviewService] Cleaning up old approved review without subscription: %s", id)
+			logger.Info("[ReviewService] Cleaning up old approved review without subscription: %s", id)
 			continue
 		}
 
@@ -428,7 +428,7 @@ func (s *ReviewService) cleanup() {
 	}
 
 	if len(toDelete) > 0 {
-		log.Printf("[ReviewService] Cleaned up %d old review requests", len(toDelete))
+		logger.Info("[ReviewService] Cleaned up %d old review requests", len(toDelete))
 		s.saveLocked()
 	}
 }
@@ -465,7 +465,7 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ReviewService] Panic in initial subscription refresh: %v, recovering...", r)
+				logger.Info("[ReviewService] Panic in initial subscription refresh: %v, recovering...", r)
 			}
 		}()
 		s.updateAllSubscriptionStatus()
@@ -475,7 +475,7 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[ReviewService] Panic in subscription refresh: %v, recovering...", r)
+					logger.Info("[ReviewService] Panic in subscription refresh: %v, recovering...", r)
 				}
 			}()
 			s.updateAllSubscriptionStatus()
@@ -494,7 +494,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	for _, review := range s.reviews {
 		if review.Status == "approved" && review.SubscriptionID > 0 {
 			if existedReqID, dup := seenSubID[review.SubscriptionID]; dup {
-				log.Printf("[ReviewService] Skip duplicate subscription tracker: subID=%d, request=%s, existed=%s", review.SubscriptionID, review.RequestID, existedReqID)
+				logger.Info("[ReviewService] Skip duplicate subscription tracker: subID=%d, request=%s, existed=%s", review.SubscriptionID, review.RequestID, existedReqID)
 				continue
 			}
 			seenSubID[review.SubscriptionID] = review.RequestID
@@ -513,12 +513,12 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 		return
 	}
 
-	log.Printf("[ReviewService] Updating subscription status for %d requests", len(toUpdate))
+	logger.Info("[ReviewService] Updating subscription status for %d requests", len(toUpdate))
 
 	// Get all subscriptions from MoviePilot
 	subs, err := s.moviepilot.GetAllSubscriptions()
 	if err != nil {
-		log.Printf("[ReviewService] Failed to get subscriptions: %v", err)
+		logger.Info("[ReviewService] Failed to get subscriptions: %v", err)
 		return
 	}
 
@@ -554,20 +554,20 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 				if review.SubscriptionState != actualState {
 					oldState := review.SubscriptionState
 					review.SubscriptionState = actualState
-					log.Printf("[ReviewService] Updated %s: %s -> %s (lack=%d/%d)", item.requestID, oldState, actualState, sub.LackEpisode, sub.TotalEpisode)
+					logger.Info("[ReviewService] Updated %s: %s -> %s (lack=%d/%d)", item.requestID, oldState, actualState, sub.LackEpisode, sub.TotalEpisode)
 
 					// If state is "R" (Recycled), mark for resubscription (dedupe by subscription ID)
 					// Only trigger resubscribe if not completed
 					if sub.State == "R" && actualState != "C" {
 						if !review.LastResubscribeAt.IsZero() && time.Since(review.LastResubscribeAt) < resubscribeCooldown {
-							log.Printf("[ReviewService] Skip recycle trigger in cooldown: request=%s, last=%s", item.requestID, review.LastResubscribeAt.Format(time.RFC3339))
+							logger.Info("[ReviewService] Skip recycle trigger in cooldown: request=%s, last=%s", item.requestID, review.LastResubscribeAt.Format(time.RFC3339))
 							continue
 						}
 						if !resubSeen[item.subID] {
 							toResubscribe = append(toResubscribe, item.requestID)
 							resubSeen[item.subID] = true
 						} else {
-							log.Printf("[ReviewService] Skip duplicate recycle trigger: subID=%d, request=%s", item.subID, item.requestID)
+							logger.Info("[ReviewService] Skip duplicate recycle trigger: subID=%d, request=%s", item.subID, item.requestID)
 						}
 					}
 				}
@@ -579,7 +579,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 					oldState := review.SubscriptionState
 					// Mark as cancelled/removed
 					review.SubscriptionState = "X"
-					log.Printf("[ReviewService] Subscription %d not found in MoviePilot, marked as cancelled: %s (was: %s)",
+					logger.Info("[ReviewService] Subscription %d not found in MoviePilot, marked as cancelled: %s (was: %s)",
 						item.subID, item.requestID, oldState)
 				}
 			}
@@ -593,7 +593,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 		if s.autoResubscribe {
 			go s.resubscribeRecycledRequests(toResubscribe)
 		} else {
-			log.Printf("[ReviewService] Auto resubscribe disabled, skipped %d recycled requests", len(toResubscribe))
+			logger.Info("[ReviewService] Auto resubscribe disabled, skipped %d recycled requests", len(toResubscribe))
 		}
 	}
 }
@@ -612,7 +612,7 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 
 		if review.SubscriptionID > 0 {
 			if processedSubID[review.SubscriptionID] {
-				log.Printf("[ReviewService] Skip duplicate resubscribe for same subID=%d, request=%s", review.SubscriptionID, requestID)
+				logger.Info("[ReviewService] Skip duplicate resubscribe for same subID=%d, request=%s", review.SubscriptionID, requestID)
 				continue
 			}
 			processedSubID[review.SubscriptionID] = true
@@ -620,14 +620,14 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 
 		// Delete old subscription first
 		if review.SubscriptionID > 0 {
-			log.Printf("[ReviewService] Deleting old subscription %d for %s", review.SubscriptionID, requestID)
+			logger.Info("[ReviewService] Deleting old subscription %d for %s", review.SubscriptionID, requestID)
 			if err := s.moviepilot.DeleteRequest(review.SubscriptionID); err != nil {
-				log.Printf("[ReviewService] Failed to delete old subscription: %v", err)
+				logger.Info("[ReviewService] Failed to delete old subscription: %v", err)
 			}
 		}
 
 		// Resubscribe
-		log.Printf("[ReviewService] Resubscribing %s: %s (%d)", requestID, review.MediaTitle, review.TmdbID)
+		logger.Info("[ReviewService] Resubscribing %s: %s (%d)", requestID, review.MediaTitle, review.TmdbID)
 		mpMediaType := MediaTypeMovie
 		if review.MediaType == MediaTypeTV {
 			mpMediaType = MediaTypeTV
@@ -646,13 +646,13 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 			season,
 		)
 		if err != nil {
-			log.Printf("[ReviewService] Failed to resubscribe %s: %v", requestID, err)
+			logger.Info("[ReviewService] Failed to resubscribe %s: %v", requestID, err)
 			continue
 		}
 
 		// Update subscription info
 		if err := s.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
-			log.Printf("[ReviewService] Failed to update subscription info: %v", err)
+			logger.Info("[ReviewService] Failed to update subscription info: %v", err)
 		}
 
 		// Mark last resubscribe time to avoid frequent recycle loops
@@ -663,6 +663,6 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 		}
 		s.mu.Unlock()
 
-		log.Printf("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
+		logger.Info("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
 	}
 }

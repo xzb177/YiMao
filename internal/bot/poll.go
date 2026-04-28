@@ -2,11 +2,11 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"emby-telegram-bot/ai"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/handlers"
@@ -58,7 +58,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		return // Don't poll if webhook is configured
 	}
 
-	log.Println("🔄 Starting Telegram updates polling...")
+	logger.Info("🔄 Starting Telegram updates polling...")
 
 	offset := 0
 	pollInterval := 1 * time.Second
@@ -86,7 +86,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 		updates, err := deps.Telegram.GetUpdates(offset, 100)
 		if err != nil {
-			log.Printf("[Poll] Failed to get updates: %v", err)
+			logger.Info("[Poll] Failed to get updates: %v", err)
 			time.Sleep(5 * time.Second)
 			continue
 		}
@@ -95,7 +95,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 			continue
 		}
 
-		log.Printf("[Poll] Received %d updates", len(updates))
+		logger.Info("[Poll] Received %d updates", len(updates))
 
 		for _, update := range updates {
 			// Update offset immediately to avoid reprocessing
@@ -108,13 +108,13 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 			go func() {
 				// Debug: log update type
 				if update.Message != nil {
-					log.Printf("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
+					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
 					HandlePollMessage(update.Message, pollDeps, cfg)
 				} else if update.CallbackQuery != nil {
-					log.Printf("[Poll] Update %d: Callback from %d: %s", update.UpdateID, update.CallbackQuery.From.ID, update.CallbackQuery.Data)
+					logger.Info("[Poll] Update %d: Callback from %d: %s", update.UpdateID, update.CallbackQuery.From.ID, update.CallbackQuery.Data)
 					HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
 				} else {
-					log.Printf("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
+					logger.Info("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
 				}
 			}()
 		}
@@ -125,7 +125,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.Config) {
 	// Sanitize input text
 	sanitizedText := validation.SanitizeMessageText(msg.Text)
-	log.Printf("[Poll] Message from %d: %s", msg.From.ID, sanitizedText)
+	logger.Info("[Poll] Message from %d: %s", msg.From.ID, sanitizedText)
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
@@ -134,21 +134,21 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	}
 
 	// Check if user is feedback process
-	log.Printf("[Poll] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
+	logger.Info("[Poll] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
 	if deps.FeedbackHandler != nil {
 		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
-		log.Printf("[Poll] User %d in feedback process: %v", msg.From.ID, inFeedback)
+		logger.Info("[Poll] User %d in feedback process: %v", msg.From.ID, inFeedback)
 		if inFeedback {
 			// Check if user sent a photo with feedback
 			var photoFileID string
 			if msg.Photo != nil && len(msg.Photo) > 0 {
 				// Get the largest photo (last element in array)
 				photoFileID = msg.Photo[len(msg.Photo)-1].FileID
-				log.Printf("[Poll] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
+				logger.Info("[Poll] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
 			}
 
 			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, sanitizedText, photoFileID); err != nil {
-				log.Printf("[Poll] Failed to handle feedback: %v", err)
+				logger.Info("[Poll] Failed to handle feedback: %v", err)
 			}
 			return
 		}
@@ -157,9 +157,9 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
 		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
 			if _, exists := sess.Get("feedback_conversation_issue_id"); exists {
-				log.Printf("[Poll] User %d is in feedback follow-up conversation", msg.From.ID)
+				logger.Info("[Poll] User %d is in feedback follow-up conversation", msg.From.ID)
 				if err := deps.FeedbackHandler.HandleUserFollowUp(msg.From.ID, msg.Chat.ID, sanitizedText); err != nil {
-					log.Printf("[Poll] Failed to handle follow-up: %v", err)
+					logger.Info("[Poll] Failed to handle follow-up: %v", err)
 				}
 				return
 			}
@@ -171,11 +171,11 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
 		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
 			if _, exists := sess.Get("waiting_for_add_admin"); exists {
-				log.Printf("[Poll] User %d is in add admin state", msg.From.ID)
+				logger.Info("[Poll] User %d is in add admin state", msg.From.ID)
 				msg.Text = sanitizedText // Update with sanitized text
 				if resp, err := deps.AdminHandler.HandleAdminAddMessage(msg.From.ID, msg.Chat.ID, msg); resp != nil {
 					if err != nil {
-						log.Printf("[Poll] HandleAdminAddMessage error: %v", err)
+						logger.Info("[Poll] HandleAdminAddMessage error: %v", err)
 					}
 					// Send the response as a new message
 					keyboard := ConvertKeyboard(resp.Keyboard)
@@ -188,11 +188,11 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 			// Check if user is in "waiting for custom time input" state
 			if _, exists := sess.Get("waiting_for_time_input"); exists {
-				log.Printf("[Poll] User %d is in custom time input state", msg.From.ID)
+				logger.Info("[Poll] User %d is in custom time input state", msg.From.ID)
 				msg.Text = sanitizedText // Update with sanitized text
 				if resp, err := deps.AdminHandler.HandleNotifCustomTimeInput(msg.From.ID, msg.Chat.ID, msg.Text); resp != nil {
 					if err != nil {
-						log.Printf("[Poll] HandleNotifCustomTimeInput error: %v", err)
+						logger.Info("[Poll] HandleNotifCustomTimeInput error: %v", err)
 					}
 					// Send the response as a new message
 					keyboard := ConvertKeyboard(resp.Keyboard)
@@ -207,7 +207,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 			// Check if admin is in "pending issue reply" state
 			if pendingIssueIDVal, exists := sess.Get("pending_issue_reply"); exists {
-				log.Printf("[Poll] Admin %d is in issue reply state", msg.From.ID)
+				logger.Info("[Poll] Admin %d is in issue reply state", msg.From.ID)
 				// Parse issue ID
 				var issueID int64
 				if issueIDInt, ok := pendingIssueIDVal.(int64); ok {
@@ -260,7 +260,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
 		if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
 			if aiEnabled, ok := aiChatMode.(bool); ok && aiEnabled {
-				log.Printf("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
+				logger.Info("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
 				handleAIChatMessage(msg.From.ID, msg.Chat.ID, sanitizedText, deps.Telegram, deps.SessionMgr)
 				return
 			}
@@ -290,7 +290,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 				}
 
 				if isCredentialFormat {
-					log.Printf("[Poll] User %d not linked, detected credential format, attempting auto-link", msg.From.ID)
+					logger.Info("[Poll] User %d not linked, detected credential format, attempting auto-link", msg.From.ID)
 					msg.Text = sanitizedText
 					HandleLinkCommand(deps.Telegram, msg, deps.BindingRequest, cfg, deps.UserMapping)
 					return
@@ -320,7 +320,7 @@ func allDigits(s string) bool {
 // 群组中完全禁用交互功能，仅用于接收入库通知推送
 func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
 	// 群组中不响应任何消息，只用于接收入库通知
-	log.Printf("[PollGroupChat] ChatID=%d, Title=%s: Message ignored (groups are notifications only)", msg.Chat.ID, msg.Chat.Title)
+	logger.Info("[PollGroupChat] ChatID=%d, Title=%s: Message ignored (groups are notifications only)", msg.Chat.ID, msg.Chat.Title)
 	return
 }
 
@@ -355,19 +355,19 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	// Add to search history - prefer DB version (new), fallback to legacy
 	if searchHistoryDB != nil && query != "" {
 		searchHistoryDB.AddSearch(msg.From.ID, query)
-		log.Printf("[Poll] Search added to SearchHistoryDB: userID=%d, query=%s", msg.From.ID, query)
+		logger.Info("[Poll] Search added to SearchHistoryDB: userID=%d, query=%s", msg.From.ID, query)
 	} else if searchHistory != nil && query != "" {
 		searchHistory.AddSearch(msg.From.ID, query)
-		log.Printf("[Poll] Search added to SearchHistory (legacy): userID=%d, query=%s", msg.From.ID, query)
+		logger.Info("[Poll] Search added to SearchHistory (legacy): userID=%d, query=%s", msg.From.ID, query)
 	} else if query != "" {
-		log.Printf("[Poll] WARNING: No search history service available, query not saved: %s", query)
+		logger.Info("[Poll] WARNING: No search history service available, query not saved: %s", query)
 	}
 
 	// Search in MoviePilot
 	results, err := moviepilot.SearchMedia(query, 1)
 	if err != nil {
 		// Log full error for admin debugging
-		log.Printf("[Poll] Search failed for query '%s': %v", query, err)
+		logger.Info("[Poll] Search failed for query '%s': %v", query, err)
 		// Send user-friendly message without technical details
 		telegram.SendMessage(msg.Chat.ID, "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。", "", nil)
 		return
@@ -378,10 +378,10 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 		if fallbackSvc != nil {
 			fallbackResults, fallbackQuery, fbErr := fallbackSvc.TryFallback(query)
 			if fbErr != nil {
-				log.Printf("[Poll] Fallback search failed: %v", fbErr)
+				logger.Info("[Poll] Fallback search failed: %v", fbErr)
 			}
 			if len(fallbackResults) > 0 {
-				log.Printf("[Poll] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
+				logger.Info("[Poll] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
 				// Update query to the successful fallback query
 				query = fallbackQuery
 				results = &services.SearchResponse{Results: fallbackResults}
@@ -427,7 +427,7 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 			go func(tmdbID int) {
 				tvDetails, err := tmdb.GetTVDetailsWithSeasons(tmdbID)
 				if err != nil {
-					log.Printf("[PollSearch] Failed to fetch seasons from TMDB for %s: %v", item.Title, err)
+					logger.Info("[PollSearch] Failed to fetch seasons from TMDB for %s: %v", item.Title, err)
 					resultChan <- seasonResult{err: err}
 					return
 				}
@@ -464,11 +464,11 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 		}
 	}
 	if seasonCount > 0 {
-		log.Printf("[搜索] 获取到 %d/%d 部剧集的季数信息", seasonCount, len(searchItems))
+		logger.Info("[搜索] 获取到 %d/%d 部剧集的季数信息", seasonCount, len(searchItems))
 	}
 
 	sess.SetSearchResults(searchItems, 1, query)
-	log.Printf("[搜索] 查询 \"%s\": %d 条结果", query, len(results.Results))
+	logger.Info("[搜索] 查询 \"%s\": %d 条结果", query, len(results.Results))
 
 	// Build search results message
 	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n",
@@ -536,14 +536,14 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Registry, telegram *services.TelegramClient) {
 	// Sanitize callback data
 	sanitizedData := validation.SanitizeCallbackData(cb.Data)
-	log.Printf("[Poll] Callback from user %d: %s", cb.From.ID, sanitizedData)
+	logger.Info("[Poll] Callback from user %d: %s", cb.From.ID, sanitizedData)
 
 	// Parse callback
 	parsed, err := registry.Parser().Parse(sanitizedData)
 	if err != nil {
-		log.Printf("Failed to parse callback: %v", err)
+		logger.Info("Failed to parse callback: %v", err)
 		if ansErr := telegram.AnswerCallback(cb.ID, "无效的请求", true); ansErr != nil {
-			log.Printf("[Callback] Failed to answer callback (parse error): %v", ansErr)
+			logger.Info("[Callback] Failed to answer callback (parse error): %v", ansErr)
 		}
 		return
 	}
@@ -561,9 +561,9 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	// Get handler
 	handler, exists := registry.Get(parsed.Action)
 	if !exists {
-		log.Printf("No handler for action: %s", parsed.Action)
+		logger.Info("No handler for action: %s", parsed.Action)
 		if ansErr := telegram.AnswerCallback(cb.ID, "未知操作", true); ansErr != nil {
-			log.Printf("[Callback] Failed to answer callback (no handler): %v", ansErr)
+			logger.Info("[Callback] Failed to answer callback (no handler): %v", ansErr)
 		}
 		return
 	}
@@ -578,7 +578,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[Callback] Panic recovered in handler: %v", r)
+				logger.Info("[Callback] Panic recovered in handler: %v", r)
 				resultChan <- handleResult{
 					resp: &callback.Response{
 						Text:        "❌ 处理请求时发生错误",
@@ -597,13 +597,13 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	case result := <-resultChan:
 		// Use the result from handler
 		if result.err != nil {
-			log.Printf("Handler error: %v", result.err)
+			logger.Info("Handler error: %v", result.err)
 			callbackMsg := "操作失败"
 			if result.resp != nil && result.resp.CallbackMsg != "" {
 				callbackMsg = result.resp.CallbackMsg
 			}
 			if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, true); ansErr != nil {
-				log.Printf("[Callback] Failed to answer callback (error): %v", ansErr)
+				logger.Info("[Callback] Failed to answer callback (error): %v", ansErr)
 			}
 			// Try to show error message if response exists
 			if result.resp != nil && result.resp.Text != "" {
@@ -630,21 +630,21 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		}
 
 		if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); ansErr != nil {
-			log.Printf("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
+			logger.Info("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
 		}
 
 		// Send or edit message
 		if resp != nil {
-			log.Printf("[Callback] Response: Text=%d chars, Edit=%v, Photo=%v, Keyboard=%v",
+			logger.Info("[Callback] Response: Text=%d chars, Edit=%v, Photo=%v, Keyboard=%v",
 				len(resp.Text), resp.Edit, resp.Photo != "", resp.Keyboard != nil)
 			handleCallbackResponse(ctx, resp, telegram)
 		} else {
-			log.Printf("[Callback] Response is nil!")
+			logger.Info("[Callback] Response is nil!")
 		}
 	case <-time.After(25 * time.Second):
-		log.Printf("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)
+		logger.Info("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)
 		if ansErr := telegram.AnswerCallback(cb.ID, "处理超时，请重试", true); ansErr != nil {
-			log.Printf("[Callback] Failed to answer callback (timeout): %v", ansErr)
+			logger.Info("[Callback] Failed to answer callback (timeout): %v", ansErr)
 		}
 		return
 	}
@@ -661,14 +661,14 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 	}
 
 	// Log parse mode for debugging
-	log.Printf("[Callback] Using parse_mode=%s for chat %d, text preview=%.50s",
+	logger.Info("[Callback] Using parse_mode=%s for chat %d, text preview=%.50s",
 		parseMode, ctx.ChatID, resp.Text)
 
 	// Check if we need to send a photo
 	if resp.Photo != "" {
 		// Delete the original message first
 		if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
-			log.Printf("[Callback] DeleteMessage error: %v", delErr)
+			logger.Info("[Callback] DeleteMessage error: %v", delErr)
 		}
 		// Send photo with caption and keyboard
 		// First try URL method (most reliable)
@@ -676,38 +676,38 @@ func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, tele
 		if caption == "" {
 			caption = resp.Text
 		}
-		log.Printf("[Callback] Sending photo via URL: %s with parse_mode=%s", resp.Photo, parseMode)
+		logger.Info("[Callback] Sending photo via URL: %s with parse_mode=%s", resp.Photo, parseMode)
 		if _, sendErr := telegram.SendPhotoWithParseMode(ctx.ChatID, resp.Photo, caption, parseMode, keyboard); sendErr != nil {
-			log.Printf("[Callback] SendPhoto URL method error: %v, trying proxy upload", sendErr)
+			logger.Info("[Callback] SendPhoto URL method error: %v, trying proxy upload", sendErr)
 			// Fallback to proxy upload if URL method fails
 			if _, fallbackErr := telegram.SendPhotoWithAuthAndParseMode(ctx.ChatID, resp.Photo, caption, parseMode, nil, keyboard); fallbackErr != nil {
-				log.Printf("[Callback] SendPhoto proxy upload also failed: %v", fallbackErr)
+				logger.Info("[Callback] SendPhoto proxy upload also failed: %v", fallbackErr)
 			}
 		}
 	} else if resp.Text != "" {
 		if resp.DeleteMessage {
 			// Delete current message and send new one
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
-				log.Printf("[Callback] DeleteMessage error: %v", delErr)
+				logger.Info("[Callback] DeleteMessage error: %v", delErr)
 			}
 			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
-				log.Printf("[Callback] SendMessage error: %v", sendErr)
+				logger.Info("[Callback] SendMessage error: %v", sendErr)
 			}
 		} else if resp.Edit {
 			// Edit existing message
 			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard); editErr != nil {
-				log.Printf("[Callback] EditMessage error: %v", editErr)
+				logger.Info("[Callback] EditMessage error: %v", editErr)
 			}
 		} else {
 			// Send new message
 			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
-				log.Printf("[Callback] SendMessage error: %v", sendErr)
+				logger.Info("[Callback] SendMessage error: %v", sendErr)
 			}
 		}
 	} else if resp.Keyboard != nil && resp.Text == "" {
 		// 仅更新键盘按钮，不修改文本 (状态融合按钮的原地刷新)
 		if _, editErr := telegram.EditMessageReplyMarkup(ctx.ChatID, ctx.MessageID, keyboard); editErr != nil {
-			log.Printf("[Callback] EditMessageReplyMarkup error: %v", editErr)
+			logger.Info("[Callback] EditMessageReplyMarkup error: %v", editErr)
 		}
 	}
 }
@@ -747,7 +747,7 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 	// Get AI recommendations based on user input
 	response, err := ai.GetAIRecommendations(text, 5)
 	if err != nil {
-		log.Printf("[AIChat] Failed to get AI recommendations: %v", err)
+		logger.Info("[AIChat] Failed to get AI recommendations: %v", err)
 		telegram.SendMessage(chatID, fmt.Sprintf("😓 AI 推荐暂时不可用: %v\n\n💡 请稍后再试或使用普通搜索", err), "", nil)
 		return
 	}

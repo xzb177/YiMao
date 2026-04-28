@@ -20,7 +20,7 @@
 
 ## ⚠️ 更新提示
 
-**更新前请务必查看 [更新指南](UPDATE.md) 以避免数据丢失！**
+**更新前请务必查看 [更新指南](docs/UPDATE.md) 以避免数据丢失！**
 
 ---
 
@@ -155,7 +155,7 @@ docker compose up -d
 
 ## 维护与更新
 
-> **重要：更新前请务必备份数据！** 详见 [更新指南](UPDATE.md)
+> **重要：更新前请务必备份数据！** 详见 [更新指南](docs/UPDATE.md)
 
 ### 快速更新
 
@@ -235,18 +235,18 @@ docker compose up -d
 ## 项目文档
 
 **部署与维护**
-- [UPDATE.md](UPDATE.md) — 更新指南（必读）
-- [DEPLOY.md](DEPLOY.md) — 部署说明
-- [DOCKER.md](DOCKER.md) — Docker 管理
+- [UPDATE.md](docs/UPDATE.md) — 更新指南（必读）
+- [DEPLOY.md](docs/DEPLOY.md) — 部署说明
+- [DOCKER.md](docs/DOCKER.md) — Docker 管理
 
 **功能说明**
-- [COMMANDS.md](COMMANDS.md) — 命令与回调说明
-- [FEATURES.md](FEATURES.md) — 功能特性
+- [COMMANDS.md](docs/COMMANDS.md) — 命令与回调说明
+- [FEATURES.md](docs/FEATURES.md) — 功能特性
 
 **开发文档**
-- [ARCHITECTURE.md](ARCHITECTURE.md) — 架构设计
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构设计
 - [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
-- [CONTRIBUTING.md](CONTRIBUTING.md) — 贡献指南
+- [CONTRIBUTING.md](docs/CONTRIBUTING.md) — 贡献指南
 
 ---
 

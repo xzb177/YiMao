@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/errors"
@@ -110,7 +110,7 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 		if id, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
 			moviepilotID = id
 			sess.Set("moviepilot_id", int(id))
-			log.Printf("[MyRequestsHandler] Loaded moviepilot_id=%d from userMapping for user %d", id, ctx.UserID)
+			logger.Info("[MyRequestsHandler] Loaded moviepilot_id=%d from userMapping for user %d", id, ctx.UserID)
 		}
 	}
 
@@ -527,7 +527,7 @@ func (h *MyRequestsHandler) handleReshare(ctx *callback.Context, itemID string, 
 	// Note: This requires MoviePilot API support
 	err := h.moviepilot.ReshareSubscription(itemID)
 	if err != nil {
-		log.Printf("[MyRequestsHandler] Reshare failed for item %s: %v", itemID, err)
+		logger.Info("[MyRequestsHandler] Reshare failed for item %s: %v", itemID, err)
 		return &callback.Response{
 			Text:        "❌ 重新搜索失败",
 			CallbackMsg: "操作失败",

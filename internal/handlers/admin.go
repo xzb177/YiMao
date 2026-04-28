@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -148,7 +148,7 @@ func (h *AdminHandler) handleApprove(ctx *callback.Context) (*callback.Response,
 	// Approve request
 	if h.moviepilot != nil {
 		// MoviePilot API for approving requests will be implemented
-		log.Printf("[AdminHandler] Approve request %d (MoviePilot)", requestID)
+		logger.Info("[AdminHandler] Approve request %d (MoviePilot)", requestID)
 	}
 
 	message := fmt.Sprintf("✅ 请求已批准\n\n请求ID: %d", requestID)
@@ -190,7 +190,7 @@ func (h *AdminHandler) handleDecline(ctx *callback.Context) (*callback.Response,
 	// Decline request
 	if h.moviepilot != nil {
 		// MoviePilot API for declining requests will be implemented
-		log.Printf("[AdminHandler] Decline request %d (MoviePilot)", requestID)
+		logger.Info("[AdminHandler] Decline request %d (MoviePilot)", requestID)
 	}
 
 	message := fmt.Sprintf("❌ 请求已拒绝\n\n请求ID: %d", requestID)
@@ -329,7 +329,7 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 	// Update issue status
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusFixed); err != nil {
-			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -349,7 +349,7 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
-			log.Printf("[AdminHandler] Notified user %d about issue #%d being fixed", issue.UserID, issue.ID)
+			logger.Info("[AdminHandler] Notified user %d about issue #%d being fixed", issue.UserID, issue.ID)
 		}
 	}
 
@@ -391,7 +391,7 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 	// Update issue status
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusProcessing); err != nil {
-			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -411,7 +411,7 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
-			log.Printf("[AdminHandler] Notified user %d about issue #%d being processed", issue.UserID, issue.ID)
+			logger.Info("[AdminHandler] Notified user %d about issue #%d being processed", issue.UserID, issue.ID)
 		}
 	}
 
@@ -453,7 +453,7 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 	// Update issue status
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusClosed); err != nil {
-			log.Printf("[AdminHandler] Failed to update issue status: %v", err)
+			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -473,14 +473,14 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 			kb.AddButton("⬅️ 返回主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
-			log.Printf("[AdminHandler] Notified user %d about issue #%d being closed", issue.UserID, issue.ID)
+			logger.Info("[AdminHandler] Notified user %d about issue #%d being closed", issue.UserID, issue.ID)
 		}
 	}
 
 	// Delete the message to remove keyboard, then send new confirmation message
 	go func() {
 		if err := h.telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); err != nil {
-			log.Printf("[AdminHandler] Failed to delete message: %v", err)
+			logger.Info("[AdminHandler] Failed to delete message: %v", err)
 		}
 		msg := services.NewMessageBuilder()
 		msg.Bold("🚫 问题已关闭").Newline()
@@ -501,11 +501,11 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 
 // handleAdminMenu handles admin menu callback
 func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[AdminHandler] handleAdminMenu called by user %d", ctx.UserID)
+	logger.Info("[AdminHandler] handleAdminMenu called by user %d", ctx.UserID)
 
 	// Check if user is admin
 	if !h.adminService.IsAdmin(ctx.UserID) {
-		log.Printf("[AdminHandler] User %d is not admin", ctx.UserID)
+		logger.Info("[AdminHandler] User %d is not admin", ctx.UserID)
 		return &callback.Response{
 			CallbackMsg: "你不是管理员",
 			ShowAlert:   true,
@@ -534,11 +534,11 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	}
 
 	// Media notification settings
-	log.Printf("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
+	logger.Info("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
 	if h.mediaNotificationSvc != nil {
-		log.Printf("[AdminHandler] Getting settings for user %d", ctx.UserID)
+		logger.Info("[AdminHandler] Getting settings for user %d", ctx.UserID)
 		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-		log.Printf("[AdminHandler] Got settings: daily=%v", settings.DailySummaryEnabled)
+		logger.Info("[AdminHandler] Got settings: daily=%v", settings.DailySummaryEnabled)
 
 		// 群组通知状态（全局开启）
 		msg.Bold("✅ 媒体库通知").Newline()
@@ -557,7 +557,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 
 		kb.AddButton("🔔 通知设置", "admin_notif_settings")
 		kb.NewRow()
-		log.Printf("[AdminHandler] Added notification settings button")
+		logger.Info("[AdminHandler] Added notification settings button")
 	}
 
 	// Admin management - only for root admin
@@ -579,7 +579,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	resultText := msg.Build()
-	log.Printf("[AdminHandler] Returning admin menu with %d chars text, isRoot=%v", len(resultText), isRoot)
+	logger.Info("[AdminHandler] Returning admin menu with %d chars text, isRoot=%v", len(resultText), isRoot)
 
 	return &callback.Response{
 		Text:      resultText,
@@ -1145,7 +1145,7 @@ func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callbac
 
 	// Remove admin
 	if err := h.adminService.RemoveAdmin(adminID); err != nil {
-		log.Printf("[AdminHandler] Failed to remove admin %d: %v", adminID, err)
+		logger.Info("[AdminHandler] Failed to remove admin %d: %v", adminID, err)
 		return &callback.Response{
 			CallbackMsg: "移除失败，请稍后再试",
 			ShowAlert:   true,
@@ -1272,7 +1272,7 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 		targetName = fmt.Sprintf("Admin_%d", targetID)
 	}
 	if err := h.adminService.AddAdmin(targetID, targetName); err != nil {
-		log.Printf("[AdminHandler] Failed to add admin: %v", err)
+		logger.Info("[AdminHandler] Failed to add admin: %v", err)
 		return &callback.Response{
 			Text: "❌ 添加失败，请稍后再试",
 		}, nil
@@ -1874,7 +1874,7 @@ func (h *AdminHandler) handleFeedbackPriority(ctx *callback.Context) (*callback.
 	}
 
 	if err := h.issueService.UpdatePriority(issueID, priority); err != nil {
-		log.Printf("[AdminHandler] Failed to update priority: %v", err)
+		logger.Info("[AdminHandler] Failed to update priority: %v", err)
 		return &callback.Response{
 			CallbackMsg: "更新失败",
 			ShowAlert:   true,
@@ -1942,7 +1942,7 @@ func (h *AdminHandler) handleFeedbackTemplate(ctx *callback.Context) (*callback.
 
 	_, err = h.issueService.AddReply(issueID, ctx.UserID, adminName, template.Content, "admin")
 	if err != nil {
-		log.Printf("[AdminHandler] Failed to add reply: %v", err)
+		logger.Info("[AdminHandler] Failed to add reply: %v", err)
 		return &callback.Response{
 			CallbackMsg: "回复失败",
 			ShowAlert:   true,

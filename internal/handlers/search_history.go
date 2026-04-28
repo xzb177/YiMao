@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/ui"
 	"emby-telegram-bot/pkg/errors"
@@ -31,7 +31,7 @@ func NewSearchHistoryHandler(
 
 // Handle handles search history callbacks
 func (h *SearchHistoryHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[SearchHistoryHandler] Handle: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
+	logger.Info("[SearchHistoryHandler] Handle: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
 
 	// 根据不同的 action 处理
 	switch ctx.Callback.Action {
@@ -61,28 +61,28 @@ func (h *SearchHistoryHandler) showHistoryMenu(ctx *callback.Context) (*callback
 	// 获取分组历史记录
 	groupedHistory, err := h.searchHistory.GetHistoryGrouped(ctx.UserID)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get grouped history: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get grouped history: %v", err)
 		return nil, errors.InternalErr(fmt.Sprintf("failed to get history: %v", err))
 	}
 
 	// 获取统计数据
 	stats, err := h.searchHistory.GetStats(ctx.UserID)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get stats: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get stats: %v", err)
 		stats = &services.SearchStats{Total: 0, Week: 0, Month: 0, Top5: []string{}}
 	}
 
 	// 获取热门搜索（可选）
 	popular, err := h.searchHistory.GetPopularSearches(5)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get popular: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get popular: %v", err)
 		popular = []services.PopularSearch{}
 	}
 
 	// 获取趋势（可选）
 	trends, err := h.searchHistory.GetSearchTrends(7)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get trends: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get trends: %v", err)
 		trends = []services.TrendItem{}
 	}
 
@@ -92,7 +92,7 @@ func (h *SearchHistoryHandler) showHistoryMenu(ctx *callback.Context) (*callback
 	// 构建键盘
 	history, err := h.searchHistory.GetHistory(ctx.UserID, 10)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get history for keyboard: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get history for keyboard: %v", err)
 		history = []services.SearchEntry{}
 	}
 
@@ -110,7 +110,7 @@ func (h *SearchHistoryHandler) showHistoryMenu(ctx *callback.Context) (*callback
 func (h *SearchHistoryHandler) showStats(ctx *callback.Context) (*callback.Response, error) {
 	stats, err := h.searchHistory.GetStats(ctx.UserID)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get stats: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get stats: %v", err)
 		return &callback.Response{
 			Text:        "❌ 获取统计失败",
 			CallbackMsg: "获取失败",
@@ -139,7 +139,7 @@ func (h *SearchHistoryHandler) showPopularSearches(ctx *callback.Context) (*call
 	limit := 10
 	popular, err := h.searchHistory.GetPopularSearches(limit)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get popular: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get popular: %v", err)
 		return &callback.Response{
 			Text:        "❌ 获取热门搜索失败",
 			CallbackMsg: "获取失败",
@@ -167,7 +167,7 @@ func (h *SearchHistoryHandler) showTrends(ctx *callback.Context) (*callback.Resp
 
 	trends, err := h.searchHistory.GetSearchTrends(days)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get trends: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get trends: %v", err)
 		return &callback.Response{
 			Text:        "❌ 获取搜索趋势失败",
 			CallbackMsg: "获取失败",
@@ -196,7 +196,7 @@ func (h *SearchHistoryHandler) showManageHistory(ctx *callback.Context) (*callba
 	// 获取历史记录
 	history, err := h.searchHistory.GetHistory(ctx.UserID, 0)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to get history: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to get history: %v", err)
 		return &callback.Response{
 			Text:        "❌ 获取历史失败",
 			CallbackMsg: "获取失败",
@@ -248,7 +248,7 @@ func (h *SearchHistoryHandler) deleteEntry(ctx *callback.Context) (*callback.Res
 	// 删除记录
 	err := h.searchHistory.DeleteEntry(ctx.UserID, index)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to delete entry: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to delete entry: %v", err)
 		return &callback.Response{
 			Text:        "❌ 删除失败",
 			CallbackMsg: "删除失败",
@@ -264,7 +264,7 @@ func (h *SearchHistoryHandler) deleteEntry(ctx *callback.Context) (*callback.Res
 func (h *SearchHistoryHandler) clearHistory(ctx *callback.Context) (*callback.Response, error) {
 	err := h.searchHistory.ClearHistory(ctx.UserID)
 	if err != nil {
-		log.Printf("[SearchHistoryHandler] Failed to clear history: %v", err)
+		logger.Info("[SearchHistoryHandler] Failed to clear history: %v", err)
 		return &callback.Response{
 			Text:        "❌ 清空失败",
 			CallbackMsg: "清空失败",
@@ -286,7 +286,7 @@ func (h *SearchHistoryHandler) handleSearchAction(ctx *callback.Context) (*callb
 		// 转义处理
 		query = unescapeString(query)
 
-		log.Printf("[SearchHistoryHandler] Quick search: %s", query)
+		logger.Info("[SearchHistoryHandler] Quick search: %s", query)
 
 		// 发送搜索结果（这里需要调用 SearchHandler）
 		// 由于 SearchHandler 是独立的，我们需要一个方法来触发搜索

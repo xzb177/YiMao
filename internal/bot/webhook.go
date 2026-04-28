@@ -3,12 +3,12 @@ package bot
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -31,7 +31,7 @@ func HandleWebhook(
 	// Parse update
 	var update types.TelegramUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
-		log.Printf("Failed to decode update: %v", err)
+		logger.Info("Failed to decode update: %v", err)
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
@@ -58,12 +58,12 @@ func HandleWebhookCallback(
 	adminService *services.AdminService,
 ) {
 	cb := update.CallbackQuery
-	log.Printf("[Webhook] Callback from user %d: %s", cb.From.ID, cb.Data)
+	logger.Info("[Webhook] Callback from user %d: %s", cb.From.ID, cb.Data)
 
 	// Parse callback
 	parsed, err := registry.Parser().Parse(cb.Data)
 	if err != nil {
-		log.Printf("Failed to parse callback: %v", err)
+		logger.Info("Failed to parse callback: %v", err)
 		telegram.AnswerCallback(cb.ID, "无效的请求", true)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -82,7 +82,7 @@ func HandleWebhookCallback(
 	// Get handler
 	handler, exists := registry.Get(parsed.Action)
 	if !exists {
-		log.Printf("No handler for action: %s", parsed.Action)
+		logger.Info("No handler for action: %s", parsed.Action)
 		telegram.AnswerCallback(cb.ID, "未知操作", true)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -105,7 +105,7 @@ func HandleWebhookCallback(
 	}
 
 	if err != nil {
-		log.Printf("Handler error: %v", err)
+		logger.Info("Handler error: %v", err)
 		if callbackMsg == "" {
 			callbackMsg = "操作失败"
 		}
@@ -117,7 +117,7 @@ func HandleWebhookCallback(
 	}
 
 	if err := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); err != nil {
-		log.Printf("[Callback] AnswerCallback error: %v", err)
+		logger.Info("[Callback] AnswerCallback error: %v", err)
 	}
 
 	// Send or edit message
@@ -140,9 +140,9 @@ func HandleWebhookCallback(
 			if caption == "" {
 				caption = resp.Text
 			}
-			log.Printf("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
+			logger.Info("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
 			if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
-				log.Printf("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
+				logger.Info("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
 				// Fallback to URL method if proxy upload fails
 				telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
 			}
@@ -175,7 +175,7 @@ func HandleWebhookMessage(
 		fmt.Fprint(w, "OK")
 		return
 	}
-	log.Printf("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
+	logger.Info("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
 
 	// 群聊处理 @mention 搜索
 	if msg.Chat.Type != "private" {
@@ -190,22 +190,22 @@ func HandleWebhookMessage(
 	// 私聊中处理所有功能
 
 	// 【关键修复】首先检查用户是否处于反馈流程中
-	log.Printf("[Webhook] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
+	logger.Info("[Webhook] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
 	if deps.FeedbackHandler != nil {
 		inFeedback := deps.FeedbackHandler.IsInFeedbackProcess(msg.From.ID)
-		log.Printf("[Webhook] User %d in feedback process: %v", msg.From.ID, inFeedback)
+		logger.Info("[Webhook] User %d in feedback process: %v", msg.From.ID, inFeedback)
 		if inFeedback {
 			// Check if user sent a photo with feedback
 			var photoFileID string
 			if msg.Photo != nil && len(msg.Photo) > 0 {
 				// Get the largest photo (last element in array)
 				photoFileID = msg.Photo[len(msg.Photo)-1].FileID
-				log.Printf("[Webhook] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
+				logger.Info("[Webhook] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
 			}
 
 			// 用户正在反馈流程中，处理反馈文本/图片并返回
 			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, msg.Text, photoFileID); err != nil {
-				log.Printf("[Webhook] Failed to handle feedback: %v", err)
+				logger.Info("[Webhook] Failed to handle feedback: %v", err)
 			}
 			w.WriteHeader(http.StatusOK)
 			fmt.Fprint(w, "OK")
@@ -216,9 +216,9 @@ func HandleWebhookMessage(
 		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
 		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
 			if _, exists := sess.Get("feedback_conversation_issue_id"); exists {
-				log.Printf("[Webhook] User %d is in feedback follow-up conversation", msg.From.ID)
+				logger.Info("[Webhook] User %d is in feedback follow-up conversation", msg.From.ID)
 				if err := deps.FeedbackHandler.HandleUserFollowUp(msg.From.ID, msg.Chat.ID, msg.Text); err != nil {
-					log.Printf("[Webhook] Failed to handle follow-up: %v", err)
+					logger.Info("[Webhook] Failed to handle follow-up: %v", err)
 				}
 				w.WriteHeader(http.StatusOK)
 				fmt.Fprint(w, "OK")
@@ -256,7 +256,7 @@ func HandleWebhookGroupChat(
 	tmdb *services.TMDBClient,
 ) {
 	// 群组中不响应任何消息，只用于接收入库通知
-	log.Printf("[WebhookGroupChat] ChatID=%d: Message ignored (groups are notifications only)", msg.Chat.ID)
+	logger.Info("[WebhookGroupChat] ChatID=%d: Message ignored (groups are notifications only)", msg.Chat.ID)
 	return
 }
 
@@ -299,7 +299,7 @@ func PerformSearch(
 	results, err := moviepilot.SearchMedia(query, 1)
 	if err != nil {
 		// Log full error for admin debugging (already done above)
-		log.Printf("[Search] Failed to search: %v", err)
+		logger.Info("[Search] Failed to search: %v", err)
 		// Send user-friendly message without technical details
 		text := "❌ 搜索失败：服务器暂时开小差了，请稍后再试。\n\n💡 如果持续失败，请联系管理员。"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)

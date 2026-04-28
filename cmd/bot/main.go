@@ -35,12 +35,12 @@ func main() {
 	logger.InitLogger(logLevel, cfg.LogPrefix, cfg.LogColor)
 	logger.Info("✅ Logger initialized: level=%s, prefix=%s, color=%v", cfg.LogLevel, cfg.LogPrefix, cfg.LogColor)
 
-	log.Printf("✅ Configuration loaded")
-	log.Printf("   MoviePilot: %s", cfg.MoviePilotURL)
-	log.Printf("   Data directory: %s", cfg.DataDir)
+	logger.Info("✅ Configuration loaded")
+	logger.Info("   MoviePilot: %s", cfg.MoviePilotURL)
+	logger.Info("   Data directory: %s", cfg.DataDir)
 
 	// Parse chat ID (optional - empty means no group notifications)
-	log.Println("🔍 Parsing chat ID...")
+	logger.Info("🔍 Parsing chat ID...")
 	chatID := int64(0)
 	if cfg.TelegramChatID != "" {
 		var err error
@@ -48,15 +48,15 @@ func main() {
 		if err != nil {
 			log.Fatalf("❌ Invalid Telegram Chat ID '%s': %v", cfg.TelegramChatID, err)
 		}
-		log.Printf("✅ Chat ID parsed: %d", chatID)
+		logger.Info("✅ Chat ID parsed: %d", chatID)
 	} else {
-		log.Println("ℹ️  No group chat ID configured (group notifications disabled)")
+		logger.Info("ℹ️  No group chat ID configured (group notifications disabled)")
 	}
 
 	// Initialize services
-	log.Println("🔧 Initializing services...")
+	logger.Info("🔧 Initializing services...")
 	deps := initServices(cfg, chatID)
-	log.Println("✅ Services initialized")
+	logger.Info("✅ Services initialized")
 
 	// Initialize Security Service
 	securityService := services.NewSecurityService()
@@ -72,7 +72,7 @@ func main() {
 		securityService.EnableAPIAuth(true)
 	}
 	securityService.Start()
-	log.Printf("✅ Security service initialized: rate_limit=%v, ip_blocking=%v",
+	logger.Info("✅ Security service initialized: rate_limit=%v, ip_blocking=%v",
 		cfg.EnableRateLimit, cfg.EnableIPBlocking)
 
 	// Initialize callback registry (creates handlers including FeedbackHandler)
@@ -104,7 +104,7 @@ func main() {
 
 	// Start server in background
 	go func() {
-		log.Printf("🌐 Server listening on %s:%s", cfg.ServerHost, cfg.ServerPort)
+		logger.Info("🌐 Server listening on %s:%s", cfg.ServerHost, cfg.ServerPort)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}
@@ -115,7 +115,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("🛑 Shutting down server...")
+	logger.Info("🛑 Shutting down server...")
 
 	// Stop security service
 	securityService.Stop()
@@ -125,10 +125,10 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Printf("❌ Server shutdown error: %v", err)
+		logger.Info("❌ Server shutdown error: %v", err)
 	}
 
-	log.Println("✅ Server stopped")
+	logger.Info("✅ Server stopped")
 }
 
 // Dependencies holds all service dependencies
@@ -158,45 +158,45 @@ type Dependencies struct {
 
 // initServices initializes all services
 func initServices(cfg *config.Config, chatID int64) *Dependencies {
-	log.Println("  [1/11] Creating basic clients and services...")
-	log.Println("    - TelegramClient...")
+	logger.Info("  [1/11] Creating basic clients and services...")
+	logger.Info("    - TelegramClient...")
 	telegramClient := services.NewTelegramClient(cfg.TelegramBotToken)
-	log.Println("    - ImageCache...")
+	logger.Info("    - ImageCache...")
 	imageCache := services.NewImageCache(cfg.DataDir, 7*24*time.Hour) // 7天缓存
 	telegramClient.SetImageCache(imageCache)
-	log.Println("    - MoviePilotClient...")
+	logger.Info("    - MoviePilotClient...")
 	moviepilotClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
 	if cfg.DownloadSavePath != "" {
-		log.Printf("    - Download save path configured: %s", cfg.DownloadSavePath)
+		logger.Info("    - Download save path configured: %s", cfg.DownloadSavePath)
 	}
 	// Set Emby config for checking media availability
 	if cfg.EmbyURL != "" && cfg.EmbyAPIKey != "" {
 		moviepilotClient.SetEmbyConfig(cfg.EmbyURL, cfg.EmbyAPIKey)
-		log.Printf("    - Emby integration enabled for completion status")
+		logger.Info("    - Emby integration enabled for completion status")
 	}
-	log.Println("    - SessionManager...")
+	logger.Info("    - SessionManager...")
 	sessMgr := session.NewManager(time.Duration(cfg.MaxSessionAge)*time.Hour, cfg.MaxSessions)
-	log.Println("    - UserMappingService...")
+	logger.Info("    - UserMappingService...")
 	userMappingService := services.NewUserMappingService(cfg.DataDir)
-	log.Println("    - BindingRequestService...")
+	logger.Info("    - BindingRequestService...")
 	bindingRequestService := services.NewBindingRequestService(cfg.DataDir)
-	log.Println("    - PreferencesService...")
+	logger.Info("    - PreferencesService...")
 	preferencesService := services.NewPreferencesService(cfg.DataDir)
-	log.Println("    - IssueService...")
+	logger.Info("    - IssueService...")
 	issueService := services.NewIssueService(cfg.DataDir)
-	log.Println("    - AdminService...")
+	logger.Info("    - AdminService...")
 	adminService := services.NewAdminService(cfg.DataDir)
-	log.Println("    - QuotaService...")
+	logger.Info("    - QuotaService...")
 	quotaService := services.NewQuotaService(cfg.DataDir, moviepilotClient)
-	log.Println("    - ReviewService...")
+	logger.Info("    - ReviewService...")
 	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
-	log.Println("    - Setting MoviePilotClient...")
+	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
-	log.Println("  [2/11] Basic services created")
+	logger.Info("  [2/11] Basic services created")
 
 	// Initialize Media Notification Service
 	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService, chatID)
-	log.Println("  [3/11] Media notification service initialized")
+	logger.Info("  [3/11] Media notification service initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)
 	adminsMap := adminService.GetAllAdmins()
@@ -207,9 +207,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		}
 	}
 	quotaService.SetAdminIDs(adminIDs)
-	log.Println("  [4/11] Admin IDs configured")
+	logger.Info("  [4/11] Admin IDs configured")
 
-	log.Println("  [5/11] Creating webhook service...")
+	logger.Info("  [5/11] Creating webhook service...")
 	webhookService := services.NewWebhookService(
 		telegramClient,
 		moviepilotClient,
@@ -223,39 +223,39 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		cfg.NotificationFormat,
 		cfg.TMDBAPIKey,
 	)
-	log.Println("  [6/11] Webhook service created")
+	logger.Info("  [6/11] Webhook service created")
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
-	log.Println("  [7/11] TMDB client created")
+	logger.Info("  [7/11] TMDB client created")
 
 	// Initialize Notification Service
-	log.Println("  [8/11] Creating notification service...")
+	logger.Info("  [8/11] Creating notification service...")
 	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
-	log.Println("  [9/11] Notification service created")
+	logger.Info("  [9/11] Notification service created")
 
 	// Initialize Scheduler for daily recommendations
-	log.Println("  [10/11] Creating scheduler...")
+	logger.Info("  [10/11] Creating scheduler...")
 	scheduler := services.NewScheduler(notificationService, moviepilotClient, adminService, userMappingService)
 	scheduler.SetDailyTime(9, 0) // 9 AM daily
 	scheduler.Start()
-	log.Println("  [11/11] Scheduler started")
+	logger.Info("  [11/11] Scheduler started")
 
 	// Initialize Search History Service (legacy, for backward compatibility)
 	searchHistory := services.NewSearchHistoryService(cfg.DataDir)
 
 	// Initialize Search History DB with cache (new, advanced features)
-	log.Println("    - SearchHistoryDB...")
+	logger.Info("    - SearchHistoryDB...")
 	searchHistoryDB, err := services.NewSearchHistoryDB(cfg.DataDir)
 	if err != nil {
-		log.Printf("⚠️  Failed to create SearchHistoryDB: %v", err)
+		logger.Info("⚠️  Failed to create SearchHistoryDB: %v", err)
 		searchHistoryDB = nil
 	} else {
-		log.Println("    - SearchHistoryDB initialized")
+		logger.Info("    - SearchHistoryDB initialized")
 	}
 
 	// Initialize Weekly Report Service
-	log.Println("    - WeeklyReportService...")
+	logger.Info("    - WeeklyReportService...")
 	var weeklyReportSvc *services.WeeklyReportService
 	if searchHistoryDB != nil {
 		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, telegramClient, tmdbClient)
@@ -265,7 +265,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[Cleanup] Panic recovered in cleanup routine: %v", r)
+				logger.Info("[Cleanup] Panic recovered in cleanup routine: %v", r)
 			}
 		}()
 		ticker := time.NewTicker(1 * time.Hour)
@@ -277,7 +277,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Start image cache cleanup routine (每天清理一次过期缓存)
 	imageCache.StartCleanupRoutine(24 * time.Hour)
 
-	log.Println("✅ Services initialized")
+	logger.Info("✅ Services initialized")
 
 	return &Dependencies{
 		Cfg:               cfg,
@@ -338,7 +338,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Set passkeys from config
 	if deps.Cfg.HDSkyPasskey != "" {
 		hdskyAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.HDSkyPasskey})
-		log.Println("    - HD-Sky passkey configured")
+		logger.Info("    - HD-Sky passkey configured")
 	}
 	// ZhuQue: support both legacy passkey and new RSS key format
 	if deps.Cfg.ZhuQueRSSKey1 != "" && deps.Cfg.ZhuQueRSSKey2 != "" {
@@ -346,10 +346,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 			"rss_key1": deps.Cfg.ZhuQueRSSKey1,
 			"rss_key2": deps.Cfg.ZhuQueRSSKey2,
 		})
-		log.Println("    - ZhuQue RSS new format configured")
+		logger.Info("    - ZhuQue RSS new format configured")
 	} else if deps.Cfg.ZhuQuePasskey != "" {
 		zhuqueAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.ZhuQuePasskey})
-		log.Println("    - ZhuQue passkey configured (legacy)")
+		logger.Info("    - ZhuQue passkey configured (legacy)")
 	}
 	// M-Team: support both legacy passkey and new RSS format
 	if deps.Cfg.MTeamRSSUID != "" && deps.Cfg.MTeamRSSSign != "" {
@@ -357,16 +357,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 			"rss_uid":  deps.Cfg.MTeamRSSUID,
 			"rss_sign": deps.Cfg.MTeamRSSSign,
 		})
-		log.Println("    - M-Team RSS new format configured")
+		logger.Info("    - M-Team RSS new format configured")
 	} else if deps.Cfg.MTeamPasskey != "" {
 		mteamAdapter.SetCredentials(map[string]string{"passkey": deps.Cfg.MTeamPasskey})
-		log.Println("    - M-Team passkey configured (legacy)")
+		logger.Info("    - M-Team passkey configured (legacy)")
 	}
 
 	siteRegistry.Register(hdskyAdapter)
 	siteRegistry.Register(zhuqueAdapter)
 	siteRegistry.Register(mteamAdapter)
-	log.Println("    - SiteRegistry initialized with 3 adapters (HD-Sky, ZhuQue, M-Team)")
+	logger.Info("    - SiteRegistry initialized with 3 adapters (HD-Sky, ZhuQue, M-Team)")
 
 	resourceHandler := handlers.NewResourceHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, siteRegistry)
 
@@ -374,9 +374,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	var searchHistoryHandler *handlers.SearchHistoryHandler
 	if deps.SearchHistoryDB != nil {
 		searchHistoryHandler = handlers.NewSearchHistoryHandler(deps.Telegram, deps.SearchHistoryDB)
-		log.Println("    - SearchHistoryHandler created")
+		logger.Info("    - SearchHistoryHandler created")
 	} else {
-		log.Println("    - SearchHistoryHandler skipped (DB not available)")
+		logger.Info("    - SearchHistoryHandler skipped (DB not available)")
 	}
 
 	// Inject dependencies
@@ -414,7 +414,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
-	log.Printf("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
+	logger.Info("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
 	registry.RegisterFunc("my_feedback", feedbackHandler.Handle)
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
@@ -477,7 +477,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		registry.RegisterFunc("search_popular_refresh", searchHistoryHandler.Handle)
 		registry.RegisterFunc("search_trends_refresh", searchHistoryHandler.Handle)
 		registry.RegisterFunc("search_input", searchHandler.Handle)
-		log.Println("    - Search History callbacks registered")
+		logger.Info("    - Search History callbacks registered")
 	}
 
 	// Weekly Report callbacks
@@ -512,7 +512,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Short format callback for resource pick (to stay under 64 bytes)
 	registry.RegisterFunc("rp", resourceHandler.Handle)
 
-	log.Println("✅ Callback handlers registered")
+	logger.Info("✅ Callback handlers registered")
 
 	// Build full dependencies with handlers included
 	resultDeps := &Dependencies{
@@ -553,9 +553,9 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommands(commands, ""); err != nil {
-		log.Printf("⚠️  Failed to set bot commands: %v", err)
+		logger.Info("⚠️  Failed to set bot commands: %v", err)
 	} else {
-		log.Println("✅ Bot command menu set")
+		logger.Info("✅ Bot command menu set")
 	}
 }
 
@@ -563,12 +563,12 @@ func setupBotCommands(telegram *services.TelegramClient) {
 func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 	if cfg.WebhookURL != "" {
 		if err := telegram.SetWebhook(cfg.WebhookURL); err != nil {
-			log.Printf("⚠️  Failed to set webhook: %v", err)
+			logger.Info("⚠️  Failed to set webhook: %v", err)
 		} else {
-			log.Printf("✅ Webhook set: %s", cfg.WebhookURL)
+			logger.Info("✅ Webhook set: %s", cfg.WebhookURL)
 		}
 	} else {
-		log.Println("⚠️  No webhook URL configured, deleting webhook to enable polling")
+		logger.Info("⚠️  No webhook URL configured, deleting webhook to enable polling")
 		telegram.DeleteWebhook()
 	}
 }

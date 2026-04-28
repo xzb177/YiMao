@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -41,7 +41,7 @@ func NewLinkHandler(
 func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	// Check if already linked
 	if moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
-		log.Printf("[LinkHandler] User %d already linked to moviepilot_id=%d", ctx.UserID, moviepilotID)
+		logger.Info("[LinkHandler] User %d already linked to moviepilot_id=%d", ctx.UserID, moviepilotID)
 		// Update session with the MoviePilot ID
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
 		sess.Set("moviepilot_id", int(moviepilotID))
@@ -52,7 +52,7 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		}, nil
 	}
 
-	log.Printf("[LinkHandler] User %d not linked yet", ctx.UserID)
+	logger.Info("[LinkHandler] User %d not linked yet", ctx.UserID)
 
 	// Show link instructions
 	return &callback.Response{
@@ -86,7 +86,7 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 
 	// If user doesn't exist, register automatically
 	if err != nil {
-		log.Printf("[LinkHandler] User not found, registering new user: %s", username)
+		logger.Info("[LinkHandler] User not found, registering new user: %s", username)
 
 		// Auto-register user in MoviePilot
 		email := username + "@local" // Placeholder email
@@ -96,9 +96,9 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 			return fmt.Errorf("注册失败: %w", err)
 		}
 
-		log.Printf("[LinkHandler] Successfully registered new user: %s (ID: %d)", username, user.ID)
+		logger.Info("[LinkHandler] Successfully registered new user: %s (ID: %d)", username, user.ID)
 	} else {
-		log.Printf("[LinkHandler] Found existing user %s (ID: %d)", username, user.ID)
+		logger.Info("[LinkHandler] Found existing user %s (ID: %d)", username, user.ID)
 	}
 
 	// Create binding request
@@ -126,7 +126,7 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 	sess := h.sessMgr.GetOrCreate(telegramID)
 	sess.Set("moviepilot_id", int(user.ID))
 
-	log.Printf("[LinkHandler] User %d linked to MoviePilot user %s (ID: %d)", telegramID, username, user.ID)
+	logger.Info("[LinkHandler] User %d linked to MoviePilot user %s (ID: %d)", telegramID, username, user.ID)
 
 	return nil
 }

@@ -1,10 +1,10 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -117,7 +117,7 @@ func (r *SiteRegistry) SearchAll(keyword string, page int) ([]TorrentResource, e
 		results, err := adapter.Search(keyword, page)
 		if err != nil {
 			// Log error but continue searching other sites
-			log.Printf("Error searching %s: %v\n", adapter.Name(), err)
+			logger.Info("Error searching %s: %v\n", adapter.Name(), err)
 			continue
 		}
 		allResults = append(allResults, results...)
@@ -176,7 +176,7 @@ func (a *SkyIslandAdapter) Search(keyword string, page int) ([]TorrentResource, 
 	// Build RSS URL with search parameter
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	log.Printf("[HD-Sky] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[HD-Sky] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	// Fetch RSS feed
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -241,9 +241,9 @@ func (a *SkyIslandAdapter) parseRSS(r io.Reader) ([]TorrentResource, error) {
 		if len(results) < maxShow {
 			maxShow = len(results)
 		}
-		log.Printf("[%s] Sample titles (first %d):\n", a.Name(), maxShow)
+		logger.Info("[%s] Sample titles (first %d):\n", a.Name(), maxShow)
 		for i := 0; i < maxShow; i++ {
-			log.Printf("  - %s\n", results[i].Title)
+			logger.Info("  - %s\n", results[i].Title)
 		}
 	}
 
@@ -318,17 +318,17 @@ func (a *ZhuQueAdapter) Search(keyword string, page int) ([]TorrentResource, err
 	if a.rssKey1 != "" && a.rssKey2 != "" {
 		// New format: https://zhuque.in/api/torrent/rss/{key1}/{key2}
 		rssURL = fmt.Sprintf("%s/%s/%s", a.rssURL, a.rssKey1, a.rssKey2)
-		log.Printf("[ZhuQue] Using new RSS format\n")
+		logger.Info("[ZhuQue] Using new RSS format\n")
 	} else if a.passkey != "" {
 		// Legacy format: https://zhuque.in/torrentrss.php?passkey=xxx
 		rssURL = fmt.Sprintf("https://zhuque.in/torrentrss.php?passkey=%s&rows=100&search=%s",
 			a.passkey, url.QueryEscape(keyword))
-		log.Printf("[ZhuQue] Using legacy RSS format\n")
+		logger.Info("[ZhuQue] Using legacy RSS format\n")
 	} else {
 		return nil, fmt.Errorf("no RSS credentials configured")
 	}
 
-	log.Printf("[ZhuQue] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+	logger.Info("[ZhuQue] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
 
 	// Make HTTP request
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -380,9 +380,9 @@ func (a *ZhuQueAdapter) Search(keyword string, page int) ([]TorrentResource, err
 		if len(results) < maxShow {
 			maxShow = len(results)
 		}
-		log.Printf("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
+		logger.Info("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
 		for i := 0; i < maxShow; i++ {
-			log.Printf("  - %s\n", results[i].Title)
+			logger.Info("  - %s\n", results[i].Title)
 		}
 	}
 
@@ -456,7 +456,7 @@ func (a *ZhuQueAdapter) searchAPI(keyword string, page int) ([]TorrentResource, 
 func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	log.Printf("[ZhuQue] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[ZhuQue] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -576,17 +576,17 @@ func (a *MTeamAdapter) Search(keyword string, page int) ([]TorrentResource, erro
 		// New format: https://rss.m-team.cc/api/rss/fetch?uid=xxx&sign=xxx&pageSize=100
 		rssURL = fmt.Sprintf("%s?uid=%s&sign=%s&pageSize=100&dl=1&tkeys=ttitle,tcat,tsmalldescr,tuploader,tsize",
 			a.rssBaseURL, a.rssUID, a.rssSign)
-		log.Printf("[M-Team] Using new RSS format\n")
+		logger.Info("[M-Team] Using new RSS format\n")
 	} else if a.passkey != "" {
 		// Legacy format: https://kp.m-team.cc/torrentrss.php?passkey=xxx
 		rssURL = fmt.Sprintf("%s?passkey=%s&rows=100&search=%s",
 			a.rssURL, a.passkey, url.QueryEscape(keyword))
-		log.Printf("[M-Team] Using legacy RSS format\n")
+		logger.Info("[M-Team] Using legacy RSS format\n")
 	} else {
 		return nil, fmt.Errorf("no RSS credentials configured")
 	}
 
-	log.Printf("[M-Team] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+	logger.Info("[M-Team] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
 
 	// Make HTTP request
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -638,9 +638,9 @@ func (a *MTeamAdapter) Search(keyword string, page int) ([]TorrentResource, erro
 		if len(results) < maxShow {
 			maxShow = len(results)
 		}
-		log.Printf("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
+		logger.Info("[%s] Found %d results, sample titles (first %d):\n", a.Name(), len(results), maxShow)
 		for i := 0; i < maxShow; i++ {
-			log.Printf("  - %s\n", results[i].Title)
+			logger.Info("  - %s\n", results[i].Title)
 		}
 	}
 
@@ -714,7 +714,7 @@ func (a *MTeamAdapter) searchAPI(keyword string, page int) ([]TorrentResource, e
 func (a *MTeamAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	log.Printf("[M-Team] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[M-Team] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -783,11 +783,11 @@ type RSSItem struct {
 // parseRSSItems parses RSS items from a reader
 // Supports both standard RSS and Atom formats
 func parseRSSItems(data string) ([]RSSItem, error) {
-	log.Printf("[RSS] Parsing %d bytes of data\n", len(data))
+	logger.Info("[RSS] Parsing %d bytes of data\n", len(data))
 
 	// Check if data looks like HTML (error response)
 	if strings.HasPrefix(data, "<!doctype html>") || strings.HasPrefix(data, "<!DOCTYPE html>") || strings.HasPrefix(data, "<html>") {
-		log.Printf("[RSS] Got HTML response instead of RSS - RSS URL may be incorrect\n")
+		logger.Info("[RSS] Got HTML response instead of RSS - RSS URL may be incorrect\n")
 		return []RSSItem{}, nil
 	}
 
@@ -799,14 +799,14 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 		}
 		preview := data[:previewLen]
 		if strings.Contains(preview, "<?xml") || strings.Contains(preview, "<rss") {
-			log.Printf("[RSS] Looks like valid RSS feed\n")
+			logger.Info("[RSS] Looks like valid RSS feed\n")
 		}
 		// Show sample of RSS structure
 		if strings.Contains(data, "<item>") {
 			itemStart := strings.Index(data, "<item>")
 			if itemStart > 0 && len(data) > itemStart+800 {
 				itemSample := data[itemStart:itemStart+800]
-				log.Printf("[RSS] Sample item structure:\n%s\n", itemSample)
+				logger.Info("[RSS] Sample item structure:\n%s\n", itemSample)
 			}
 		}
 	}
@@ -856,7 +856,7 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 				}
 				// Unescape HTML entities
 				currentItem.Title = htmlUnescape(currentItem.Title)
-				log.Printf("[RSS] Parsed title: %s\n", currentItem.Title)
+				logger.Info("[RSS] Parsed title: %s\n", currentItem.Title)
 			}
 			continue
 		}
@@ -935,7 +935,7 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 		}
 	}
 
-	log.Printf("[RSS] Parsed %d items from feed\n", len(items))
+	logger.Info("[RSS] Parsed %d items from feed\n", len(items))
 	return items, nil
 }
 
@@ -1098,7 +1098,7 @@ func extractSeedersPeers(desc string) (seeders, peers int) {
 
 // filterByKeyword filters results by keyword, keeping only matching results
 func filterByKeyword(results []TorrentResource, keyword string) []TorrentResource {
-	log.Printf("[Filter] Filtering %d results by keyword: %s\n", len(results), keyword)
+	logger.Info("[Filter] Filtering %d results by keyword: %s\n", len(results), keyword)
 
 	// Show sample titles for debugging
 	if len(results) > 0 {
@@ -1106,9 +1106,9 @@ func filterByKeyword(results []TorrentResource, keyword string) []TorrentResourc
 		if len(results) < maxShow {
 			maxShow = len(results)
 		}
-		log.Printf("[Filter] Sample titles (first %d):\n", maxShow)
+		logger.Info("[Filter] Sample titles (first %d):\n", maxShow)
 		for i := 0; i < maxShow; i++ {
-			log.Printf("  - %s\n", results[i].Title)
+			logger.Info("  - %s\n", results[i].Title)
 		}
 	}
 
@@ -1145,6 +1145,6 @@ func filterByKeyword(results []TorrentResource, keyword string) []TorrentResourc
 		}
 	}
 
-	log.Printf("[Filter] After filtering: %d results\n", len(filtered))
+	logger.Info("[Filter] After filtering: %d results\n", len(filtered))
 	return filtered
 }

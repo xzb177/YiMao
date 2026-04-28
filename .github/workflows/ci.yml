@@ -37,6 +37,12 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
       - name: Go test
         run: go test ./...
 

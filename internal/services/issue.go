@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -112,7 +112,7 @@ func (s *IssueService) load() error {
 		}
 	}
 
-	log.Printf("[IssueService] Loaded %d issues", len(s.issues))
+	logger.Info("[IssueService] Loaded %d issues", len(s.issues))
 	return nil
 }
 
@@ -162,7 +162,7 @@ func (s *IssueService) CreateIssueWithPhoto(userID int64, userName, title, descr
 		return nil, err
 	}
 
-	log.Printf("[IssueService] Created issue #%d by user %d", issue.ID, userID)
+	logger.Info("[IssueService] Created issue #%d by user %d", issue.ID, userID)
 	return issue, nil
 }
 
@@ -284,7 +284,7 @@ func (s *IssueService) cleanupOldIssues() int {
 
 	if removed > 0 {
 		s.save()
-		log.Printf("[IssueService] Cleaned up %d old issues", removed)
+		logger.Info("[IssueService] Cleaned up %d old issues", removed)
 	}
 
 	return removed

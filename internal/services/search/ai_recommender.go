@@ -3,10 +3,10 @@ package search
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"emby-telegram-bot/ai"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 )
 
@@ -34,7 +34,7 @@ type MoodRecommendation struct {
 
 // GetMoodRecommendations returns AI-powered mood-based recommendations.
 func (r *AIRecommender) GetMoodRecommendations(mood string, count int) ([]services.SearchResult, error) {
-	log.Printf("[AIRecommender] Calling AI mood recommendation: mood=%s", mood)
+	logger.Info("[AIRecommender] Calling AI mood recommendation: mood=%s", mood)
 
 	// Use a channel to get results with timeout
 	type aiResult struct {
@@ -53,17 +53,17 @@ func (r *AIRecommender) GetMoodRecommendations(mood string, count int) ([]servic
 	select {
 	case res := <-resultChan:
 		if res.err != nil {
-			log.Printf("[AIRecommender] AI recommendation failed: %v", res.err)
+			logger.Info("[AIRecommender] AI recommendation failed: %v", res.err)
 			return r.getTMDBBasedRecommendations(mood, count)
 		}
-		log.Printf("[AIRecommender] AI returned %d recommendations", len(res.results))
+		logger.Info("[AIRecommender] AI returned %d recommendations", len(res.results))
 
 		// Convert AI results to TMDB search results for display
 		var results []services.SearchResult
 		for _, item := range res.results {
 			searchResult, err := r.searchByTitleAndYear(item.Title, item.Year, item.MediaType)
 			if err != nil {
-				log.Printf("[AIRecommender] Failed to find TMDB entry for %s: %v", item.Title, err)
+				logger.Info("[AIRecommender] Failed to find TMDB entry for %s: %v", item.Title, err)
 				continue
 			}
 			results = append(results, searchResult...)
@@ -85,7 +85,7 @@ func (r *AIRecommender) GetMoodRecommendations(mood string, count int) ([]servic
 		return results, nil
 
 	case <-time.After(5 * time.Second):
-		log.Printf("[AIRecommender] AI timeout after 5s, using fallback")
+		logger.Info("[AIRecommender] AI timeout after 5s, using fallback")
 		return r.getTMDBBasedRecommendations(mood, count)
 	}
 }

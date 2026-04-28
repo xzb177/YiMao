@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"sync"
@@ -62,28 +62,28 @@ func NewUserMappingService(dataDir string) *UserMappingService {
 
 // load loads user mappings from file
 func (s *UserMappingService) load() error {
-	log.Printf("[UserMapping] load: acquiring lock...")
+	logger.Info("[UserMapping] load: acquiring lock...")
 	s.mu.Lock()
-	log.Printf("[UserMapping] load: lock acquired, reading file: %s", s.mappingsFile)
+	logger.Info("[UserMapping] load: lock acquired, reading file: %s", s.mappingsFile)
 
 	data, err := os.ReadFile(s.mappingsFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("[UserMapping] File not exist, creating empty file")
+			logger.Info("[UserMapping] File not exist, creating empty file")
 			// Create empty file - use saveLocked since we already hold the lock
 			if saveErr := s.saveLocked(); saveErr != nil {
-				log.Printf("[UserMapping] ERROR creating file: %v", saveErr)
+				logger.Info("[UserMapping] ERROR creating file: %v", saveErr)
 				s.mu.Unlock()
 				return saveErr
 			}
 			s.mu.Unlock()
 			return nil
 		}
-		log.Printf("[UserMapping] ERROR reading file: %v", err)
+		logger.Info("[UserMapping] ERROR reading file: %v", err)
 		s.mu.Unlock()
 		return err
 	}
-	log.Printf("[UserMapping] File read: %d bytes", len(data))
+	logger.Info("[UserMapping] File read: %d bytes", len(data))
 
 	// Try new format first
 	var fileData struct {
@@ -95,7 +95,7 @@ func (s *UserMappingService) load() error {
 		s.mappings = fileData.UserMappings
 		s.usernames = fileData.Usernames
 		s.reverseMap = fileData.ReverseMappings
-		log.Printf("[UserMapping] Loaded %d user mappings (new format)", len(s.mappings))
+		logger.Info("[UserMapping] Loaded %d user mappings (new format)", len(s.mappings))
 		s.mu.Unlock()
 		return nil
 	}
@@ -106,7 +106,7 @@ func (s *UserMappingService) load() error {
 	}
 	if err := json.Unmarshal(data, &altData); err == nil && altData.Mappings != nil {
 		s.mappings = altData.Mappings
-		log.Printf("[UserMapping] Loaded %d user mappings (alt format with 'mappings' key)", len(s.mappings))
+		logger.Info("[UserMapping] Loaded %d user mappings (alt format with 'mappings' key)", len(s.mappings))
 		s.mu.Unlock()
 		return nil
 	}
@@ -115,12 +115,12 @@ func (s *UserMappingService) load() error {
 	var legacyData map[string]int64
 	if err := json.Unmarshal(data, &legacyData); err == nil {
 		s.mappings = legacyData
-		log.Printf("[UserMapping] Loaded %d user mappings (legacy format)", len(s.mappings))
+		logger.Info("[UserMapping] Loaded %d user mappings (legacy format)", len(s.mappings))
 		s.mu.Unlock()
 		return nil
 	}
 
-	log.Printf("[UserMapping] Failed to load user mappings: %v", err)
+	logger.Info("[UserMapping] Failed to load user mappings: %v", err)
 	s.mu.Unlock()
 	return nil
 }
@@ -144,12 +144,12 @@ func (s *UserMappingService) save() error {
 		return err
 	}
 
-	log.Printf("[UserMapping] Writing to file: %s (%d bytes)", s.mappingsFile, len(jsonData))
+	logger.Info("[UserMapping] Writing to file: %s (%d bytes)", s.mappingsFile, len(jsonData))
 	writeErr := os.WriteFile(s.mappingsFile, jsonData, 0644)
 	if writeErr != nil {
-		log.Printf("[UserMapping] ERROR writing file: %v", writeErr)
+		logger.Info("[UserMapping] ERROR writing file: %v", writeErr)
 	} else {
-		log.Printf("[UserMapping] File saved successfully")
+		logger.Info("[UserMapping] File saved successfully")
 	}
 
 	return writeErr
@@ -187,7 +187,7 @@ func (s *UserMappingService) scheduleSave() {
 			s.savePending = true
 			s.mu.Unlock()
 			if err := s.save(); err != nil {
-				log.Printf("[UserMapping] Failed to save: %v", err)
+				logger.Info("[UserMapping] Failed to save: %v", err)
 			}
 			s.mu.Lock()
 			s.savePending = false
@@ -209,12 +209,12 @@ func (s *UserMappingService) GetJellyseerrUserID(telegramID int64) (int64, bool)
 
 // GetMoviePilotUserID gets MoviePilot user ID for a Telegram user
 func (s *UserMappingService) GetMoviePilotUserID(telegramID int64) (int64, bool) {
-	log.Printf("[UserMapping] GetMoviePilotUserID: acquiring lock for telegramID=%d", telegramID)
+	logger.Info("[UserMapping] GetMoviePilotUserID: acquiring lock for telegramID=%d", telegramID)
 	s.mu.RLock()
-	log.Printf("[UserMapping] GetMoviePilotUserID: lock acquired for telegramID=%d", telegramID)
+	logger.Info("[UserMapping] GetMoviePilotUserID: lock acquired for telegramID=%d", telegramID)
 	defer func() {
 		s.mu.RUnlock()
-		log.Printf("[UserMapping] GetMoviePilotUserID: lock released for telegramID=%d", telegramID)
+		logger.Info("[UserMapping] GetMoviePilotUserID: lock released for telegramID=%d", telegramID)
 	}()
 
 	moviepilotID, exists := s.mappings[fmt.Sprintf("%d", telegramID)]
@@ -378,7 +378,7 @@ func (s *BindingRequestService) load() error {
 		}
 	}
 
-	log.Printf("[BindingRequest] Loaded %d binding requests", len(s.requests))
+	logger.Info("[BindingRequest] Loaded %d binding requests", len(s.requests))
 	return nil
 }
 
@@ -489,7 +489,7 @@ func (s *BindingRequestService) CleanupExpiredRequests() int {
 		if req.Status == "pending" {
 			createdAt, err := strconv.ParseInt(req.CreatedAt, 10, 64)
 			if err != nil {
-				log.Printf("[UserMapping] Failed to parse CreatedAt for request %s: %v", id, err)
+				logger.Info("[UserMapping] Failed to parse CreatedAt for request %s: %v", id, err)
 				continue // Skip this request if timestamp is invalid
 			}
 			age := now - createdAt

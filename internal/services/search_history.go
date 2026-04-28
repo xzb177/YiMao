@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -56,7 +56,7 @@ func (s *SearchHistoryService) load() error {
 		return err
 	}
 
-	log.Printf("[SearchHistory] Loaded history for %d users", len(s.history))
+	logger.Info("[SearchHistory] Loaded history for %d users", len(s.history))
 	return nil
 }
 
@@ -115,7 +115,7 @@ func (s *SearchHistoryService) AddSearch(telegramID int64, query string) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[SearchHistory] Panic in async save: %v", r)
+				logger.Info("[SearchHistory] Panic in async save: %v", r)
 			}
 		}()
 		s.saveAsync(historyCopy)
@@ -126,12 +126,12 @@ func (s *SearchHistoryService) AddSearch(telegramID int64, query string) {
 func (s *SearchHistoryService) saveAsync(history map[int64][]SearchEntry) {
 	data, err := json.MarshalIndent(history, "", "  ")
 	if err != nil {
-		log.Printf("[SearchHistory] Failed to marshal: %v", err)
+		logger.Info("[SearchHistory] Failed to marshal: %v", err)
 		return
 	}
 
 	if err := os.WriteFile(s.historyFile, data, 0644); err != nil {
-		log.Printf("[SearchHistory] Failed to save: %v", err)
+		logger.Info("[SearchHistory] Failed to save: %v", err)
 	}
 }
 

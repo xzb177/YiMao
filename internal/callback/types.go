@@ -1,9 +1,9 @@
 package callback
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -464,7 +464,7 @@ func (r *Registry) Match(pattern string, data string) bool {
 		matched, err := regexp.MatchString(pattern, data)
 		if err != nil {
 			// Invalid regex pattern - log and treat as no match
-			log.Printf("[Callback] Invalid regex pattern: %s, error: %v", pattern, err)
+			logger.Info("[Callback] Invalid regex pattern: %s, error: %v", pattern, err)
 			return false
 		}
 		return matched

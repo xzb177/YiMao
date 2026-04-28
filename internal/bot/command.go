@@ -2,10 +2,10 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"emby-telegram-bot/internal/config"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/ui"
 	"emby-telegram-bot/pkg/types"
@@ -22,14 +22,14 @@ func HandleCommand(
 	quotaService *services.QuotaService,
 	userMapping *services.UserMappingService,
 ) {
-	log.Printf("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
+	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
 	parts := strings.Fields(msg.Text)
 	if len(parts) == 0 {
 		return
 	}
 
 	command := parts[0]
-	log.Printf("[Command] Parsed command: %s", command)
+	logger.Info("[Command] Parsed command: %s", command)
 
 	switch command {
 	case "/start":
@@ -62,13 +62,13 @@ func HandleCommand(
 // HandleLinkCommand handles /link command with optional username and password
 // Also supports direct credential input: "username password" (without /link prefix)
 func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping *services.UserMappingService) {
-	log.Printf("[LinkCommand] Processing /link command from user %d: %s", msg.From.ID, msg.Text)
+	logger.Info("[LinkCommand] Processing /link command from user %d: %s", msg.From.ID, msg.Text)
 	parts := strings.Fields(msg.Text)
-	log.Printf("[LinkCommand] Parsed parts: %v (len=%d)", parts, len(parts))
+	logger.Info("[LinkCommand] Parsed parts: %v (len=%d)", parts, len(parts))
 
 	// Check if user is already linked
 	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
-		log.Printf("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
+		logger.Info("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
 		text := fmt.Sprintf("✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号 (ID: %d)\n\n如需更换账号，请先联系管理员解绑", mpID)
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
@@ -82,7 +82,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 	// Extract username and password
 	if len(parts) <= startIndex {
-		log.Printf("[LinkCommand] No credentials provided, showing help")
+		logger.Info("[LinkCommand] No credentials provided, showing help")
 		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下格式绑定：\n\n/link 用户名 密码\n\n或直接输入：\n用户名 密码\n\n示例：\n/link 2879681674 mypassword\n或：\n2879681674 mypassword"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
@@ -94,12 +94,12 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		password = strings.Join(parts[startIndex+1:], " ")
 	}
 	// 不记录密码和敏感信息，只记录操作类型
-	log.Printf("[LinkCommand] Processing link request for user")
+	logger.Info("[LinkCommand] Processing link request for user")
 
 	// Validate and sanitize inputs
 	sanitizedUsername, err := validation.SanitizeUsername(username)
 	if err != nil {
-		log.Printf("[LinkCommand] Invalid username: %v", err)
+		logger.Info("[LinkCommand] Invalid username: %v", err)
 		text := "❌ 用户名格式无效"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
@@ -107,20 +107,20 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 	sanitizedPassword, err := validation.SanitizePassword(password)
 	if err != nil {
-		log.Printf("[LinkCommand] Invalid password: %v", err)
+		logger.Info("[LinkCommand] Invalid password: %v", err)
 		text := "❌ 密码格式无效"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
-	log.Printf("[LinkCommand] Sanitized inputs: %s / ***", sanitizedUsername)
+	logger.Info("[LinkCommand] Sanitized inputs: %s / ***", sanitizedUsername)
 
 	// Verify credentials with MoviePilot
 	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
-	log.Printf("[LinkCommand] Calling Authenticate with MoviePilot URL: %s", cfg.MoviePilotURL)
+	logger.Info("[LinkCommand] Calling Authenticate with MoviePilot URL: %s", cfg.MoviePilotURL)
 	userID, err := mpClient.Authenticate(sanitizedUsername, sanitizedPassword)
 	if err != nil {
-		log.Printf("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
+		logger.Info("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
 		text := "❌ 绑定失败：用户名或密码错误"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
@@ -128,27 +128,27 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 	// Check if userID is valid (not 0)
 	if userID == 0 {
-		log.Printf("[LinkCommand] Authentication returned invalid userID 0 for %s", sanitizedUsername)
+		logger.Info("[LinkCommand] Authentication returned invalid userID 0 for %s", sanitizedUsername)
 		text := "❌ 绑定失败：无法获取用户ID，请稍后重试"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
-	log.Printf("[LinkCommand] Authentication successful, userID=%d", userID)
+	logger.Info("[LinkCommand] Authentication successful, userID=%d", userID)
 
 	// Save mapping using the provided userMapping service
-	log.Printf("[LinkCommand] Calling AddMapping...")
+	logger.Info("[LinkCommand] Calling AddMapping...")
 	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
-		log.Printf("[LinkCommand] Failed to save mapping: %v", err)
+		logger.Info("[LinkCommand] Failed to save mapping: %v", err)
 		text := "❌ 绑定失败：无法保存映射"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
 
-	log.Printf("[LinkCommand] AddMapping completed, sending success message")
+	logger.Info("[LinkCommand] AddMapping completed, sending success message")
 	text := "✅ 绑定成功\n\n您现在可以使用求片功能了"
 	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
-		log.Printf("[LinkCommand] Failed to send success message: %v", err)
+		logger.Info("[LinkCommand] Failed to send success message: %v", err)
 	}
 }
 
@@ -188,16 +188,16 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 
 // HandleQuotaCommand handles /quota command
 func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, quotaService *services.QuotaService) {
-	log.Printf("[QuotaCommand] Handling /quota for user %d, quotaService=%v", msg.From.ID, quotaService != nil)
+	logger.Info("[QuotaCommand] Handling /quota for user %d, quotaService=%v", msg.From.ID, quotaService != nil)
 
 	if quotaService == nil {
-		log.Printf("[QuotaCommand] QuotaService is nil!")
+		logger.Info("[QuotaCommand] QuotaService is nil!")
 		telegram.SendMessage(msg.Chat.ID, "❌ 配额服务未启用", "", nil)
 		return
 	}
 
 	userID := msg.From.ID
 	quotaText := quotaService.GetQuotaText(userID)
-	log.Printf("[QuotaCommand] Sending quota text to user %d", userID)
+	logger.Info("[QuotaCommand] Sending quota text to user %d", userID)
 	telegram.SendMessage(msg.Chat.ID, quotaText, "", nil)
 }

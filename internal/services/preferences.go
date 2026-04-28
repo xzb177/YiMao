@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -88,7 +88,7 @@ func (s *PreferencesService) load() error {
 		s.prefs[id] = pref
 	}
 
-	log.Printf("[Preferences] Loaded %d user preferences", len(s.prefs))
+	logger.Info("[Preferences] Loaded %d user preferences", len(s.prefs))
 	return nil
 }
 
@@ -231,7 +231,7 @@ func (s *PreferencesService) ShouldNotify(telegramID int64, prefType PreferenceT
 		}
 		// If time parsing fails, log and continue without quiet time check
 		if err != nil {
-			log.Printf("[Preferences] Failed to parse quiet start time '%s': %v", pref.QuietStart, err)
+			logger.Info("[Preferences] Failed to parse quiet start time '%s': %v", pref.QuietStart, err)
 		}
 	}
 

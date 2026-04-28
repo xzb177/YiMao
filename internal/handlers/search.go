@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	searchsvc "emby-telegram-bot/internal/services/search"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
@@ -61,7 +61,7 @@ func (h *SearchHandler) SetSearchHistoryDB(db *services.SearchHistoryDB) {
 }
 
 func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[SearchHandler] Handle: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
+	logger.Info("[SearchHandler] Handle: action=%s, params=%v", ctx.Callback.Action, ctx.Callback.Params)
 
 	// Check if this is a search result selection
 	if tmdbIDStr, hasID := ctx.Callback.Params["id"]; hasID {
@@ -84,7 +84,7 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Check if this is a search history query
 	if query, hasQuery := ctx.Callback.Params["query"]; hasQuery {
-		log.Printf("[SearchHandler] Quick search from history: query=%s", query)
+		logger.Info("[SearchHandler] Quick search from history: query=%s", query)
 		h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
 		return &callback.Response{
 			CallbackMsg: "搜索中...",
@@ -94,10 +94,10 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// Check if clearing history
 	if _, hasClear := ctx.Callback.Params["clear_history"]; hasClear {
-		log.Printf("[SearchHandler] Clearing search history for user %d", ctx.UserID)
+		logger.Info("[SearchHandler] Clearing search history for user %d", ctx.UserID)
 		if h.searchHistory != nil {
 			if err := h.searchHistory.ClearHistory(ctx.UserID); err != nil {
-				log.Printf("[SearchHandler] Failed to clear history: %v", err)
+				logger.Info("[SearchHandler] Failed to clear history: %v", err)
 			}
 		}
 		kb := services.NewKeyboardBuilder()
@@ -114,7 +114,7 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 // HandleSearchQuery handles a text search query
 func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query string) error {
-	log.Printf("[SearchHandler] Search query: %s", query)
+	logger.Info("[SearchHandler] Search query: %s", query)
 
 	query = strings.TrimSpace(query)
 	if query == "" {
@@ -124,18 +124,18 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	// Add to search history - prefer DB version (new), fallback to legacy
 	if h.searchHistoryDB != nil {
 		h.searchHistoryDB.AddSearch(userID, query)
-		log.Printf("[SearchHandler] Search added to SearchHistoryDB: userID=%d, query=%s", userID, query)
+		logger.Info("[SearchHandler] Search added to SearchHistoryDB: userID=%d, query=%s", userID, query)
 	} else if h.searchHistory != nil {
 		h.searchHistory.AddSearch(userID, query)
-		log.Printf("[SearchHandler] Search added to SearchHistory (legacy): userID=%d, query=%s", userID, query)
+		logger.Info("[SearchHandler] Search added to SearchHistory (legacy): userID=%d, query=%s", userID, query)
 	} else {
-		log.Printf("[SearchHandler] WARNING: No search history service available, query not saved: %s", query)
+		logger.Info("[SearchHandler] WARNING: No search history service available, query not saved: %s", query)
 	}
 
 	// Perform search
 	results, err := h.moviepilot.SearchMedia(query, 1)
 	if err != nil {
-		log.Printf("[SearchHandler] Search failed: %v", err)
+		logger.Info("[SearchHandler] Search failed: %v", err)
 		h.telegram.SendMessage(chatID, "❌ 搜索服务暂时不可用，请稍后再试", "", nil)
 		return err
 	}
@@ -148,7 +148,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	if len(results.Results) == 0 {
 		fallbackResults, fallbackQuery, fbErr := h.trySearchFallback(query)
 		if fbErr != nil {
-			log.Printf("[SearchHandler] Fallback search failed: %v", fbErr)
+			logger.Info("[SearchHandler] Fallback search failed: %v", fbErr)
 		}
 		if fallbackResults != nil && len(fallbackResults) > 0 {
 			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults})
@@ -192,13 +192,13 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 		mediaType = typeStr
 	}
 
-	log.Printf("[SearchHandler] handleSelect: id=%s, type=%s", tmdbIDStr, mediaType)
+	logger.Info("[SearchHandler] handleSelect: id=%s, type=%s", tmdbIDStr, mediaType)
 
 	detailCallback := fmt.Sprintf("detail:id:%s:type:%s", tmdbIDStr, mediaType)
 	parser := callback.NewParser()
 	cb, err := parser.Parse(detailCallback)
 	if err != nil {
-		log.Printf("[SearchHandler] Failed to parse detail callback: %v", err)
+		logger.Info("[SearchHandler] Failed to parse detail callback: %v", err)
 		return &callback.Response{
 			Text: "❌ 操作失败",
 			Edit: true,
@@ -232,7 +232,7 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 }
 
 func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*callback.Response, error) {
-	log.Printf("[SearchHandler] Recommendation request: %s", tType)
+	logger.Info("[SearchHandler] Recommendation request: %s", tType)
 
 	if ctx.ChatType != "private" {
 		return &callback.Response{
@@ -266,7 +266,7 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 }
 
 func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType, mood string) (*callback.Response, error) {
-	log.Printf("[SearchHandler] Mood recommendation: type=%s, mood=%s", recType, mood)
+	logger.Info("[SearchHandler] Mood recommendation: type=%s, mood=%s", recType, mood)
 
 	if ctx.ChatType != "private" {
 		return &callback.Response{
@@ -281,7 +281,7 @@ func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType,
 	moodKeyword := searchsvc.MapMoodKeyword(mood)
 	results, err := h.aiRecommender.GetMoodRecommendations(moodKeyword, 6)
 	if err != nil {
-		log.Printf("[SearchHandler] AI recommendation failed: %v", err)
+		logger.Info("[SearchHandler] AI recommendation failed: %v", err)
 		msg.Bold("🤖 AI 心情推荐").Newline()
 		msg.Newline()
 		msg.Text("😓 AI 推荐服务暂时不可用").Newline()
@@ -381,7 +381,7 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 		})
 	}
 	sess.SetSearchResults(searchItems, 1, recType)
-	log.Printf("[SearchHandler] Stored %d recommendation results in session for user %d", len(searchItems), userID)
+	logger.Info("[SearchHandler] Stored %d recommendation results in session for user %d", len(searchItems), userID)
 
 	kb := services.NewKeyboardBuilder()
 	for i, item := range results[:displayCount] {
@@ -468,7 +468,7 @@ func (h *SearchHandler) buildMoodRecommendationResponse(results []services.Searc
 		})
 	}
 	sess.SetSearchResults(searchItems, 1, fmt.Sprintf("mood_%s", mood))
-	log.Printf("[SearchHandler] Stored %d mood recommendation results in session for user %d", len(searchItems), userID)
+	logger.Info("[SearchHandler] Stored %d mood recommendation results in session for user %d", len(searchItems), userID)
 
 	kb := services.NewKeyboardBuilder()
 	for i, item := range results[:displayCount] {

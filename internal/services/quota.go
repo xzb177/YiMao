@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -86,7 +86,7 @@ func (s *QuotaService) load() error {
 	// Reset daily usage if needed
 	s.resetDailyUsage()
 
-	log.Printf("[QuotaService] Loaded %d user quotas", len(s.quotas))
+	logger.Info("[QuotaService] Loaded %d user quotas", len(s.quotas))
 	return nil
 }
 
@@ -108,12 +108,12 @@ func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
 		"quotas": quotasCopy,
 	}, "", "  ")
 	if err != nil {
-		log.Printf("[QuotaService] Failed to marshal quotas: %v", err)
+		logger.Info("[QuotaService] Failed to marshal quotas: %v", err)
 		return
 	}
 
 	if err := os.WriteFile(s.quotasFile, data, 0644); err != nil {
-		log.Printf("[QuotaService] Failed to save quotas: %v", err)
+		logger.Info("[QuotaService] Failed to save quotas: %v", err)
 	}
 }
 
@@ -427,7 +427,7 @@ func (s *QuotaService) checkAndResetUnsafe(telegramID int64) {
 		quota.MovieUsed = 0
 		quota.TVUsed = 0
 		quota.LastResetDate = currentDate
-		log.Printf("[QuotaService] Reset daily quota for user %d", telegramID)
+		logger.Info("[QuotaService] Reset daily quota for user %d", telegramID)
 	}
 }
 
@@ -477,12 +477,12 @@ func (s *QuotaService) syncAllQuotas() {
 
 		if moviepilotID > 0 {
 			if err := s.SyncFromMoviePilot(telegramID, moviepilotID); err != nil {
-				log.Printf("[QuotaService] Failed to sync quota for user %d: %v", telegramID, err)
+				logger.Info("[QuotaService] Failed to sync quota for user %d: %v", telegramID, err)
 			}
 		}
 	}
 
-	log.Printf("[QuotaService] Synced %d user quotas", len(users))
+	logger.Info("[QuotaService] Synced %d user quotas", len(users))
 }
 
 // getCurrentDate returns current date in YYYY-MM-DD format
@@ -500,7 +500,7 @@ func (s *QuotaService) SetAdminIDs(adminIDs []int64) {
 		s.adminIDs[id] = true
 	}
 
-	log.Printf("[QuotaService] Set %d admin IDs for unlimited quota", len(adminIDs))
+	logger.Info("[QuotaService] Set %d admin IDs for unlimited quota", len(adminIDs))
 }
 
 // isAdmin checks if a user is an admin
@@ -598,9 +598,9 @@ func (s *QuotaService) SetFollowupDisabled(telegramID int64, disabled bool) erro
 	s.saveAsync(quotasCopy)
 
 	if disabled {
-		log.Printf("[QuotaService] Follow-up disabled for user %d", telegramID)
+		logger.Info("[QuotaService] Follow-up disabled for user %d", telegramID)
 	} else {
-		log.Printf("[QuotaService] Follow-up enabled for user %d", telegramID)
+		logger.Info("[QuotaService] Follow-up enabled for user %d", telegramID)
 	}
 	return nil
 }

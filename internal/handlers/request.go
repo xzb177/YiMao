@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 	"emby-telegram-bot/pkg/errors"
@@ -53,11 +53,11 @@ func NewRequestHandler(
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[RequestHandler] Handle called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
+	logger.Info("[RequestHandler] Handle called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
 
 	// Defensive check: ensure required services are available
 	if h.userMapping == nil {
-		log.Printf("[RequestHandler] ERROR: userMapping service is nil!")
+		logger.Info("[RequestHandler] ERROR: userMapping service is nil!")
 		return &callback.Response{
 			Text:        "❌ 服务配置错误",
 			CallbackMsg: "配置错误",
@@ -65,7 +65,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 	if h.sessMgr == nil {
-		log.Printf("[RequestHandler] ERROR: sessMgr service is nil!")
+		logger.Info("[RequestHandler] ERROR: sessMgr service is nil!")
 		return &callback.Response{
 			Text:        "❌ 服务配置错误",
 			CallbackMsg: "配置错误",
@@ -73,7 +73,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 	if h.reviewService == nil {
-		log.Printf("[RequestHandler] ERROR: reviewService is nil!")
+		logger.Info("[RequestHandler] ERROR: reviewService is nil!")
 		return &callback.Response{
 			Text:        "❌ 服务配置错误",
 			CallbackMsg: "配置错误",
@@ -102,12 +102,12 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		fmt.Sscanf(seasonStr, "%d", &season)
 	}
 
-	log.Printf("[RequestHandler] Parsed: tmdbID=%d, mediaType=%s, season=%d", tmdbID, mediaType, season)
+	logger.Info("[RequestHandler] Parsed: tmdbID=%d, mediaType=%s, season=%d", tmdbID, mediaType, season)
 
 	// Get MoviePilot user ID from user mapping (with timeout protection)
-	log.Printf("[RequestHandler] Getting user mapping for userID=%d...", ctx.UserID)
+	logger.Info("[RequestHandler] Getting user mapping for userID=%d...", ctx.UserID)
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
-	log.Printf("[RequestHandler] User mapping result: moviepilotID=%d, exists=%v", moviepilotID, exists)
+	logger.Info("[RequestHandler] User mapping result: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		// Build link instructions message with button
 		msg := services.NewMessageBuilder()
@@ -186,7 +186,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	// Try TMDB API if still no title
 	if mediaTitle == "" && h.tmdbClient != nil {
-		log.Printf("[RequestHandler] Fetching media info from TMDB for ID: %d", tmdbID)
+		logger.Info("[RequestHandler] Fetching media info from TMDB for ID: %d", tmdbID)
 		mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
 		if err == nil && mediaInfo != nil {
 			mediaTitle = mediaInfo.GetTitle()
@@ -199,9 +199,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			if posterPath == "" {
 				posterPath = mediaInfo.PosterPath
 			}
-			log.Printf("[RequestHandler] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
+			logger.Info("[RequestHandler] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
 		} else {
-			log.Printf("[RequestHandler] TMDB API failed: %v", err)
+			logger.Info("[RequestHandler] TMDB API failed: %v", err)
 		}
 	}
 
@@ -217,13 +217,13 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		embyType = services.MediaTypeTV
 	}
 
-	log.Printf("[RequestHandler] Checking Emby for: %s (%d) %s (5s timeout)", mediaTitle, mediaYear, embyType)
+	logger.Info("[RequestHandler] Checking Emby for: %s (%d) %s (5s timeout)", mediaTitle, mediaYear, embyType)
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err != nil {
-		log.Printf("[RequestHandler] Emby search timeout/failed (continuing): %v", err)
+		logger.Info("[RequestHandler] Emby search timeout/failed (continuing): %v", err)
 		// 继续创建请求 - Emby 慢时不阻塞求片
 	} else if existingMedia != nil {
-		log.Printf("[求片] 媒体库已存在: %s", existingMedia.Title)
+		logger.Info("[求片] 媒体库已存在: %s", existingMedia.Title)
 
 		// Build message showing media already exists
 		typeIcon := "🎬"
@@ -279,7 +279,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	// Media doesn't exist in library (or check timed out), deduct quota before creating request
 	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		log.Printf("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
+		logger.Info("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
 
 		// Check if it's a quota exceeded error
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
@@ -298,9 +298,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			ShowAlert:   true,
 		}, nil
 	}
-	log.Printf("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
+	logger.Info("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
 
-	log.Printf("[RequestHandler] Creating review request...")
+	logger.Info("[RequestHandler] Creating review request...")
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
 
@@ -323,7 +323,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 
 	if err := h.reviewService.CreateRequest(review); err != nil {
-		log.Printf("[求片] 创建请求失败: %v", err)
+		logger.Info("[求片] 创建请求失败: %v", err)
 		return &callback.Response{
 			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
@@ -345,11 +345,11 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 	adminIDs := h.adminService.GetAdminIDs()
 	if len(adminIDs) == 0 {
-		log.Printf("[RequestHandler] No admins to notify")
+		logger.Info("[RequestHandler] No admins to notify")
 		return
 	}
 
-	log.Printf("[审核] 通知 %d 位管理员: %s, 令牌: %s", len(adminIDs), review.MediaTitle, review.ApproveToken)
+	logger.Info("[审核] 通知 %d 位管理员: %s, 令牌: %s", len(adminIDs), review.MediaTitle, review.ApproveToken)
 
 	mediaTypeLabel := "电影"
 	if review.MediaType == services.MediaTypeTV {
@@ -408,7 +408,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 			},
 		}
 		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
-			log.Printf("[审核] 通知管理员失败 %d: %v", adminID, err)
+			logger.Info("[审核] 通知管理员失败 %d: %v", adminID, err)
 		}
 	}
 }
@@ -443,18 +443,18 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 			},
 		}
 		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
-			log.Printf("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
+			logger.Info("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
 		}
 	}
 }
 
 // HandleForceSubscribe handles user choosing to subscribe despite existing media
 func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[HandleForceSubscribe] Called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
+	logger.Info("[HandleForceSubscribe] Called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
 
 	// Defensive checks
 	if h.userMapping == nil || h.sessMgr == nil || h.reviewService == nil {
-		log.Printf("[HandleForceSubscribe] ERROR: required service is nil!")
+		logger.Info("[HandleForceSubscribe] ERROR: required service is nil!")
 		return &callback.Response{
 			Text:        "❌ 服务配置错误",
 			CallbackMsg: "配置错误",
@@ -484,11 +484,11 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
-	log.Printf("[HandleForceSubscribe] Parsed: tmdbID=%d, mediaType=%s", tmdbID, mediaType)
+	logger.Info("[HandleForceSubscribe] Parsed: tmdbID=%d, mediaType=%s", tmdbID, mediaType)
 
 	// Get MoviePilot user ID
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
-	log.Printf("[HandleForceSubscribe] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
+	logger.Info("[HandleForceSubscribe] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
 		return &callback.Response{
 			Text:        "🔗 请先绑定账号",
@@ -499,7 +499,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	// Deduct quota for force subscribe (user confirmed they want to subscribe despite existing media)
 	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		log.Printf("[HandleForceSubscribe] Quota check failed for user %d: %v", ctx.UserID, err)
+		logger.Info("[HandleForceSubscribe] Quota check failed for user %d: %v", ctx.UserID, err)
 
 		// Check if it's a quota exceeded error
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
@@ -518,7 +518,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 			ShowAlert:   true,
 		}, nil
 	}
-	log.Printf("[HandleForceSubscribe] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
+	logger.Info("[HandleForceSubscribe] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
 
 	// Get session info
 	sess := h.sessMgr.Get(ctx.UserID)
@@ -559,16 +559,16 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	// Try TMDB API if still no title
 	if mediaTitle == "" && h.tmdbClient != nil {
-		log.Printf("[HandleForceSubscribe] Fetching media info from TMDB for ID: %d", tmdbID)
+		logger.Info("[HandleForceSubscribe] Fetching media info from TMDB for ID: %d", tmdbID)
 		mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
 		if err == nil && mediaInfo != nil {
 			mediaTitle = mediaInfo.GetTitle()
 			if mediaYear == 0 {
 				mediaYear = mediaInfo.GetYear()
 			}
-			log.Printf("[HandleForceSubscribe] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
+			logger.Info("[HandleForceSubscribe] TMDB API returned: %s (%d)", mediaTitle, mediaYear)
 		} else {
-			log.Printf("[HandleForceSubscribe] TMDB API failed: %v", err)
+			logger.Info("[HandleForceSubscribe] TMDB API failed: %v", err)
 		}
 	}
 
@@ -592,7 +592,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
 	if err == nil && existingMedia != nil {
 		embyInfo = existingMedia
-		log.Printf("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)
+		logger.Info("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)
 	}
 
 	// Prevent duplicate active requests before creating review

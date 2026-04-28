@@ -1,7 +1,7 @@
 package services
 
 import (
-	"log"
+	"emby-telegram-bot/pkg/logger"
 	"strconv"
 	"strings"
 )
@@ -22,24 +22,24 @@ func NewSearchFallbackService(moviepilot *MoviePilotClient) *SearchFallbackServi
 // Returns (results, actualQueryUsed, error)
 func (s *SearchFallbackService) TryFallback(query string) ([]SearchResult, string, error) {
 	candidates := BuildFallbackQueries(query)
-	log.Printf("[SearchFallback] Trying fallback for query='%s', candidates=%d", query, len(candidates))
+	logger.Info("[SearchFallback] Trying fallback for query='%s', candidates=%d", query, len(candidates))
 	for _, q := range candidates {
 		if q == "" || q == query {
 			continue
 		}
-		log.Printf("[SearchFallback] Trying fallback query: '%s'", q)
+		logger.Info("[SearchFallback] Trying fallback query: '%s'", q)
 		results, err := s.moviepilot.SearchMedia(q, 1)
 		if err != nil || results == nil {
-			log.Printf("[SearchFallback] Query '%s' failed: %v", q, err)
+			logger.Info("[SearchFallback] Query '%s' failed: %v", q, err)
 			continue
 		}
 		if len(results.Results) > 0 {
-			log.Printf("[SearchFallback] Fallback hit: query='%s' -> fallback='%s', count=%d", query, q, len(results.Results))
+			logger.Info("[SearchFallback] Fallback hit: query='%s' -> fallback='%s', count=%d", query, q, len(results.Results))
 			return results.Results, q, nil
 		}
-		log.Printf("[SearchFallback] Query '%s' returned no results", q)
+		logger.Info("[SearchFallback] Query '%s' returned no results", q)
 	}
-	log.Printf("[SearchFallback] No fallback worked for query='%s'", query)
+	logger.Info("[SearchFallback] No fallback worked for query='%s'", query)
 	return nil, "", nil
 }
 

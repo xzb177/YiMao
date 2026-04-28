@@ -1,11 +1,11 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -36,12 +36,12 @@ func NewImageCache(dataDir string, maxAge time.Duration) *ImageCache {
 
 	// 确保缓存目录存在
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		log.Printf("[ImageCache] Failed to create cache directory: %v", err)
+		logger.Info("[ImageCache] Failed to create cache directory: %v", err)
 		cache.enabled = false
 	}
 
 	if cache.enabled {
-		log.Printf("[ImageCache] Initialized with cache dir: %s, max age: %v", cacheDir, maxAge)
+		logger.Info("[ImageCache] Initialized with cache dir: %s, max age: %v", cacheDir, maxAge)
 	}
 
 	return cache
@@ -65,14 +65,14 @@ func (c *ImageCache) Get(imageURL string) []byte {
 	info, err := os.Stat(cachePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			log.Printf("[ImageCache] Error checking cache file: %v", err)
+			logger.Info("[ImageCache] Error checking cache file: %v", err)
 		}
 		return nil
 	}
 
 	// 检查是否过期
 	if time.Since(info.ModTime()) > c.maxAge {
-		log.Printf("[ImageCache] Cache expired: %s", filepath.Base(cachePath))
+		logger.Info("[ImageCache] Cache expired: %s", filepath.Base(cachePath))
 		os.Remove(cachePath)
 		return nil
 	}
@@ -80,11 +80,11 @@ func (c *ImageCache) Get(imageURL string) []byte {
 	// 读取缓存文件
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
-		log.Printf("[ImageCache] Error reading cache file: %v", err)
+		logger.Info("[ImageCache] Error reading cache file: %v", err)
 		return nil
 	}
 
-	log.Printf("[ImageCache] Cache hit: %s (%d bytes)", filepath.Base(cachePath), len(data))
+	logger.Info("[ImageCache] Cache hit: %s (%d bytes)", filepath.Base(cachePath), len(data))
 	return data
 }
 
@@ -104,11 +104,11 @@ func (c *ImageCache) Set(imageURL string, data []byte) error {
 
 	// 写入缓存文件
 	if err := os.WriteFile(cachePath, data, 0644); err != nil {
-		log.Printf("[ImageCache] Error writing cache file: %v", err)
+		logger.Info("[ImageCache] Error writing cache file: %v", err)
 		return err
 	}
 
-	log.Printf("[ImageCache] Cached: %s (%d bytes)", filepath.Base(cachePath), len(data))
+	logger.Info("[ImageCache] Cached: %s (%d bytes)", filepath.Base(cachePath), len(data))
 	return nil
 }
 
@@ -129,11 +129,11 @@ func (c *ImageCache) DownloadOrFetch(imageURL string, headers map[string]string)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ImageCache] Panic in async cache save: %v", r)
+				logger.Info("[ImageCache] Panic in async cache save: %v", r)
 			}
 		}()
 		if err := c.Set(imageURL, data); err != nil {
-			log.Printf("[ImageCache] Failed to cache image: %v", err)
+			logger.Info("[ImageCache] Failed to cache image: %v", err)
 		}
 	}()
 
@@ -170,7 +170,7 @@ func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byt
 		return nil, err
 	}
 
-	log.Printf("[ImageCache] Downloaded: %s (%d bytes)", imageURL, len(data))
+	logger.Info("[ImageCache] Downloaded: %s (%d bytes)", imageURL, len(data))
 	return data, nil
 }
 
@@ -207,11 +207,11 @@ func (c *ImageCache) Cleanup() {
 		return
 	}
 
-	log.Printf("[ImageCache] Starting cleanup...")
+	logger.Info("[ImageCache] Starting cleanup...")
 
 	files, err := os.ReadDir(c.cacheDir)
 	if err != nil {
-		log.Printf("[ImageCache] Error reading cache dir: %v", err)
+		logger.Info("[ImageCache] Error reading cache dir: %v", err)
 		return
 	}
 
@@ -235,7 +235,7 @@ func (c *ImageCache) Cleanup() {
 		}
 	}
 
-	log.Printf("[ImageCache] Cleanup complete: removed %d expired files", cleaned)
+	logger.Info("[ImageCache] Cleanup complete: removed %d expired files", cleaned)
 }
 
 // GetStats 获取缓存统计信息
@@ -278,7 +278,7 @@ func (c *ImageCache) StartCleanupRoutine(interval time.Duration) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ImageCache] Panic recovered in cleanup routine: %v", r)
+				logger.Info("[ImageCache] Panic recovered in cleanup routine: %v", r)
 			}
 		}()
 		ticker := time.NewTicker(interval)
@@ -289,5 +289,5 @@ func (c *ImageCache) StartCleanupRoutine(interval time.Duration) {
 		}
 	}()
 
-	log.Printf("[ImageCache] Cleanup routine started (interval: %v)", interval)
+	logger.Info("[ImageCache] Cleanup routine started (interval: %v)", interval)
 }

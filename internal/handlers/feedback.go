@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 )
@@ -66,7 +66,7 @@ func (h *FeedbackHandler) getMediaTitle(tmdbIDStr, mediaType, providedTitle stri
 	// Fetch from TMDB
 	mediaInfo, err := h.tmdbClient.GetMediaByType(tmdbID, mediaType)
 	if err != nil {
-		log.Printf("[FeedbackHandler] Failed to get media title from TMDB: %v", err)
+		logger.Info("[FeedbackHandler] Failed to get media title from TMDB: %v", err)
 		return ""
 	}
 
@@ -75,7 +75,7 @@ func (h *FeedbackHandler) getMediaTitle(tmdbIDStr, mediaType, providedTitle stri
 
 // Handle handles feedback callbacks
 func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	log.Printf("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
+	logger.Info("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
 
 	// Check if this is a quick option selection (feedback:quick:encoded_text:id:xxx)
@@ -209,7 +209,7 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	tmdbID := ctx.Callback.Params["id"]
 	mediaType := ctx.Callback.Params["media_type"]
 
-	log.Printf("[FeedbackHandler] handleTypeSelect: issueType=%s, tmdbID=%s, mediaType=%s", issueType, tmdbID, mediaType)
+	logger.Info("[FeedbackHandler] handleTypeSelect: issueType=%s, tmdbID=%s, mediaType=%s", issueType, tmdbID, mediaType)
 
 	if issueType == "" || tmdbID == "" {
 		return &callback.Response{
@@ -476,7 +476,7 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 		)
 	}
 	if err != nil {
-		log.Printf("[FeedbackHandler] Failed to create issue: %v", err)
+		logger.Info("[FeedbackHandler] Failed to create issue: %v", err)
 		h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil)
 		return err
 	}
@@ -570,15 +570,15 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 			// Send photo with the message as caption
 			// Use SendPhotoByFileIDWithParseMode to send using Telegram's file_id with HTML parsing
 			if _, err := h.telegram.SendPhotoByFileIDWithParseMode(adminID, issue.PhotoFileID, message, "HTML", keyboard); err != nil {
-				log.Printf("[FeedbackHandler] Failed to send photo to admin %d: %v", adminID, err)
+				logger.Info("[FeedbackHandler] Failed to send photo to admin %d: %v", adminID, err)
 				// Fallback to text message
 				if _, err2 := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err2 != nil {
-					log.Printf("[FeedbackHandler] Failed to send fallback message to admin %d: %v", adminID, err2)
+					logger.Info("[FeedbackHandler] Failed to send fallback message to admin %d: %v", adminID, err2)
 				}
 			}
 		} else {
 			if _, err := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err != nil {
-				log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+				logger.Info("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
 			}
 		}
 	}
@@ -588,7 +588,7 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 func (h *FeedbackHandler) IsInFeedbackProcess(userID int64) bool {
 	sess := h.sessMgr.GetOrCreate(userID)
 	step, ok := sess.Get("feedback_step")
-	log.Printf("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
+	logger.Info("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
 	return ok && step == "description"
 }
 
@@ -882,7 +882,7 @@ func (h *FeedbackHandler) HandleUserFollowUp(userID int64, chatID int64, text st
 	// Check if follow-up is disabled for this user
 	if h.quotaService != nil && h.quotaService.IsFollowupDisabled(userID) {
 		// Don't process follow-up, just ignore it
-		log.Printf("[FeedbackHandler] Follow-up disabled for user %d, ignoring message", userID)
+		logger.Info("[FeedbackHandler] Follow-up disabled for user %d, ignoring message", userID)
 		return nil
 	}
 
@@ -928,7 +928,7 @@ func (h *FeedbackHandler) HandleUserFollowUp(userID int64, chatID int64, text st
 
 	_, err := h.issueService.AddReply(issueID, userID, userName, text, "user")
 	if err != nil {
-		log.Printf("[FeedbackHandler] Failed to add follow-up: %v", err)
+		logger.Info("[FeedbackHandler] Failed to add follow-up: %v", err)
 		return err
 	}
 
@@ -982,7 +982,7 @@ func (h *FeedbackHandler) notifyAdminFollowUp(issueID int64, text, userName stri
 	// Send to all admins
 	for _, adminID := range adminIDs {
 		if _, err := h.telegram.SendMessage(adminID, message, "HTML", keyboard); err != nil {
-			log.Printf("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
+			logger.Info("[FeedbackHandler] Failed to notify admin %d: %v", adminID, err)
 		}
 	}
 }
@@ -1065,7 +1065,7 @@ func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingSt
 
 	// Save rating
 	if err := h.issueService.RateSatisfaction(issueID, rating); err != nil {
-		log.Printf("[FeedbackHandler] Failed to save rating: %v", err)
+		logger.Info("[FeedbackHandler] Failed to save rating: %v", err)
 		return &callback.Response{
 			CallbackMsg: "评分失败",
 			ShowAlert:   true,
@@ -1184,7 +1184,7 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 		mediaTitle,
 	)
 	if err != nil {
-		log.Printf("[FeedbackHandler] Failed to create issue: %v", err)
+		logger.Info("[FeedbackHandler] Failed to create issue: %v", err)
 		return &callback.Response{
 			CallbackMsg: "提交失败，请稍后重试",
 			ShowAlert:   true,

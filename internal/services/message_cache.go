@@ -1,10 +1,10 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -59,7 +59,7 @@ func (mc *MessageCache) Check(chatID int64, content string) bool {
 
 	// Check if entry is still valid
 	if time.Since(entry.timestamp) < mc.ttl {
-		log.Printf("[MessageCache] Duplicate message blocked for chat %d", chatID)
+		logger.Info("[MessageCache] Duplicate message blocked for chat %d", chatID)
 		return true
 	}
 
@@ -106,7 +106,7 @@ func (mc *MessageCache) cleanupLoop() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("[MessageCache] Panic in cleanup: %v", r)
+						logger.Info("[MessageCache] Panic in cleanup: %v", r)
 					}
 				}()
 				mc.cleanup()

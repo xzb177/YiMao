@@ -3,12 +3,12 @@ package search
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"sync"
 	"time"
 
 	"emby-telegram-bot/internal/services"
+	"emby-telegram-bot/pkg/logger"
 )
 
 // RecommendationCacheEntry represents a cached recommendation result.
@@ -104,7 +104,7 @@ func (r *Recommender) GetRecommendations(recType string) ([]services.SearchResul
 func (r *Recommender) getTrendingMovies() ([]services.SearchResult, error) {
 	cacheKey := fmt.Sprintf("popular_movies_%d", time.Now().Unix()/60)
 	if cached, found := r.cache.Get(cacheKey); found {
-		log.Printf("[Recommender] Using cached popular movies")
+		logger.Info("[Recommender] Using cached popular movies")
 		return cached, nil
 	}
 
@@ -118,7 +118,7 @@ func (r *Recommender) getTrendingMovies() ([]services.SearchResult, error) {
 	for _, page := range pages {
 		tmdbResults, err := r.tmdb.GetPopularMovies(page)
 		if err != nil {
-			log.Printf("[Recommender] TMDB GetPopularMovies page %d failed: %v", page, err)
+			logger.Info("[Recommender] TMDB GetPopularMovies page %d failed: %v", page, err)
 			continue
 		}
 		allItems = append(allItems, tmdbResults.Results...)
@@ -137,7 +137,7 @@ func (r *Recommender) getTrendingMovies() ([]services.SearchResult, error) {
 func (r *Recommender) getTrendingTV() ([]services.SearchResult, error) {
 	cacheKey := fmt.Sprintf("popular_tv_%d", time.Now().Unix()/60)
 	if cached, found := r.cache.Get(cacheKey); found {
-		log.Printf("[Recommender] Using cached popular TV")
+		logger.Info("[Recommender] Using cached popular TV")
 		return cached, nil
 	}
 
@@ -151,7 +151,7 @@ func (r *Recommender) getTrendingTV() ([]services.SearchResult, error) {
 	for _, page := range pages {
 		tmdbResults, err := r.tmdb.GetPopularTV(page)
 		if err != nil {
-			log.Printf("[Recommender] TMDB GetPopularTV page %d failed: %v", page, err)
+			logger.Info("[Recommender] TMDB GetPopularTV page %d failed: %v", page, err)
 			continue
 		}
 		allItems = append(allItems, tmdbResults.Results...)
@@ -170,7 +170,7 @@ func (r *Recommender) getTrendingTV() ([]services.SearchResult, error) {
 func (r *Recommender) getTopRatedMedia() ([]services.SearchResult, error) {
 	cacheKey := fmt.Sprintf("toprated_movies_%d", time.Now().Unix()/60)
 	if cached, found := r.cache.Get(cacheKey); found {
-		log.Printf("[Recommender] Using cached top-rated movies")
+		logger.Info("[Recommender] Using cached top-rated movies")
 		return cached, nil
 	}
 
@@ -184,7 +184,7 @@ func (r *Recommender) getTopRatedMedia() ([]services.SearchResult, error) {
 	for _, page := range pages {
 		tmdbResults, err := r.tmdb.GetTopRatedMovies(page)
 		if err != nil {
-			log.Printf("[Recommender] TMDB GetTopRatedMovies page %d failed: %v", page, err)
+			logger.Info("[Recommender] TMDB GetTopRatedMovies page %d failed: %v", page, err)
 			continue
 		}
 		allItems = append(allItems, tmdbResults.Results...)
@@ -203,7 +203,7 @@ func (r *Recommender) getTopRatedMedia() ([]services.SearchResult, error) {
 func (r *Recommender) getNewMedia() ([]services.SearchResult, error) {
 	cacheKey := fmt.Sprintf("new_movies_%d", time.Now().Unix()/60)
 	if cached, found := r.cache.Get(cacheKey); found {
-		log.Printf("[Recommender] Using cached new movies")
+		logger.Info("[Recommender] Using cached new movies")
 		return cached, nil
 	}
 
@@ -213,7 +213,7 @@ func (r *Recommender) getNewMedia() ([]services.SearchResult, error) {
 
 	tmdbResults, err := r.tmdb.GetNowPlayingMovies(1)
 	if err != nil {
-		log.Printf("[Recommender] TMDB GetNowPlayingMovies failed: %v", err)
+		logger.Info("[Recommender] TMDB GetNowPlayingMovies failed: %v", err)
 	} else if len(tmdbResults.Results) >= MaxResults {
 		shuffled := r.shuffleItems(tmdbResults.Results)
 		results := r.convertTMDBToSearchResults(shuffled, "movie")

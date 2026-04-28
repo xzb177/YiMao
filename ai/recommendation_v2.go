@@ -2,9 +2,9 @@
 package ai
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -204,7 +204,7 @@ func (e *RecommendationEngine) Recommend(req *RecommendationRequestV2) ([]*Recom
 		req.Strategy = e.selectStrategy(req.UserID)
 	}
 
-	log.Printf("[RecEngine] User %d: strategy=%s, context=%s", req.UserID, req.Strategy, req.Context)
+	logger.Info("[RecEngine] User %d: strategy=%s, context=%s", req.UserID, req.Strategy, req.Context)
 
 	switch req.Strategy {
 	case StrategyPersonalized:
@@ -1144,7 +1144,7 @@ func (e *RecommendationEngine) ensureUserProfile(userID int64) {
 			AIPersona:       "探索者",
 			LastAIAnalysis:  time.Time{},
 		}
-		log.Printf("[RecEngine] Created profile for user %d", userID)
+		logger.Info("[RecEngine] Created profile for user %d", userID)
 	}
 }
 
@@ -1268,7 +1268,7 @@ func (e *RecommendationEngine) analyzeUserProfile(userID int64) {
 
 	response, err := e.zhipu.Send(query, "你是用户行为分析专家，负责分析观影偏好。")
 	if err != nil {
-		log.Printf("[RecEngine] AI analysis failed for user %d: %v", userID, err)
+		logger.Info("[RecEngine] AI analysis failed for user %d: %v", userID, err)
 		return
 	}
 
@@ -1297,7 +1297,7 @@ func (e *RecommendationEngine) analyzeUserProfile(userID int64) {
 		profile.LastAIAnalysis = time.Now()
 		e.profileMutex.Unlock()
 
-		log.Printf("[RecEngine] Updated profile for user %d: persona=%s, tags=%v", userID, analysis.Persona, analysis.Tags)
+		logger.Info("[RecEngine] Updated profile for user %d: persona=%s, tags=%v", userID, analysis.Persona, analysis.Tags)
 	}
 }
 
@@ -1535,6 +1535,6 @@ func (e *RecommendationEngine) StartRecommendationAPI(port string) error {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	log.Printf("[RecEngine] API server starting on port %s", port)
+	logger.Info("[RecEngine] API server starting on port %s", port)
 	return http.ListenAndServe(":"+port, mux)
 }

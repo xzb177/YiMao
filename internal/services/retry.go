@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"context"
 	"fmt"
-	"log"
 	"math"
 	"net/http"
 	"time"
@@ -70,7 +70,7 @@ func RetryHTTP(ctx context.Context, client *http.Client, req *http.Request, cfg 
 			// Calculate delay with exponential backoff and jitter
 			delay := calculateBackoff(attempt, cfg)
 
-			log.Printf("[Retry] Attempt %d/%d for %s, waiting %v",
+			logger.Info("[Retry] Attempt %d/%d for %s, waiting %v",
 				attempt+1, cfg.MaxAttempts, req.URL.String(), delay)
 
 			select {
@@ -127,7 +127,7 @@ func Retry(fn RetryableFunc, cfg *RetryConfig) error {
 	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
 		if attempt > 0 {
 			delay := calculateBackoff(attempt, cfg)
-			log.Printf("[Retry] Attempt %d/%d, waiting %v", attempt+1, cfg.MaxAttempts, delay)
+			logger.Info("[Retry] Attempt %d/%d, waiting %v", attempt+1, cfg.MaxAttempts, delay)
 			time.Sleep(delay)
 		}
 

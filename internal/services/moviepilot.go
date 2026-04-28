@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -362,11 +361,11 @@ func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse,
 
 	var response []SearchResult
 	if err := json.Unmarshal(body, &response); err != nil {
-		log.Printf("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
+		logger.Info("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
 		return nil, fmt.Errorf("failed to decode search response: %w", err)
 	}
 
-	log.Printf("[MoviePilot] SearchMedia: found %d results for query=%s (page %d)", len(response), query, page)
+	logger.Info("[MoviePilot] SearchMedia: found %d results for query=%s (page %d)", len(response), query, page)
 
 	return &SearchResponse{
 		Results: response,
@@ -397,7 +396,7 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 	// Check if the media actually exists (title should not be empty)
 	if info.Title == "" && info.ID == 0 {
 		// Try with opposite type (fallback)
-		log.Printf("[MoviePilot] Media not found with type %s, trying opposite type", typeStr)
+		logger.Info("[MoviePilot] Media not found with type %s, trying opposite type", typeStr)
 		oppTypeStr := "电视剧"
 		if mediaType == MediaTypeTV {
 			oppTypeStr = "电影"
@@ -417,7 +416,7 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 
 		// Check if media exists with opposite type
 		if info2.Title != "" || info2.ID != 0 {
-			log.Printf("[MoviePilot] Found media with opposite type %s", oppTypeStr)
+			logger.Info("[MoviePilot] Found media with opposite type %s", oppTypeStr)
 			info2.Type = mediaType // Keep original type
 			return &info2, nil
 		}
@@ -463,7 +462,7 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 	// Add save_path if configured (for multi-server deployments)
 	if c.downloadSavePath != "" {
 		payload["save_path"] = c.downloadSavePath
-		log.Printf("[MoviePilot] Using custom save_path: %s", c.downloadSavePath)
+		logger.Info("[MoviePilot] Using custom save_path: %s", c.downloadSavePath)
 	}
 
 	endpoint := "/api/v1/subscribe"
@@ -514,9 +513,9 @@ func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	}, &RetryConfig{MaxAttempts: 3, BaseDelay: 1 * time.Second, Multiplier: 1.5})
 
 	if err == nil {
-		log.Printf("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
+		logger.Info("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
 	} else {
-		log.Printf("[MoviePilot] 触发订阅搜索失败，订阅 ID: %d: %v", subID, err)
+		logger.Info("[MoviePilot] 触发订阅搜索失败，订阅 ID: %d: %v", subID, err)
 	}
 }
 
@@ -694,7 +693,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, user.UserNameAlt=%q, effectiveUsername=%q",
+	logger.Info("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, user.UserNameAlt=%q, effectiveUsername=%q",
 		userID, user.Username, user.UserNameAlt, effectiveUsername)
 
 	// MoviePilot uses /api/v1/subscribe/ endpoint
@@ -712,7 +711,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: fetched %d total subscriptions from API", len(items))
+	logger.Info("[MoviePilot] GetUserRequests: fetched %d total subscriptions from API", len(items))
 
 	// Client-side filtering with multiple matching strategies
 	var filtered []SubscribeItem
@@ -721,7 +720,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	for i, item := range items {
 		// Log first few items for debugging to understand the data format
 		if i < 5 {
-			log.Printf("[MoviePilot] Subscription item[%d]: id=%d, name=%s, username=%q, user_id=%d, state=%s",
+			logger.Info("[MoviePilot] Subscription item[%d]: id=%d, name=%s, username=%q, user_id=%d, state=%s",
 				i, item.ID, item.Name, item.Username, item.UserID.Int64(), item.State)
 		}
 
@@ -763,12 +762,12 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		if matched {
 			filtered = append(filtered, item)
 			if len(filtered) <= 3 {
-				log.Printf("[MoviePilot] Matched item id=%d (%s): %s", item.ID, matchReason, item.Name)
+				logger.Info("[MoviePilot] Matched item id=%d (%s): %s", item.ID, matchReason, item.Name)
 			}
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
+	logger.Info("[MoviePilot] GetUserRequests: userID=%d, effectiveUsername=%q, total_items=%d, filtered=%d",
 		userID, effectiveUsername, len(items), len(filtered))
 
 	// Adjust state based on lack_episode, Emby availability, and subscription activity
@@ -814,12 +813,12 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		}
 
 		if item.State != originalState {
-			log.Printf("[MoviePilot] State changed: %s (year:%s, was:%s, now:%s)",
+			logger.Info("[MoviePilot] State changed: %s (year:%s, was:%s, now:%s)",
 				item.Name, item.Year, originalState, item.State)
 		}
 	}
 
-	log.Printf("[MoviePilot] GetUserRequests: completed=%d/%d",
+	logger.Info("[MoviePilot] GetUserRequests: completed=%d/%d",
 		completedCount, len(filtered))
 
 	// Log state values of first few filtered items
@@ -827,7 +826,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		if i >= 5 {
 			break
 		}
-		log.Printf("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d",
+		logger.Info("[MoviePilot] Filtered[%d]: id=%d, name=%s, state=%q, lack=%d/%d",
 			i, item.ID, item.Name, item.State, item.LackEpisode, item.TotalEpisode)
 	}
 
@@ -858,7 +857,7 @@ func (c *MoviePilotClient) DeleteRequest(requestID int) error {
 	_, err := c.makeRequest("DELETE", endpoint, nil)
 	// If subscription doesn't exist (404), that's fine - goal achieved
 	if err != nil && strings.Contains(err.Error(), "status 404") {
-		log.Printf("[MoviePilot] Subscription %d not found (already deleted)", requestID)
+		logger.Info("[MoviePilot] Subscription %d not found (already deleted)", requestID)
 		return nil
 	}
 	return err
@@ -1126,7 +1125,7 @@ func (c *MoviePilotClient) SearchAllResources(keyword string, page int) (map[str
 	for _, site := range sites {
 		resources, err := c.GetSiteResources(site.ID, keyword, page)
 		if err != nil {
-			log.Printf("[MoviePilot] Failed to get resources from site %s: %v", site.Name, err)
+			logger.Info("[MoviePilot] Failed to get resources from site %s: %v", site.Name, err)
 			continue
 		}
 		if len(resources) > 0 {

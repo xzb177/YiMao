@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -122,7 +122,7 @@ func (s *WeeklyReportService) load() error {
 	s.reminders = fileData.Reminders
 	s.reminderIndex = fileData.ReminderIndex
 
-	log.Printf("[WeeklyReport] Loaded %d reports, %d reminders", len(s.reports), len(s.reminders))
+	logger.Info("[WeeklyReport] Loaded %d reports, %d reminders", len(s.reports), len(s.reminders))
 	return nil
 }
 
@@ -232,7 +232,7 @@ func (s *WeeklyReportService) GenerateReport(userID int64, userName string) (*We
 	s.reports[reportKey] = report
 	go s.save()
 
-	log.Printf("[WeeklyReport] Generated report for user %d: %d searches, %d requests",
+	logger.Info("[WeeklyReport] Generated report for user %d: %d searches, %d requests",
 		userID, report.SearchCount, report.RequestCount)
 
 	return report, nil
@@ -403,7 +403,7 @@ func (s *WeeklyReportService) SendReport(userID int64, userName string) error {
 
 	go s.save()
 
-	log.Printf("[WeeklyReport] Sent report to user %d", userID)
+	logger.Info("[WeeklyReport] Sent report to user %d", userID)
 	return nil
 }
 
@@ -422,7 +422,7 @@ func (s *WeeklyReportService) weeklyRoutine() {
 		firstDelay = 24 * time.Hour
 	}
 
-	log.Printf("[WeeklyReport] First report scheduled in %v", firstDelay)
+	logger.Info("[WeeklyReport] First report scheduled in %v", firstDelay)
 
 	time.Sleep(firstDelay)
 
@@ -441,7 +441,7 @@ func (s *WeeklyReportService) weeklyRoutine() {
 
 // sendWeeklyReports sends reports to all active users
 func (s *WeeklyReportService) sendWeeklyReports() {
-	log.Printf("[WeeklyReport] Starting weekly report sending - using existing report data")
+	logger.Info("[WeeklyReport] Starting weekly report sending - using existing report data")
 
 	// Send reports for users who already have generated reports
 	s.mu.RLock()
@@ -456,13 +456,13 @@ func (s *WeeklyReportService) sendWeeklyReports() {
 	for _, userID := range userIDs {
 		userName := "用户" // Can be fetched from session
 		if err := s.SendReport(userID, userName); err != nil {
-			log.Printf("[WeeklyReport] Failed to send report to %d: %v", userID, err)
+			logger.Info("[WeeklyReport] Failed to send report to %d: %v", userID, err)
 		}
 		// Add delay to avoid rate limiting
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	log.Printf("[WeeklyReport] Sent %d weekly reports", len(userIDs))
+	logger.Info("[WeeklyReport] Sent %d weekly reports", len(userIDs))
 }
 
 // reminderRoutine checks for media availability reminders hourly
@@ -506,7 +506,7 @@ func (s *WeeklyReportService) checkReminders() {
 			reminder.NotifiedAt = time.Now()
 			s.reminders[id] = reminder
 
-			log.Printf("[WeeklyReport] Sent reminder for %s to user %d", reminder.MediaTitle, reminder.UserID)
+			logger.Info("[WeeklyReport] Sent reminder for %s to user %d", reminder.MediaTitle, reminder.UserID)
 		}
 	}
 
@@ -540,7 +540,7 @@ func (s *WeeklyReportService) AddReminder(userID int64, userName string, tmdbID 
 
 	go s.save()
 
-	log.Printf("[WeeklyReport] Added reminder for %s (user %d)", mediaTitle, userID)
+	logger.Info("[WeeklyReport] Added reminder for %s (user %d)", mediaTitle, userID)
 }
 
 // GetReport gets the latest report for a user

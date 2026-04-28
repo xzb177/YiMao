@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 	"time"
@@ -135,7 +135,7 @@ func (s *NotificationService) NotifyStatusUpdate(requestID int, status *Subscrib
 func (s *NotificationService) saveAndNotify(updates []StatusUpdate) error {
 	// Save to file
 	if err := s.SaveStatusUpdates(updates); err != nil {
-		log.Printf("[Notification] Failed to save notifications: %v", err)
+		logger.Info("[Notification] Failed to save notifications: %v", err)
 		return err
 	}
 
@@ -162,7 +162,7 @@ func (s *NotificationService) processNotifications(updates []StatusUpdate) {
 		message := s.formatStatusMessage(update)
 		_, err := s.telegram.SendMessage(telegramID, message, "", nil)
 		if err != nil {
-			log.Printf("[Notification] Failed to send notification to user %d: %v", telegramID, err)
+			logger.Info("[Notification] Failed to send notification to user %d: %v", telegramID, err)
 			continue
 		}
 
@@ -271,7 +271,7 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 	// Send to all users
 	for _, telegramID := range telegramIDs {
 		if _, err := s.telegram.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
-			log.Printf("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err)
+			logger.Info("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err)
 		}
 	}
 
@@ -292,7 +292,7 @@ func (s *NotificationService) StartNotificationWorker() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[NotificationService] Panic in notification worker: %v", r)
+				logger.Info("[NotificationService] Panic in notification worker: %v", r)
 			}
 		}()
 		ticker := time.NewTicker(5 * time.Minute)

@@ -3,9 +3,9 @@ package search
 
 import (
 	"fmt"
-	"log"
 
 	"emby-telegram-bot/internal/services"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/session"
 )
 
@@ -42,32 +42,32 @@ type SearchResult struct {
 
 // Search performs a search with fallback support.
 func (o *Orchestrator) Search(userID int64, query string) (*SearchResult, error) {
-	log.Printf("[Orchestrator] Search query: %s", query)
+	logger.Info("[Orchestrator] Search query: %s", query)
 
 	// Perform search
 	results, err := o.mp.SearchMedia(query, 1)
 	if err != nil {
-		log.Printf("[Orchestrator] Search failed: %v", err)
+		logger.Info("[Orchestrator] Search failed: %v", err)
 		return nil, err
 	}
 
 	// Check for empty results
 	if results == nil || results.Results == nil {
-		log.Printf("[Orchestrator] Search results is nil for query: %s", query)
+		logger.Info("[Orchestrator] Search results is nil for query: %s", query)
 		return &SearchResult{Results: []services.SearchResult{}, Query: query}, nil
 	}
 
-	log.Printf("[Orchestrator] Search results count: %d for query: %s", len(results.Results), query)
+	logger.Info("[Orchestrator] Search results count: %d for query: %s", len(results.Results), query)
 
 	if len(results.Results) == 0 {
 		// Try fallback search
 		fallbackResults, fallbackQuery, fbErr := o.tryFallback(query)
 		if fbErr != nil {
-			log.Printf("[Orchestrator] Fallback search failed: %v", fbErr)
+			logger.Info("[Orchestrator] Fallback search failed: %v", fbErr)
 			return &SearchResult{Results: []services.SearchResult{}, Query: query}, nil
 		}
 		if fallbackResults != nil && len(fallbackResults) > 0 {
-			log.Printf("[Orchestrator] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
+			logger.Info("[Orchestrator] Fallback hit: query=%s -> fallback=%s, count=%d", query, fallbackQuery, len(fallbackResults))
 			return &SearchResult{
 				Results:       fallbackResults,
 				Query:         query,

@@ -1,0 +1,44 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck        # 检查未处理的 error
+    - gosimple        # 简化代码建议
+    - govet           # go vet 的超集
+    - ineffassign     # 无效赋值检测
+    - staticcheck     # 静态分析
+    - unused          # 未使用的变量/函数
+    - misspell        # 拼写检查
+    - gocritic        # 代码质量检查
+    - bodyclose       # HTTP response body 未关闭
+    - exportloopref   # 循环变量引用陷阱（Go 1.22 以下适用）
+    - unconvert       # 无用类型转换
+    - wastedassign    # 浪费的赋值
+
+linters-settings:
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - style
+    disabled-checks:
+      - hugeParam       # 大结构体传值在 bot 场景影响不大
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    # 测试文件宽松一些
+    - path: _test\.go
+      linters:
+        - errcheck
+        - gocritic
+    # 允许未处理的 error 在 main.go 的 log.Fatal 中
+    - path: cmd/bot/main\.go
+      linters:
+        - errcheck
+
+  # 按文件聚合
+  max-issues-per-linter: 50
+  max-same-issues: 5

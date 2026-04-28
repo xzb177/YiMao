@@ -1,9 +1,9 @@
 package session
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 )
@@ -107,7 +107,7 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 			m.evictOldestSession()
 		}
 		if removed > 0 || len(m.sessions) >= m.maxSize {
-			log.Printf("[Session] Session limit reached (%d/%d), cleaned %d, evicted oldest",
+			logger.Info("[Session] Session limit reached (%d/%d), cleaned %d, evicted oldest",
 				len(m.sessions), m.maxSize, removed)
 		}
 	}
@@ -121,7 +121,7 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	}
 
 	m.sessions[userID] = sess
-	log.Printf("[Session] Created new session for user %d (total: %d/%d)", userID, len(m.sessions), m.maxSize)
+	logger.Info("[Session] Created new session for user %d (total: %d/%d)", userID, len(m.sessions), m.maxSize)
 
 	return sess
 }
@@ -142,7 +142,7 @@ func (m *Manager) GetOrCreateWithCleanup(userID int64) *Session {
 		go func() {
 			removed := m.Cleanup()
 			if removed > 0 {
-				log.Printf("[Session] Proactive cleanup: removed %d expired sessions", removed)
+				logger.Info("[Session] Proactive cleanup: removed %d expired sessions", removed)
 			}
 		}()
 	}
@@ -169,7 +169,7 @@ func (m *Manager) Delete(userID int64) {
 	defer m.mu.Unlock()
 
 	if sess, exists := m.sessions[userID]; exists {
-		log.Printf("[Session] Deleting session for user %d", userID)
+		logger.Info("[Session] Deleting session for user %d", userID)
 		delete(m.sessions, userID)
 		// Note: sess is removed from map, will be garbage collected (no explicit cleanup needed)
 		_ = sess
@@ -209,7 +209,7 @@ func (m *Manager) cleanupLocked() int {
 	}
 
 	if removed > 0 {
-		log.Printf("[Session] Cleaned up %d expired sessions", removed)
+		logger.Info("[Session] Cleaned up %d expired sessions", removed)
 	}
 
 	return removed
@@ -235,7 +235,7 @@ func (m *Manager) evictOldestSession() {
 
 	if oldestID != 0 {
 		delete(m.sessions, oldestID)
-		log.Printf("[Session] Evicted oldest session for user %d (inactive since %v)", oldestID, oldestTime.Format("15:04:05"))
+		logger.Info("[Session] Evicted oldest session for user %d (inactive since %v)", oldestID, oldestTime.Format("15:04:05"))
 	}
 }
 
@@ -250,7 +250,7 @@ func (m *Manager) cleanupLoop() {
 			func() {
 				defer func() {
 					if r := recover(); r != nil {
-						log.Printf("[Session] Panic in cleanup: %v, recovering...", r)
+						logger.Info("[Session] Panic in cleanup: %v, recovering...", r)
 					}
 				}()
 				m.Cleanup()

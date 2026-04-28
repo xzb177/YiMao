@@ -1,9 +1,9 @@
 package services
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -107,7 +107,7 @@ func NewMediaNotificationService(dataDir string, telegram *TelegramClient, admin
 
 	service.load()
 
-	log.Printf("[MediaNotification] Service initialized")
+	logger.Info("[MediaNotification] Service initialized")
 
 	// Start processing items
 	go service.processItems()
@@ -141,7 +141,7 @@ func (s *MediaNotificationService) load() error {
 
 	s.settings = fileData.Settings
 
-	log.Printf("[MediaNotification] Loaded settings for %d admins", len(s.settings))
+	logger.Info("[MediaNotification] Loaded settings for %d admins", len(s.settings))
 	return nil
 }
 
@@ -154,16 +154,16 @@ func (s *MediaNotificationService) save() error {
 		"settings": s.settings,
 	}, "", "  ")
 	if err != nil {
-		log.Printf("[MediaNotification] Failed to marshal settings: %v", err)
+		logger.Info("[MediaNotification] Failed to marshal settings: %v", err)
 		return err
 	}
 
 	if err := os.WriteFile(s.dataFile, data, 0644); err != nil {
-		log.Printf("[MediaNotification] Failed to save settings to %s: %v", s.dataFile, err)
+		logger.Info("[MediaNotification] Failed to save settings to %s: %v", s.dataFile, err)
 		return err
 	}
 
-	log.Printf("[MediaNotification] Saved settings for %d admins to %s", len(s.settings), s.dataFile)
+	logger.Info("[MediaNotification] Saved settings for %d admins to %s", len(s.settings), s.dataFile)
 	return nil
 }
 
@@ -200,7 +200,7 @@ func (s *MediaNotificationService) SetSettings(settings *AdminNotificationSettin
 func (s *MediaNotificationService) SetDailySummaryEnabled(adminID int64, enabled bool) error {
 	settings := s.GetSettings(adminID)
 	settings.DailySummaryEnabled = enabled
-	log.Printf("[MediaNotification] SetDailySummaryEnabled: adminID=%d, enabled=%v", adminID, enabled)
+	logger.Info("[MediaNotification] SetDailySummaryEnabled: adminID=%d, enabled=%v", adminID, enabled)
 	return s.SetSettings(settings)
 }
 
@@ -208,7 +208,7 @@ func (s *MediaNotificationService) SetDailySummaryEnabled(adminID int64, enabled
 func (s *MediaNotificationService) SetSingleEnabled(adminID int64, enabled bool) error {
 	settings := s.GetSettings(adminID)
 	settings.SingleEnabled = enabled
-	log.Printf("[MediaNotification] SetSingleEnabled: adminID=%d, enabled=%v", adminID, enabled)
+	logger.Info("[MediaNotification] SetSingleEnabled: adminID=%d, enabled=%v", adminID, enabled)
 	return s.SetSettings(settings)
 }
 
@@ -627,16 +627,16 @@ func (s *MediaNotificationService) sendDailySummary(adminID int64, items []*Medi
 		settings := s.GetSettings(adminID)
 		if settings.DailySummaryEnabled {
 			if _, err := s.telegram.SendMessage(s.groupChatID, message, "", nil); err != nil {
-				log.Printf("[MediaNotification] Failed to send daily summary to group %d: %v", s.groupChatID, err)
+				logger.Info("[MediaNotification] Failed to send daily summary to group %d: %v", s.groupChatID, err)
 			} else {
-				log.Printf("[MediaNotification] 已发送每日汇总到群组 %d", s.groupChatID)
+				logger.Info("[MediaNotification] 已发送每日汇总到群组 %d", s.groupChatID)
 			}
 		}
 	}
 
 	// 2. 发送到管理员私聊
 	if _, err := s.telegram.SendMessage(adminID, message, "", nil); err != nil {
-		log.Printf("[MediaNotification] Failed to send daily summary to admin %d: %v", adminID, err)
+		logger.Info("[MediaNotification] Failed to send daily summary to admin %d: %v", adminID, err)
 	}
 }
 

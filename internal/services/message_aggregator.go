@@ -2,12 +2,12 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
 	"emby-telegram-bot/pkg/types"
+	"emby-telegram-bot/pkg/logger"
 )
 
 // MessageAggregator aggregates multiple messages before sending
@@ -217,7 +217,7 @@ func (ma *MessageAggregator) flushQueue(chatID int64) {
 		}
 	}
 
-	log.Printf("[MessageAggregator] Flushed %d messages for chat %d", len(messages), chatID)
+	logger.Info("[MessageAggregator] Flushed %d messages for chat %d", len(messages), chatID)
 }
 
 // aggregateMessages combines multiple messages into one

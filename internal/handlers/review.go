@@ -2,10 +2,10 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strings"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/services"
 	"emby-telegram-bot/internal/session"
 )
@@ -67,7 +67,7 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response, error) {
 	// Check admin permission
 	if !h.adminService.IsAdmin(ctx.UserID) {
-		log.Printf("[ReviewHandler] 非管理员尝试批准请求: userID=%d", ctx.UserID)
+		logger.Info("[ReviewHandler] 非管理员尝试批准请求: userID=%d", ctx.UserID)
 		return &callback.Response{
 			Text:        "❌ 此操作仅限管理员使用",
 			CallbackMsg: "无权限",
@@ -95,7 +95,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 					if review.Status == "rejected" {
 						statusText = "已拒绝"
 					}
-					log.Printf("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
+					logger.Info("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
 					return &callback.Response{
 						Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
 						CallbackMsg: "已被处理",
@@ -125,7 +125,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		// Check if it's a duplicate approval (already approved by another admin)
 		if err.Error() == "already_approved" {
 			// Get the current review state
-			log.Printf("[ReviewHandler] 请求已被其他管理员批准: %s", requestID)
+			logger.Info("[ReviewHandler] 请求已被其他管理员批准: %s", requestID)
 			return &callback.Response{
 				Text:        "✅ 此请求已被其他管理员批准",
 				CallbackMsg: "已被批准",
@@ -195,7 +195,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		season,
 	)
 	if err != nil {
-		log.Printf("[ReviewHandler] Failed to submit to MoviePilot: %v", err)
+		logger.Info("[ReviewHandler] Failed to submit to MoviePilot: %v", err)
 		// Notify user about approval but submission failed
 		h.telegram.SendMessage(review.TelegramID,
 			fmt.Sprintf("✅ 你的求片请求已批准\n\n📺 %s\n\n但自动提交失败，请稍后再试", review.MediaTitle), "", nil)
@@ -207,14 +207,14 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		}, nil
 	}
 
-	log.Printf("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
+	logger.Info("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
 
 	// Note: Quota was already deducted when user submitted the request
 	// No need to deduct again here
 
 	// Save subscription ID to review
 	if err := h.reviewService.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
-		log.Printf("[ReviewHandler] Failed to update subscription info: %v", err)
+		logger.Info("[ReviewHandler] Failed to update subscription info: %v", err)
 	}
 
 	// Get subscription status
@@ -240,7 +240,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response, error) {
 	// Check admin permission
 	if !h.adminService.IsAdmin(ctx.UserID) {
-		log.Printf("[ReviewHandler] 非管理员尝试拒绝请求: userID=%d", ctx.UserID)
+		logger.Info("[ReviewHandler] 非管理员尝试拒绝请求: userID=%d", ctx.UserID)
 		return &callback.Response{
 			Text:        "❌ 此操作仅限管理员使用",
 			CallbackMsg: "无权限",
@@ -268,7 +268,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 					if review.Status == "rejected" {
 						statusText = "已拒绝"
 					}
-					log.Printf("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
+					logger.Info("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
 					return &callback.Response{
 						Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
 						CallbackMsg: "已被处理",
@@ -307,10 +307,10 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		mediaType = "tv"
 	}
 	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
-		log.Printf("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
 		// Don't fail the rejection, just log the error
 	} else {
-		log.Printf("[ReviewHandler] Quota restored for user %d, media type: %s", review.TelegramID, mediaType)
+		logger.Info("[ReviewHandler] Quota restored for user %d, media type: %s", review.TelegramID, mediaType)
 	}
 
 	// Notify user about rejection
@@ -355,10 +355,10 @@ func (h *ReviewHandler) handleCancel(ctx *callback.Context) (*callback.Response,
 		mediaType = "tv"
 	}
 	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
-		log.Printf("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
 		// Don't fail the cancellation, just log the error
 	} else {
-		log.Printf("[ReviewHandler] Quota restored for user %d on cancel, media type: %s", review.TelegramID, mediaType)
+		logger.Info("[ReviewHandler] Quota restored for user %d on cancel, media type: %s", review.TelegramID, mediaType)
 	}
 
 	// Delete the review

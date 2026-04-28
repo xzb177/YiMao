@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 
 	"emby-telegram-bot/ai"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/internal/callback"
 	"emby-telegram-bot/internal/config"
 	"emby-telegram-bot/internal/services"
@@ -373,7 +373,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	// Set session mode to AI chat
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	sess.Set("ai_chat_mode", true)
-	log.Printf("[HandleAI] Enabled AI chat mode for user %d", ctx.UserID)
+	logger.Info("[HandleAI] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -456,7 +456,7 @@ func (h *StartHandler) HandleAIChat(ctx *callback.Context) (*callback.Response, 
 	// Set session mode to AI chat
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	sess.Set("ai_chat_mode", true)
-	log.Printf("[HandleAIChat] Enabled AI chat mode for user %d", ctx.UserID)
+	logger.Info("[HandleAIChat] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -762,7 +762,7 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 					sess.PushNavEntry("search", query, query)
 				}
 				// Use search result data - it already has all we need
-				log.Printf("[DetailHandler] Using search result info for: %s", item.Title)
+				logger.Info("[DetailHandler] Using search result info for: %s", item.Title)
 				return h.buildDetailFromSearch(item, mediaType, sess), nil
 			}
 		}
@@ -777,10 +777,10 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	if h.tmdb != nil {
 		tmdbMedia, err := h.tmdb.GetMediaByType(tmdbID, mediaType)
 		if err == nil && tmdbMedia != nil {
-			log.Printf("[DetailHandler] Got media info from TMDB: %s", tmdbMedia.GetTitle())
+			logger.Info("[DetailHandler] Got media info from TMDB: %s", tmdbMedia.GetTitle())
 			return h.buildDetailFromTMDB(tmdbMedia, sess), nil
 		}
-		log.Printf("[DetailHandler] TMDB API failed: %v", err)
+		logger.Info("[DetailHandler] TMDB API failed: %v", err)
 	}
 
 	// If all else fails, build a simple detail page
@@ -963,7 +963,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	// Fetch TV details with seasons from TMDB
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
-		log.Printf("[DetailHandler] Failed to get TV details from TMDB: %v", err)
+		logger.Info("[DetailHandler] Failed to get TV details from TMDB: %v", err)
 		// Fallback to simple detail
 		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable, posterURL)
 	}
@@ -1270,17 +1270,17 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			_, _, query, _ := sess.GetSearchResults()
 			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
 		}
-		log.Printf("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
+		logger.Info("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
 		// Don't mark as unavailable - the search found this media, so it exists
 		// The error might be due to type mismatch or API issue, but the media is in the system
-		log.Printf("[DetailHandler] Media found in search but GetMediaInfo failed, treating as available (error: %v)", err)
+		logger.Info("[DetailHandler] Media found in search but GetMediaInfo failed, treating as available (error: %v)", err)
 
 		// Get poster URL from search item
 		posterURL := getPosterURL(item.Poster)
 
 		// For TV shows, fallback to TMDB for season info
 		if isTV && h.tmdb != nil {
-			log.Printf("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
+			logger.Info("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
 			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, false, posterURL) // Treat as available
 		}
 	}
@@ -1343,7 +1343,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
 		if err != nil {
 			// Log TMDB error for debugging
-			log.Printf("[DetailHandler] TMDB API failed for ID %d: %v, falling back to MoviePilot", info.ID, err)
+			logger.Info("[DetailHandler] TMDB API failed for ID %d: %v, falling back to MoviePilot", info.ID, err)
 		}
 		if err == nil && len(tmdbDetails.Seasons) > 0 {
 			// Use TMDB seasons for complete list
@@ -1356,18 +1356,18 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 					Name:         s.Name,
 				}
 			}
-			log.Printf("[DetailHandler] Using TMDB seasons: %d seasons found", len(seasons))
+			logger.Info("[DetailHandler] Using TMDB seasons: %d seasons found", len(seasons))
 		} else if len(seasons) > 0 {
 			// Fallback to MoviePilot seasons
 			numberOfSeasons = len(seasons)
-			log.Printf("[DetailHandler] Using MoviePilot seasons: %d seasons found", len(seasons))
+			logger.Info("[DetailHandler] Using MoviePilot seasons: %d seasons found", len(seasons))
 		} else {
-			log.Printf("[DetailHandler] No seasons found from TMDB or MoviePilot for ID %d", info.ID)
+			logger.Info("[DetailHandler] No seasons found from TMDB or MoviePilot for ID %d", info.ID)
 		}
 	} else if isTV && len(seasons) > 0 {
 		// No TMDB client, use MoviePilot seasons
 		numberOfSeasons = len(seasons)
-		log.Printf("[DetailHandler] Using MoviePilot seasons (no TMDB client): %d seasons found", len(seasons))
+		logger.Info("[DetailHandler] Using MoviePilot seasons (no TMDB client): %d seasons found", len(seasons))
 	}
 
 	if isTV && len(seasons) > 0 {
@@ -1862,7 +1862,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 
 	// Restore previous view
-	log.Printf("[BackHandler] Restoring view: source=%s, query=%s", entry.Source, entry.Query)
+	logger.Info("[BackHandler] Restoring view: source=%s, query=%s", entry.Source, entry.Query)
 
 	// Based on source, restore appropriate view
 	switch entry.Source {
@@ -1874,20 +1874,20 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			tType = "hot" // Default to hot TV shows
 		}
 
-		log.Printf("[BackHandler] Returning to AI recommendation: %s", tType)
+		logger.Info("[BackHandler] Returning to AI recommendation: %s", tType)
 
 		// Check if we have cached search results to restore
 		items, page, query, hasSearch := sess.GetSearchResults()
-		log.Printf("[BackHandler] Checking search results: hasSearch=%v, query=%s, tType=%s", hasSearch, query, tType)
+		logger.Info("[BackHandler] Checking search results: hasSearch=%v, query=%s, tType=%s", hasSearch, query, tType)
 
 		// If we have cached results AND they match the current type, restore them
 		if hasSearch && query == tType && len(items) > 0 {
-			log.Printf("[BackHandler] Restoring cached recommendation results: %d items", len(items))
+			logger.Info("[BackHandler] Restoring cached recommendation results: %d items", len(items))
 			return h.restoreRecommendationResults(sess, tType, items, page)
 		}
 
 		// No cached results, show loading message with reload button
-		log.Printf("[BackHandler] No cached results, showing reload prompt")
+		logger.Info("[BackHandler] No cached results, showing reload prompt")
 		msg := services.NewMessageBuilder()
 		msg.Bold("🎬 精选推荐").Newline()
 		msg.Newline()
@@ -1993,11 +1993,11 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 // restoreSearchResults restores the search results from session
 func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.Context) (*callback.Response, error) {
 	items, _, query, hasSearch := sess.GetSearchResults()
-	log.Printf("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, query=%s", hasSearch, len(items), query)
+	logger.Info("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, query=%s", hasSearch, len(items), query)
 
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu using UI package
-		log.Printf("[BackHandler] Search results expired or empty, showing start menu")
+		logger.Info("[BackHandler] Search results expired or empty, showing start menu")
 		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
@@ -2064,7 +2064,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		InlineKeyboard: keyboardRows,
 	}
 
-	log.Printf("[BackHandler] Restoring search results: query=%s, items=%d", query, len(items))
+	logger.Info("[BackHandler] Restoring search results: query=%s, items=%d", query, len(items))
 	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
 		Text:          text,
@@ -2077,7 +2077,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 
 // restoreRecommendationResults restores the AI recommendation results from session
 func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType string, items []session.SearchItem, page int) (*callback.Response, error) {
-	log.Printf("[BackHandler] restoreRecommendationResults: tType=%s, items=%d, page=%d", tType, len(items), page)
+	logger.Info("[BackHandler] restoreRecommendationResults: tType=%s, items=%d, page=%d", tType, len(items), page)
 
 	// Build title and subtitle based on type
 	title := ""
@@ -2176,7 +2176,7 @@ func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType 
 		InlineKeyboard: keyboardRows,
 	}
 
-	log.Printf("[BackHandler] Restoring recommendation results: tType=%s, items=%d", tType, len(items))
+	logger.Info("[BackHandler] Restoring recommendation results: tType=%s, items=%d", tType, len(items))
 	return &callback.Response{
 		Text:          msg.Build(),
 		Edit:          false,

@@ -1,10 +1,10 @@
 package middleware
 
 import (
-	"log"
 	"time"
 
 	"emby-telegram-bot/internal/callback"
+	"emby-telegram-bot/pkg/logger"
 	"emby-telegram-bot/pkg/errors"
 )
 
@@ -12,16 +12,16 @@ import (
 func Logger(next callback.Handler) callback.Handler {
 	return callback.HandlerFunc(func(ctx *callback.Context) (*callback.Response, error) {
 		start := time.Now()
-		log.Printf("[Callback] Started: action=%s, userID=%d", ctx.Callback.Action, ctx.UserID)
+		logger.Info("[Callback] Started: action=%s, userID=%d", ctx.Callback.Action, ctx.UserID)
 
 		resp, err := next.Handle(ctx)
 
 		duration := time.Since(start)
 		if err != nil {
-			log.Printf("[Callback] Error: action=%s, userID=%d, duration=%v, error=%v",
+			logger.Info("[Callback] Error: action=%s, userID=%d, duration=%v, error=%v",
 				ctx.Callback.Action, ctx.UserID, duration, err)
 		} else {
-			log.Printf("[Callback] Completed: action=%s, userID=%d, duration=%v, edit=%v",
+			logger.Info("[Callback] Completed: action=%s, userID=%d, duration=%v, edit=%v",
 				ctx.Callback.Action, ctx.UserID, duration, resp.Edit)
 		}
 
@@ -34,7 +34,7 @@ func Recovery(next callback.Handler) callback.Handler {
 	return callback.HandlerFunc(func(ctx *callback.Context) (resp *callback.Response, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[Callback] Panic recovered: action=%s, userID=%d, panic=%v",
+				logger.Info("[Callback] Panic recovered: action=%s, userID=%d, panic=%v",
 					ctx.Callback.Action, ctx.UserID, r)
 				err = errors.InternalErr("internal error occurred")
 				resp = &callback.Response{

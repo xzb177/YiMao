@@ -1,9 +1,9 @@
 package ai
 
 import (
+	"emby-telegram-bot/pkg/logger"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 	"sync"
@@ -75,12 +75,12 @@ func (m *TrendingAIManager) GetTrendingMovies(count int) ([]*TrendingResult, err
 	cached := m.jailed[cacheKey]
 	if cached != nil && time.Now().Before(cached.ExpiresAt) {
 		m.cacheMutex.RUnlock()
-		log.Printf("[TrendingAI] Cache hit for trending_movies")
+		logger.Info("[TrendingAI] Cache hit for trending_movies")
 		return cached.Results, nil
 	}
 	m.cacheMutex.RUnlock()
 
-	log.Printf("[TrendingAI] Fetching AI trending movies...")
+	logger.Info("[TrendingAI] Fetching AI trending movies...")
 
 	currentTime := time.Now().Format("2006-01-02")
 
@@ -101,13 +101,13 @@ func (m *TrendingAIManager) GetTrendingMovies(count int) ([]*TrendingResult, err
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
-		log.Printf("[TrendingAI] Error getting trending movies: %v", err)
+		logger.Info("[TrendingAI] Error getting trending movies: %v", err)
 		return nil, err
 	}
 
 	results, err := m.parseTrendingResults(response, "movie")
 	if err != nil {
-		log.Printf("[TrendingAI] Error parsing trending movies: %v", err)
+		logger.Info("[TrendingAI] Error parsing trending movies: %v", err)
 		return nil, err
 	}
 
@@ -123,7 +123,7 @@ func (m *TrendingAIManager) GetTrendingMovies(count int) ([]*TrendingResult, err
 	// Save to file for persistence
 	m.saveToFile()
 
-	log.Printf("[TrendingAI] Got %d trending movies from AI", len(results))
+	logger.Info("[TrendingAI] Got %d trending movies from AI", len(results))
 	return results, nil
 }
 
@@ -145,12 +145,12 @@ func (m *TrendingAIManager) GetHotTVShows(count int) ([]*TrendingResult, error) 
 	m.cacheMutex.RLock()
 	if cached, exists := m.jailed[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
 		m.cacheMutex.RUnlock()
-		log.Printf("[TrendingAI] Cache hit for hot_tv_shows")
+		logger.Info("[TrendingAI] Cache hit for hot_tv_shows")
 		return cached.Results, nil
 	}
 	m.cacheMutex.RUnlock()
 
-	log.Printf("[TrendingAI] Fetching AI hot TV shows...")
+	logger.Info("[TrendingAI] Fetching AI hot TV shows...")
 
 	currentTime := time.Now().Format("2006-01-02")
 
@@ -171,13 +171,13 @@ func (m *TrendingAIManager) GetHotTVShows(count int) ([]*TrendingResult, error) 
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
-		log.Printf("[TrendingAI] Error getting hot TV shows: %v", err)
+		logger.Info("[TrendingAI] Error getting hot TV shows: %v", err)
 		return nil, err
 	}
 
 	results, err := m.parseTrendingResults(response, "tv")
 	if err != nil {
-		log.Printf("[TrendingAI] Error parsing hot TV shows: %v", err)
+		logger.Info("[TrendingAI] Error parsing hot TV shows: %v", err)
 		return nil, err
 	}
 
@@ -193,7 +193,7 @@ func (m *TrendingAIManager) GetHotTVShows(count int) ([]*TrendingResult, error) 
 	// Save to file for persistence
 	m.saveToFile()
 
-	log.Printf("[TrendingAI] Got %d hot TV shows from AI", len(results))
+	logger.Info("[TrendingAI] Got %d hot TV shows from AI", len(results))
 	return results, nil
 }
 
@@ -215,12 +215,12 @@ func (m *TrendingAIManager) GetNewReleases(count int) ([]*TrendingResult, error)
 	m.cacheMutex.RLock()
 	if cached, exists := m.jailed[cacheKey]; exists && time.Now().Before(cached.ExpiresAt) {
 		m.cacheMutex.RUnlock()
-		log.Printf("[TrendingAI] Cache hit for new_releases")
+		logger.Info("[TrendingAI] Cache hit for new_releases")
 		return cached.Results, nil
 	}
 	m.cacheMutex.RUnlock()
 
-	log.Printf("[TrendingAI] Fetching AI new releases...")
+	logger.Info("[TrendingAI] Fetching AI new releases...")
 
 	currentTime := time.Now().Format("2006-01-02")
 
@@ -241,13 +241,13 @@ func (m *TrendingAIManager) GetNewReleases(count int) ([]*TrendingResult, error)
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
-		log.Printf("[TrendingAI] Error getting new releases: %v", err)
+		logger.Info("[TrendingAI] Error getting new releases: %v", err)
 		return nil, err
 	}
 
 	results, err := m.parseTrendingResults(response, "movie")
 	if err != nil {
-		log.Printf("[TrendingAI] Error parsing new releases: %v", err)
+		logger.Info("[TrendingAI] Error parsing new releases: %v", err)
 		return nil, err
 	}
 
@@ -263,7 +263,7 @@ func (m *TrendingAIManager) GetNewReleases(count int) ([]*TrendingResult, error)
 	// Save to file for persistence
 	m.saveToFile()
 
-	log.Printf("[TrendingAI] Got %d new releases from AI", len(results))
+	logger.Info("[TrendingAI] Got %d new releases from AI", len(results))
 	return results, nil
 }
 
@@ -310,7 +310,7 @@ func (m *TrendingAIManager) ClearCache() {
 	m.cacheMutex.Lock()
 	defer m.cacheMutex.Unlock()
 	m.jailed = make(map[string]*TrendingCacheItem)
-	log.Printf("[TrendingAI] Cache cleared")
+	logger.Info("[TrendingAI] Cache cleared")
 }
 
 // RefreshCache refreshes all trending caches
@@ -319,7 +319,7 @@ func (m *TrendingAIManager) RefreshCache() error {
 		return fmt.Errorf("AI trending not enabled")
 	}
 
-	log.Printf("[TrendingAI] Refreshing all caches...")
+	logger.Info("[TrendingAI] Refreshing all caches...")
 
 	// Refresh all three categories in parallel
 	var wg sync.WaitGroup
@@ -330,7 +330,7 @@ func (m *TrendingAIManager) RefreshCache() error {
 	go func() {
 		defer wg.Done()
 		if _, err := m.GetTrendingMovies(5); err != nil {
-			log.Printf("[TrendingAI] Failed to refresh trending movies: %v", err)
+			logger.Info("[TrendingAI] Failed to refresh trending movies: %v", err)
 			errChan <- err
 		}
 	}()
@@ -338,7 +338,7 @@ func (m *TrendingAIManager) RefreshCache() error {
 	go func() {
 		defer wg.Done()
 		if _, err := m.GetHotTVShows(5); err != nil {
-			log.Printf("[TrendingAI] Failed to refresh hot TV shows: %v", err)
+			logger.Info("[TrendingAI] Failed to refresh hot TV shows: %v", err)
 			errChan <- err
 		}
 	}()
@@ -346,7 +346,7 @@ func (m *TrendingAIManager) RefreshCache() error {
 	go func() {
 		defer wg.Done()
 		if _, err := m.GetNewReleases(5); err != nil {
-			log.Printf("[TrendingAI] Failed to refresh new releases: %v", err)
+			logger.Info("[TrendingAI] Failed to refresh new releases: %v", err)
 			errChan <- err
 		}
 	}()
@@ -366,7 +366,7 @@ func (m *TrendingAIManager) RefreshCache() error {
 		return fmt.Errorf("some caches failed to refresh: %s", strings.Join(errors, "; "))
 	}
 
-	log.Printf("[TrendingAI] All caches refreshed successfully")
+	logger.Info("[TrendingAI] All caches refreshed successfully")
 	return nil
 }
 
@@ -515,7 +515,7 @@ func (m *TrendingAIManager) saveToFile() error {
 		return err
 	}
 
-	log.Printf("[TrendingAI] Cache saved to file")
+	logger.Info("[TrendingAI] Cache saved to file")
 	return nil
 }
 
@@ -524,7 +524,7 @@ func (m *TrendingAIManager) loadFromFile() error {
 	data, err := os.ReadFile("ai_trending_cache.json")
 	if err != nil {
 		if os.IsNotExist(err) {
-			log.Printf("[TrendingAI] No cache file found, starting fresh")
+			logger.Info("[TrendingAI] No cache file found, starting fresh")
 			return nil
 		}
 		return err
@@ -551,11 +551,11 @@ func (m *TrendingAIManager) loadFromFile() error {
 	for key, cached := range savedData.Caches {
 		if now.Before(cached.ExpiresAt) {
 			m.jailed[key] = cached
-			log.Printf("[TrendingAI] Restored cache: %s (%d items)", key, len(cached.Results))
+			logger.Info("[TrendingAI] Restored cache: %s (%d items)", key, len(cached.Results))
 		}
 	}
 
-	log.Printf("[TrendingAI] Cache loaded from file")
+	logger.Info("[TrendingAI] Cache loaded from file")
 	return nil
 }
 
@@ -572,7 +572,7 @@ func (m *TrendingAIManager) GetRandomRecommendation(count int, mediaType string)
 		count = 3
 	}
 
-	log.Printf("[TrendingAI] Fetching random %s recommendations...", mediaType)
+	logger.Info("[TrendingAI] Fetching random %s recommendations...", mediaType)
 
 	currentTime := time.Now().Format("2006-01-02")
 
@@ -607,17 +607,17 @@ func (m *TrendingAIManager) GetRandomRecommendation(count int, mediaType string)
 
 	response, err := m.zhipu.Send(userMessage, systemPrompt)
 	if err != nil {
-		log.Printf("[TrendingAI] Error getting random recommendations: %v", err)
+		logger.Info("[TrendingAI] Error getting random recommendations: %v", err)
 		return nil, err
 	}
 
 	results, err := m.parseTrendingResults(response, mediaType)
 	if err != nil {
-		log.Printf("[TrendingAI] Error parsing random recommendations: %v", err)
+		logger.Info("[TrendingAI] Error parsing random recommendations: %v", err)
 		return nil, err
 	}
 
-	log.Printf("[TrendingAI] Got %d random recommendations from AI", len(results))
+	logger.Info("[TrendingAI] Got %d random recommendations from AI", len(results))
 	return results, nil
 }
 

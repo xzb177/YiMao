@@ -2,10 +2,10 @@ package services
 
 import (
 	"fmt"
-	"log"
 	"strconv"
 
 	"emby-telegram-bot/internal/session"
+	"emby-telegram-bot/pkg/logger"
 )
 
 // SearchService handles media search operations
@@ -38,7 +38,7 @@ type ExtendedSearchResult struct {
 
 // Search searches for media by title
 func (s *SearchService) Search(userID int64, query string, page int) (*ExtendedSearchResult, error) {
-	log.Printf("[SearchService] Searching: query=%s, page=%d", query, page)
+	logger.Info("[SearchService] Searching: query=%s, page=%d", query, page)
 
 	// Call MoviePilot search API
 	result, err := s.moviepilot.SearchMedia(query, page)
@@ -108,7 +108,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 					Name:         season.Name,
 				}
 			}
-			log.Printf("[SearchService] Using TMDB seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
+			logger.Info("[SearchService] Using TMDB seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
 			return seasons
 		}
 	}
@@ -116,7 +116,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 	// Fallback to MoviePilot
 	mediaInfo, err := s.moviepilot.GetMediaInfo(tmdbID, MediaTypeTV)
 	if err != nil {
-		log.Printf("[SearchService] Failed to get media info for seasons: %v", err)
+		logger.Info("[SearchService] Failed to get media info for seasons: %v", err)
 		return nil
 	}
 
@@ -130,7 +130,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 				Name:         s.Name,
 			}
 		}
-		log.Printf("[SearchService] Using MoviePilot seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
+		logger.Info("[SearchService] Using MoviePilot seasons for TMDB ID %d: %d seasons", tmdbID, len(seasons))
 		return seasons
 	}
 
@@ -151,7 +151,7 @@ func (s *SearchService) fetchSeasons(tmdbID int) []session.Season {
 					})
 				}
 			}
-			log.Printf("[SearchService] Using MoviePilot seasons map for TMDB ID %d: %d seasons", tmdbID, len(seasons))
+			logger.Info("[SearchService] Using MoviePilot seasons map for TMDB ID %d: %d seasons", tmdbID, len(seasons))
 			return seasons
 		}
 	}
