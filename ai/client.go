@@ -30,8 +30,38 @@ type ClaudeClient struct {
 	cache      *ResponseCache
 }
 
-// NewClaudeClient creates a new Claude client
+// NewClaudeClient creates a new Claude client.
+// Supports OpenAI-compatible proxies via OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL env vars.
+// When OPENAI_BASE_URL is set, uses OpenAI chat/completions format instead of Anthropic native format.
 func NewClaudeClient(apiKey string) *ClaudeClient {
+	// Check for OpenAI-compatible proxy first (higher priority)
+	openaiKey := os.Getenv("OPENAI_API_KEY")
+	openaiBase := os.Getenv("OPENAI_BASE_URL")
+	openaiModel := os.Getenv("OPENAI_MODEL")
+
+	if openaiKey != "" && openaiBase != "" {
+		// OpenAI-compatible mode
+		if openaiModel == "" {
+			openaiModel = "claude-sonnet-4-5"
+		}
+		// Ensure base URL ends with /chat/completions
+		baseURL := strings.TrimRight(openaiBase, "/")
+		if !strings.HasSuffix(baseURL, "/chat/completions") {
+			baseURL = baseURL + "/chat/completions"
+		}
+		return &ClaudeClient{
+			apiKey:  openaiKey,
+			baseURL: baseURL,
+			model:   openaiModel,
+			enabled: true,
+			httpClient: &http.Client{
+				Timeout: 60 * time.Second,
+			},
+			cache: NewResponseCache(30 * time.Minute),
+		}
+	}
+
+	// Fallback to native Anthropic API
 	if apiKey == "" {
 		return &ClaudeClient{enabled: false}
 	}
@@ -55,7 +85,8 @@ func (c *ClaudeClient) IsEnabled() bool {
 	return c.enabled
 }
 
-// Send sends a message to Claude and returns the response
+// Send sends a message to Claude and returns the response.
+// Automatically detects OpenAI-compatible proxy vs native Anthropic API based on baseURL.
 func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, error) {
 	if !c.IsEnabled() {
 		return "", fmt.Errorf("Claude client is not enabled")
@@ -67,7 +98,88 @@ func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, er
 		return cached, nil
 	}
 
-	// Prepare request
+	var response string
+	var err error
+
+	// Detect OpenAI-compatible proxy by checking if baseURL contains "chat/completions"
+	if strings.Contains(c.baseURL, "chat/completions") {
+		response, err = c.sendOpenAI(userMessage, systemPrompt)
+	} else {
+		response, err = c.sendAnthropic(userMessage, systemPrompt)
+	}
+
+	if err != nil {
+		return "", err
+	}
+
+	c.cache.Set(cacheKey, response)
+	return response, nil
+}
+
+// sendOpenAI sends request using OpenAI-compatible chat/completions format
+func (c *ClaudeClient) sendOpenAI(userMessage string, systemPrompt string) (string, error) {
+	messages := []Message{}
+	if systemPrompt != "" {
+		messages = append(messages, Message{Role: "system", Content: systemPrompt})
+	}
+	messages = append(messages, Message{Role: "user", Content: userMessage})
+
+	requestBody := map[string]interface{}{
+		"model":      c.model,
+		"max_tokens": 4096,
+		"messages":   messages,
+	}
+
+	jsonBody, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", c.baseURL, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+c.apiKey)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("API error: status %d, response: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse OpenAI response format
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("empty response from API")
+	}
+
+	return result.Choices[0].Message.Content, nil
+}
+
+// sendAnthropic sends request using native Anthropic API format
+func (c *ClaudeClient) sendAnthropic(userMessage string, systemPrompt string) (string, error) {
 	messages := []Message{
 		{Role: "user", Content: userMessage},
 	}
@@ -84,7 +196,6 @@ func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, er
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create request
 	req, err := http.NewRequest("POST", c.baseURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
@@ -94,7 +205,6 @@ func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, er
 	req.Header.Set("x-api-key", c.apiKey)
 	req.Header.Set("anthropic-version", "2023-06-01")
 
-	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
@@ -110,7 +220,6 @@ func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, er
 		return "", fmt.Errorf("API error: status %d, response: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
 	var result struct {
 		Content []struct {
 			Text string `json:"text"`
@@ -125,9 +234,7 @@ func (c *ClaudeClient) Send(userMessage string, systemPrompt string) (string, er
 		return "", fmt.Errorf("empty response from API")
 	}
 
-	response := result.Content[0].Text
-	c.cache.Set(cacheKey, response)
-	return response, nil
+	return result.Content[0].Text, nil
 }
 
 // ZhipuClient handles Zhipu AI API interactions
