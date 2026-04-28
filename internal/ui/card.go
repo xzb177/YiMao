@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"emby-telegram-bot/internal/services"
+	"github.com/xzb177/yimao/internal/services"
 )
 
 // CardBuilder 极简卡片风格构建器

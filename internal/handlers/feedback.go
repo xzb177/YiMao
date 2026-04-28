@@ -5,10 +5,10 @@ import (
 	"net/url"
 	"strings"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 )
 
 // FeedbackHandler handles user feedback callbacks

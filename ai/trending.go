@@ -1,7 +1,7 @@
 package ai
 
 import (
-	"emby-telegram-bot/pkg/logger"
+	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
 	"os"

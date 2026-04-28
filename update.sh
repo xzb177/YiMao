@@ -198,7 +198,7 @@ check_status() {
     sleep 3  # 等待容器启动
 
     # 获取容器状态
-    CONTAINER_STATUS=$(docker ps --filter "name=emby-telegram-bot" --format "{{.Status}}" 2>/dev/null | head -1)
+    CONTAINER_STATUS=$(docker ps --filter "name=yimao" --format "{{.Status}}" 2>/dev/null | head -1)
 
     if [ -n "$CONTAINER_STATUS" ]; then
         if echo "$CONTAINER_STATUS" | grep -q "healthy"; then
@@ -224,7 +224,7 @@ show_post_update_info() {
     echo ""
 
     echo "📊 容器状态:"
-    docker ps --filter "name=emby-telegram-bot" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || echo "  无法获取状态"
+    docker ps --filter "name=yimao" --format "table {{.Names}}\t{{.Status}}" 2>/dev/null || echo "  无法获取状态"
     echo ""
 
     echo "🔧 常用命令:"

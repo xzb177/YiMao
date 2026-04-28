@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/config"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 )
 
 // Router handles HTTP API requests
@@ -86,7 +86,7 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "ok",
-		"service": "emby-telegram-bot",
+		"service": "yimao",
 		"version": "2.0.0",
 	})
 }

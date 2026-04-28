@@ -4,7 +4,7 @@ package ui
 import (
 	"fmt"
 
-	"emby-telegram-bot/pkg/types"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // KeyboardBuilder helps build inline keyboards for various bot interactions.

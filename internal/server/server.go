@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"time"
 
-	"emby-telegram-bot/internal/api"
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/internal/config"
-	botHandlers "emby-telegram-bot/internal/bot"
-	"emby-telegram-bot/internal/handlers"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
+	"github.com/xzb177/yimao/internal/api"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/config"
+	botHandlers "github.com/xzb177/yimao/internal/bot"
+	"github.com/xzb177/yimao/internal/handlers"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 )
 
 // Dependencies holds all service dependencies for the server

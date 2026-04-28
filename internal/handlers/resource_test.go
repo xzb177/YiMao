@@ -3,7 +3,7 @@ package handlers
 import (
 	"testing"
 
-	"emby-telegram-bot/internal/callback"
+	"github.com/xzb177/yimao/internal/callback"
 )
 
 func TestResourceHandlerActions(t *testing.T) {

@@ -1,6 +1,6 @@
 # Docker 迁移指南
 
-本文档说明如何将 emby-telegram-bot 从 systemd 服务迁移到 Docker 容器。
+本文档说明如何将 yimao 从 systemd 服务迁移到 Docker 容器。
 
 ## 迁移步骤
 
@@ -99,7 +99,7 @@ docker-compose ps
 docker-compose logs -f
 
 # 进入容器
-docker-compose exec emby-telegram-bot sh
+docker-compose exec yimao sh
 
 # 更新代码后重新构建
 docker-compose up -d --build
@@ -151,8 +151,8 @@ vi .env
 docker-compose down
 
 # 2. 重新启用 systemd 服务
-sudo systemctl enable emby-telegram-bot
-sudo systemctl start emby-telegram-bot
+sudo systemctl enable yimao
+sudo systemctl start yimao
 ```
 
 ## 故障排查

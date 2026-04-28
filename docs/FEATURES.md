@@ -129,7 +129,7 @@ ADMINS=123456:张三,789012:李四
 ### 启动服务
 
 ```bash
-cd /root/emby-telegram-bot
+cd /root/yimao
 ./start.sh
 ```
 

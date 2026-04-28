@@ -3,9 +3,9 @@ package middleware
 import (
 	"time"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/pkg/errors"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/errors"
 )
 
 // Logger logs callback processing

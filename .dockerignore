@@ -21,8 +21,8 @@ logs/
 /tmp/
 
 # Build artifacts
-emby-telegram-bot
-emby-telegram-bot-new
+yimao
+yimao-new
 
 # Data files
 preferences.json

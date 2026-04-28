@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"emby-telegram-bot/pkg/types"
-	"emby-telegram-bot/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // MessageAggregator aggregates multiple messages before sending

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"emby-telegram-bot/internal/services"
+	"github.com/xzb177/yimao/internal/services"
 )
 
 // PopBuilder 波普艺术风格构建器

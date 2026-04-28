@@ -1,4 +1,4 @@
-module emby-telegram-bot
+module github.com/xzb177/yimao
 
 go 1.23
 

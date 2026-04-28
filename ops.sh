@@ -4,7 +4,7 @@
 # ========================================
 
 PROJECT_DIR="/root/YiMao"
-CONTAINER_NAME="emby-telegram-bot"
+CONTAINER_NAME="yimao"
 COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
 
 # 颜色输出

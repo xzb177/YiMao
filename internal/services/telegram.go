@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/pkg/types"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // sanitizeUTF8 ensures the string contains only valid UTF-8 characters

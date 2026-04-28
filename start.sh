@@ -3,7 +3,7 @@
 # Emby Telegram Bot 启动脚本
 # 这个脚本会正确加载环境变量并启动服务
 
-cd /root/emby-telegram-bot
+cd /root/yimao
 
 # 从 .env 文件读取并设置环境变量（忽略注释和空行）
 export TELEGRAM_BOT_TOKEN=$(grep '^TELEGRAM_BOT_TOKEN=' .env | cut -d'=' -f2-)
@@ -27,14 +27,14 @@ if [ -f /tmp/emby-bot.pid ]; then
 fi
 
 # 停止旧进程
-pkill -f "emby-telegram-bot" 2>/dev/null
+pkill -f "yimao" 2>/dev/null
 sleep 1
 
 # 启动服务（优先使用新版本）
-if [ -f "./emby-telegram-bot-new" ]; then
-    ./emby-telegram-bot-new > /tmp/emby-debug.log 2>&1 &
+if [ -f "./yimao-new" ]; then
+    ./yimao-new > /tmp/emby-debug.log 2>&1 &
 else
-    ./emby-telegram-bot > /tmp/emby-debug.log 2>&1 &
+    ./yimao > /tmp/emby-debug.log 2>&1 &
 fi
 PID=$!
 

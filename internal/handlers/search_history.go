@@ -3,11 +3,11 @@ package handlers
 import (
 	"fmt"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/ui"
-	"emby-telegram-bot/pkg/errors"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/ui"
+	"github.com/xzb177/yimao/pkg/errors"
 )
 
 // SearchHistoryHandler handles search history operations

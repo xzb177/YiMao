@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"emby-telegram-bot/internal/bot"
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/internal/config"
-	"emby-telegram-bot/internal/handlers"
-	"emby-telegram-bot/internal/middleware"
-	"emby-telegram-bot/internal/server"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/logger"
+	"github.com/xzb177/yimao/internal/bot"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/handlers"
+	"github.com/xzb177/yimao/internal/middleware"
+	"github.com/xzb177/yimao/internal/server"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 func main() {

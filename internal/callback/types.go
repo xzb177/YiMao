@@ -1,7 +1,7 @@
 package callback
 
 import (
-	"emby-telegram-bot/pkg/logger"
+	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
 	"regexp"

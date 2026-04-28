@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"emby-telegram-bot/internal/config"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/ui"
-	"emby-telegram-bot/pkg/types"
-	"emby-telegram-bot/pkg/validation"
+	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/ui"
+	"github.com/xzb177/yimao/pkg/types"
+	"github.com/xzb177/yimao/pkg/validation"
 )
 
 // HandleCommand handles bot commands

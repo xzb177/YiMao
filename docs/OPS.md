@@ -121,30 +121,30 @@ tail -f /var/log/yimao_monitor.log
 
 ```bash
 # 停止服务
-docker stop emby-telegram-bot
+docker stop yimao
 
 # 恢复数据
 cp -r backup_XXXXX/data/* /root/YiMao/data/
 cp backup_XXXXX/.env /root/YiMao/
 
 # 重启服务
-docker start emby-telegram-bot
+docker start yimao
 ```
 
 ## Docker 命令
 
 ```bash
 # 查看日志
-docker logs -f emby-telegram-bot
+docker logs -f yimao
 
 # 进入容器
-docker exec -it emby-telegram-bot sh
+docker exec -it yimao sh
 
 # 重启容器
-docker restart emby-telegram-bot
+docker restart yimao
 
 # 查看资源
-docker stats emby-telegram-bot
+docker stats yimao
 ```
 
 ## 配置文件
@@ -161,7 +161,7 @@ docker stats emby-telegram-bot
 
 | 日志类型 | 位置 |
 |----------|------|
-| 容器日志 | `docker logs emby-telegram-bot` |
+| 容器日志 | `docker logs yimao` |
 | 监控日志 | `/var/log/yimao_monitor.log` |
 | 运维日志 | 通过 `journalctl -u docker` 查看 |
 

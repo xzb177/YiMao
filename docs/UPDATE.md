@@ -135,7 +135,7 @@ docker compose build
 docker compose up -d --force-recreate
 
 # 5. 验证运行状态
-docker ps | grep emby-telegram-bot
+docker ps | grep yimao
 ```
 
 **首次更新提示**：
@@ -285,7 +285,7 @@ docker compose up -d --force-recreate
 
 ```bash
 # 查看容器是否正常运行
-docker ps | grep emby-telegram-bot
+docker ps | grep yimao
 
 # 应该看到 "healthy" 状态
 ```
@@ -294,7 +294,7 @@ docker ps | grep emby-telegram-bot
 
 ```bash
 # 查看启动日志
-docker logs emby-telegram-bot --tail 50
+docker logs yimao --tail 50
 
 # 应该看到类似输出：
 # 🌐 Server listening on 0.0.0.0:8080
@@ -362,7 +362,7 @@ cp -r backup-20260308-043558/* .
 
 ```bash
 # 更新前标记当前镜像
-docker tag emby-telegram-bot-emby-telegram-bot:latest emby-telegram-bot-emby-telegram-bot:backup-$(date +%Y%m%d)
+docker tag yimao-yimao:latest yimao-yimao:backup-$(date +%Y%m%d)
 
 # 更新后如果需要回滚
 docker compose down
@@ -392,7 +392,7 @@ git diff HEAD@{1} .env.example
 
 ```bash
 # 1. 检查 data 目录是否挂载正确
-docker inspect emby-telegram-bot | grep -A 10 Mounts
+docker inspect yimao | grep -A 10 Mounts
 
 # 2. 从备份恢复数据
 # （参考上面的回滚方法）

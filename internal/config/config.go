@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Config holds application configuration
@@ -151,7 +153,7 @@ func Load() (*Config, error) {
 	// Load admins from file
 	if err := cfg.loadAdmins(); err != nil {
 		// Non-fatal, continue with empty map
-		fmt.Printf("Warning: failed to load admins: %v\n", err)
+		logger.Warn("failed to load admins: %v", err)
 	}
 
 	// Validate required config
@@ -279,6 +281,59 @@ func (c *Config) IsAdmin(userID int64) bool {
 // GetAdminName returns the admin's name
 func (c *Config) GetAdminName(userID int64) string {
 	return c.Admins[userID]
+}
+
+// ---- Structured accessors ----
+// These return sub-configs that group related fields.
+// New code should prefer these over direct field access.
+
+// Telegram returns Telegram-specific configuration
+func (c *Config) Telegram() TelegramConfig {
+	return TelegramConfig{BotToken: c.TelegramBotToken, ChatID: c.TelegramChatID}
+}
+
+// MoviePilot returns MoviePilot-specific configuration
+func (c *Config) MoviePilot() MoviePilotConfig {
+	return MoviePilotConfig{URL: c.MoviePilotURL, APIKey: c.MoviePilotAPIKey, DownloadPath: c.DownloadSavePath}
+}
+
+// Emby returns Emby-specific configuration
+func (c *Config) Emby() EmbyConfig {
+	return EmbyConfig{URL: c.EmbyURL, APIKey: c.EmbyAPIKey}
+}
+
+// AI returns AI service configuration
+func (c *Config) AI() AIConfig {
+	return AIConfig{AnthropicKey: c.AnthropicAPIKey, ZhipuKey: c.ZhipuAPIKey, OpenAIKey: c.OpenAIAPIKey, Enabled: c.EnableAI}
+}
+
+// Server returns server configuration
+func (c *Config) Server() ServerConfig {
+	return ServerConfig{Port: c.ServerPort, Host: c.ServerHost, WebhookURL: c.WebhookURL}
+}
+
+// Security returns security configuration
+func (c *Config) Security() SecurityConfig {
+	return SecurityConfig{
+		EnableAPIAuth: c.EnableAPIAuth, APIKeys: c.APIKeys,
+		EnableRateLimit: c.EnableRateLimit, EnableIPBlocking: c.EnableIPBlocking,
+		RateLimitReq: c.RateLimitRequests, RateLimitWindow: c.RateLimitWindow,
+		MaxFailed: c.MaxFailedAttempts, BlockDuration: c.BlockDuration,
+	}
+}
+
+// Logging returns logging configuration
+func (c *Config) Logging() LoggingConfig {
+	return LoggingConfig{Level: c.LogLevel, Color: c.LogColor, Prefix: c.LogPrefix}
+}
+
+// PTSites returns PT site passkey configuration
+func (c *Config) PTSites() PTSitesConfig {
+	return PTSitesConfig{
+		HDSkyPasskey: c.HDSkyPasskey, ZhuQuePasskey: c.ZhuQuePasskey,
+		ZhuQueRSSKey1: c.ZhuQueRSSKey1, ZhuQueRSSKey2: c.ZhuQueRSSKey2,
+		MTeamPasskey: c.MTeamPasskey, MTeamRSSUID: c.MTeamRSSUID, MTeamRSSSign: c.MTeamRSSSign,
+	}
 }
 
 // Helper functions

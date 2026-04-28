@@ -15,8 +15,8 @@
 *.pid
 
 # Binaries
-emby-telegram-bot
-emby-telegram-bot-*
+yimao
+yimao-*
 bot
 /bot
 *.exe

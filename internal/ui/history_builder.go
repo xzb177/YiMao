@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/internal/services"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/services"
 )
 
 // HistoryBuilder 搜索历史 UI 构建器

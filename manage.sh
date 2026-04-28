@@ -7,8 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-CONTAINER_NAME="emby-telegram-bot"
-IMAGE_NAME="emby-telegram-bot-emby-telegram-bot"
+CONTAINER_NAME="yimao"
+IMAGE_NAME="yimao-yimao"
 
 # Colors for output
 RED='\033[0;31m'

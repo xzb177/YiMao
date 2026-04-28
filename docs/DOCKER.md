@@ -79,8 +79,8 @@ git pull
 
 ## 容器信息
 
-- 容器名称: `emby-telegram-bot`
-- 镜像名称: `emby-telegram-bot-emby-telegram-bot`
+- 容器名称: `yimao`
+- 镜像名称: `yimao-yimao`
 - 端口: `8080`
 - 重启策略: `unless-stopped`
 - 健康检查: 每30秒检查一次

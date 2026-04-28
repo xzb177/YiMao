@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Docker 部署脚本
-# 用于将 emby-telegram-bot 迁移到 Docker 容器
+# 用于将 yimao 迁移到 Docker 容器
 
 set -e
 
@@ -28,10 +28,10 @@ if [ ! -f .env ]; then
 fi
 
 # 停止旧的 systemd 服务
-if systemctl is-active --quiet emby-telegram-bot; then
+if systemctl is-active --quiet yimao; then
     echo "⏹️  停止旧的 systemd 服务..."
-    sudo systemctl stop emby-telegram-bot
-    sudo systemctl disable emby-telegram-bot
+    sudo systemctl stop yimao
+    sudo systemctl disable yimao
 fi
 
 # 备份数据

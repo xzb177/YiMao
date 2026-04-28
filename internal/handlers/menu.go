@@ -5,11 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/errors"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/errors"
 )
 
 // MyRequestsHandler handles "my requests" callbacks with pagination

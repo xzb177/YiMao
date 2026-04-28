@@ -4,7 +4,7 @@
 # ========================================
 
 PROJECT_DIR="/root/YiMao"
-CONTAINER_NAME="emby-telegram-bot"
+CONTAINER_NAME="yimao"
 LOG_FILE="/var/log/yimao_monitor.log"
 
 # 告警阈值

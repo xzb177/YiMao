@@ -5,12 +5,12 @@ import (
 	"strconv"
 	"strings"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/internal/config"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/types"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // AdminHandler handles admin-related callbacks

@@ -4,10 +4,10 @@ package presenters
 import (
 	"fmt"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/types"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // SearchPresenter builds messages for search results.

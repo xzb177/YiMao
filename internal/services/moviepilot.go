@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"emby-telegram-bot/pkg/logger"
-	"emby-telegram-bot/pkg/validation"
+	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/validation"
 )
 
 // FlexibleYear handles year fields that can be string, int, or null

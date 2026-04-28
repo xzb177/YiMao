@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"strings"
 
-	"emby-telegram-bot/internal/callback"
-	"emby-telegram-bot/pkg/logger"
-	searchsvc "emby-telegram-bot/internal/services/search"
-	"emby-telegram-bot/internal/services"
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/types"
+	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/pkg/logger"
+	searchsvc "github.com/xzb177/yimao/internal/services/search"
+	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // SearchHandler handles search callbacks and queries

@@ -42,7 +42,7 @@ docker compose up -d
 ### 5. 查看日志
 
 ```bash
-docker logs -f emby-telegram-bot
+docker logs -f yimao
 ```
 
 看到 `🌐 Server listening on 0.0.0.0:8080` 表示启动成功。
@@ -87,7 +87,7 @@ docker logs -f emby-telegram-bot
 docker ps
 
 # 查看日志
-docker logs emby-telegram-bot
+docker logs yimao
 ```
 
 常见原因：

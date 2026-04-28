@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"emby-telegram-bot/internal/session"
-	"emby-telegram-bot/pkg/logger"
+	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // SearchService handles media search operations
