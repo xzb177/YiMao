@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/xzb177/yimao/pkg/logger"
 )
@@ -154,6 +155,24 @@ func Load() (*Config, error) {
 	if err := cfg.loadAdmins(); err != nil {
 		// Non-fatal, continue with empty map
 		logger.Warn("failed to load admins: %v", err)
+	}
+
+	// Also load admins from ADMIN_USER_IDS environment variable (comma-separated)
+	// This allows setting admins purely via env vars without creating a JSON file.
+	if envAdmins := getEnv("ADMIN_USER_IDS", ""); envAdmins != "" {
+		for _, idStr := range strings.Split(envAdmins, ",") {
+			idStr = strings.TrimSpace(idStr)
+			if idStr == "" {
+				continue
+			}
+			var id int64
+			if _, err := fmt.Sscanf(idStr, "%d", &id); err == nil && id > 0 {
+				if _, exists := cfg.Admins[id]; !exists {
+					cfg.Admins[id] = "Admin"
+					logger.Info("Admin added from env: %d", id)
+				}
+			}
+		}
 	}
 
 	// Validate required config
