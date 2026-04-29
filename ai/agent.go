@@ -4,8 +4,9 @@ package ai
 import (
 	"fmt"
 	"os"
-	"strings"
 	"sync"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Agent orchestrates all AI capabilities
@@ -18,48 +19,16 @@ type Agent struct {
 	enabled   bool
 }
 
-// NewAgent creates a new AI agent
+// NewAgent creates a new AI agent.
+// Priority: OPENAI_BASE_URL (proxy) > ZHIPU_API_KEY > CLAUDE_API_KEY
 func NewAgent(apiKey string) *Agent {
-	// Try Zhipu first (Chinese AI, better for this use case)
-	zhipu := NewZhipuClient(apiKey)
-	if zhipu.IsEnabled() {
-		return &Agent{
-			zhipu:    zhipu,
-			recommend: NewMediaRecommendationAIWithZhipu(zhipu),
-			search:    NewSearchAIWithZhipu(zhipu),
-			enabled:   true,
-		}
-	}
-
-	// Fallback to Claude
-	claude := NewClaudeClient(apiKey)
-	if claude.IsEnabled() {
-		return &Agent{
-			claude:    claude,
-			recommend: NewMediaRecommendationAI(claude),
-			search:    NewSearchAI(claude),
-			enabled:   true,
-		}
-	}
-
-	// Try environment variables separately
-	zhipuKey := os.Getenv("ZHIPU_API_KEY")
-	if zhipuKey != "" {
-		zhipu = NewZhipuClient(zhipuKey)
-		if zhipu.IsEnabled() {
-			return &Agent{
-				zhipu:    zhipu,
-				recommend: NewMediaRecommendationAIWithZhipu(zhipu),
-				search:    NewSearchAIWithZhipu(zhipu),
-				enabled:   true,
-			}
-		}
-	}
-
-	claudeKey := os.Getenv("CLAUDE_API_KEY")
-	if claudeKey != "" {
-		claude = NewClaudeClient(claudeKey)
+	// Priority 1: OpenAI-compatible proxy (e.g. one-api, new-api)
+	openaiKey := os.Getenv("OPENAI_API_KEY")
+	openaiBase := os.Getenv("OPENAI_BASE_URL")
+	if openaiKey != "" && openaiBase != "" {
+		claude := NewClaudeClient("") // Will pick up OPENAI_* env vars
 		if claude.IsEnabled() {
+			logger.Info("[AI] Using OpenAI-compatible proxy: %s", openaiBase)
 			return &Agent{
 				claude:    claude,
 				recommend: NewMediaRecommendationAI(claude),
@@ -69,19 +38,24 @@ func NewAgent(apiKey string) *Agent {
 		}
 	}
 
-	// Try reading from .env file
-	if apiKey := readAPIKeyFromEnv(); apiKey != "" {
-		zhipu = NewZhipuClient(apiKey)
-		if zhipu.IsEnabled() {
-			return &Agent{
-				zhipu:    zhipu,
-				recommend: NewMediaRecommendationAIWithZhipu(zhipu),
-				search:    NewSearchAIWithZhipu(zhipu),
-				enabled:   true,
-			}
+	// Priority 2: Zhipu AI
+	zhipu := NewZhipuClient("")
+	if zhipu.IsEnabled() {
+		return &Agent{
+			zhipu:    zhipu,
+			recommend: NewMediaRecommendationAIWithZhipu(zhipu),
+			search:    NewSearchAIWithZhipu(zhipu),
+			enabled:   true,
 		}
+	}
 
-		claude = NewClaudeClient(apiKey)
+	// Priority 3: Native Anthropic API
+	claudeKey := os.Getenv("ANTHROPIC_API_KEY")
+	if claudeKey == "" {
+		claudeKey = os.Getenv("CLAUDE_API_KEY")
+	}
+	if claudeKey != "" {
+		claude := NewClaudeClient(claudeKey)
 		if claude.IsEnabled() {
 			return &Agent{
 				claude:    claude,
@@ -95,29 +69,6 @@ func NewAgent(apiKey string) *Agent {
 	return &Agent{
 		enabled: false,
 	}
-}
-
-// readAPIKeyFromEnv reads API key from .env file
-func readAPIKeyFromEnv() string {
-	possiblePaths := []string{
-		"/root/YiMao/.env",
-		".env",
-		"/app/data/.env",
-	}
-
-	for _, path := range possiblePaths {
-		if data, err := os.ReadFile(path); err == nil {
-			for _, line := range strings.Split(string(data), "\n") {
-				if strings.HasPrefix(line, "ZHIPU_API_KEY=") {
-					return strings.TrimSpace(strings.TrimPrefix(line, "ZHIPU_API_KEY="))
-				}
-				if strings.HasPrefix(line, "CLAUDE_API_KEY=") {
-					return strings.TrimSpace(strings.TrimPrefix(line, "CLAUDE_API_KEY="))
-				}
-			}
-		}
-	}
-	return ""
 }
 
 // IsEnabled returns whether the agent is enabled
