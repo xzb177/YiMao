@@ -280,3 +280,14 @@ docker compose up -d
 Made with ❤️ by [xzb177](https://github.com/xzb177)
 
 </div>
+
+---
+
+## 🌟 支持本项目
+
+如果觉得本项目对你有帮助，欢迎支持：
+
+[![VSLLM](https://img.shields.io/badge/Powered%20by-VSLLM-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMMyA3djEwbDkgNSA5LTVIN0wxMiAyeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==)](https://vsllm.com)
+
+> 🔗 [维云模型开放平台](https://vsllm.com) - 稳定极速的大模型API聚合平台
+
