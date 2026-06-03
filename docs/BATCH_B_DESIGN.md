@@ -101,3 +101,41 @@ WISHED → SEARCHING ─→ FOUND → NOTIFIED → FULFILLED
 - #1（小、隔离）→ #5（中）→ #6（大、状态机+SQLite，风险最高）。
 - 每个功能 `go build ./... && go vet ./... && go test ./...` 全绿才算完成；任一关键环节做不干净则保留骨架+不接入半成品。
 - **建议 #6 实现后配合真实 Emby/MoviePilot 环境 runtime 验证再合并部署**（状态机/调度/去重无法仅靠编译保证正确）。
+
+---
+
+# 附录：三模型评审后的落地细化（v2 locked）
+
+## 通用（跨三功能）
+- **全部步长/阈值走 env config**（禁 magic number）：`WISH_RESEARCH_INTERVAL_HOURS=24`、`WISH_EXPIRE_DAYS=30`、`WISH_MIN_SEEDERS=1`、`WISH_MIN_QUALITY`(默认关)、`RADIO_MAX_PER_WEEK=2`、`RADIO_MIN_ACTIVE_DAYS=7`、`ETA_THRESHOLD_HIGH=3`。
+- **结构化日志带 tag**：`[eta]` `[radio]` `[wish]`——三者都是无人值守（定时/webhook），出错没人看，要可 grep。
+
+## #1 状态灯牌（不承诺时间）
+| 灯 | 条件 | 文案 |
+|----|------|------|
+| ⚡ | ≥ETA_THRESHOLD_HIGH 站点做种 | 资源充足，很快到货 |
+| 🔄 | 1-2 站点做种 | 已有源，需要等种 |
+| 🐢 | 0 站点 | 暂无源，待补档 |
+| ❓ | 候选空/数据不足 | 还在找源中…… |
+
+## #5 细化
+- 默认 opt-out 但**必须有显式关闭字段**，scheduler 读字段跳过（不靠 UI 隐藏）。
+- 频控：≤2 次/周 且 间隔 ≥3 天；表 `radio_dm_log(user_id, sent_at)`，`COUNT WHERE sent_at>now-7d`。
+- 近 `RADIO_MIN_ACTIVE_DAYS` 天无互动（命令/按钮）→ 不推。
+- playability：`Items/{id}?Fields=Path,IsPlaceHolder,MediaSources`，校验 `!IsPlaceHolder && MediaSources非空 && Path非空`，虚拟路径跳过换下一部。
+
+## #6 状态机落地（SQLite，全部跃迁包在同一事务）
+状态：`PENDING → SEARCHING → FOUND → NOTIFIED → FULFILLED`；旁路 `EXPIRED` / `ORPHANED`。
+- **坑1 TMDB 查不到**：强校验 `tmdb_id != 0`，否则拒绝入池"没找到这个片，换关键词"，不入池不占容量不重搜。
+- **坑2 错峰**：`search_offset_minutes = hash(item_id) % 1440`，搜索时刻散布全天，平均探测延迟 ~12h→~1h，不增请求次数。
+- **坑3 质量**：v1 不设门槛，通知里**标注**疑似枪版/无中字/分辨率，用户自决。
+- **坑4 过期**：`expiry_cursor` 每天扫，超 `WISH_EXPIRE_DAYS` 无源 → 触发一次最终重搜 → 仍无则 `EXPIRED` + 私信发起人。
+- **坑5 退群**：发通知前 TG `getChatMember`，不在 → `ORPHANED`，不通知不重试，管理员可 review。
+- **坑6 重搜自愈**：字段 `searching_at`，调度只选 `searching_at IS NULL OR searching_at<now-interval`；搜前 `UPDATE SET searching_at=now()`，搜完清空。崩溃重启旧锁超时自动重纳入。
+- **坑7 去重**：入池前查 许愿池 + 现有订阅/求片表，命中 → "这片已在求列表，出源自动通知"。唯一索引 canonical key = `tmdb_id` 优先，无则 `imdb_id`，都无拒绝入池（不用纯标题）。
+- 出源后**仅通知**，inline「🎬 立即求片」→ 走**现有 request 流程 + 用户确认**（防误触自动入库）→ FULFILLED。
+
+## 实现前置（必先跑通，Codex 最关注）
+1. Emby `externalId=tmdb:xxx` 查询可用？
+2. 候选列表入口能拿到可播放源 / seeders 数据？
+3. 求片/订阅子系统有 TMDB/IMDb 键可去重？
