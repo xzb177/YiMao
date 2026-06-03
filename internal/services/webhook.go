@@ -11,7 +11,7 @@ import (
 )
 
 // NewWebhookService creates a new webhook service
-func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
+func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, embySkipTLSVerify bool, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
 	svc := &WebhookService{
 		telegram:             telegram,
 		moviepilot:           moviepilot,
@@ -21,6 +21,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		chatID:               chatID,
 		embyURL:              embyURL,
 		embyAPIKey:           embyAPIKey,
+		embySkipTLSVerify:    embySkipTLSVerify,
 		mediaNotificationSvc: mediaNotificationSvc,
 		messageCache:         NewMessageCache(5 * time.Minute),
 		notificationFormat:   notificationFormat,

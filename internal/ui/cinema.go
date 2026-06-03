@@ -149,7 +149,7 @@ func (b *CinemaBuilder) BuildRecommendation(title string, results []services.Sea
 	sb.WriteString(cinemaSeparator + "\n\n")
 
 	sb.WriteString(fmt.Sprintf("              🎬 %s\n", title))
-	sb.WriteString(fmt.Sprintf("           今日精选\n\n", title))
+	sb.WriteString("           今日精选\n\n")
 
 	sb.WriteString(cinemaSeparator + "\n\n")
 

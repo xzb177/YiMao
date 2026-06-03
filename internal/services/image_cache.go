@@ -103,7 +103,7 @@ func (c *ImageCache) Set(imageURL string, data []byte) error {
 	}
 
 	// 写入缓存文件
-	if err := os.WriteFile(cachePath, data, 0644); err != nil {
+	if err := atomicWriteFile(cachePath, data, 0644); err != nil {
 		logger.Info("[ImageCache] Error writing cache file: %v", err)
 		return err
 	}

@@ -559,9 +559,10 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	// Skip TLS verification for self-signed/origin certificates
+	// Skip TLS verification only when explicitly enabled for trusted
+	// self-signed/origin certificates (EMBY_SKIP_TLS_VERIFY). Default: verify.
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify},
 	}
 	client := &http.Client{
 		Timeout:   5 * time.Second, // 降低超时避免阻塞求片流程，5秒足够正常响应

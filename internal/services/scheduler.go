@@ -1,9 +1,11 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"math/rand"
+	"sync"
 	"time"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Scheduler handles periodic tasks like daily recommendations
@@ -13,7 +15,11 @@ type Scheduler struct {
 	adminService *AdminService
 	userMapping  *UserMappingService
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 
+	// mu guards the mutable config fields below (accessed from both the
+	// run() goroutine and external setters).
+	mu sync.RWMutex
 	// Daily recommendation time (hour, minute)
 	dailyHour   int
 	dailyMinute int
@@ -41,14 +47,18 @@ func NewScheduler(
 
 // SetDailyTime sets the time for daily recommendations
 func (s *Scheduler) SetDailyTime(hour, minute int) {
+	s.mu.Lock()
 	s.dailyHour = hour
 	s.dailyMinute = minute
+	s.mu.Unlock()
 	logger.Info("[Scheduler] Daily recommendation time set to %02d:%02d", hour, minute)
 }
 
 // SetEnabled enables or disables the scheduler
 func (s *Scheduler) SetEnabled(enabled bool) {
+	s.mu.Lock()
 	s.enabled = enabled
+	s.mu.Unlock()
 	if enabled {
 		logger.Info("[Scheduler] Scheduler enabled")
 	} else {
@@ -56,16 +66,33 @@ func (s *Scheduler) SetEnabled(enabled bool) {
 	}
 }
 
+// isEnabled returns whether the scheduler is currently enabled.
+func (s *Scheduler) isEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.enabled
+}
+
+// dailyTime returns the configured daily run hour and minute.
+func (s *Scheduler) dailyTime() (int, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dailyHour, s.dailyMinute
+}
+
 // Start starts the scheduler
 func (s *Scheduler) Start() {
 	go s.run()
-	logger.Info("[Scheduler] Started (daily recommendation at %02d:%02d)", s.dailyHour, s.dailyMinute)
+	h, m := s.dailyTime()
+	logger.Info("[Scheduler] Started (daily recommendation at %02d:%02d)", h, m)
 }
 
-// Stop stops the scheduler
+// Stop stops the scheduler. Safe to call multiple times.
 func (s *Scheduler) Stop() {
-	close(s.stopCh)
-	logger.Info("[Scheduler] Stopped")
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+		logger.Info("[Scheduler] Stopped")
+	})
 }
 
 // run is the main scheduler loop
@@ -78,7 +105,7 @@ func (s *Scheduler) run() {
 		case <-s.stopCh:
 			return
 		case <-time.After(time.Until(nextRun)):
-			if s.enabled {
+			if s.isEnabled() {
 				s.sendDailyRecommendations()
 			}
 			nextRun = s.nextDailyRun()
@@ -88,8 +115,9 @@ func (s *Scheduler) run() {
 
 // nextDailyRun calculates the next daily run time
 func (s *Scheduler) nextDailyRun() time.Time {
+	hour, minute := s.dailyTime()
 	now := time.Now()
-	next := time.Date(now.Year(), now.Month(), now.Day(), s.dailyHour, s.dailyMinute, 0, 0, now.Location())
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, minute, 0, 0, now.Location())
 
 	// If time has passed today, schedule for tomorrow
 	if next.Before(now) || next.Equal(now) {

@@ -1,6 +1,11 @@
 package api
 
 import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -327,7 +332,11 @@ func (r *Router) generateSummary() string {
 	return message
 }
 
-// handleDebug handles debug requests
+// handleDebug handles debug requests.
+// NOTE: this returns only non-sensitive runtime counters. Do not echo back
+// configured URLs, data paths, or credentials here — earlier versions leaked
+// moviepilot_url/emby_url/data_dir which is unsafe if this route is ever wired
+// without authentication.
 func (r *Router) handleDebug(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -336,12 +345,9 @@ func (r *Router) handleDebug(w http.ResponseWriter, req *http.Request) {
 	debugInfo := map[string]interface{}{
 		"sessions": stats,
 		"config": map[string]interface{}{
-			"moviepilot_url":    r.cfg.MoviePilotURL,
-			"emby_url":          r.cfg.EmbyURL,
-			"data_dir":          r.cfg.DataDir,
-			"webhook_url":       r.cfg.WebhookURL,
-			"has_admins":        r.adminService.HasAdmins(),
-			"admin_count":       r.adminService.GetAdminCount(),
+			"emby_configured":       r.cfg.EmbyURL != "",
+			"moviepilot_configured": r.cfg.MoviePilotURL != "",
+			"has_admins":            r.adminService.HasAdmins(),
 		},
 		"registry": map[string]interface{}{
 			"status": "active",
@@ -372,6 +378,27 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// Optional webhook authentication: when WEBHOOK_SECRET is configured, every
+	// inbound webhook must carry a valid HMAC-SHA256 signature over the raw body
+	// (header "X-Webhook-Signature: sha256=<hex>"). A "?token=" / "X-Webhook-Token"
+	// shared-secret fallback is also accepted. Without a secret configured this
+	// check is skipped for backward compatibility.
+	if secret := r.cfg.WebhookSecret; secret != "" {
+		body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // cap at 1MB
+		req.Body.Close()
+		if err != nil {
+			http.Error(w, "Failed to read request", http.StatusBadRequest)
+			return
+		}
+		if !verifyWebhookAuth(req, body, secret) {
+			logger.Info("[API] Rejected webhook: invalid signature/token from %s", req.RemoteAddr)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		// Restore the body so downstream handlers can read it again.
+		req.Body = io.NopCloser(bytes.NewReader(body))
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// Check webhook type from path or header
@@ -393,6 +420,30 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// verifyWebhookAuth validates an inbound webhook against the shared secret.
+// It accepts either an HMAC-SHA256 signature of the raw body or a plain
+// shared-secret token, both compared in constant time.
+func verifyWebhookAuth(req *http.Request, body []byte, secret string) bool {
+	// 1) HMAC signature: "X-Webhook-Signature: sha256=<hex>"
+	sig := req.Header.Get("X-Webhook-Signature")
+	if sig != "" {
+		sig = strings.TrimPrefix(sig, "sha256=")
+		mac := hmac.New(sha256.New, []byte(secret))
+		mac.Write(body)
+		expected := hex.EncodeToString(mac.Sum(nil))
+		return hmac.Equal([]byte(sig), []byte(expected))
+	}
+	// 2) Plain shared-secret token fallback (?token= or X-Webhook-Token)
+	token := req.URL.Query().Get("token")
+	if token == "" {
+		token = req.Header.Get("X-Webhook-Token")
+	}
+	if token != "" {
+		return subtle.ConstantTimeCompare([]byte(token), []byte(secret)) == 1
+	}
+	return false
+}
+
 // handleEmbyWebhook handles Emby webhook
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	// Log request for debugging
@@ -402,7 +453,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
 		return
 	}
-	logger.Info("[API] Emby webhook received - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
+	logger.Info("[API] Emby webhook received - Content-Type: %s, Body length: %d bytes", req.Header.Get("Content-Type"), len(body))
 
 	var payload services.EmbyWebhookPayload
 	if err := json.Unmarshal(body, &payload); err != nil {

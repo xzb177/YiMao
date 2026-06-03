@@ -158,7 +158,7 @@ func (s *MediaNotificationService) save() error {
 		return err
 	}
 
-	if err := os.WriteFile(s.dataFile, data, 0644); err != nil {
+	if err := atomicWriteFile(s.dataFile, data, 0644); err != nil {
 		logger.Info("[MediaNotification] Failed to save settings to %s: %v", s.dataFile, err)
 		return err
 	}

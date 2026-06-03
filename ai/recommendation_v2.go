@@ -222,13 +222,37 @@ func (e *RecommendationEngine) Recommend(req *RecommendationRequestV2) ([]*Recom
 	}
 }
 
+// snapshotProfile returns a deep copy of the user's profile under the read
+// lock, or nil if the profile does not exist. Callers operate on the copy so
+// that concurrent writers (RecordInteraction / UpdateMood / analyzeUserProfile)
+// cannot mutate the nested Behavior/Preferences/Context/Interaction structs
+// while a recommendation is being computed. A JSON round-trip is used because
+// every field is JSON-serializable with no unexported fields or cycles, which
+// guarantees a complete copy with no shared slice/map backing storage.
+func (e *RecommendationEngine) snapshotProfile(userID int64) *UserProfileV2 {
+	e.profileMutex.RLock()
+	profile, ok := e.userProfiles[userID]
+	if !ok || profile == nil {
+		e.profileMutex.RUnlock()
+		return nil
+	}
+	data, err := json.Marshal(profile)
+	e.profileMutex.RUnlock()
+	if err != nil {
+		return nil
+	}
+	var clone UserProfileV2
+	if err := json.Unmarshal(data, &clone); err != nil {
+		return nil
+	}
+	return &clone
+}
+
 // selectStrategy 根据用户状态自动选择推荐策略
 func (e *RecommendationEngine) selectStrategy(userID int64) RecommendStrategy {
-	e.profileMutex.RLock()
-	profile, exists := e.userProfiles[userID]
-	e.profileMutex.RUnlock()
+	profile := e.snapshotProfile(userID)
 
-	if !exists {
+	if profile == nil {
 		return StrategyTrending // 新用户先用热门
 	}
 
@@ -253,9 +277,7 @@ func (e *RecommendationEngine) selectStrategy(userID int64) RecommendStrategy {
 
 // personalizedRecommend 个性化推荐（核心算法）
 func (e *RecommendationEngine) personalizedRecommend(req *RecommendationRequestV2) ([]*RecommendationResultV2, error) {
-	e.profileMutex.RLock()
-	profile := e.userProfiles[req.UserID]
-	e.profileMutex.RUnlock()
+	profile := e.snapshotProfile(req.UserID)
 
 	// 构建推荐查询
 	query := e.buildPersonalizationQuery(profile, req)
@@ -432,9 +454,7 @@ func (e *RecommendationEngine) trendingRecommend(req *RecommendationRequestV2) (
 
 // moodBasedRecommend 心情推荐（增强版）
 func (e *RecommendationEngine) moodBasedRecommend(req *RecommendationRequestV2) ([]*RecommendationResultV2, error) {
-	e.profileMutex.RLock()
-	profile := e.userProfiles[req.UserID]
-	e.profileMutex.RUnlock()
+	profile := e.snapshotProfile(req.UserID)
 
 	// 解析心情（支持复杂的心情描述）
 	moodAnalysis := e.analyzeMood(req.Context, profile)
@@ -1003,9 +1023,7 @@ func (e *RecommendationEngine) isWeekend() bool {
 
 // discoveryRecommend 发现推荐（探索新内容）
 func (e *RecommendationEngine) discoveryRecommend(req *RecommendationRequestV2) ([]*RecommendationResultV2, error) {
-	e.profileMutex.RLock()
-	profile := e.userProfiles[req.UserID]
-	e.profileMutex.RUnlock()
+	profile := e.snapshotProfile(req.UserID)
 
 	// 分析用户探索倾向
 	openness := 0.5
@@ -1226,11 +1244,12 @@ func (e *RecommendationEngine) RecordInteraction(userID int64, interactionType s
 
 // analyzeUserProfile AI 分析用户画像
 func (e *RecommendationEngine) analyzeUserProfile(userID int64) {
-	e.profileMutex.RLock()
-	profile := e.userProfiles[userID]
-	e.profileMutex.RUnlock()
-
 	if e.zhipu == nil || !e.zhipu.IsEnabled() {
+		return
+	}
+
+	profile := e.snapshotProfile(userID)
+	if profile == nil {
 		return
 	}
 
@@ -1283,7 +1302,13 @@ func (e *RecommendationEngine) analyzeUserProfile(userID int64) {
 	}
 
 	if err := json.Unmarshal([]byte(cleanAIResponse(response)), &analysis); err == nil {
+		// Write back to the canonical profile (not the snapshot read above).
 		e.profileMutex.Lock()
+		profile := e.userProfiles[userID]
+		if profile == nil {
+			e.profileMutex.Unlock()
+			return
+		}
 		profile.AIPersona = analysis.Persona
 		profile.AITags = analysis.Tags
 		profile.Preferences.Openness = analysis.Openness

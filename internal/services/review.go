@@ -103,7 +103,7 @@ func (s *ReviewService) saveLocked() error {
 		return err
 	}
 
-	if err := os.WriteFile(s.reviewsFile, data, 0644); err != nil {
+	if err := atomicWriteFile(s.reviewsFile, data, 0644); err != nil {
 		logger.Info("[ReviewService] 写入文件失败: %v", err)
 		return err
 	}

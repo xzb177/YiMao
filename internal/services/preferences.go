@@ -105,7 +105,7 @@ func (s *PreferencesService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.prefsFile, data, 0644)
+	return atomicWriteFile(s.prefsFile, data, 0644)
 }
 
 // GetPreferences gets preferences for a user

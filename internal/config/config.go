@@ -24,6 +24,9 @@ type Config struct {
 	// Emby (optional)
 	EmbyURL    string
 	EmbyAPIKey string
+	// EmbySkipTLSVerify disables TLS certificate verification for Emby requests.
+	// Default false (secure). Only enable for trusted self-signed/origin certs.
+	EmbySkipTLSVerify bool
 
 	// TMDB
 	TMDBAPIKey string
@@ -37,6 +40,10 @@ type Config struct {
 	ServerPort string
 	ServerHost string
 	WebhookURL string
+	// WebhookSecret, when set, requires inbound webhooks to carry a valid
+	// HMAC-SHA256 signature (X-Webhook-Signature: sha256=<hex>). Empty = off
+	// (backward compatible).
+	WebhookSecret string
 
 	// Storage
 	DataDir         string
@@ -103,6 +110,7 @@ func Load() (*Config, error) {
 		DownloadSavePath:   getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
 		EmbyURL:          getEnv("EMBY_URL", ""),
 		EmbyAPIKey:       getEnv("EMBY_API_KEY", ""),
+		EmbySkipTLSVerify: getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
 		TMDBAPIKey:       getEnv("TMDB_API_KEY", ""),
 		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
 		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
@@ -111,6 +119,7 @@ func Load() (*Config, error) {
 		ServerPort:            getEnv("PORT", "8080"),
 		ServerHost:            getEnv("HOST", "0.0.0.0"),
 		WebhookURL:            getEnv("WEBHOOK_URL", ""),
+		WebhookSecret:         getEnv("WEBHOOK_SECRET", ""),
 		DataDir:               getEnv("DATA_DIR", "/app/data"),
 		MaxSessionAge:         getEnvInt("MAX_SESSION_AGE", 24),
 		MaxSessions:           getEnvInt("MAX_SESSIONS", 1000),
@@ -288,7 +297,40 @@ func (c *Config) saveAdmins(admins map[string]int64) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(c.AdminFile, data, 0600)
+	return atomicWrite(c.AdminFile, data, 0600)
+}
+
+// atomicWrite writes data to path via a temp file + rename so an interrupted
+// write cannot corrupt the destination file.
+func atomicWrite(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-"+filepath.Base(path)+"-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	if err := os.Rename(tmpName, path); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return nil
 }
 
 // IsAdmin checks if a user is an admin

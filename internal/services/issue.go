@@ -123,7 +123,7 @@ func (s *IssueService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.issuesFile, data, 0644)
+	return atomicWriteFile(s.issuesFile, data, 0644)
 }
 
 // CreateIssue creates a new issue

@@ -140,7 +140,7 @@ func (s *WeeklyReportService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.dataFile, data, 0644)
+	return atomicWriteFile(s.dataFile, data, 0644)
 }
 
 // getWeekRange returns the start and end of the current week (Monday-Sunday)

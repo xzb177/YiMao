@@ -81,7 +81,7 @@ func (s *NotificationService) SaveStatusUpdates(updates []StatusUpdate) error {
 		return err
 	}
 
-	return os.WriteFile(s.notifyFile, data, 0600)
+	return atomicWriteFile(s.notifyFile, data, 0600)
 }
 
 // NotifyStatusUpdate notifies a user about request status change

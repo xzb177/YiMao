@@ -145,7 +145,7 @@ func (s *UserMappingService) save() error {
 	}
 
 	logger.Info("[UserMapping] Writing to file: %s (%d bytes)", s.mappingsFile, len(jsonData))
-	writeErr := os.WriteFile(s.mappingsFile, jsonData, 0644)
+	writeErr := atomicWriteFile(s.mappingsFile, jsonData, 0644)
 	if writeErr != nil {
 		logger.Info("[UserMapping] ERROR writing file: %v", writeErr)
 	} else {
@@ -389,7 +389,7 @@ func (s *BindingRequestService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.requestsFile, data, 0644)
+	return atomicWriteFile(s.requestsFile, data, 0644)
 }
 
 // CreateRequest creates a new binding request

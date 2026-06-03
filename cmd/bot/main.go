@@ -219,6 +219,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		chatID,
 		cfg.EmbyURL,
 		cfg.EmbyAPIKey,
+		cfg.EmbySkipTLSVerify,
 		mediaNotificationSvc,
 		cfg.NotificationFormat,
 		cfg.TMDBAPIKey,

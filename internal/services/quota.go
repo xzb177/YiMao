@@ -99,7 +99,7 @@ func (s *QuotaService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.quotasFile, data, 0644)
+	return atomicWriteFile(s.quotasFile, data, 0644)
 }
 
 // saveAsync saves quotas to file asynchronously (without locking)
@@ -112,7 +112,7 @@ func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
 		return
 	}
 
-	if err := os.WriteFile(s.quotasFile, data, 0644); err != nil {
+	if err := atomicWriteFile(s.quotasFile, data, 0644); err != nil {
 		logger.Info("[QuotaService] Failed to save quotas: %v", err)
 	}
 }
@@ -134,7 +134,7 @@ func (s *QuotaService) saveLocked() error {
 		return err
 	}
 
-	return os.WriteFile(s.quotasFile, data, 0644)
+	return atomicWriteFile(s.quotasFile, data, 0644)
 }
 
 // getOrCreateQuotaUnsafe gets or creates a quota without locking (caller must hold lock)

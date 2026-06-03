@@ -302,6 +302,6 @@ func (h *SearchHistoryHandler) handleSearchAction(ctx *callback.Context) (*callb
 
 // unescapeString 反转义字符串
 func unescapeString(s string) string {
-	s = s // Placeholder - implement unescaping if needed
+	// Placeholder - implement unescaping if needed
 	return s
 }

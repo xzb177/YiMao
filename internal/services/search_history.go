@@ -70,7 +70,7 @@ func (s *SearchHistoryService) save() error {
 		return err
 	}
 
-	return os.WriteFile(s.historyFile, data, 0644)
+	return atomicWriteFile(s.historyFile, data, 0644)
 }
 
 // AddSearch adds a search query to history
@@ -130,7 +130,7 @@ func (s *SearchHistoryService) saveAsync(history map[int64][]SearchEntry) {
 		return
 	}
 
-	if err := os.WriteFile(s.historyFile, data, 0644); err != nil {
+	if err := atomicWriteFile(s.historyFile, data, 0644); err != nil {
 		logger.Info("[SearchHistory] Failed to save: %v", err)
 	}
 }
