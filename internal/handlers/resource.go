@@ -512,7 +512,17 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 		text.WriteString(fmt.Sprintf("🌐 已搜索 %d 个站点\n", len(sitesSearched)))
 	}
 
-	text.WriteString(fmt.Sprintf("📊 找到 %d 条资源\n\n", len(rl.Resources)))
+	text.WriteString(fmt.Sprintf("📊 找到 %d 条资源\n", len(rl.Resources)))
+
+	// Batch B #1：状态灯牌（不承诺具体时间）。
+	// hasCandidate 判定：只要实际搜过站点（无论是否命中）就算「拿到了候选数据」，
+	// 据此区分「搜过但 0 源 -> 🐢」与「还没搜/数据缺失 -> ❓」。
+	hasCandidate := len(sitesSearched) > 0 || len(rl.Resources) > 0
+	lamp := deliveryLampForResources(rl.Resources, hasCandidate)
+	seedingSites := countSeedingSites(rl.Resources)
+	logger.Info("[eta] tmdb=%d type=%s sites_searched=%d resources=%d seeding_sites=%d threshold=%d lamp=%q\n",
+		rl.TMDBID, rl.MediaType, len(sitesSearched), len(rl.Resources), seedingSites, etaThresholdHigh(), lamp)
+	text.WriteString(fmt.Sprintf("%s\n\n", lamp))
 
 	// Show resources for current page
 	if len(rl.Resources) == 0 {

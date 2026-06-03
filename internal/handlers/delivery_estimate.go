@@ -1,56 +1,101 @@
 package handlers
 
-// 本文件实现「求片预产期」功能（Batch A #1）。
-//
-// 设计目标：在求片成功后追加一条「到货预估」文案，给用户一个轻量的心理预期。
-//
-// 数据来源与限制说明：
-//   - 理想情况下应根据候选资源的「有种站点数 / 做种数 seeder」来分档。
-//   - 但当前求片流程（RequestHandler.Handle）走的是「提交审核」逻辑，
-//     在提交点并不会主动去各站点搜索候选资源（那是 ResourceHandler 的职责），
-//     因此这里**不会**为了拿 seeder 数据而额外发起网络请求（避免打乱/拖慢求片流程、引入不确定行为）。
-//   - 折中方案：把分档逻辑抽成一个纯函数 estimateDelivery，调用方根据已掌握的
-//     保守信息（站点数 / 做种数 / 是否有候选）传参；当完全没有候选信息时，
-//     传入 hasCandidate=false，函数会返回最保守的「冷门」档位文案。
-//
-// 这样既保证了易测试性，又能在未来求片流程能拿到候选数据时直接复用，无需改动调用方以外的代码。
-
-// 预产期分档阈值（经验值，可按需调整）
-const (
-	// 充足：多站点有种 或 单站点做种数很高
-	deliveryRichSiteCount   = 3
-	deliveryRichSeederTotal = 30
-	// 一般：至少有候选且做种数不为 0
-	deliveryNormalSeederTotal = 1
+import (
+	"fmt"
+	"os"
 )
 
-// estimateDelivery 根据候选资源情况返回「到货预估」文案（纯函数，便于单测）。
+// 本文件实现「求片预产期 / 状态灯牌」功能（Batch B #1）。
+//
+// 设计目标：在用户**浏览候选资源列表**时，根据已扫到的候选资源（站点 + 做种数）
+// 计算一个轻量「状态灯牌」，给用户一个心理预期——但**不承诺具体时间**（不伪装精确日期）。
+//
+// 数据来源：候选列表入口 ResourceHandler.handleShowList 已经并发搜各站点并把命中结果
+// 转成 []CandidateResource（含 SiteName / Seeders 字段），O(n) 扫这份现成数据即可，
+// 零额外网络开销。
+//
+// 灯牌规则（v2 locked，见 docs/BATCH_B_DESIGN.md 附录「#1 状态灯牌」）：
+//
+//	⚡ ≥ETA_THRESHOLD_HIGH 站点做种 -> 资源充足，很快到货
+//	🔄 1 ~ (阈值-1) 站点做种        -> 已有源，需要等种
+//	🐢 0 站点做种                   -> 暂无源，待补档
+//	❓ 候选为空 / 数据缺失          -> 还在找源中……
+//
+// 这里「站点做种」指：该站点至少有一个候选资源的 seeder 数 > 0（即有人在做种），
+// 按**去重后的站点数**统计（同一站点多条资源只算一个）。
+//
+// 纯函数 estimateDeliveryLamp 不读 env、不依赖 ResourceHandler，便于单测；
+// 阈值由调用方传入（调用方用 etaThresholdHigh() 从 env 读取，遵循 config.getEnvInt 模式）。
+
+// etaThresholdHighDefault 是 ETA_THRESHOLD_HIGH 的默认值（与 docs 附录一致）。
+const etaThresholdHighDefault = 3
+
+// etaThresholdHigh 从环境变量 ETA_THRESHOLD_HIGH 读取「资源充足」档位的站点做种数阈值。
+// 遵循 internal/config/config.go 的 getEnvInt 模式（无效/缺失则回退默认值）。
+// ResourceHandler 当前不持有 *config.Config，故在 handler 层就近读取，保持最小侵入。
+func etaThresholdHigh() int {
+	if value := os.Getenv("ETA_THRESHOLD_HIGH"); value != "" {
+		var i int
+		if _, err := fmt.Sscanf(value, "%d", &i); err == nil && i > 0 {
+			return i
+		}
+	}
+	return etaThresholdHighDefault
+}
+
+// countSeedingSites 统计「有做种」的去重站点数：
+// 即在候选资源里，至少有一条资源 Seeders > 0 的站点的数量（同站多条只计一次）。
+// 返回的 seedingSites 用于灯牌分档。
+func countSeedingSites(resources []CandidateResource) int {
+	if len(resources) == 0 {
+		return 0
+	}
+	seen := make(map[string]bool, len(resources))
+	for _, r := range resources {
+		if r.Seeders > 0 {
+			seen[r.SiteName] = true
+		}
+	}
+	return len(seen)
+}
+
+// estimateDeliveryLamp 根据「有做种的站点数」返回状态灯牌文案（纯函数，便于单测）。
 //
 // 参数：
-//   - siteCount:    有该资源的站点数量（命中候选的站点数）
-//   - seederTotal:  所有候选资源的做种数(seeder)之和
-//   - hasCandidate: 是否拿到了任何候选资源数据（用于区分「确实冷门」与「数据缺失」）
+//   - seedingSites:  有做种（Seeders>0）的去重站点数
+//   - hasCandidate:  是否拿到了任何候选资源数据（区分「确实没源」与「数据缺失/还没搜」）
+//   - thresholdHigh: 「资源充足」档位阈值（站点做种数 ≥ 此值 -> ⚡），来自 env ETA_THRESHOLD_HIGH
 //
-// 规则（分三档）：
-//   - 资源充足（多站点 / 做种多）        -> 「资源充足，今晚就能看 🚀」
-//   - 一般（有候选且有一定做种）          -> 「正常排队中，预计 1-2 天 ⏳」
-//   - 冷门 / 无候选 / 数据缺失（保守兜底）-> 「这片较冷门，可能要等几天 🐢」
-func estimateDelivery(siteCount, seederTotal int, hasCandidate bool) string {
-	// 没有任何候选数据时，保守给出「冷门」档位（不臆造乐观结果）。
+// 规则（四档，不承诺具体时间）：
+//   - ❓ 候选为空 / 数据缺失（hasCandidate=false）
+//   - ⚡ seedingSites >= thresholdHigh
+//   - 🔄 1 <= seedingSites < thresholdHigh
+//   - 🐢 seedingSites == 0
+func estimateDeliveryLamp(seedingSites int, hasCandidate bool, thresholdHigh int) string {
+	// 数据缺失 / 还没拿到任何候选 -> 最保守，不臆造。
 	if !hasCandidate {
-		return "📦 到货预估：这片较冷门，可能要等几天 🐢"
+		return "❓ 还在找源中……"
 	}
 
-	// 充足：站点数多 或 做种总数高，任一满足即视为充足。
-	if siteCount >= deliveryRichSiteCount || seederTotal >= deliveryRichSeederTotal {
-		return "📦 到货预估：资源充足，今晚就能看 🚀"
+	// 防御：阈值非法时回退默认，避免分档退化。
+	if thresholdHigh < 1 {
+		thresholdHigh = etaThresholdHighDefault
 	}
 
-	// 一般：有候选且做种数达到下限。
-	if seederTotal >= deliveryNormalSeederTotal {
-		return "📦 到货预估：正常排队中，预计 1-2 天 ⏳"
+	switch {
+	case seedingSites >= thresholdHigh:
+		return "⚡ 资源充足，很快到货"
+	case seedingSites >= 1:
+		return "🔄 已有源，需要等种"
+	default:
+		return "🐢 暂无源，待补档"
 	}
+}
 
-	// 其余（有候选但做种为 0 等）按冷门处理。
-	return "📦 到货预估：这片较冷门，可能要等几天 🐢"
+// deliveryLampForResources 是给候选列表入口用的便捷封装：
+// 直接吃候选切片，内部完成「去重统计做种站点 -> 读阈值 -> 分档」。
+// hasCandidate 由调用方传入（区分「搜过但 0 结果」与「还没搜/数据缺失」）。
+func deliveryLampForResources(resources []CandidateResource, hasCandidate bool) string {
+	seedingSites := countSeedingSites(resources)
+	return estimateDeliveryLamp(seedingSites, hasCandidate, etaThresholdHigh())
 }
