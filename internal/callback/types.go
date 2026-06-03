@@ -141,6 +141,7 @@ var validActions = map[Action]bool{
 	// Request related actions
 	"force_subscribe": true,
 	"cancel_request":  true,
+	"carpool":         true, // 拼车 +1：用户标记「我也想看」
 
 	// Admin Feedback Panel actions
 	"admin_feedback":               true, // Feedback management main panel

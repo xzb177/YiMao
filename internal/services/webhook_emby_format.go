@@ -45,6 +45,11 @@ func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year i
 		} else {
 			s.sendWithCache(s.chatID, message)
 		}
+
+		// #3 拼车 +1：入库后 @ 想看该剧的用户，并清空拼车记录。
+		if enhancedInfo != nil {
+			s.notifyCarpoolMembers(enhancedInfo.TMDBID, "tv")
+		}
 	}
 }
 
@@ -121,6 +126,13 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 	builder.WriteString("📁 文件数量：")
 	builder.WriteString(fmt.Sprintf("%d", fileCount))
 	builder.WriteString(" 个")
+
+	// #2 群追剧「集数进度条」：追加一行更新进度。
+	// current 用本次聚合到的最大集号；total 从 TMDB 取（取不到则只显示「已更到 EXX」）。
+	if line := s.buildEpisodeProgressLine(agg); line != "" {
+		builder.WriteString("\n")
+		builder.WriteString(line)
+	}
 
 	return builder.String()
 }
@@ -680,6 +692,12 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 	builder.WriteString("📁 文件数量：")
 	builder.WriteString(fmt.Sprintf("%d", fileCount))
 	builder.WriteString(" 个")
+
+	// #2 群追剧「集数进度条」：图片版通知同样追加进度行。
+	if line := s.buildEpisodeProgressLine(agg); line != "" {
+		builder.WriteString("\n")
+		builder.WriteString(line)
+	}
 
 	return builder.String()
 }

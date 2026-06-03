@@ -149,6 +149,13 @@ type WebhookService struct {
 	fileInfoCache    map[string]*cachedFileInfo // key: itemID
 	fileInfoCacheMu  sync.RWMutex
 	fileInfoCacheTTL time.Duration // 缓存过期时间 (默认1小时)
+	// #3 拼车服务（可选注入）：入库通知时 @ 拼车用户。允许为 nil。
+	carpool *CarpoolService
+}
+
+// SetCarpoolService 注入拼车服务（#3 拼车 +1）。采用 setter 注入避免改动构造函数签名。
+func (s *WebhookService) SetCarpoolService(c *CarpoolService) {
+	s.carpool = c
 }
 
 // cachedFileInfo 缓存的文件信息

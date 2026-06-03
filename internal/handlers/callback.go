@@ -860,6 +860,8 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
+	// #3 拼车「我也想看 +1」按钮
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", item.TmdbID, item.MediaType))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", item.TmdbID, item.MediaType, item.Title))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
@@ -944,6 +946,8 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
+	// #3 拼车「我也想看 +1」按钮
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
 	kb.NewRow()
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
@@ -1064,6 +1068,10 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	}
 	kb.NewRow()
 
+	// #3 拼车「我也想看 +1」按钮（剧集）
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", tvDetails.ID))
+	kb.NewRow()
+
 	// Resource list button
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tvDetails.ID), "type": "tv"}))
 	kb.NewRow()
@@ -1147,6 +1155,10 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 	} else {
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tmdbID, title))
 	}
+	kb.NewRow()
+
+	// #3 拼车「我也想看 +1」按钮（剧集，简易详情页）
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
 	kb.NewRow()
 
 	// Resource list button
@@ -1236,6 +1248,8 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
+	// #3 拼车「我也想看 +1」按钮
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", media.ID, mediaTypeStr))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, mediaTypeStr, media.Title))
 	kb.NewRow()
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": mediaTypeStr}))
@@ -1411,6 +1425,9 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", info.ID, info.Title))
 		kb.NewRow()
+		// #3 拼车「我也想看 +1」按钮（剧集）
+		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", info.ID))
+		kb.NewRow()
 
 		// Second row: resource list button
 		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": "tv"}))
@@ -1445,6 +1462,9 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	} else {
 		// Movie - single subscribe button
 		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
+		kb.NewRow()
+		// #3 拼车「我也想看 +1」按钮（电影）
+		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", info.ID))
 		kb.NewRow()
 		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
 		kb.NewRow()
@@ -1582,6 +1602,10 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		}
 		kb.NewRow()
 
+		// #3 拼车「我也想看 +1」按钮（剧集，搜索基础详情页）
+		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%s:type:tv", item.ID))
+		kb.NewRow()
+
 		// Second row: resource list button
 		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": item.ID, "type": "tv"}))
 		kb.NewRow()
@@ -1616,6 +1640,10 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		} else {
 			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
 		}
+		kb.NewRow()
+
+		// #3 拼车「我也想看 +1」按钮（非剧集，按 movie 归类）
+		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%s:type:movie", item.ID))
 		kb.NewRow()
 
 		// Resource list button
@@ -1690,6 +1718,8 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
+	// #3 拼车「我也想看 +1」按钮
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s", tmdbID, mediaType))
 	kb.NewRow()
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": mediaType}))

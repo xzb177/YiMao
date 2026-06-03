@@ -337,6 +337,15 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		} else {
 			s.sendWithCache(s.chatID, message)
 		}
+
+		// #3 拼车 +1：电影/单条入库后 @ 想看该片的用户并清空记录。
+		// itemType 为剧集类（Series/Episode/Season）时按 tv，否则按 movie。
+		carpoolType := "movie"
+		if itemType == "Series" || itemType == "Episode" || itemType == "Season" {
+			carpoolType = "tv"
+		}
+		carpoolTMDBID := s.extractTMDBID(enhancedPayload, payload)
+		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType)
 	}
 
 	return nil

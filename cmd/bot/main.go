@@ -154,6 +154,7 @@ type Dependencies struct {
 	SearchHistoryDB   *services.SearchHistoryDB
 	FeedbackHandler   *handlers.FeedbackHandler
 	WeeklyReportSvc   *services.WeeklyReportService
+	CarpoolService    *services.CarpoolService // #3 拼车 +1 服务
 }
 
 // initServices initializes all services
@@ -192,6 +193,8 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+	logger.Info("    - CarpoolService...")
+	carpoolService := services.NewCarpoolService(cfg.DataDir) // #3 拼车 +1 持久化服务
 	logger.Info("  [2/11] Basic services created")
 
 	// Initialize Media Notification Service
@@ -225,6 +228,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		cfg.TMDBAPIKey,
 	)
 	logger.Info("  [6/11] Webhook service created")
+
+	// #3 拼车 +1：把拼车服务注入 webhook，用于入库时 @ 拼车用户（setter 注入，不改构造函数签名）
+	webhookService.SetCarpoolService(carpoolService)
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
@@ -300,6 +306,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		SearchHistory:     searchHistory,
 		SearchHistoryDB:   searchHistoryDB,
 		WeeklyReportSvc:   weeklyReportSvc,
+		CarpoolService:    carpoolService,
 	}
 }
 
@@ -328,6 +335,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
+
+	// #3 拼车 +1 回调处理器
+	carpoolHandler := handlers.NewCarpoolHandler(deps.CarpoolService)
 
 	// Initialize site adapter registry for resource candidates
 	siteRegistry := services.NewSiteRegistry()
@@ -460,6 +470,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
 	registry.RegisterFunc("cancel_request", requestHandler.HandleCancelRequest)
 
+	// #3 拼车 +1 回调
+	registry.RegisterFunc("carpool", carpoolHandler.Handle)
+
 	// My Requests pagination callbacks
 	registry.RegisterFunc(callback.ActionMyReqsPage, myRequestsHandler.HandlePage)
 	registry.RegisterFunc(callback.ActionMyReqsItem, myRequestsHandler.HandleItemAction)
@@ -537,6 +550,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		SearchHistory:     deps.SearchHistory,
 		SearchHistoryDB:   deps.SearchHistoryDB,
 		FeedbackHandler:   feedbackHandler,
+		CarpoolService:    deps.CarpoolService,
 	}
 
 	return registry, resultDeps
