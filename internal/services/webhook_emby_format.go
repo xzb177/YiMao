@@ -46,9 +46,9 @@ func (s *WebhookService) sendAggregatedEpisodeToAdmins(seriesName string, year i
 			s.sendWithCache(s.chatID, message)
 		}
 
-		// #3 拼车 +1：入库后 @ 想看该剧的用户，并清空拼车记录。
+		// #3 拼车 +1：入库后 @ 想看该剧的用户，并清空拼车记录（#2 三层通知）。
 		if enhancedInfo != nil {
-			s.notifyCarpoolMembers(enhancedInfo.TMDBID, "tv")
+			s.notifyCarpoolMembers(enhancedInfo.TMDBID, "tv", seriesName)
 		}
 	}
 }

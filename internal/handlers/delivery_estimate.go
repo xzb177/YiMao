@@ -14,12 +14,12 @@ import (
 // 转成 []CandidateResource（含 SiteName / Seeders 字段），O(n) 扫这份现成数据即可，
 // 零额外网络开销。
 //
-// 灯牌规则（v2 locked，见 docs/BATCH_B_DESIGN.md 附录「#1 状态灯牌」）：
+// 灯牌规则（四档不合并，每档带「建议动作」）：
 //
-//	⚡ ≥ETA_THRESHOLD_HIGH 站点做种 -> 资源充足，很快到货
-//	🔄 1 ~ (阈值-1) 站点做种        -> 已有源，需要等种
-//	🐢 0 站点做种                   -> 暂无源，待补档
-//	❓ 候选为空 / 数据缺失          -> 还在找源中……
+//	⚡ ≥ETA_THRESHOLD_HIGH 站点做种 -> 资源充足，很快到货 → 等着就好
+//	🔄 1 ~ (阈值-1) 站点做种        -> 已有源，需要等做种 → 可去站点顶一下种
+//	🐢 0 站点做种                   -> 暂无站点出源 → 可去求助群问问谁有
+//	❓ 候选为空 / 数据缺失          -> 数据不足，系统还在找来源 → 稍等
 //
 // 这里「站点做种」指：该站点至少有一个候选资源的 seeder 数 > 0（即有人在做种），
 // 按**去重后的站点数**统计（同一站点多条资源只算一个）。
@@ -66,7 +66,7 @@ func countSeedingSites(resources []CandidateResource) int {
 //   - hasCandidate:  是否拿到了任何候选资源数据（区分「确实没源」与「数据缺失/还没搜」）
 //   - thresholdHigh: 「资源充足」档位阈值（站点做种数 ≥ 此值 -> ⚡），来自 env ETA_THRESHOLD_HIGH
 //
-// 规则（四档，不承诺具体时间）：
+// 规则（四档，不承诺具体时间，每档带建议动作）：
 //   - ❓ 候选为空 / 数据缺失（hasCandidate=false）
 //   - ⚡ seedingSites >= thresholdHigh
 //   - 🔄 1 <= seedingSites < thresholdHigh
@@ -74,7 +74,7 @@ func countSeedingSites(resources []CandidateResource) int {
 func estimateDeliveryLamp(seedingSites int, hasCandidate bool, thresholdHigh int) string {
 	// 数据缺失 / 还没拿到任何候选 -> 最保守，不臆造。
 	if !hasCandidate {
-		return "❓ 还在找源中……"
+		return "❓ 数据不足，系统还在找来源 → 稍等"
 	}
 
 	// 防御：阈值非法时回退默认，避免分档退化。
@@ -84,11 +84,14 @@ func estimateDeliveryLamp(seedingSites int, hasCandidate bool, thresholdHigh int
 
 	switch {
 	case seedingSites >= thresholdHigh:
-		return "⚡ 资源充足，很快到货"
+		// ⚡ 充足：用户什么都不用做，等着就好。
+		return "⚡ 资源充足，很快到货 → 等着就好"
 	case seedingSites >= 1:
-		return "🔄 已有源，需要等种"
+		// 🔄 有源但做种少：建议去站点顶一下种，加速做种。
+		return "🔄 已有源，需要等做种 → 可去站点顶一下种"
 	default:
-		return "🐢 暂无源，待补档"
+		// 🐢 有候选数据但无站点出源：建议去求助群问问。
+		return "🐢 暂无站点出源 → 可去求助群问问谁有"
 	}
 }
 

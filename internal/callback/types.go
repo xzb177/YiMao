@@ -143,6 +143,7 @@ var validActions = map[Action]bool{
 	"cancel_request":  true,
 	"carpool":         true, // 拼车 +1：用户标记「我也想看」
 	"wish_request":    true, // #6 许愿池：出源喜报「立即求片」按钮（走现有 request 流程 + 确认）
+	"wish_add":        true, // #1 搜索无结果「🌟 加入许愿池」按钮（片名存 session，回调不带超长参数）
 
 	// Admin Feedback Panel actions
 	"admin_feedback":               true, // Feedback management main panel

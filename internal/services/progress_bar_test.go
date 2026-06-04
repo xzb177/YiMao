@@ -84,7 +84,127 @@ func TestRenderProgressBar(t *testing.T) {
 	})
 }
 
-// TestRenderSeasonProgressBar 覆盖 B3 多季剧季相对口径：
+// TestRenderSeriesProgressBar 覆盖全剧口径单行渲染的边界。
+func TestRenderSeriesProgressBar(t *testing.T) {
+	t.Run("正常 52/100=52% 不带距完结", func(t *testing.T) {
+		got := renderSeriesProgressBar(52, 100)
+		if !strings.Contains(got, "全剧：E52/E100") {
+			t.Errorf("全剧集数信息错误: %q", got)
+		}
+		if !strings.Contains(got, "52%") {
+			t.Errorf("应为 52%%: %q", got)
+		}
+		if strings.Contains(got, "距完结") {
+			t.Errorf("全剧口径不应带距完结: %q", got)
+		}
+	})
+	t.Run("total<=0 只显示累计", func(t *testing.T) {
+		got := renderSeriesProgressBar(52, 0)
+		if got != "全剧：已更到 E52" {
+			t.Errorf("无全剧总数应只报累计: %q", got)
+		}
+		if strings.Contains(got, "%") {
+			t.Errorf("无总数不应有百分比: %q", got)
+		}
+	})
+	t.Run("current<=0 返回空", func(t *testing.T) {
+		if got := renderSeriesProgressBar(0, 100); got != "" {
+			t.Errorf("current=0 应空: %q", got)
+		}
+		if got := renderSeriesProgressBar(-5, 100); got != "" {
+			t.Errorf("current<0 应空: %q", got)
+		}
+	})
+	t.Run("current>total 钳制100%", func(t *testing.T) {
+		got := renderSeriesProgressBar(120, 100)
+		if !strings.Contains(got, "全剧：E100/E100") || !strings.Contains(got, "100%") {
+			t.Errorf("应钳制到 100%%: %q", got)
+		}
+		if strings.Contains(got, "░") {
+			t.Errorf("100%% 不应有空格块: %q", got)
+		}
+	})
+}
+
+// TestRenderDualProgressBar 覆盖需求 #4 双口径的四种组合边界：双有/只本季/只全剧/都无。
+func TestRenderDualProgressBar(t *testing.T) {
+	t.Run("双口径都有 渲染两行", func(t *testing.T) {
+		got := renderDualProgressBar(3, 12, 16, 52, 100)
+		lines := strings.Split(got, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("应为两行, got %d 行: %q", len(lines), got)
+		}
+		if !strings.Contains(lines[0], "S03E12/S03E16") || !strings.Contains(lines[0], "75%") {
+			t.Errorf("第一行应为本季 75%%: %q", lines[0])
+		}
+		if !strings.Contains(lines[1], "全剧：E52/E100") || !strings.Contains(lines[1], "52%") {
+			t.Errorf("第二行应为全剧 52%%: %q", lines[1])
+		}
+	})
+
+	t.Run("只有本季总数 拿不到全剧 退化为单行本季", func(t *testing.T) {
+		got := renderDualProgressBar(3, 12, 16, 0, 0)
+		if strings.Contains(got, "\n") {
+			t.Errorf("应为单行: %q", got)
+		}
+		if !strings.Contains(got, "S03E12/S03E16") || !strings.Contains(got, "75%") {
+			t.Errorf("应仅本季口径: %q", got)
+		}
+		if strings.Contains(got, "全剧") {
+			t.Errorf("不应出现全剧行: %q", got)
+		}
+	})
+
+	t.Run("拿不到本季集数但有全剧 退化为本季已更到+全剧两行", func(t *testing.T) {
+		// 本季 total=0 → 本季行为「已更到 S03E12」（无百分比）；全剧仍可渲染。
+		got := renderDualProgressBar(3, 12, 0, 52, 100)
+		lines := strings.Split(got, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("应为两行(本季已更到 + 全剧), got %q", got)
+		}
+		if lines[0] != "📈 已更到 S03E12" {
+			t.Errorf("本季行应为已更到无百分比: %q", lines[0])
+		}
+		if !strings.Contains(lines[1], "全剧：E52/E100") {
+			t.Errorf("全剧行缺失: %q", lines[1])
+		}
+	})
+
+	t.Run("两个口径都拿不到 单行已更到", func(t *testing.T) {
+		got := renderDualProgressBar(3, 12, 0, 0, 0)
+		if got != "📈 已更到 S03E12" {
+			t.Errorf("都无应单行已更到: %q", got)
+		}
+	})
+
+	t.Run("本季集号无效 但全剧有效 只显全剧行", func(t *testing.T) {
+		got := renderDualProgressBar(3, 0, 16, 52, 100)
+		if strings.Contains(got, "\n") {
+			t.Errorf("本季 current<=0 本季行应为空, 只剩全剧单行: %q", got)
+		}
+		if !strings.Contains(got, "全剧：E52/E100") {
+			t.Errorf("应只显全剧行: %q", got)
+		}
+	})
+
+	t.Run("全部无效 返回空串", func(t *testing.T) {
+		if got := renderDualProgressBar(3, 0, 16, 0, 100); got != "" {
+			t.Errorf("本季 current<=0 且全剧 current<=0 应空: %q", got)
+		}
+	})
+
+	t.Run("season<=0 本季行退化为不带季号 全剧行正常", func(t *testing.T) {
+		got := renderDualProgressBar(0, 7, 16, 52, 100)
+		lines := strings.Split(got, "\n")
+		if len(lines) != 2 {
+			t.Fatalf("应两行: %q", got)
+		}
+		if !strings.Contains(lines[0], "已更 E07/E16") {
+			t.Errorf("本季行应不带季号: %q", lines[0])
+		}
+	})
+}
+
 // 必须用「本季集数」当分母，绝不用全剧总集数。
 func TestRenderSeasonProgressBar(t *testing.T) {
 	t.Run("多季剧 用本季集数当分母 S3E12/S3E16=75%", func(t *testing.T) {

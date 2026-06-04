@@ -47,6 +47,12 @@ type WishScheduler struct {
 	stopOnce sync.Once
 
 	mu sync.Mutex // 串行化过期扫描判定（读改写 last_expiry_sweep_at）
+
+	// #2 群内公示去重：同一 canonical key 当天只公示一次「N 人在等的片出源了」，
+	// 避免多个用户都许愿同一部片时、各自 FOUND 触发重复群公示。
+	// 进程内即可（公示是尽力而为，重启后最多多发一次，不影响主路径）。
+	announcedMu sync.Mutex
+	announced   map[string]bool // key: canonicalKey|YYYY-MM-DD
 }
 
 // NewWishScheduler 创建许愿池调度器。
@@ -79,6 +85,7 @@ func NewWishScheduler(
 		minSeeders:    minSeeders,
 		lockTTLMin:    lockTTLMinutes,
 		stopCh:        make(chan struct{}),
+		announced:     make(map[string]bool),
 	}
 }
 
@@ -362,6 +369,64 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 	if _, err := s.wish.MarkNotified(item.ID); err != nil {
 		logger.Info("[wish] id=%d MarkNotified 失败: %v", item.ID, err)
 	}
+
+	// #2 群内公示（主路径，尽力而为）：在群里发「《X》出源了，N 人在等 🎉」。
+	// 即便上面的个人私信全靠 PM，群内公示也保证「等车的人」能在群里看到。
+	// 同一 canonical key 当天只公示一次（announced 去重）。
+	s.announceWishFoundToGroup(item)
+}
+
+// announceWishFoundToGroup 在群里公示「某许愿片出源了，N 人在等」（#2 三层之主通知）。
+// 仅在配置了群 chatID（且为群组）时发送；同一 canonical key 当天去重，发送失败仅记日志。
+func (s *WishScheduler) announceWishFoundToGroup(item *WishItem) {
+	if item == nil || s.telegram == nil {
+		return
+	}
+	// 只在群组里公示（chatID < -100 表示超级群组）。
+	if s.groupChatID == 0 || s.groupChatID >= -100 {
+		return
+	}
+
+	// 当天去重 key。
+	dayKey := s.wishAnnounceKey(item, time.Now())
+	s.announcedMu.Lock()
+	if s.announced[dayKey] {
+		s.announcedMu.Unlock()
+		return
+	}
+	s.announced[dayKey] = true
+	s.announcedMu.Unlock()
+
+	// 统计「还在等」人数：当前许愿池为「每个 canonical 全局一条」模型——
+	// 同一部片即便多人 /wish，也只去重保留一条（后来者按 Duplicate 处理，不单独记 wisher）。
+	// 因此这里**不臆造** N 人，公示只说「出源了」，避免显示与事实不符的人数。
+	title := strings.TrimSpace(item.Title)
+	if title == "" {
+		title = "有人许愿的片"
+	}
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了！", title))
+	if item.MediaType == "tv" && item.Season > 0 {
+		b.WriteString(fmt.Sprintf("（第%d季）", item.Season))
+	}
+	b.WriteString("\n已私信通知许愿的小伙伴，点「立即求片」即可入库～")
+
+	if _, err := s.telegram.SendMessage(s.groupChatID, b.String(), "", nil); err != nil {
+		// 公示失败：撤销去重标记，下次同片 FOUND 可再试；不影响个人 PM 主流程。
+		s.announcedMu.Lock()
+		delete(s.announced, dayKey)
+		s.announcedMu.Unlock()
+		logger.Info("[wish] 群内公示发送失败 id=%d: %v", item.ID, err)
+	}
+}
+
+// wishAnnounceKey 生成「canonical + 日期」去重 key（同片当天只公示一次）。
+func (s *WishScheduler) wishAnnounceKey(item *WishItem, now time.Time) string {
+	day := now.Format("2006-01-02")
+	if item.TmdbID != 0 {
+		return fmt.Sprintf("tmdb-%d-%s-%d|%s", item.TmdbID, item.MediaType, item.Season, day)
+	}
+	return fmt.Sprintf("imdb-%s-%s-%d|%s", item.ImdbID, item.MediaType, item.Season, day)
 }
 
 // notifyExpired 私信发起人「等了 N 天没找到已自动取消」（坑4）。

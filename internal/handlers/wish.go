@@ -72,6 +72,51 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		return
 	}
 
+	// 走统一入池流程；命令入口不需要尝试打通私信（用户已在私聊里发命令，通道天然存在）。
+	h.addWishByQuery(chatID, userID, query, false)
+}
+
+// HandleAddFromSearch 处理 #1「🌟 加入许愿池」回调：从 session 取暂存的搜索词入池。
+// 回调串不带超长片名（守 TG 64 字节上限），片名由搜索无结果分支预先存进 session。
+func (h *WishHandler) HandleAddFromSearch(ctx *callback.Context) (*callback.Response, error) {
+	if h == nil || h.wish == nil {
+		return &callback.Response{CallbackMsg: "许愿池服务未就绪", ShowAlert: true}, nil
+	}
+	if h.sessMgr == nil {
+		return &callback.Response{CallbackMsg: "会话已过期，请重新搜索后再试", ShowAlert: true}, nil
+	}
+
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	query, _ := sess.GetString(pendingWishQueryKey)
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return &callback.Response{
+			CallbackMsg: "没拿到要许愿的片名了，麻烦重新搜一次再点～",
+			ShowAlert:   true,
+		}, nil
+	}
+	// 用完即清，避免下次误用旧片名。
+	sess.Delete(pendingWishQueryKey)
+
+	// #1 通路缺口修复：点「加入许愿池」时尝试打通私聊通道（失败不阻断入池，仅记日志）。
+	h.tryOpenDMChannel(ctx.UserID)
+
+	// 走统一入池流程，回复发到当前会话（群内点按钮则发群里、私聊点则发私聊）。
+	// fromSearch=true → 入池成功文案追加「记得和我私聊过哦」提示。
+	h.addWishByQuery(ctx.ChatID, ctx.UserID, query, true)
+
+	return &callback.Response{CallbackMsg: "已为你处理许愿～", ShowAlert: false}, nil
+}
+
+// pendingWishQueryKey 是 session 里暂存「待许愿搜索词」的 key（#1 搜索无结果按钮用）。
+const pendingWishQueryKey = "pending_wish_query"
+
+// addWishByQuery 是 /wish 命令与搜索无结果按钮共用的入池核心逻辑。
+//   - chatID:    回复目标会话。
+//   - userID:    许愿发起人。
+//   - query:     待许愿的片名/关键词。
+//   - fromSearch: 是否来自搜索无结果按钮（true 时入池成功文案追加私聊提示）。
+func (h *WishHandler) addWishByQuery(chatID int64, userID int64, query string, fromSearch bool) {
 	// 坑1：入池前 TMDB 强校验（tmdb_id != 0 才入）。
 	if h.tmdb == nil {
 		h.telegram.SendMessage(chatID, "❌ TMDB 服务未配置，暂时无法许愿", "", nil)
@@ -85,8 +130,6 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 	}
 
 	// 取首个有效结果（带 id 的 movie/tv），同时统计可选候选数 + 判断首条置信度。
-	// B6：多个 TMDB 结果且首条不够置信时，不静默取首条——在入池确认消息里明确「匹配到的标题/年份」，
-	// 并提示用户若选错可用更精确片名重搜，避免默默许愿到错误条目。
 	var picked *services.TMDBMediaInfo
 	viableCount := 0
 	for i := range result.Results {
@@ -107,13 +150,11 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		h.telegram.SendMessage(chatID, "🔍 没找到这个片，换个关键词再试试～", "", nil)
 		return
 	}
-	// 首条是否「置信」：查询词与候选标题忽略大小写/空白后相等或互相包含视为高置信。
 	confidentPick := isConfidentTitleMatch(query, picked.GetTitle())
 
 	mediaType := picked.MediaType
 	tmdbID := picked.ID
 
-	// 取 imdb_id（canonical key 兜底用）。详情接口带 external_ids。
 	imdbID := ""
 	if detail, derr := h.tmdb.GetMediaByType(tmdbID, mediaType); derr == nil && detail != nil {
 		imdbID = strings.TrimSpace(detail.ExternalIDs.IMDBID)
@@ -154,7 +195,6 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 
 	switch {
 	case addRes.Duplicate:
-		// 坑7：池内已存在同 canonical key。
 		h.telegram.SendMessage(chatID,
 			fmt.Sprintf("📌 《%s》已在许愿池里啦，出源会自动通知你～", title), "", nil)
 	case addRes.OverPerUser:
@@ -171,17 +211,38 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		if mediaType == "tv" {
 			typeStr = "剧集"
 		}
-		// B6：确认消息明确展示「匹配到」的标题/年份/类型，让用户能看出是否选错。
 		msg := fmt.Sprintf("✨ 已加入许愿池\n🎯 匹配到：《%s》%s · %s\n\n找到源后会第一时间私信通知你（约每天重搜一次）。",
 			title, yearStr, typeStr)
-		// 多个候选且首条置信度不高：提示用户若选错可用更精确片名（带年份）重搜。
 		if viableCount > 1 && !confidentPick {
 			msg += "\n\n⚠️ 这个片名有多个匹配结果，已按最接近的加入。若不是这部，请用更精确的片名（可带年份）重新 /wish。"
+		}
+		// #1：来自搜索无结果按钮时，额外提示「想被通知出源记得和我私聊过哦」。
+		if fromSearch {
+			msg += "\n\n💬 想被通知出源？记得和我私聊过哦（点一下我头像发条消息就行）。"
 		}
 		h.telegram.SendMessage(chatID, msg, "", nil)
 	default:
 		h.telegram.SendMessage(chatID, "✨ 已加入许愿池", "", nil)
 	}
+}
+
+// tryOpenDMChannel 尽力打通用户与 bot 的私聊通道（#1 通路缺口修复）。
+// 直接给用户发一条「打招呼」私信：
+//   - 若此前从未私聊过 / 被封禁 → SendMessage 会失败（403 等），此时仅记日志、不阻断入池。
+//   - 成功 → 通道已通，后续出源私信可达。
+//
+// 注意：该方法只为「探活 + 打招呼」，绝不能因失败影响主流程。
+func (h *WishHandler) tryOpenDMChannel(userID int64) {
+	if h.telegram == nil || userID == 0 {
+		return
+	}
+	greeting := "👋 你好！我是云海影视助手。\n你刚加了一条许愿，找到源后我会第一时间在这里私信通知你～"
+	if _, err := h.telegram.SendMessage(userID, greeting, "", nil); err != nil {
+		// 发不出说明用户还没和 bot 建立私聊（或封禁了），不阻断入池，仅记日志。
+		logger.Info("[wish] 打招呼私信发送失败（用户可能未私聊过 bot，不影响入池）user=%d: %v", userID, err)
+		return
+	}
+	logger.Info("[wish] 已向 user=%d 发送打招呼私信，私聊通道已打通", userID)
 }
 
 // listMyWishes 列出某用户的活跃许愿。

@@ -374,6 +374,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// #3 拼车 +1 回调处理器
 	carpoolHandler := handlers.NewCarpoolHandler(deps.CarpoolService)
+	// #1 注入 Telegram，用于拼车 +1 时尝试打通私聊通道（打招呼）。
+	carpoolHandler.SetTelegram(deps.Telegram)
 
 	// #6 许愿池处理器：复用 requestHandler 走现有求片流程（仅在 WishService 就绪时接入）。
 	var wishHandler *handlers.WishHandler
@@ -520,6 +522,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// #6 许愿池：出源喜报「立即求片」回调（仅在处理器就绪时注册）。
 	if wishHandler != nil {
 		registry.RegisterFunc("wish_request", wishHandler.Handle)
+		// #1 搜索无结果「🌟 加入许愿池」回调（片名从 session 取，回调串无超长参数）。
+		registry.RegisterFunc("wish_add", wishHandler.HandleAddFromSearch)
 	}
 
 	// My Requests pagination callbacks

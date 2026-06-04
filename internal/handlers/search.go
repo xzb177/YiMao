@@ -141,7 +141,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 	}
 
 	if results == nil || results.Results == nil {
-		h.sendNoResultsMessage(chatID, query)
+		h.sendNoResultsMessage(userID, chatID, query)
 		return nil
 	}
 
@@ -155,7 +155,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 			h.telegram.SendMessage(chatID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
 			return nil
 		}
-		h.sendNoResultsMessage(chatID, query)
+		h.sendNoResultsMessage(userID, chatID, query)
 		return nil
 	}
 
@@ -536,9 +536,20 @@ func (h *SearchHandler) getRecommendationTitle(recType string) (title, subtitle 
 	return
 }
 
-func (h *SearchHandler) sendNoResultsMessage(chatID int64, query string) {
+func (h *SearchHandler) sendNoResultsMessage(userID int64, chatID int64, query string) {
 	msg := fmt.Sprintf("🔍 搜索结果「%s」\n\n😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", query)
 	kb := services.NewKeyboardBuilder()
+	// #1 搜索无结果 → 弹「🌟 加入许愿池」按钮。
+	// 片名可能超长 / 含特殊字符，直接塞 callback_data 会撞 TG 64 字节上限，
+	// 因此把片名暂存到 session（按 userID 存），回调串只用固定的 "wish_add"，
+	// 由 WishHandler 用 ctx.UserID 从同一 session 取词。
+	// 仅当 sessMgr 可用且片名非空时提供按钮（否则取不到词，避免点了报错的死按钮）。
+	if h.sessMgr != nil && strings.TrimSpace(query) != "" {
+		sess := h.sessMgr.GetOrCreate(userID)
+		sess.Set("pending_wish_query", query)
+		kb.AddButton("🌟 加入许愿池", "wish_add")
+		kb.NewRow()
+	}
 	kb.AddButton("⬅️ 返回主菜单", "start")
 	h.telegram.SendMessage(chatID, msg, "", kb.Build())
 }

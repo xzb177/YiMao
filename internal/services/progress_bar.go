@@ -140,6 +140,133 @@ func renderSeasonProgressBar(season, current, seasonTotal int) string {
 		season, clamped, season, seasonTotal, bar, percent, suffix)
 }
 
+// renderSeriesProgressBar 渲染「全剧」口径进度行（纯函数，便于单测）。
+//
+// 与 renderSeasonProgressBar 区别：全剧不带季号、用全剧累计已更集数 / 全剧总集数，前缀「全剧：」。
+//
+// 入参：
+//   - current: 全剧累计已更集数（跨季累计；未知/<=0 返回空）。
+//   - total:   全剧总集数（来自 TMDB number_of_episodes；未知传 0）。
+//
+// 返回：
+//   - current<=0:     ""                              （无有效集数，不渲染）
+//   - total<=0:       "全剧：已更到 E52"               （拿不到全剧总数：只报累计，无百分比）
+//   - 正常:           "全剧：E52/E100 ▓▓▓▓▓░░░ 52%"    （不带「距完结」，避免与本季口径混淆）
+//   - current>=total: "全剧：E100/E100 ▓▓▓▓▓▓▓▓ 100%"  （钳制，防越界）
+func renderSeriesProgressBar(current, total int) string {
+	if current <= 0 {
+		return ""
+	}
+	if total <= 0 {
+		// 拿不到全剧总集数：只报累计已更到第几集，不渲染进度条/百分比（不除零、不臆造）。
+		return fmt.Sprintf("全剧：已更到 E%02d", current)
+	}
+
+	clamped := current
+	if clamped > total {
+		clamped = total
+	}
+	filled, percent := progressFillAndPercent(clamped, total)
+	bar := buildBar(filled)
+	return fmt.Sprintf("全剧：E%02d/E%02d %s %d%%", clamped, total, bar, percent)
+}
+
+// renderDualProgressBar 渲染「双口径」进度（需求 #4：本季 + 全剧两行）。
+//
+// 设计：本季口径仍复用 renderSeasonProgressBar（季号 + 本季集数/本季总集数 + 距完结），
+// 全剧口径用 renderSeriesProgressBar（全剧累计/全剧总集数）。
+//
+// 退化规则（守住边界，绝不臆造、绝不除零）：
+//   - 两个口径都拿得到 → 两行：
+//     本季：📈 已更 S03E12/S03E16 ▓▓▓░░ 75%（距完结还差 4 集）
+//     全剧：E52/E100 ▓▓▓▓▓░░ 52%
+//   - 只有本季（拿不到全剧总数）→ 仅本季那一行（沿用 renderSeasonProgressBar 行为）。
+//   - 只有全剧（拿不到本季集数但有全剧）→ 退化为本季「已更到 SxxExx」单行 + 全剧行。
+//   - 两者都拿不到 → 单行「已更到 SxxExx」（沿用 renderSeasonProgressBar 兜底）。
+//
+// 入参：
+//   - season:        季号（<=0 时本季行退化为不带季号渲染）。
+//   - seasonCurrent: 本季已更到的集号。
+//   - seasonTotal:   本季总集数（未知传 0）。
+//   - seriesCurrent: 全剧累计已更集数（未知/无法计算传 0 → 不渲染全剧行）。
+//   - seriesTotal:   全剧总集数（未知传 0 → 全剧行退化为「已更到 EXX」或整体不显示）。
+//
+// 返回：用 "\n" 连接的 1~2 行；seasonCurrent<=0 且 seriesCurrent<=0 时返回空串。
+func renderDualProgressBar(season, seasonCurrent, seasonTotal, seriesCurrent, seriesTotal int) string {
+	seasonLine := renderSeasonProgressBar(season, seasonCurrent, seasonTotal)
+	seriesLine := renderSeriesProgressBar(seriesCurrent, seriesTotal)
+
+	switch {
+	case seasonLine != "" && seriesLine != "":
+		// 双口径都有 → 两行。本季在上、全剧在下。
+		return seasonLine + "\n" + seriesLine
+	case seasonLine != "":
+		// 只有本季口径。
+		return seasonLine
+	case seriesLine != "":
+		// 本季集号无效但全剧有效（少见，保守只显全剧行）。
+		return seriesLine
+	default:
+		return ""
+	}
+}
+
+// getTMDBSeriesEpisodeStats 取「全剧总集数」与「截至指定季为止的累计集数基数」（需求 #4 双口径）。
+//
+// 返回：
+//   - seriesTotal:  全剧总集数（number_of_episodes）。
+//   - priorEpisodes: 在 currentSeason 之前的所有「正片季」（season_number>=1）的 episode_count 之和，
+//     用作全剧累计基数：全剧已更累计 = priorEpisodes + 本季已更集号。
+//
+// 任一环节失败/数据缺失时返回 (0,0)，调用方据此退化为只渲染本季口径（绝不臆造、绝不除零）。
+// 仅在聚合通知 flush 时调用一次，不阻塞主流程。
+func (s *WebhookService) getTMDBSeriesEpisodeStats(tmdbID string, currentSeason int) (seriesTotal, priorEpisodes int) {
+	if tmdbID == "" {
+		return 0, 0
+	}
+
+	apiKey := s.tmdbAPIKey
+	if apiKey == "" {
+		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key（与 getTMDBBackdrop 一致）
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN", tmdbID, apiKey)
+
+	resp, err := client.Get(url)
+	if err != nil {
+		logger.Info("[TMDB] 获取全剧集数失败 ID=%s: %v", tmdbID, err)
+		return 0, 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		logger.Info("[TMDB] 获取全剧集数返回状态 %d ID=%s", resp.StatusCode, tmdbID)
+		return 0, 0
+	}
+
+	var result struct {
+		NumberOfEpisodes int `json:"number_of_episodes"`
+		Seasons          []struct {
+			SeasonNumber int `json:"season_number"`
+			EpisodeCount int `json:"episode_count"`
+		} `json:"seasons"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		logger.Info("[TMDB] 解析全剧集数失败 ID=%s: %v", tmdbID, err)
+		return 0, 0
+	}
+
+	seriesTotal = result.NumberOfEpisodes
+	// 累计基数：currentSeason 之前的正片季（season_number>=1）集数之和。
+	// 跳过 season 0（特别篇/花絮），避免污染正片累计口径。
+	for _, se := range result.Seasons {
+		if se.SeasonNumber >= 1 && se.SeasonNumber < currentSeason {
+			priorEpisodes += se.EpisodeCount
+		}
+	}
+	return seriesTotal, priorEpisodes
+}
+
 // getTMDBTotalEpisodes 从 TMDB 获取剧集的「全剧跨季」总集数（number_of_episodes）。
 //
 // Deprecated（B3 修复）：进度条已改为季相对口径（见 getTMDBSeasonEpisodes / renderSeasonProgressBar），
@@ -245,12 +372,24 @@ func (s *WebhookService) buildEpisodeProgressLine(agg *EpisodeAggregation) strin
 		}
 	}
 
-	// 尝试取「当前季」总集数（B3：分母必须是季集数，不是全剧总集数）。
+	// 尝试取「当前季」总集数（B3：本季分母必须是季集数，不是全剧总集数）。
 	seasonTotal := 0
 	if agg.Season > 0 && agg.EnhancedInfo != nil && agg.EnhancedInfo.TMDBID != "" {
 		seasonTotal = s.getTMDBSeasonEpisodes(agg.EnhancedInfo.TMDBID, agg.Season)
 	}
 
-	return renderSeasonProgressBar(agg.Season, current, seasonTotal)
-}
+	// 需求 #4 双口径：再尝试取「全剧总集数」+「本季之前累计集数」，组合出全剧口径。
+	//   - 全剧累计已更 = priorEpisodes + 本季已更集号（current）。
+	//   - 任一数据拿不到（seriesTotal<=0 或无 TMDBID）→ renderSeriesProgressBar 自然退化/返回空，
+	//     renderDualProgressBar 据此只渲染本季单行（绝不臆造）。
+	seriesCurrent, seriesTotal := 0, 0
+	if agg.Season > 0 && agg.EnhancedInfo != nil && agg.EnhancedInfo.TMDBID != "" {
+		total, prior := s.getTMDBSeriesEpisodeStats(agg.EnhancedInfo.TMDBID, agg.Season)
+		if total > 0 {
+			seriesTotal = total
+			seriesCurrent = prior + current
+		}
+	}
 
+	return renderDualProgressBar(agg.Season, current, seasonTotal, seriesCurrent, seriesTotal)
+}

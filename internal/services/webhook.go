@@ -345,7 +345,12 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 			carpoolType = "tv"
 		}
 		carpoolTMDBID := s.extractTMDBID(enhancedPayload, payload)
-		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType)
+		// #2 群内公示用片名：优先 enhanced.Title，退回 webhook itemName。
+		carpoolTitle := itemName
+		if enhancedPayload != nil && strings.TrimSpace(enhancedPayload.Title) != "" {
+			carpoolTitle = enhancedPayload.Title
+		}
+		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType, carpoolTitle)
 	}
 
 	return nil
