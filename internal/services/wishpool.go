@@ -137,8 +137,33 @@ func NewWishService(dataDir string) (*WishService, error) {
 		return nil, fmt.Errorf("failed to create wish_meta table: %w", err)
 	}
 
+	// 「许愿众筹计数」join 表（wish_wishers）：记录每个 canonical 维度有哪些 user 在等。
+	// wish_items 仍是「每个 canonical 全局一条」，本表不影响其状态机/重搜/调度；
+	// 仅用于「累计等待人数」与「出源时通知所有 wisher」。
+	//   - PRIMARY KEY(canonical_key, user_id) 即唯一约束，天然去重幂等（INSERT OR IGNORE）。
+	//   - canonical_key 必须经 CanonicalKey 生成，与 wish_items 去重键完全对齐。
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS wish_wishers (
+			canonical_key TEXT    NOT NULL,
+			user_id       INTEGER NOT NULL,
+			created_at    DATETIME NOT NULL,
+			PRIMARY KEY (canonical_key, user_id)
+		);
+		CREATE INDEX IF NOT EXISTS idx_wish_wishers_key ON wish_wishers(canonical_key);`); err != nil {
+		return nil, fmt.Errorf("failed to create wish_wishers table: %w", err)
+	}
+
+	svc := &WishService{db: db}
+
+	// 向后兼容回填：把存量 wish_items 每条的 (canonical_key, user_id, created_at)
+	// INSERT OR IGNORE 进 wish_wishers，保证每片至少 1 个 wisher（= 原发起人）。
+	// INSERT OR IGNORE 保证幂等：重启多次不重复污染。
+	if err := svc.backfillWishers(); err != nil {
+		return nil, fmt.Errorf("failed to backfill wish_wishers: %w", err)
+	}
+
 	logger.Info("[wish] 许愿池数据库已初始化: %s", dbPath)
-	return &WishService{db: db}, nil
+	return svc, nil
 }
 
 // metaKeyLastExpirySweep 是 wish_meta 表里记录「上次过期扫描完成时刻」的 key。
@@ -273,6 +298,16 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 		return nil, err
 	}
 	if existing != nil {
+		// 众筹计数关键语义：重复许愿同一片时，仍把该 user 记进 wish_wishers（同事务），
+		// 这样后来者也能累计进等待人数，再由 handler 给「N 人在等」提示。
+		ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+		if err := addWisherTx(tx, ck, item.UserID, time.Now()); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		committed = true
 		return &AddWishResult{Duplicate: true, Existing: existing}, nil
 	}
 
@@ -313,6 +348,12 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 		return nil, fmt.Errorf("failed to insert wish item: %w", err)
 	}
 	id, _ := res.LastInsertId()
+
+	// 众筹计数：新建 wish_items 的同时把发起人记进 wish_wishers（同事务，原子）。
+	ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+	if err := addWisherTx(tx, ck, item.UserID, now); err != nil {
+		return nil, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
@@ -362,8 +403,109 @@ func (s *WishService) findActiveByCanonicalTx(tx *sql.Tx, tmdbID int, imdbID, me
 }
 
 // ---------------------------------------------------------------------------
-// 调度查询 + searching_at 锁（坑2 / 坑6）
+// 许愿众筹计数（wish_wishers）：记 wisher / 计数 / 列举 / 回填迁移
 // ---------------------------------------------------------------------------
+
+// AddWisher 把一个 user 记入某 canonical 的 wisher 集合（幂等：INSERT OR IGNORE）。
+// 无论入池是「新建 wish_items」还是「命中已存在 canonical（原 Duplicate）」都应调用，
+// 这样重复许愿同一片的后来者也能累计进等待人数，而不会因 wish_items 去重被丢弃。
+// canonicalKey 为空（无 id）时直接跳过（与 AddWish 的 canonical 校验对齐）。
+func (s *WishService) AddWisher(canonicalKey string, userID int64) error {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	if canonicalKey == "" || userID == 0 {
+		return nil
+	}
+	_, err := s.db.Exec(
+		`INSERT OR IGNORE INTO wish_wishers (canonical_key, user_id, created_at) VALUES (?, ?, ?)`,
+		canonicalKey, userID, time.Now())
+	return err
+}
+
+// addWisherTx 在事务内记 wisher（供 AddWish 与落库同事务，保证「入池即记 wisher」原子性）。
+func addWisherTx(tx *sql.Tx, canonicalKey string, userID int64, when time.Time) error {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	if canonicalKey == "" || userID == 0 {
+		return nil
+	}
+	_, err := tx.Exec(
+		`INSERT OR IGNORE INTO wish_wishers (canonical_key, user_id, created_at) VALUES (?, ?, ?)`,
+		canonicalKey, userID, when)
+	return err
+}
+
+// CountWishers 返回某 canonical 的等待人数（总数，只升不降——退群也算）。
+func (s *WishService) CountWishers(canonicalKey string) int {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	if canonicalKey == "" {
+		return 0
+	}
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM wish_wishers WHERE canonical_key = ?`, canonicalKey,
+	).Scan(&n); err != nil {
+		logger.Info("[wish] CountWishers 查询失败 key=%s: %v", canonicalKey, err)
+		return 0
+	}
+	return n
+}
+
+// ListWishers 返回某 canonical 的所有 wisher user_id（按入等先后）。
+// 供出源通知遍历做 @/PM（可达过滤由调用方负责，本方法返回全量，不剔退群者）。
+func (s *WishService) ListWishers(canonicalKey string) []int64 {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	if canonicalKey == "" {
+		return nil
+	}
+	rows, err := s.db.Query(
+		`SELECT user_id FROM wish_wishers WHERE canonical_key = ? ORDER BY created_at ASC, user_id ASC`,
+		canonicalKey)
+	if err != nil {
+		logger.Info("[wish] ListWishers 查询失败 key=%s: %v", canonicalKey, err)
+		return nil
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var uid int64
+		if err := rows.Scan(&uid); err != nil {
+			logger.Info("[wish] ListWishers 扫描失败 key=%s: %v", canonicalKey, err)
+			return ids
+		}
+		ids = append(ids, uid)
+	}
+	return ids
+}
+
+// backfillWishers 向后兼容回填：存量 wish_items 每条的 (canonical_key, user_id, created_at)
+// INSERT OR IGNORE 进 wish_wishers，保证每片至少 1 个 wisher（= 原发起人）。
+// 用 SQL 表达式直接派生 canonical_key，与 CanonicalKey 的格式严格一致：
+//   - tmdb_id != 0 → 'tmdb-<tmdb_id>-<media_type>-<season>'
+//   - 否则           → 'imdb-<imdb_id>-<media_type>-<season>'
+// media_type 空串归一为 'movie'（与 CanonicalKey 一致）。
+// 仅回填有 canonical key 的行（tmdb_id!=0 或 imdb_id!=''），无 id 的脏行跳过。
+// INSERT OR IGNORE + 确定性派生 → 多次启动幂等、不重复污染。
+func (s *WishService) backfillWishers() error {
+	res, err := s.db.Exec(`
+		INSERT OR IGNORE INTO wish_wishers (canonical_key, user_id, created_at)
+		SELECT
+			CASE WHEN tmdb_id != 0
+				THEN 'tmdb-' || tmdb_id || '-' || (CASE WHEN media_type = '' THEN 'movie' ELSE media_type END) || '-' || season
+				ELSE 'imdb-' || imdb_id || '-' || (CASE WHEN media_type = '' THEN 'movie' ELSE media_type END) || '-' || season
+			END AS canonical_key,
+			user_id,
+			created_at
+		FROM wish_items
+		WHERE tmdb_id != 0 OR imdb_id != ''`)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		logger.Info("[wish] 已回填 %d 条存量许愿发起人进 wish_wishers", n)
+	}
+	return nil
+}
+
+
 
 // SearchOffsetMinutes 按 hash(item_id)%1440 算错峰偏移（坑2）。导出供调度与测试使用。
 // 注意：入池时 id 尚未生成（AUTOINCREMENT），故入池偏移用 canonical key 计算
@@ -374,15 +516,39 @@ func SearchOffsetMinutes(itemID int64) int {
 	return int(v % 1440)
 }
 
+// CanonicalKey 生成许愿池的「规范键」——与 wish_items 去重所用的唯一键完全对齐：
+// tmdb_id 优先，无则用 imdb_id，并带上 media_type / season。
+//
+// **唯一权威生成函数**：池内去重（idx_wish_canonical_*）、错峰偏移
+// （searchOffsetForCanonical）、群公示去重（wishAnnounceKey）、以及新增的
+// wish_wishers 计数表，全部经此函数派生 canonical 维度，避免「计数和去重对不上」。
+//
+// 注意：调用方须保证至少有一个 id（tmdbID!=0 或 imdbID 非空），否则键不具区分性。
+// 与 findActiveByCanonicalTx 的 WHERE 子句一致：tmdb 优先用 tmdb 维度，否则 imdb 维度。
+// media_type 空串按 "movie" 归一（与 AddWish 入池前归一逻辑一致）。
+func CanonicalKey(tmdbID int, imdbID, mediaType string, season int) string {
+	if mediaType == "" {
+		mediaType = "movie"
+	}
+	if tmdbID != 0 {
+		return fmt.Sprintf("tmdb-%d-%s-%d", tmdbID, mediaType, season)
+	}
+	return fmt.Sprintf("imdb-%s-%s-%d", strings.TrimSpace(imdbID), mediaType, season)
+}
+
+// canonicalKeyOf 是 *WishItem 的便捷封装，复用同一权威生成函数。
+func canonicalKeyOf(item *WishItem) string {
+	if item == nil {
+		return ""
+	}
+	return CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+}
+
 // searchOffsetForCanonical 用 canonical key（tmdb 优先，否则 imdb）算入池时的错峰偏移。
 // canonical key 在入池前已确定且稳定，避免依赖尚未生成的自增 id。
+// 复用 CanonicalKey 派生（前缀 "wish-" 仅为与历史哈希输入保持兼容、不改变既有错峰分布）。
 func searchOffsetForCanonical(tmdbID int, imdbID, mediaType string, season int) int {
-	var key string
-	if tmdbID != 0 {
-		key = fmt.Sprintf("wish-tmdb-%d-%s-%d", tmdbID, mediaType, season)
-	} else {
-		key = fmt.Sprintf("wish-imdb-%s-%s-%d", imdbID, mediaType, season)
-	}
+	key := "wish-" + CanonicalKey(tmdbID, imdbID, mediaType, season)
 	h := sha1.Sum([]byte(key))
 	v := binary.BigEndian.Uint64(h[:8])
 	return int(v % 1440)

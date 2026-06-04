@@ -195,8 +195,17 @@ func (h *WishHandler) addWishByQuery(chatID int64, userID int64, query string, f
 
 	switch {
 	case addRes.Duplicate:
-		h.telegram.SendMessage(chatID,
-			fmt.Sprintf("📌 《%s》已在许愿池里啦，出源会自动通知你～", title), "", nil)
+		// 众筹：重复许愿同一片时，该 user 已被 AddWish 记进 wish_wishers（累计人数），
+		// 这里查总人数给「已经在等这部啦，目前 N 人在等」的友好提示。
+		ck := services.CanonicalKey(tmdbID, imdbID, mediaType, season)
+		n := h.wish.CountWishers(ck)
+		var msg string
+		if n > 1 {
+			msg = fmt.Sprintf("📌 《%s》已经在等啦，目前 %d 人在等，出源会自动通知你～", title, n)
+		} else {
+			msg = fmt.Sprintf("📌 《%s》已在许愿池里啦，出源会自动通知你～", title)
+		}
+		h.telegram.SendMessage(chatID, msg, "", nil)
 	case addRes.OverPerUser:
 		h.telegram.SendMessage(chatID,
 			fmt.Sprintf("📦 你的许愿池已满（上限 %d 条），先等几部出源或移除一些吧～", services.WishMaxPerUser), "", nil)

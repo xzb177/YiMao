@@ -370,10 +370,81 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 		logger.Info("[wish] id=%d MarkNotified 失败: %v", item.ID, err)
 	}
 
+	// 众筹：除发起人外，通知该 canonical 的其余所有 wisher（可达过滤，PM 尽力而为）。
+	// 不影响状态机——状态机只认 wish_items 的发起人（item.UserID）；其余 wisher 仅是额外 PM。
+	s.notifyOtherWishers(item)
+
 	// #2 群内公示（主路径，尽力而为）：在群里发「《X》出源了，N 人在等 🎉」。
 	// 即便上面的个人私信全靠 PM，群内公示也保证「等车的人」能在群里看到。
 	// 同一 canonical key 当天只公示一次（announced 去重）。
 	s.announceWishFoundToGroup(item)
+}
+
+// notifyOtherWishers 对该 canonical 的「除发起人外」的所有 wisher 做 PM 通知（坑5 可达过滤）。
+// 退群/封禁用户跳过 PM（但仍计入总数，CountWishers 只升不降）；网络抖动保守保留（仍尝试发）。
+// PM 失败仅记日志，不影响发起人主流程与群内公示。
+func (s *WishScheduler) notifyOtherWishers(item *WishItem) {
+	if item == nil || s.telegram == nil {
+		return
+	}
+	ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+	all := s.wish.ListWishers(ck)
+	if len(all) == 0 {
+		return
+	}
+
+	// 可达过滤（纯函数 + 注入可达判定，便于单测）：剔除发起人（已单独走带按钮的喜报），
+	// 退群/封禁的不 PM，但人数不减。
+	targets := filterWisherTargets(all, item.UserID, func(uid int64) bool {
+		return s.reachability(uid) != reachOrphaned
+	})
+
+	msg := s.buildOtherWisherMessage(item)
+	for _, uid := range targets {
+		if _, err := s.telegram.SendMessage(uid, msg, "", nil); err != nil {
+			// PM 发不出（未私聊过 / 封禁 / 抖动）仅记日志，不影响主流程与群内公示。
+			logger.Info("[wish] id=%d 通知其他 wisher user=%d 失败（不影响主流程）: %v", item.ID, uid, err)
+		}
+	}
+	if len(targets) > 0 {
+		logger.Info("[wish] id=%d 已额外通知 %d 位等待者（共 %d 人在等）", item.ID, len(targets), len(all))
+	}
+}
+
+// buildOtherWisherMessage 给「非发起人 wisher」的出源 PM 文案（不带「立即求片」按钮——
+// 该按钮绑定 wish_items 且只允许发起人点；其余 wisher 自行 /search 或等发起人入库）。
+func (s *WishScheduler) buildOtherWisherMessage(item *WishItem) string {
+	var b strings.Builder
+	b.WriteString("🎉 你也在等的影片出源啦！\n\n")
+	b.WriteString(fmt.Sprintf("🎬 %s", strings.TrimSpace(item.Title)))
+	if item.Year > 0 {
+		b.WriteString(fmt.Sprintf(" (%d)", item.Year))
+	}
+	if item.MediaType == "tv" && item.Season > 0 {
+		b.WriteString(fmt.Sprintf(" 第%d季", item.Season))
+	}
+	b.WriteString("\n\n已有人发起求片，入库后即可观看～如想自己求片可用 /search 重新搜索。")
+	return b.String()
+}
+
+// filterWisherTargets 是「可达过滤」纯函数（便于单测，不依赖网络）：
+//   - 剔除 originator（发起人单独走带按钮的喜报，避免重复 PM）。
+//   - reachable(uid)==false（退群/封禁）的跳过 @/PM；但**不从计数减**（计数在 CountWishers 处独立统计）。
+//   - 保持原顺序、去重（同一 uid 只出现一次）。
+func filterWisherTargets(all []int64, originator int64, reachable func(int64) bool) []int64 {
+	seen := map[int64]bool{}
+	var out []int64
+	for _, uid := range all {
+		if uid == 0 || uid == originator || seen[uid] {
+			continue
+		}
+		seen[uid] = true
+		if reachable != nil && !reachable(uid) {
+			continue
+		}
+		out = append(out, uid)
+	}
+	return out
 }
 
 // announceWishFoundToGroup 在群里公示「某许愿片出源了，N 人在等」（#2 三层之主通知）。
@@ -397,15 +468,21 @@ func (s *WishScheduler) announceWishFoundToGroup(item *WishItem) {
 	s.announced[dayKey] = true
 	s.announcedMu.Unlock()
 
-	// 统计「还在等」人数：当前许愿池为「每个 canonical 全局一条」模型——
-	// 同一部片即便多人 /wish，也只去重保留一条（后来者按 Duplicate 处理，不单独记 wisher）。
-	// 因此这里**不臆造** N 人，公示只说「出源了」，避免显示与事实不符的人数。
+	// 统计「在等」总人数（CountWishers = wish_wishers 该 canonical 的总数，只升不降，退群也算）。
+	// 众筹计数后，同一部片即便 wish_items 仍只去重一条，wish_wishers 已累计所有许愿者，
+	// 故这里如实展示 N 人在等。N<=1 时不显示人数（避免「1 人在等」的尴尬，退化为「到货了」）。
+	ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+	n := s.wish.CountWishers(ck)
 	title := strings.TrimSpace(item.Title)
 	if title == "" {
 		title = "有人许愿的片"
 	}
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了！", title))
+	if n > 1 {
+		b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了，%d 人在等到了！", title, n))
+	} else {
+		b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了！", title))
+	}
 	if item.MediaType == "tv" && item.Season > 0 {
 		b.WriteString(fmt.Sprintf("（第%d季）", item.Season))
 	}
@@ -421,12 +498,10 @@ func (s *WishScheduler) announceWishFoundToGroup(item *WishItem) {
 }
 
 // wishAnnounceKey 生成「canonical + 日期」去重 key（同片当天只公示一次）。
+// 复用 CanonicalKey 保证与去重/计数维度严格对齐。
 func (s *WishScheduler) wishAnnounceKey(item *WishItem, now time.Time) string {
 	day := now.Format("2006-01-02")
-	if item.TmdbID != 0 {
-		return fmt.Sprintf("tmdb-%d-%s-%d|%s", item.TmdbID, item.MediaType, item.Season, day)
-	}
-	return fmt.Sprintf("imdb-%s-%s-%d|%s", item.ImdbID, item.MediaType, item.Season, day)
+	return CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season) + "|" + day
 }
 
 // notifyExpired 私信发起人「等了 N 天没找到已自动取消」（坑4）。
