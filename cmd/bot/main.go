@@ -294,7 +294,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		wishService = ws
 		wishScheduler = services.NewWishScheduler(
 			wishService, moviepilotClient, telegramClient, chatID,
-			cfg.WishResearchIntervalHours, cfg.WishExpireDays, cfg.WishMinSeeders,
+			cfg.WishResearchIntervalHours, cfg.WishExpireDays, cfg.WishMinSeeders, cfg.WishSearchLockTTLMinutes,
 		)
 		// 注入「立即求片」按钮构造（出源喜报用），按钮回调走 wish_request。
 		wishScheduler.SetRequestButtonBuilder(handlers.BuildWishRequestButton)

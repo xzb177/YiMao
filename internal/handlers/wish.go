@@ -84,8 +84,11 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		return
 	}
 
-	// 取首个有效结果（带 id 的 movie/tv）。
+	// 取首个有效结果（带 id 的 movie/tv），同时统计可选候选数 + 判断首条置信度。
+	// B6：多个 TMDB 结果且首条不够置信时，不静默取首条——在入池确认消息里明确「匹配到的标题/年份」，
+	// 并提示用户若选错可用更精确片名重搜，避免默默许愿到错误条目。
 	var picked *services.TMDBMediaInfo
+	viableCount := 0
 	for i := range result.Results {
 		r := &result.Results[i]
 		mt := r.MediaType
@@ -95,13 +98,17 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		if r.ID == 0 {
 			continue
 		}
-		picked = r
-		break
+		viableCount++
+		if picked == nil {
+			picked = r
+		}
 	}
 	if picked == nil {
 		h.telegram.SendMessage(chatID, "🔍 没找到这个片，换个关键词再试试～", "", nil)
 		return
 	}
+	// 首条是否「置信」：查询词与候选标题忽略大小写/空白后相等或互相包含视为高置信。
+	confidentPick := isConfidentTitleMatch(query, picked.GetTitle())
 
 	mediaType := picked.MediaType
 	tmdbID := picked.ID
@@ -160,8 +167,18 @@ func (h *WishHandler) HandleCommand(chatID int64, userID int64, text string) {
 		if year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", year)
 		}
-		h.telegram.SendMessage(chatID,
-			fmt.Sprintf("✨ 已加入许愿池：《%s》%s\n\n找到源后会第一时间私信通知你（约每天重搜一次）。", title, yearStr), "", nil)
+		typeStr := "电影"
+		if mediaType == "tv" {
+			typeStr = "剧集"
+		}
+		// B6：确认消息明确展示「匹配到」的标题/年份/类型，让用户能看出是否选错。
+		msg := fmt.Sprintf("✨ 已加入许愿池\n🎯 匹配到：《%s》%s · %s\n\n找到源后会第一时间私信通知你（约每天重搜一次）。",
+			title, yearStr, typeStr)
+		// 多个候选且首条置信度不高：提示用户若选错可用更精确片名（带年份）重搜。
+		if viableCount > 1 && !confidentPick {
+			msg += "\n\n⚠️ 这个片名有多个匹配结果，已按最接近的加入。若不是这部，请用更精确的片名（可带年份）重新 /wish。"
+		}
+		h.telegram.SendMessage(chatID, msg, "", nil)
 	default:
 		h.telegram.SendMessage(chatID, "✨ 已加入许愿池", "", nil)
 	}
@@ -280,6 +297,22 @@ func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 
 	return resp, nil
+}
+
+// isConfidentTitleMatch 判断查询词与候选标题是否高置信匹配（B6）。
+// 规则：忽略大小写与首尾空白后，两者相等或互相包含即视为高置信。
+// 用于决定多结果时是否提示用户「可能选错、请精确重搜」。
+func isConfidentTitleMatch(query, title string) bool {
+	q := strings.ToLower(strings.TrimSpace(query))
+	t := strings.ToLower(strings.TrimSpace(title))
+	if q == "" || t == "" {
+		return false
+	}
+	if q == t {
+		return true
+	}
+	// 互相包含（如查询「沙丘」匹配标题「沙丘」或「沙丘 2」）。
+	return strings.Contains(t, q) || strings.Contains(q, t)
 }
 
 // isWishRequestSubmitted 判断 RequestHandler 返回是否为「已成功提交求片」。

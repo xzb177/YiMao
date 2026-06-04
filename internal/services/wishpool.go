@@ -56,8 +56,11 @@ type WishItem struct {
 	FoundDetail string     // 命中详情（站点/标题/做种数/质量标注），通知时展示
 	SearchingAt *time.Time // 重搜锁时间戳，NULL 表示未锁
 	NotifiedAt  *time.Time // 通知时间戳，用于 TTL 倒计时
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// SearchOffsetMinute 错峰偏移分钟（坑2）：入池时定死 = hash(canonical key)%1440。
+	// 调度只在「当前分钟 == 本列」时认领，全天散布、全量覆盖、无饿死。
+	SearchOffsetMinute int
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // WishService 管理许愿池数据（SQLite 后端）。
@@ -92,6 +95,7 @@ func NewWishService(dataDir string) (*WishService, error) {
 			found_detail TEXT    NOT NULL DEFAULT '',
 			searching_at DATETIME,
 			notified_at  DATETIME,
+			search_offset_minute INTEGER NOT NULL DEFAULT 0,
 			created_at   DATETIME NOT NULL,
 			updated_at   DATETIME NOT NULL
 		);
@@ -111,8 +115,106 @@ func NewWishService(dataDir string) (*WishService, error) {
 		return nil, fmt.Errorf("failed to create wish_items table: %w", err)
 	}
 
+	// 向后兼容迁移（坑2 错峰列）：旧库 wish_items 没有 search_offset_minute 列，
+	// 这里 ALTER TABLE ADD COLUMN 补上（SQLite 不支持 IF NOT EXISTS，靠探测列是否存在防重复/防崩）。
+	if err := ensureSearchOffsetColumn(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate search_offset_minute: %w", err)
+	}
+
+	// 错峰列调度索引：按 (state, search_offset_minute) 命中本分钟该搜的那批。
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_wish_offset ON wish_items(state, search_offset_minute);`,
+	); err != nil {
+		return nil, fmt.Errorf("failed to create idx_wish_offset: %w", err)
+	}
+
+	// 元数据表（持久化调度状态，如上次过期扫描时间，用于重启 catch-up / 补跑漏扫）。
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS wish_meta (
+			key   TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);`); err != nil {
+		return nil, fmt.Errorf("failed to create wish_meta table: %w", err)
+	}
+
 	logger.Info("[wish] 许愿池数据库已初始化: %s", dbPath)
 	return &WishService{db: db}, nil
+}
+
+// metaKeyLastExpirySweep 是 wish_meta 表里记录「上次过期扫描完成时刻」的 key。
+const metaKeyLastExpirySweep = "last_expiry_sweep_at"
+
+// GetLastExpirySweep 读取上次过期扫描完成时刻。无记录返回 (零值, false, nil)。
+func (s *WishService) GetLastExpirySweep() (time.Time, bool, error) {
+	var v string
+	err := s.db.QueryRow(`SELECT value FROM wish_meta WHERE key = ?`, metaKeyLastExpirySweep).Scan(&v)
+	if err == sql.ErrNoRows {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	t, perr := time.Parse(time.RFC3339, v)
+	if perr != nil {
+		// 解析失败按「无记录」处理，触发一次补跑而非崩溃。
+		return time.Time{}, false, nil
+	}
+	return t, true, nil
+}
+
+// SetLastExpirySweep 持久化本次过期扫描完成时刻（UPSERT）。
+func (s *WishService) SetLastExpirySweep(t time.Time) error {
+	_, err := s.db.Exec(
+		`INSERT INTO wish_meta (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		metaKeyLastExpirySweep, t.UTC().Format(time.RFC3339))
+	return err
+}
+
+// ensureSearchOffsetColumn 探测并补齐 search_offset_minute 列（向后兼容旧库）。
+// 已有列则跳过；缺列则 ALTER TABLE 添加，并把存量行的偏移按 id 回填一遍，避免旧条目全挤在 0 分钟。
+func ensureSearchOffsetColumn(db *sql.DB) error {
+	rows, err := db.Query(`PRAGMA table_info(wish_items)`)
+	if err != nil {
+		return err
+	}
+	has := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dflt sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if name == "search_offset_minute" {
+			has = true
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if has {
+		return nil
+	}
+
+	if _, err := db.Exec(
+		`ALTER TABLE wish_items ADD COLUMN search_offset_minute INTEGER NOT NULL DEFAULT 0`,
+	); err != nil {
+		return err
+	}
+	// 回填存量行：按 id 算确定性偏移（与新插入逻辑一致），让旧条目错峰散布。
+	if _, err := db.Exec(
+		`UPDATE wish_items SET search_offset_minute = (
+			(id * 8761 + 619) % 1440
+		)`,
+	); err != nil {
+		return err
+	}
+	logger.Info("[wish] 已迁移：补充 search_offset_minute 列并回填存量错峰偏移")
+	return nil
 }
 
 // Close 关闭数据库连接。
@@ -197,14 +299,15 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 		return &AddWishResult{OverPerUser: true}, nil
 	}
 
-	// 3) 落库（PENDING）。
+	// 3) 落库（PENDING）。错峰偏移（坑2）入池时定死，调度据此 SQL 直接过滤本分钟该搜的批次。
 	now := time.Now()
+	offsetMinute := searchOffsetForCanonical(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
 	res, err := tx.Exec(`
 		INSERT INTO wish_items
-			(user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+			(user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail, search_offset_minute, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?)
 	`, item.UserID, item.TmdbID, item.ImdbID, item.MediaType, item.Title, item.Year, item.Season,
-		WishStatePending, now, now)
+		WishStatePending, offsetMinute, now, now)
 	if err != nil {
 		// 唯一键冲突等并发情况：当作重复处理（兜底，正常已被 step1 拦下）。
 		return nil, fmt.Errorf("failed to insert wish item: %w", err)
@@ -218,6 +321,7 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 
 	item.ID = id
 	item.State = WishStatePending
+	item.SearchOffsetMinute = offsetMinute
 	item.CreatedAt = now
 	item.UpdatedAt = now
 	logger.Info("[wish] 入池成功 id=%d user=%d tmdb=%d imdb=%s type=%s season=%d title=%q",
@@ -231,7 +335,7 @@ func (s *WishService) findActiveByCanonicalTx(tx *sql.Tx, tmdbID int, imdbID, me
 	if tmdbID != 0 {
 		row = tx.QueryRow(`
 			SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-			       searching_at, notified_at, created_at, updated_at
+			       searching_at, notified_at, search_offset_minute, created_at, updated_at
 			FROM wish_items
 			WHERE tmdb_id = ? AND media_type = ? AND season = ? AND state IN (?,?,?,?)
 			LIMIT 1`,
@@ -240,7 +344,7 @@ func (s *WishService) findActiveByCanonicalTx(tx *sql.Tx, tmdbID int, imdbID, me
 	} else {
 		row = tx.QueryRow(`
 			SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-			       searching_at, notified_at, created_at, updated_at
+			       searching_at, notified_at, search_offset_minute, created_at, updated_at
 			FROM wish_items
 			WHERE tmdb_id = 0 AND imdb_id = ? AND media_type = ? AND season = ? AND state IN (?,?,?,?)
 			LIMIT 1`,
@@ -262,29 +366,55 @@ func (s *WishService) findActiveByCanonicalTx(tx *sql.Tx, tmdbID int, imdbID, me
 // ---------------------------------------------------------------------------
 
 // SearchOffsetMinutes 按 hash(item_id)%1440 算错峰偏移（坑2）。导出供调度与测试使用。
+// 注意：入池时 id 尚未生成（AUTOINCREMENT），故入池偏移用 canonical key 计算
+// （见 searchOffsetForCanonical）；本函数保留用于已知 id 的兼容/测试场景。
 func SearchOffsetMinutes(itemID int64) int {
 	h := sha1.Sum([]byte(fmt.Sprintf("wish-%d", itemID)))
 	v := binary.BigEndian.Uint64(h[:8])
 	return int(v % 1440)
 }
 
-// ClaimSearchableItems 原子地「认领」一批今天该搜、且 searching_at 锁可用的条目。
-// 它在一个事务里：选出符合条件的 SEARCHING/PENDING 条目 → 立刻 UPDATE searching_at=now()（上锁）。
-// 返回被认领的条目（已带新的 searching_at），调度据此去站点搜索。
+// searchOffsetForCanonical 用 canonical key（tmdb 优先，否则 imdb）算入池时的错峰偏移。
+// canonical key 在入池前已确定且稳定，避免依赖尚未生成的自增 id。
+func searchOffsetForCanonical(tmdbID int, imdbID, mediaType string, season int) int {
+	var key string
+	if tmdbID != 0 {
+		key = fmt.Sprintf("wish-tmdb-%d-%s-%d", tmdbID, mediaType, season)
+	} else {
+		key = fmt.Sprintf("wish-imdb-%s-%s-%d", imdbID, mediaType, season)
+	}
+	h := sha1.Sum([]byte(key))
+	v := binary.BigEndian.Uint64(h[:8])
+	return int(v % 1440)
+}
+
+// ClaimSearchableItems 原子地「认领」当前分钟该搜、且 searching_at 自愈锁可用的条目。
+// 它在一个事务里：用 SQL 直接过滤 → 立刻 UPDATE searching_at=now()（上锁）→ 返回被认领条目。
 //
-// 锁规则（坑6）：只选 searching_at IS NULL OR searching_at < now-interval。
-// interval = WISH_RESEARCH_INTERVAL_HOURS，崩溃残留的旧锁超过该窗口会自动重纳入（自愈）。
+// 关键设计（修复 B1 饿死 + churn）：
+//   - 错峰（坑2）直接在 SQL WHERE search_offset_minute = ? 过滤，每分钟只认领真正该搜的那批，
+//     全天 1440 个分片天然轮转、全量覆盖、永不饿死，也不再 claim-then-release 空写。
+//   - 自愈锁（坑6 / 坑B）：lockTTLMinutes 是独立的短 TTL（默认 60min），
+//     与重搜周期（24h）解耦——崩溃残留旧锁超过该 TTL 即可重纳入，盲区从 ~24h 缩到 ~1h。
+//   - 每片每天仅一次：search_offset_minute 在 1440 分钟里唯一命中本分钟，
+//     天然保证「每个分片每天只被认领一次」，无需再叠加 24h 周期条件。
 //
-// 错峰（坑2）：只认领 SearchOffsetMinutes(id) 落在「当前时刻所在分钟」附近窗口内的条目，
-// 由调用方按分钟 tick 传入 nowMinuteOfDay + window。
-func (s *WishService) ClaimSearchableItems(intervalHours int, limit int) ([]*WishItem, error) {
-	if intervalHours <= 0 {
-		intervalHours = 24
+// 入参：
+//   - nowMinuteOfDay: 当前时刻的「日内分钟」= hour*60+minute，范围 [0,1439]。
+//   - lockTTLMinutes: 自愈锁 TTL（分钟），<=0 时回退 60。
+//   - limit:          单次认领上限（防一次取过多）；同一分钟分片通常远小于该值。
+func (s *WishService) ClaimSearchableItems(nowMinuteOfDay int, lockTTLMinutes int, limit int) ([]*WishItem, error) {
+	if lockTTLMinutes <= 0 {
+		lockTTLMinutes = 60
 	}
 	if limit <= 0 {
-		limit = 50
+		limit = 200
 	}
-	lockCutoff := time.Now().Add(-time.Duration(intervalHours) * time.Hour)
+	if nowMinuteOfDay < 0 {
+		nowMinuteOfDay = 0
+	}
+	nowMinuteOfDay = nowMinuteOfDay % 1440
+	lockCutoff := time.Now().Add(-time.Duration(lockTTLMinutes) * time.Minute)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -297,16 +427,18 @@ func (s *WishService) ClaimSearchableItems(intervalHours int, limit int) ([]*Wis
 		}
 	}()
 
-	// PENDING 也纳入（首次入调度即 WISHED→SEARCHING）。
+	// SQL 同时做：错峰分片过滤 + 自愈锁过期过滤；PENDING 也纳入（首次入调度即 WISHED→SEARCHING）。
+	// ORDER BY id 仅为稳定性，LIMIT 在已正确过滤的小集合上截断，不会造成饿死。
 	rows, err := tx.Query(`
 		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-		       searching_at, notified_at, created_at, updated_at
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
 		FROM wish_items
 		WHERE state IN (?, ?)
+		  AND search_offset_minute = ?
 		  AND (searching_at IS NULL OR searching_at < ?)
 		ORDER BY id ASC
 		LIMIT ?`,
-		WishStatePending, WishStateSearching, lockCutoff, limit)
+		WishStatePending, WishStateSearching, nowMinuteOfDay, lockCutoff, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +573,7 @@ func (s *WishService) MarkExpired(id int64) error {
 func (s *WishService) GetByID(id int64) (*WishItem, error) {
 	row := s.db.QueryRow(`
 		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-		       searching_at, notified_at, created_at, updated_at
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
 		FROM wish_items WHERE id = ?`, id)
 	item, err := scanWishRow(row)
 	if err == sql.ErrNoRows {
@@ -454,7 +586,7 @@ func (s *WishService) GetByID(id int64) (*WishItem, error) {
 func (s *WishService) ListByUser(userID int64) ([]*WishItem, error) {
 	rows, err := s.db.Query(`
 		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-		       searching_at, notified_at, created_at, updated_at
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
 		FROM wish_items
 		WHERE user_id = ? AND state IN (?,?,?,?)
 		ORDER BY created_at DESC`,
@@ -483,7 +615,7 @@ func (s *WishService) ListExpiryCandidates(expireDays int) ([]*WishItem, error) 
 	cutoff := time.Now().AddDate(0, 0, -expireDays)
 	rows, err := s.db.Query(`
 		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
-		       searching_at, notified_at, created_at, updated_at
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
 		FROM wish_items
 		WHERE state IN (?, ?) AND created_at < ?
 		ORDER BY created_at ASC`,
@@ -524,7 +656,7 @@ func scanWishCommon(sc rowScanner) (*WishItem, error) {
 	var searchingAt, notifiedAt sql.NullTime
 	err := sc.Scan(
 		&it.ID, &it.UserID, &it.TmdbID, &it.ImdbID, &it.MediaType, &it.Title, &it.Year, &it.Season,
-		&it.State, &it.FoundDetail, &searchingAt, &notifiedAt, &it.CreatedAt, &it.UpdatedAt,
+		&it.State, &it.FoundDetail, &searchingAt, &notifiedAt, &it.SearchOffsetMinute, &it.CreatedAt, &it.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err

@@ -103,6 +103,7 @@ type Config struct {
 	WishResearchIntervalHours int // 重搜锁定窗口/调度间隔（小时），默认 24
 	WishExpireDays            int // 入池后无源自动过期天数，默认 30
 	WishMinSeeders            int // 重搜「命中」判定的最低做种数，默认 1
+	WishSearchLockTTLMinutes  int // searching_at 自愈锁 TTL（分钟），与重搜周期解耦，默认 60
 }
 
 // Load loads configuration from environment variables and files
@@ -160,6 +161,7 @@ func Load() (*Config, error) {
 		WishResearchIntervalHours: getEnvInt("WISH_RESEARCH_INTERVAL_HOURS", 24),
 		WishExpireDays:            getEnvInt("WISH_EXPIRE_DAYS", 30),
 		WishMinSeeders:            getEnvInt("WISH_MIN_SEEDERS", 1),
+		WishSearchLockTTLMinutes:  getEnvInt("WISH_SEARCH_LOCK_TTL_MINUTES", 60),
 	}
 
 	// Set file paths
