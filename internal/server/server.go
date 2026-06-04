@@ -28,6 +28,7 @@ type Dependencies struct {
 	BindingRequest    *services.BindingRequestService
 	MediaNotification *services.MediaNotificationService
 	FeedbackHandler   *handlers.FeedbackHandler
+	WishHandler       *handlers.WishHandler // #6 许愿池命令/回调处理器
 }
 
 // New creates a new HTTP server
@@ -120,5 +121,6 @@ func toBotDeps(deps *Dependencies) *botHandlers.Dependencies {
 		QuotaService:   deps.QuotaService,
 		IssueService:   deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
+		WishHandler:    deps.WishHandler,
 	}
 }

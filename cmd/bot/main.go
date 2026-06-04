@@ -100,6 +100,8 @@ func main() {
 		WebhookService:    depsWithHandlers.WebhookService,
 		BindingRequest:    depsWithHandlers.BindingRequest,
 		MediaNotification: depsWithHandlers.MediaNotification,
+		FeedbackHandler:   depsWithHandlers.FeedbackHandler,
+		WishHandler:       depsWithHandlers.WishHandler,
 	}, securityService)
 
 	// Start server in background
@@ -119,6 +121,16 @@ func main() {
 
 	// Stop security service
 	securityService.Stop()
+
+	// #6 停止许愿池调度 + 关闭数据库（优雅关停）。
+	if depsWithHandlers.WishScheduler != nil {
+		depsWithHandlers.WishScheduler.Stop()
+	}
+	if depsWithHandlers.WishService != nil {
+		if err := depsWithHandlers.WishService.Close(); err != nil {
+			logger.Info("[wish] 关闭数据库出错: %v", err)
+		}
+	}
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -155,6 +167,9 @@ type Dependencies struct {
 	FeedbackHandler   *handlers.FeedbackHandler
 	WeeklyReportSvc   *services.WeeklyReportService
 	CarpoolService    *services.CarpoolService // #3 拼车 +1 服务
+	WishService       *services.WishService    // #6 许愿池存储
+	WishScheduler     *services.WishScheduler  // #6 许愿池 DailyRescan task
+	WishHandler       *handlers.WishHandler    // #6 许愿池命令/回调处理器
 }
 
 // initServices initializes all services
@@ -268,6 +283,25 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, telegramClient, tmdbClient)
 	}
 
+	// #6 许愿池：初始化 SQLite 存储 + 单个 DailyRescan 调度 task。
+	// 任一环节失败则降级（WishService=nil），命令/回调不接入半成品。
+	logger.Info("    - WishService (#6 许愿池)...")
+	var wishService *services.WishService
+	var wishScheduler *services.WishScheduler
+	if ws, werr := services.NewWishService(cfg.DataDir); werr != nil {
+		logger.Info("⚠️  Failed to create WishService: %v (许愿池功能禁用)", werr)
+	} else {
+		wishService = ws
+		wishScheduler = services.NewWishScheduler(
+			wishService, moviepilotClient, telegramClient, chatID,
+			cfg.WishResearchIntervalHours, cfg.WishExpireDays, cfg.WishMinSeeders,
+		)
+		// 注入「立即求片」按钮构造（出源喜报用），按钮回调走 wish_request。
+		wishScheduler.SetRequestButtonBuilder(handlers.BuildWishRequestButton)
+		wishScheduler.Start()
+		logger.Info("    - WishScheduler started (#6 DailyRescan)")
+	}
+
 	// Start cleanup routines
 	go func() {
 		defer func() {
@@ -307,6 +341,8 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		SearchHistoryDB:   searchHistoryDB,
 		WeeklyReportSvc:   weeklyReportSvc,
 		CarpoolService:    carpoolService,
+		WishService:       wishService,
+		WishScheduler:     wishScheduler,
 	}
 }
 
@@ -338,6 +374,14 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// #3 拼车 +1 回调处理器
 	carpoolHandler := handlers.NewCarpoolHandler(deps.CarpoolService)
+
+	// #6 许愿池处理器：复用 requestHandler 走现有求片流程（仅在 WishService 就绪时接入）。
+	var wishHandler *handlers.WishHandler
+	if deps.WishService != nil {
+		wishHandler = handlers.NewWishHandler(
+			deps.WishService, deps.TMDBClient, deps.MoviePilot, deps.Telegram, deps.SessionMgr, requestHandler,
+		)
+	}
 
 	// Initialize site adapter registry for resource candidates
 	siteRegistry := services.NewSiteRegistry()
@@ -473,6 +517,11 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// #3 拼车 +1 回调
 	registry.RegisterFunc("carpool", carpoolHandler.Handle)
 
+	// #6 许愿池：出源喜报「立即求片」回调（仅在处理器就绪时注册）。
+	if wishHandler != nil {
+		registry.RegisterFunc("wish_request", wishHandler.Handle)
+	}
+
 	// My Requests pagination callbacks
 	registry.RegisterFunc(callback.ActionMyReqsPage, myRequestsHandler.HandlePage)
 	registry.RegisterFunc(callback.ActionMyReqsItem, myRequestsHandler.HandleItemAction)
@@ -551,6 +600,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		SearchHistoryDB:   deps.SearchHistoryDB,
 		FeedbackHandler:   feedbackHandler,
 		CarpoolService:    deps.CarpoolService,
+		WishService:       deps.WishService,
+		WishScheduler:     deps.WishScheduler,
+		WishHandler:       wishHandler,
 	}
 
 	return registry, resultDeps
@@ -563,6 +615,7 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "search", Description: "🔍 搜索影片"},
 		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
+		{Command: "wish", Description: "🌟 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
 		{Command: "help", Description: "❓ 帮助中心"},
@@ -604,5 +657,6 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		TMDB:            deps.TMDBClient,
 		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
+		WishHandler:     deps.WishHandler,
 	}
 }

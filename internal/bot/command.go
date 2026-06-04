@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/ui"
@@ -21,6 +22,7 @@ func HandleCommand(
 	bindingRequest *services.BindingRequestService,
 	quotaService *services.QuotaService,
 	userMapping *services.UserMappingService,
+	wishHandler *handlers.WishHandler,
 ) {
 	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
 	parts := strings.Fields(msg.Text)
@@ -55,6 +57,12 @@ func HandleCommand(
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":
 		HandleQuotaCommand(telegram, msg, quotaService)
+	case "/wish":
+		// #6 许愿池入口：/wish <片名> 入池；/wish 无参列出我的许愿。
+		// 仅在 WishService 就绪（wishHandler != nil）时启用，否则静默忽略（不接入半成品）。
+		if wishHandler != nil {
+			wishHandler.HandleCommand(msg.Chat.ID, msg.From.ID, msg.Text)
+		}
 	// Unknown commands are silently ignored
 	}
 }

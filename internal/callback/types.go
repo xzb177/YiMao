@@ -142,6 +142,7 @@ var validActions = map[Action]bool{
 	"force_subscribe": true,
 	"cancel_request":  true,
 	"carpool":         true, // 拼车 +1：用户标记「我也想看」
+	"wish_request":    true, // #6 许愿池：出源喜报「立即求片」按钮（走现有 request 流程 + 确认）
 
 	// Admin Feedback Panel actions
 	"admin_feedback":               true, // Feedback management main panel

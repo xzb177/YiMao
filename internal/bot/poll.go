@@ -32,6 +32,7 @@ type Dependencies struct {
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
 	FallbackService *services.SearchFallbackService
+	WishHandler     *handlers.WishHandler // #6 许愿池
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -50,6 +51,7 @@ type PollDeps struct {
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
 	FallbackService *services.SearchFallbackService
+	WishHandler     *handlers.WishHandler // #6 许愿池
 }
 
 // StartPolling starts the Telegram update polling
@@ -79,6 +81,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
 		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
+		WishHandler:     deps.WishHandler,
 	}
 
 	for {
@@ -251,7 +254,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Private chat: Handle commands and search query
 	if strings.HasPrefix(sanitizedText, "/") {
 		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler)
 		return
 	}
 

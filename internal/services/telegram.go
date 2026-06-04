@@ -1090,3 +1090,48 @@ func Int64ToString(i int64) string {
 func StringToInt64(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
+
+// #6 许愿池坑5：发通知前用 getChatMember 检查用户是否可达。
+// GetChatMemberStatus 返回用户在指定聊天里的成员状态（"member"/"administrator"/
+// "creator"/"restricted"/"left"/"kicked"）。
+// 出错（包括用户从未与 bot 交互导致的 400/403）时返回空串 + error，调用方据此判定为不可达。
+func (c *TelegramClient) GetChatMemberStatus(chatID int64, userID int64) (string, error) {
+	apiURL := fmt.Sprintf("%s/getChatMember", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"user_id": userID,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("getChatMember request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			Status string `json:"status"`
+		} `json:"result"`
+		ErrorCode int    `json:"error_code,omitempty"`
+		ErrorDesc string `json:"description,omitempty"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to decode getChatMember response: %w", err)
+	}
+
+	if !result.OK {
+		return "", &types.TelegramError{Code: result.ErrorCode, Message: result.ErrorDesc}
+	}
+	return result.Result.Status, nil
+}
