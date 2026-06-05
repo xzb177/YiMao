@@ -43,6 +43,9 @@ jobs:
           version: latest
           args: --timeout=5m
 
+      - name: Callback completeness check
+        run: go test ./internal/callback/... -run "TestAllMenuButton|TestKnownShort|TestValidActions" -v
+
       - name: Go test
         run: go test ./...
 

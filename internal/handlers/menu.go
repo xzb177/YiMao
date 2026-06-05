@@ -390,9 +390,22 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 		extraInfo = fmt.Sprintf("共 %d 集", req.TotalEpisode)
 	}
 
+	// C2: 下载进度展示（仅下载中状态，且有集数信息时）
+	progressInfo := ""
+	if req.State == "D" && req.TotalEpisode > 0 && req.LackEpisode >= 0 {
+		downloaded := req.TotalEpisode - req.LackEpisode
+		percent := downloaded * 100 / req.TotalEpisode
+		barLen := 6
+		filled := percent * barLen / 100
+		bar := strings.Repeat("█", filled) + strings.Repeat("░", barLen-filled)
+		progressInfo = fmt.Sprintf(" %s %d%%", bar, percent)
+	}
+
 	// Format: N. [Status] Title [Type] [Extra]
 	line := fmt.Sprintf("%d. %s %s %s", index, statusEmoji, title, typeEmoji)
-	if extraInfo != "" {
+	if progressInfo != "" {
+		line += progressInfo
+	} else if extraInfo != "" {
 		line += fmt.Sprintf(" · %s", extraInfo)
 	}
 	if req.Date != "" {

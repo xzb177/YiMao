@@ -25,11 +25,11 @@ func TestValidActionsNoStartPrefix(t *testing.T) {
 // 这些是 start_xxx 剥前缀后必须存在的 action。
 func TestKnownShortActionsRegistered(t *testing.T) {
 	required := []Action{
-		"search",      // start_search → search
-		"requests",    // start_requests → requests
-		"wish",        // start_wish → wish
-		"ai",          // start_ai → ai
-		"settings",    // start_settings → settings
+		"search",       // start_search → search
+		"requests",     // start_requests → requests
+		"wish",         // start_wish → wish
+		"ai",           // start_ai → ai
+		"settings",     // start_settings → settings
 		"myreq_cancel", // 用户撤回 pending 求片
 	}
 
