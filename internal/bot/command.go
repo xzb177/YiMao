@@ -164,7 +164,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	logger.Info("[LinkCommand] AddMapping completed, sending success message")
-	text := "✅ 绑定成功\n\n您现在可以使用求片功能了"
+	text := "✅ 绑定成功！现在可以求片了～"
 	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
 		logger.Info("[LinkCommand] Failed to send success message: %v", err)
 	}

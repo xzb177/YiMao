@@ -1071,8 +1071,8 @@ func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKe
 
 	// 低频
 	kb.NewRow()
-	kb.AddButton("⚙️", "start_settings")
-	kb.AddButton("❓", "help")
+	kb.AddButton("⚙️ 设置", "start_settings")
+	kb.AddButton("❓ 帮助", "help")
 
 	if isAdmin {
 		kb.NewRow()
