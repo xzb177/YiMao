@@ -225,6 +225,12 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	}
 	// P1：MP 轮询订阅完成时通知用户（替代 Emby webhook，Emby 不可用时仍能通知）
 	reviewService.OnSubscriptionComplete = func(telegramID int64, title string, year int, mediaType string) {
+		// 检查用户是否开启了入库通知
+		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
+			logger.Info("[ReviewService] 用户 %d 关闭了入库通知，跳过", telegramID)
+			return
+		}
+
 		typeLabel := "🎬"
 		if mediaType == "tv" {
 			typeLabel = "📺"
@@ -290,6 +296,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Initialize Notification Service
 	logger.Info("  [8/11] Creating notification service...")
 	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
+	notificationService.NotifyEnabled = func(userID int64, key string) bool {
+		return preferencesService.IsNotifyEnabled(userID, key)
+	}
 	logger.Info("  [9/11] Notification service created")
 
 	// Initialize Scheduler for daily recommendations
@@ -317,6 +326,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	var weeklyReportSvc *services.WeeklyReportService
 	if searchHistoryDB != nil {
 		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, telegramClient, tmdbClient)
+		weeklyReportSvc.NotifyEnabled = func(userID int64, key string) bool {
+			return preferencesService.IsNotifyEnabled(userID, key)
+		}
 	}
 
 	// #6 许愿池：初始化 SQLite 存储 + 单个 DailyRescan 调度 task。

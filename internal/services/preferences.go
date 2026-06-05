@@ -36,7 +36,21 @@ type UserPreferences struct {
 	QuietStart string   `json:"quiet_start"` // HH:MM format
 	Whitelist  []string `json:"whitelist_keywords"`
 	Blacklist  []string `json:"blacklist_keywords"`
+
+	// 通知偏好（默认全部 true，用户可单独关闭）
+	NotifyDownload  *bool `json:"notify_download,omitempty"`  // 下载进度/入库通知
+	NotifyRecommend *bool `json:"notify_recommend,omitempty"` // 每日推荐
+	NotifyWeekly    *bool `json:"notify_weekly,omitempty"`    // 观影周报
+	NotifyAnnounce  *bool `json:"notify_announce,omitempty"`  // 系统公告
 }
+
+// 通知类型常量
+const (
+	NotifyDownload  = "download"  // 下载进度/入库
+	NotifyRecommend = "recommend" // 每日推荐
+	NotifyWeekly    = "weekly"    // 观影周报
+	NotifyAnnounce  = "announce"  // 系统公告
+)
 
 // PreferencesService manages user preferences
 type PreferencesService struct {
@@ -291,4 +305,59 @@ func indexOf(s, substr string) int {
 		}
 	}
 	return -1
+}
+
+// ─── 通知偏好 ───
+
+// IsNotifyEnabled 检查用户是否开启了某类通知。
+// 默认全部开启（*bool 为 nil 时返回 true），用户主动关闭才返回 false。
+func (s *PreferencesService) IsNotifyEnabled(userID int64, notifyKey string) bool {
+	prefs := s.GetPreferences(userID)
+	if prefs == nil {
+		return true
+	}
+	switch notifyKey {
+	case NotifyDownload:
+		return prefs.NotifyDownload == nil || *prefs.NotifyDownload
+	case NotifyRecommend:
+		return prefs.NotifyRecommend == nil || *prefs.NotifyRecommend
+	case NotifyWeekly:
+		return prefs.NotifyWeekly == nil || *prefs.NotifyWeekly
+	case NotifyAnnounce:
+		return prefs.NotifyAnnounce == nil || *prefs.NotifyAnnounce
+	default:
+		return true
+	}
+}
+
+// SetNotify 设置用户的某类通知开关。
+func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled bool) error {
+	prefs := s.GetPreferences(userID)
+	if prefs == nil {
+		prefs = &UserPreferences{TelegramID: userID}
+		s.prefs[userID] = prefs
+	}
+	switch notifyKey {
+	case NotifyDownload:
+		prefs.NotifyDownload = &enabled
+	case NotifyRecommend:
+		prefs.NotifyRecommend = &enabled
+	case NotifyWeekly:
+		prefs.NotifyWeekly = &enabled
+	case NotifyAnnounce:
+		prefs.NotifyAnnounce = &enabled
+	default:
+		return fmt.Errorf("unknown notify key: %s", notifyKey)
+	}
+	return s.save()
+}
+
+// GetNotifyStatus 返回所有通知类别的开关状态。
+func (s *PreferencesService) GetNotifyStatus(userID int64) map[string]bool {
+	return map[string]bool{
+		NotifyDownload:  s.IsNotifyEnabled(userID, NotifyDownload),
+		NotifyRecommend: s.IsNotifyEnabled(userID, NotifyRecommend),
+		NotifyWeekly:    s.IsNotifyEnabled(userID, NotifyWeekly),
+		NotifyAnnounce:  s.IsNotifyEnabled(userID, NotifyAnnounce),
+	}
 }

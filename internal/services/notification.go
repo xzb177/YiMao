@@ -17,6 +17,9 @@ type NotificationService struct {
 	notifyFile  string
 	knownUsers  map[int64]int64 // telegramID -> moviepilotID
 	mu          sync.RWMutex
+	// NotifyEnabled 检查用户是否开启了某类通知（由 main 注入）。
+	// 参数：userID, notifyKey。返回 true 表示允许发送。
+	NotifyEnabled func(userID int64, notifyKey string) bool
 }
 
 // NewNotificationService creates a new notification service
@@ -158,6 +161,12 @@ func (s *NotificationService) processNotifications(updates []StatusUpdate) {
 			continue
 		}
 
+		// 检查用户是否开启了下载通知
+		if s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyDownload) {
+			updates[i].Notified = true
+			continue
+		}
+
 		// Send notification
 		message := s.formatStatusMessage(update)
 		_, err := s.telegram.SendMessage(telegramID, message, "", nil)
@@ -224,6 +233,11 @@ func (s *NotificationService) formatStatusMessage(update StatusUpdate) string {
 
 // SendDownloadCompleted sends a notification when media is downloaded
 func (s *NotificationService) SendDownloadCompleted(telegramID int64, mediaTitle, mediaYear, mediaType, savePath string) error {
+	// 检查用户是否开启了下载通知
+	if s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyDownload) {
+		return nil
+	}
+
 	msg := NewMessageBuilder()
 	msg.Bold("🎉 下载完成！").Newline()
 	msg.Newline()
@@ -270,6 +284,10 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 
 	// Send to all users
 	for _, telegramID := range telegramIDs {
+		// 检查用户是否开启了每日推荐
+		if s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyRecommend) {
+			continue
+		}
 		if _, err := s.telegram.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
 			logger.Info("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err)
 		}

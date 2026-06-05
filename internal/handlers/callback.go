@@ -609,12 +609,13 @@ func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response
 	msg.Newline()
 
 	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔔 通知设置", "notify_settings")
 	kb.AddButton("🔗 绑定账号", "start_link")
+	kb.NewRow()
 	kb.AddButton("🐞 我的反馈", "my_feedback")
-	kb.NewRow()
 	kb.AddButton("📊 观影周报", "weekly_report")
-	kb.AddButton("❓ 帮助", "help")
 	kb.NewRow()
+	kb.AddButton("❓ 帮助", "help")
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{

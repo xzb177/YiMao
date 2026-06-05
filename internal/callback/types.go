@@ -82,6 +82,8 @@ var validActions = map[Action]bool{
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
 	"ai_chat":           true, // AI chat recommendation
+	"notify_settings":   true, // 通知设置页
+	"notify_toggle":     true, // 通知开关切换
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,

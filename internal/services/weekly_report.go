@@ -65,6 +65,9 @@ type WeeklyReportService struct {
 	// 定时任务
 	ticker   *time.Ticker
 	stopChan chan bool
+
+	// NotifyEnabled 检查用户是否开启了某类通知（由 main 注入）。
+	NotifyEnabled func(userID int64, notifyKey string) bool
 }
 
 // NewWeeklyReportService creates a new weekly report service
@@ -386,6 +389,11 @@ func (s *WeeklyReportService) SendReport(userID int64, userName string) error {
 		return fmt.Errorf("telegram client not configured")
 	}
 
+	// 检查用户是否开启了周报通知
+	if s.NotifyEnabled != nil && !s.NotifyEnabled(userID, NotifyWeekly) {
+		return nil
+	}
+
 	msg := s.FormatReport(report)
 	_, err = s.telegram.SendMessage(userID, msg, "", nil)
 	if err != nil {
@@ -498,6 +506,12 @@ func (s *WeeklyReportService) checkReminders() {
 		// In real implementation, check Emby/MoviePilot availability
 		// For now, just check if enough time has passed (3 days)
 		if time.Since(reminder.SearchDate) > 3*24*time.Hour {
+			// 检查用户是否开启了推荐通知
+			if s.NotifyEnabled != nil && !s.NotifyEnabled(reminder.UserID, NotifyRecommend) {
+				reminder.IsNotified = true
+				continue
+			}
+
 			// Send reminder
 			msg := fmt.Sprintf("🔔 你之前搜索的「%s」可能已经更新啦！快去搜索看看吧 👉 /search", reminder.MediaTitle)
 			s.telegram.SendMessage(reminder.UserID, msg, "", nil)
