@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/errors"
+	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 )
 
@@ -285,7 +285,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
 			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 			return &callback.Response{
-				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
+				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s\n\n🕛 配额将于次日 00:00 自动重置", quotaText),
 				CallbackMsg: "配额已用完",
 				ShowAlert:   true,
 			}, nil
@@ -505,7 +505,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
 			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 			return &callback.Response{
-				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s", quotaText),
+				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s\n\n🕛 配额将于次日 00:00 自动重置", quotaText),
 				CallbackMsg: "配额已用完",
 				ShowAlert:   true,
 			}, nil

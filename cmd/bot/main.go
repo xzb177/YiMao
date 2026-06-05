@@ -166,10 +166,11 @@ type Dependencies struct {
 	SearchHistoryDB   *services.SearchHistoryDB
 	FeedbackHandler   *handlers.FeedbackHandler
 	WeeklyReportSvc   *services.WeeklyReportService
-	CarpoolService    *services.CarpoolService // #3 拼车 +1 服务
-	WishService       *services.WishService    // #6 许愿池存储
-	WishScheduler     *services.WishScheduler  // #6 许愿池 DailyRescan task
-	WishHandler       *handlers.WishHandler    // #6 许愿池命令/回调处理器
+	CarpoolService    *services.CarpoolService    // #3 拼车 +1 服务
+	WishService       *services.WishService       // #6 许愿池存储
+	WishScheduler     *services.WishScheduler     // #6 许愿池 DailyRescan task
+	WishHandler       *handlers.WishHandler       // #6 许愿池命令/回调处理器
+	MyRequestsHandler *handlers.MyRequestsHandler // 「我的请求」聚合视图（/requests 命令复用）
 }
 
 // initServices initializes all services
@@ -442,6 +443,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
+	myRequestsHandler.SetReviewService(deps.ReviewService)
 	searchHandler.SetSearchHistory(deps.SearchHistory)
 	feedbackHandler.SetIssueService(deps.IssueService)
 	feedbackHandler.SetTMDBClient(deps.TMDBClient)
@@ -607,6 +609,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		WishService:       deps.WishService,
 		WishScheduler:     deps.WishScheduler,
 		WishHandler:       wishHandler,
+		MyRequestsHandler: myRequestsHandler,
 	}
 
 	return registry, resultDeps
@@ -662,5 +665,6 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
 		WishHandler:     deps.WishHandler,
+		MyRequests:      deps.MyRequestsHandler,
 	}
 }

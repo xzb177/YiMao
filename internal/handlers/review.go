@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // ReviewHandler handles review request callbacks
@@ -176,7 +176,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		stateText := services.GetStateText(sub.State)
 		h.telegram.SendMessage(review.TelegramID,
 			fmt.Sprintf("⚠️ 求片已自动拦截：MoviePilot 已有订阅\n\n📺 %s\n状态：%s", sub.Name, stateText), "", nil)
-	// Sync review with existing subscription info when possible
+		// Sync review with existing subscription info when possible
 		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
 		return &callback.Response{
@@ -196,18 +196,28 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	)
 	if err != nil {
 		logger.Info("[ReviewHandler] Failed to submit to MoviePilot: %v", err)
+		// 关键兜底（修复「审核通过但 MP 失败请求凭空消失」的真 bug）：
+		// 审核状态保持 approved，但标记 stuck + 记录错误，让请求可见、可重试。
+		if merrr := h.reviewService.MarkStuck(requestID, err.Error()); merrr != nil {
+			logger.Info("[ReviewHandler] MarkStuck 失败: %v", merrr)
+		}
 		// Notify user about approval but submission failed
 		h.telegram.SendMessage(review.TelegramID,
-			fmt.Sprintf("✅ 你的求片请求已批准\n\n📺 %s\n\n但自动提交失败，请稍后再试", review.MediaTitle), "", nil)
+			fmt.Sprintf("✅ 你的求片请求已通过审核\n\n📺 %s\n\n⚠️ 自动提交下载器暂时失败，系统已记录，管理员会重试，无需重复提交。\n可在「我的请求」查看状态。", review.MediaTitle), "", nil)
 		return &callback.Response{
-			Text:        "✅ 已批准（但提交到 MoviePilot 失败）",
-			CallbackMsg: "已批准",
+			Text:        "⚠️ 已批准，但提交 MoviePilot 失败（已进入重试兜底，可在管理面板手动重试）",
+			CallbackMsg: "已批准·待重试",
 			ShowAlert:   true,
 			Edit:        true,
 		}, nil
 	}
 
 	logger.Info("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
+
+	// 提交成功，清除可能存在的 stuck 兜底状态
+	if cerr := h.reviewService.ClearStuck(requestID); cerr != nil {
+		logger.Info("[ReviewHandler] ClearStuck 失败: %v", cerr)
+	}
 
 	// Note: Quota was already deducted when user submitted the request
 	// No need to deduct again here

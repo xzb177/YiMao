@@ -1,10 +1,10 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"math/big"
 	"os"
 	"sync"
@@ -38,6 +38,13 @@ type ReviewRequest struct {
 	SubscriptionID    int       `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
 	SubscriptionState string    `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
 	LastResubscribeAt time.Time `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
+
+	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
+	// 当 Status=="approved" 但提交 MP 失败时，进入 stuck 兜底（而不是凭空消失），
+	// 让管理员可见、可手动重试，用户在「我的请求」也能看到「同步中/重试」。
+	RetryCount int    `json:"retry_count,omitempty"` // 已重试次数
+	LastError  string `json:"last_error,omitempty"`  // 最近一次提交 MP 的错误
+	Stuck      bool   `json:"stuck,omitempty"`       // 审核通过但提交 MP 失败，卡住待处理
 }
 
 // ReviewService manages review requests
@@ -324,6 +331,63 @@ func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID 
 	logger.Info("[ReviewService] Updated subscription info for %s: ID=%d, State=%s", requestID, subscriptionID, state)
 
 	return s.saveLocked()
+}
+
+// MarkStuck 记录「审核已通过但提交 MoviePilot 失败」的兜底状态。
+// 不改变 Status（仍为 approved），仅累加 RetryCount + 记录 LastError + 置 Stuck，
+// 这样请求不会凭空消失：管理员面板可见、可手动重试，用户在「我的请求」也能看到。
+const MaxApproveRetry = 3
+
+func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+
+	review.RetryCount++
+	review.LastError = errMsg
+	review.Stuck = true
+
+	logger.Info("[ReviewService] 请求提交 MP 失败进入 stuck 兜底: %s, 第 %d 次, err=%s",
+		requestID, review.RetryCount, errMsg)
+
+	return s.saveLocked()
+}
+
+// ClearStuck 在提交 MoviePilot 成功后清除兜底状态。
+func (s *ReviewService) ClearStuck(requestID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+
+	if !review.Stuck && review.LastError == "" {
+		return nil
+	}
+	review.Stuck = false
+	review.LastError = ""
+
+	return s.saveLocked()
+}
+
+// GetStuckRequests 返回所有卡在「已审核但未成功提交 MP」的请求（供管理员面板/重试用）。
+func (s *ReviewService) GetStuckRequests() []*ReviewRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var stuck []*ReviewRequest
+	for _, review := range s.reviews {
+		if review.Stuck {
+			stuck = append(stuck, review)
+		}
+	}
+	return stuck
 }
 
 // GetSubscriptionStateText returns user-friendly text for subscription state

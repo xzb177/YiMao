@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 )
 
@@ -229,7 +229,7 @@ func HandleWebhookMessage(
 
 	// Handle commands
 	if strings.HasPrefix(msg.Text, "/") {
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler, deps.MyRequests)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 		return

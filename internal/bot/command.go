@@ -6,9 +6,9 @@ import (
 
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/ui"
+	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 	"github.com/xzb177/yimao/pkg/validation"
 )
@@ -23,6 +23,7 @@ func HandleCommand(
 	quotaService *services.QuotaService,
 	userMapping *services.UserMappingService,
 	wishHandler *handlers.WishHandler,
+	myRequestsHandler *handlers.MyRequestsHandler,
 ) {
 	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
 	parts := strings.Fields(msg.Text)
@@ -48,11 +49,20 @@ func HandleCommand(
 	case "/ai":
 		sendRecommendationMenu(telegram, msg.Chat.ID)
 	case "/requests":
-		text := "📋 请使用 /start 菜单中的 我的请求 功能"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		if myRequestsHandler != nil {
+			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
+			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "📋 请使用 /start 菜单中的 我的请求 功能", "", nil)
+		}
 	case "/watchlist":
-		text := "📎 请使用 /start 菜单中的 我的片单 功能"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		// 片单 == 我的请求（已订阅/进行中），与 /requests 同源，不再踢皮球。
+		if myRequestsHandler != nil {
+			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
+			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "📎 请使用 /start 菜单中的 我的片单 功能", "", nil)
+		}
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":
@@ -63,7 +73,7 @@ func HandleCommand(
 		if wishHandler != nil {
 			wishHandler.HandleCommand(msg.Chat.ID, msg.From.ID, msg.Text)
 		}
-	// Unknown commands are silently ignored
+		// Unknown commands are silently ignored
 	}
 }
 
@@ -83,7 +93,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	// Determine if this is a /link command or direct credentials
- startIndex := 0
+	startIndex := 0
 	if len(parts) > 0 && strings.HasPrefix(parts[0], "/link") {
 		startIndex = 1 // Skip "/link" prefix
 	}

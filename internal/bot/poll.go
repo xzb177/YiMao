@@ -6,12 +6,12 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/ai"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 	"github.com/xzb177/yimao/pkg/validation"
 )
@@ -32,7 +32,8 @@ type Dependencies struct {
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
 	FallbackService *services.SearchFallbackService
-	WishHandler     *handlers.WishHandler // #6 许愿池
+	WishHandler     *handlers.WishHandler       // #6 许愿池
+	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -45,13 +46,14 @@ type PollDeps struct {
 	AdminService    *services.AdminService
 	AdminHandler    *handlers.AdminHandler // For admin management flows
 	QuotaService    *services.QuotaService
-	SearchHistory   *services.SearchHistoryService  // Legacy, for backward compatibility
-	SearchHistoryDB *services.SearchHistoryDB        // New, advanced features
+	SearchHistory   *services.SearchHistoryService // Legacy, for backward compatibility
+	SearchHistoryDB *services.SearchHistoryDB      // New, advanced features
 	TMDB            *services.TMDBClient
 	IssueService    *services.IssueService
 	FeedbackHandler *handlers.FeedbackHandler
 	FallbackService *services.SearchFallbackService
-	WishHandler     *handlers.WishHandler // #6 许愿池
+	WishHandler     *handlers.WishHandler       // #6 许愿池
+	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 }
 
 // StartPolling starts the Telegram update polling
@@ -82,6 +84,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		FeedbackHandler: deps.FeedbackHandler,
 		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 		WishHandler:     deps.WishHandler,
+		MyRequests:      deps.MyRequests,
 	}
 
 	for {
@@ -254,7 +257,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Private chat: Handle commands and search query
 	if strings.HasPrefix(sanitizedText, "/") {
 		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler, deps.MyRequests)
 		return
 	}
 

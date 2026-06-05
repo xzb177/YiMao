@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 )
 
@@ -61,11 +61,22 @@ func obscureSiteName(siteName string) string {
 	}
 
 	// Assign a new code for this site
+	// 普通用户看不懂「站点1/站点2」这种内部编号，且选源已下线，
+	// 这里只需表达「来自不同私有站」的隐私化标签即可。
 	siteCounter++
-	code := fmt.Sprintf("站点%d", siteCounter)
+	code := fmt.Sprintf("资源站%s", circledNumber(siteCounter))
 	siteMap[siteName] = code
 
 	return code
+}
+
+// circledNumber 把 1..n 映射为更友好的标识；超出范围则退回普通数字。
+func circledNumber(n int) string {
+	circled := []string{"①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"}
+	if n >= 1 && n <= len(circled) {
+		return circled[n-1]
+	}
+	return fmt.Sprintf("%d", n)
 }
 
 // resetSiteCounter resets the site counter (for testing/restart)
@@ -549,13 +560,19 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 			text.WriteString(fmt.Sprintf("%d. %s\n", i+1, truncateTitle(res.Title, 35)))
 			text.WriteString(fmt.Sprintf("   📦 %sGB  %s ↑%d ↓%d  🌐 %s\n\n",
 				sizeGB, health, res.Seeders, res.Peers, obscureSiteName(res.SiteName)))
-
-			// Add selection button
-			btnLabel := fmt.Sprintf("✅ 选择 #%d", i+1)
-			callbackData := fmt.Sprintf("rp:%d", i)
-			kb.AddButton(btnLabel, callbackData)
-			kb.NewRow()
 		}
+		// 候选列表仅用于让用户确认「有片源」，不提供手动选源——
+		// MoviePilot 会自动挑选最佳源，手动选是伪需求且此前并未真正下发。
+		// 用「求片（自动选最佳源）」替代原来的假「选择 #N」按钮。
+		text.WriteString("💡 已自动按做种数排序，点下方「求片」即可，系统会自动选最佳源\n")
+	}
+
+	// 真·求片按钮：直接触发自动求片（MoviePilot 自动选最佳源）。
+	// 仅在有候选时展示，避免 0 源时误导用户。
+	if len(rl.Resources) > 0 {
+		kb.AddButton("🎬 求片（自动选最佳源）", callback.BuildRequestCallback(
+			fmt.Sprintf("%d", rl.TMDBID), rl.MediaType, 0))
+		kb.NewRow()
 	}
 
 	// Add sorting buttons
@@ -602,18 +619,18 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	idxStr := ctx.Callback.Params["idx"]
 	if idxStr == "" {
 		return &callback.Response{
-			Text: "❌ 参数错误",
+			Text:          "❌ 参数错误",
 			Edit:          false,
-		DeleteMessage: true,
+			DeleteMessage: true,
 		}, nil
 	}
 
 	idx, err := strconv.Atoi(idxStr)
 	if err != nil {
 		return &callback.Response{
-			Text: "❌ 无效的索引",
+			Text:          "❌ 无效的索引",
 			Edit:          false,
-		DeleteMessage: true,
+			DeleteMessage: true,
 		}, nil
 	}
 
@@ -622,48 +639,41 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	rlInterface, ok := sess.Get(resourceListSessionKey)
 	if !ok {
 		return &callback.Response{
-			Text: "❌ 会话已过期，请重新搜索",
+			Text:          "❌ 会话已过期，请重新搜索",
 			Edit:          false,
-		DeleteMessage: true,
+			DeleteMessage: true,
 		}, nil
 	}
 
 	rl, ok := rlInterface.(ResourceList)
 	if !ok {
 		return &callback.Response{
-			Text: "❌ 数据格式错误",
+			Text:          "❌ 数据格式错误",
 			Edit:          false,
-		DeleteMessage: true,
+			DeleteMessage: true,
 		}, nil
 	}
 
 	// Check index bounds
 	if idx < 0 || idx >= len(rl.Resources) {
 		return &callback.Response{
-			Text: fmt.Sprintf("❌ 无效的选择: %d", idx+1),
+			Text:          fmt.Sprintf("❌ 无效的选择: %d", idx+1),
 			Edit:          false,
-		DeleteMessage: true,
+			DeleteMessage: true,
 		}, nil
 	}
 
 	res := rl.Resources[idx]
 
-	// Create subscription with selected resource
-	// For now, just show a confirmation message
-	// In a real implementation, you would download the torrent and send it to MoviePilot
-	var subscribeResult string
-	if h.moviepilot != nil {
-		// For now, create a manual subscription with the torrent info
-		// In a real implementation, you would download the torrent and send it to MoviePilot
-		subscribeResult = fmt.Sprintf("✅ 已记录选择\n\n📦 %s\n\n💡 提示: 请使用「求片」功能，系统会自动搜索最佳资源",
-			truncateTitle(res.Title, 40))
-	} else {
-		subscribeResult = fmt.Sprintf("✅ 已选择资源\n\n📦 %s", truncateTitle(res.Title, 40))
-	}
+	// 历史遗留按钮兜底：旧消息里可能还残留「选择 #N」按钮（此前是假动作，
+	// 并未真正下发 MoviePilot）。现在统一引导到「求片（自动选最佳源）」，
+	// 不再制造「已选源」的错觉。
+	subscribeResult := fmt.Sprintf("ℹ️ 手动选源已下线\n\n📦 %s\n\nMoviePilot 会自动挑选最佳源，点下方「求片」即可。",
+		truncateTitle(res.Title, 40))
 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("✅ 求片 (自动搜索)", callback.BuildRequestCallback(
+	kb.AddButton("🎬 求片（自动选最佳源）", callback.BuildRequestCallback(
 		fmt.Sprintf("%d", rl.TMDBID), rl.MediaType, 0))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回详情", callback.BuildDetailCallback(

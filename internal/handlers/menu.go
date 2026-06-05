@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/errors"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // MyRequestsHandler handles "my requests" callbacks with pagination
@@ -18,6 +18,7 @@ type MyRequestsHandler struct {
 	telegram    *services.TelegramClient
 	moviepilot  *services.MoviePilotClient
 	userMapping *services.UserMappingService
+	reviewSvc   *services.ReviewService
 }
 
 const (
@@ -39,6 +40,12 @@ func NewMyRequestsHandler(
 // SetUserMapping sets the user mapping service
 func (h *MyRequestsHandler) SetUserMapping(um *services.UserMappingService) {
 	h.userMapping = um
+}
+
+// SetReviewService 注入审核服务，用于把 pending/stuck 的审核单合并进「我的请求」，
+// 修复「刚提交的请求在『我的请求』里看不到」（pending 存在 ReviewService，MP 还没有）。
+func (h *MyRequestsHandler) SetReviewService(rs *services.ReviewService) {
+	h.reviewSvc = rs
 }
 
 // Handle displays the first page of user requests
@@ -99,6 +106,41 @@ func (h *MyRequestsHandler) HandleItemAction(ctx *callback.Context) (*callback.R
 	}
 }
 
+// BuildForCommand 为 /requests 命令构建「我的请求」首页（文本 + 键盘）。
+// 复用与回调入口完全一致的聚合逻辑（含 ReviewService 合并），让命令不再踢皮球。
+// resolveMoviePilotID 返回 0 表示用户未绑定。
+func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback.Keyboard) {
+	moviepilotID := int64(0)
+	if h.userMapping != nil {
+		if id, exists := h.userMapping.GetMoviePilotUserID(telegramID); exists {
+			moviepilotID = id
+		}
+	}
+
+	if moviepilotID == 0 {
+		return "🔗 请先绑定账号后使用 /link", &callback.Keyboard{
+			InlineKeyboard: [][]callback.Button{
+				{{Text: "🔗 立即绑定", CallbackData: "link"}},
+				{{Text: "⬅️ 返回", CallbackData: "start"}},
+			},
+		}
+	}
+
+	requests, err := h.moviepilot.GetUserRequests(moviepilotID)
+	if err != nil {
+		logger.Info("[MyRequestsHandler] /requests 拉取 MP 失败: %v", err)
+		requests = nil
+	}
+	requests = h.mergePendingReviews(telegramID, requests)
+
+	totalRequests := len(requests)
+	totalPages := (totalRequests + requestsPerPage - 1) / requestsPerPage
+	if totalPages == 0 {
+		totalPages = 1
+	}
+	return h.buildRequestsMessage(requests, 1, totalPages, totalRequests)
+}
+
 // handleRequestsWithPage builds the paginated requests list
 func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page int) (*callback.Response, error) {
 	// Try to get MoviePilot user ID from session first
@@ -132,6 +174,12 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	if err != nil {
 		return nil, errors.MoviePilotErr("failed to get requests", err)
 	}
+
+	// 聚合：把 ReviewService 里「还没成为 MP 订阅」的审核单合并进来。
+	// 主从规则：MP（执行层）离最终结果近，凡是已有 MP 订阅的请求以 MP 为准；
+	// 仅当某审核单在 MP 里查不到对应订阅时，才用审核单的状态兜底显示，
+	// 从而修复「pending / 已审核同步中(stuck) 在『我的请求』里看不到」。
+	requests = h.mergePendingReviews(ctx.UserID, requests)
 
 	// Calculate pagination
 	totalRequests := len(requests)
@@ -179,7 +227,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	// Header
 	msg.Bold("📋 我的请求").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
-	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
+	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{stateReviewing, stateStuck, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
 	msg.Text("────────").Newline()
 	msg.Newline()
 
@@ -196,7 +244,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		Label  string
 		States map[string]bool
 	}{
-		{Key: "processing", Label: "进行中", States: map[string]bool{services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
+		{Key: "processing", Label: "进行中", States: map[string]bool{stateReviewing: true, stateStuck: true, services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
 		{Key: "done", Label: "已完成", States: map[string]bool{services.StateCompleted: true}},
 		{Key: "failed", Label: "异常/失败", States: map[string]bool{services.StateFailed: true, services.StateCancelled: true}},
 	}
@@ -291,9 +339,80 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 	return line
 }
 
+// 合成状态：仅用于「我的请求」聚合视图，区分尚未进入 MP 的审核单。
+const (
+	stateReviewing = "REVIEWING" // ReviewService pending：审核中
+	stateStuck     = "STUCK"     // 已审核但提交 MP 失败：同步中/重试
+)
+
+// mergePendingReviews 把 ReviewService 中尚未成为 MP 订阅的审核单合并进 MP 列表。
+// 去重规则：若审核单已记录 SubscriptionID（即已成功提交 MP），则以 MP 为准、不重复加入；
+// 否则按 (TMDBID, Season) 与 MP 列表比对，MP 已有就跳过，没有才用审核单兜底。
+func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []services.SubscribeItem) []services.SubscribeItem {
+	if h.reviewSvc == nil {
+		return mpItems
+	}
+
+	// MP 已存在的 (tmdbid, season) 集合，用于去重
+	existing := make(map[string]bool, len(mpItems))
+	for _, it := range mpItems {
+		existing[fmt.Sprintf("%d:%d", it.TMDBID, it.Season)] = true
+	}
+
+	var extra []services.SubscribeItem
+	for _, rv := range h.reviewSvc.GetUserRequests(telegramID) {
+		// 只关心还在流程内、且尚未真正落进 MP 的审核单
+		if rv.SubscriptionID != 0 {
+			continue // 已提交 MP，交给 MP 列表展示（执行层为准）
+		}
+		key := fmt.Sprintf("%d:%d", rv.TmdbID, rv.Season)
+		if existing[key] {
+			continue
+		}
+
+		var synthState string
+		switch {
+		case rv.Status == "pending":
+			synthState = stateReviewing
+		case rv.Status == "approved" && rv.Stuck:
+			synthState = stateStuck
+		default:
+			// approved 但未 stuck 且无 SubscriptionID 的极短暂中间态，按同步中显示
+			if rv.Status == "approved" {
+				synthState = stateStuck
+			} else {
+				continue // rejected / 其他已终结状态不在「我的请求」进行中列表里展示
+			}
+		}
+
+		typeStr := "电影"
+		if rv.MediaType == services.MediaTypeTV {
+			typeStr = "电视剧"
+		}
+		extra = append(extra, services.SubscribeItem{
+			ID:     0, // 合成项无 MP ID
+			Name:   rv.MediaTitle,
+			Year:   fmt.Sprintf("%d", rv.MediaYear),
+			Type:   typeStr,
+			State:  synthState,
+			Season: rv.Season,
+			TMDBID: rv.TmdbID,
+			Date:   rv.CreatedAt.Format("2006-01-02 15:04"),
+		})
+		existing[key] = true
+	}
+
+	// 审核中的放最前面（用户最关心刚提交的有没有进系统）
+	return append(extra, mpItems...)
+}
+
 // getStateEmoji returns the emoji for a subscription state
 func getStateEmoji(state string) string {
 	switch state {
+	case stateReviewing:
+		return "📝"
+	case stateStuck:
+		return "⚠️"
 	case services.StatePending:
 		return "⏳"
 	case services.StateRecycled:
@@ -358,6 +477,11 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 	// Telegram inline keyboard max 5 buttons per row
 	itemButtons := []callback.Button{}
 	for i := startIdx; i < endIdx; i++ {
+		// 合成项（审核中/同步中，MP 尚无订阅，ID==0）无可操作详情，跳过编号按钮，
+		// 避免 handleInfo 按 MP ID 查不到导致「请求不存在」。
+		if requests[i].ID == 0 {
+			continue
+		}
 		itemNum := i + 1
 		callbackData := callback.BuildCallback("myreqs_item", map[string]string{
 			"action": "info",
