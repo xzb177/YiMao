@@ -251,6 +251,13 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			fmt.Sprintf("请求 %s，已重试 %d 次\n最后错误: %s\n请检查 MoviePilot 状态", requestID, retryCount, lastError),
 		)
 	}
+	// 每日汇总回调
+	reviewService.OnDailySummary = func(telegramID int64, message string) {
+		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
+			return
+		}
+		telegramClient.SendMessage(telegramID, message, "", nil)
+	}
 	logger.Info("    - CarpoolService...")
 	carpoolService := services.NewCarpoolService(cfg.DataDir) // #3 拼车 +1 持久化服务
 	logger.Info("  [2/11] Basic services created")

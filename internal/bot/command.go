@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
@@ -172,9 +173,9 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	// 使用 DashBuilder 带用户名的首页（ChatID 可获取用户信息，但这里用简化版）
 	menuText := ui.BuildMenu("云海影视", "你的私人选片师")
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
+	// AI 按钮只在 AI 功能开启时显示
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, ai.GetManager().IsEnabled())
 	telegram.SendMessage(chatID, menuText, "", keyboard)
 }
 

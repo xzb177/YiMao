@@ -69,6 +69,24 @@ type ReviewService struct {
 	notifiedSubs     map[int]bool
 	// userMapping 用于 MP 用户名 → Telegram ID 反查。
 	userMapping *UserMappingService
+
+	// ── 每日汇总 ──
+	dailyMu          sync.Mutex
+	dailyCompletions []DailyCompletion // 今日新完成的订阅
+	dailySummaryHour int               // 汇总发送时间（小时，24h 制）
+	dailySummaryMin  int               // 汇总发送时间（分钟）
+	// OnDailySummary 每日汇总回调（由 main 注入）。
+	// 参数：用户 ID, 格式化后的汇总消息。
+	OnDailySummary func(telegramID int64, message string)
+}
+
+// DailyCompletion 记录一条完成的订阅。
+type DailyCompletion struct {
+	TelegramID  int64
+	Title       string
+	Year        int
+	MediaType   string
+	CompletedAt time.Time
 }
 
 // NewReviewService creates a new review service
@@ -85,9 +103,13 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 
 	service.load()
 	service.loadNotifiedSubs()
+	service.dailySummaryHour = 21 // 默认 21:00 发汇总
+	service.dailySummaryMin = 0
 
 	// Start cleanup routine for old reviews
 	go service.cleanupRoutine()
+	// 启动每日汇总定时任务
+	go service.dailySummaryRoutine()
 
 	return service
 }
@@ -244,6 +266,15 @@ func (s *ReviewService) checkAllNewCompletions() {
 
 		logger.Info("[ReviewService] 全量检测：新完成订阅 %d (%s)，通知用户 %d", sub.ID, sub.Name, tgID)
 		go s.OnSubscriptionComplete(tgID, sub.Name, year, mediaType)
+
+		// 记录到每日汇总
+		s.recordDailyCompletion(DailyCompletion{
+			TelegramID:  tgID,
+			Title:       sub.Name,
+			Year:        year,
+			MediaType:   mediaType,
+			CompletedAt: time.Now(),
+		})
 
 		// 标记已通知
 		s.notifiedSubs[sub.ID] = true
@@ -915,4 +946,81 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 
 		logger.Info("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
 	}
+}
+
+// ── 每日汇总 ──
+
+// recordDailyCompletion 记录一条完成的订阅到今日汇总。
+func (s *ReviewService) recordDailyCompletion(item DailyCompletion) {
+	s.dailyMu.Lock()
+	s.dailyCompletions = append(s.dailyCompletions, item)
+	s.dailyMu.Unlock()
+}
+
+// dailySummaryRoutine 每天定时发送汇总（默认 21:00）。
+func (s *ReviewService) dailySummaryRoutine() {
+	for {
+		now := time.Now()
+		// 计算下次 21:00
+		next := time.Date(now.Year(), now.Month(), now.Day(), s.dailySummaryHour, s.dailySummaryMin, 0, 0, now.Location())
+		if now.After(next) {
+			next = next.Add(24 * time.Hour)
+		}
+		timer := time.NewTimer(next.Sub(now))
+		<-timer.C
+
+		s.sendDailySummary()
+	}
+}
+
+// sendDailySummary 发送每日汇总并清空当日记录。
+func (s *ReviewService) sendDailySummary() {
+	s.dailyMu.Lock()
+	completions := s.dailyCompletions
+	s.dailyCompletions = nil
+	s.dailyMu.Unlock()
+
+	if len(completions) == 0 {
+		logger.Info("[ReviewService] 今日无新完成订阅，跳过汇总")
+		return
+	}
+
+	if s.OnDailySummary == nil {
+		return
+	}
+
+	// 按用户分组
+	type userSummary struct {
+		telegramID int64
+		items      []DailyCompletion
+	}
+	userMap := make(map[int64]*userSummary)
+	for _, c := range completions {
+		if _, ok := userMap[c.TelegramID]; !ok {
+			userMap[c.TelegramID] = &userSummary{telegramID: c.TelegramID}
+		}
+		userMap[c.TelegramID].items = append(userMap[c.TelegramID].items, c)
+	}
+
+	// 给每个用户发汇总
+	today := time.Now().Format("01-02")
+	for _, us := range userMap {
+		msg := fmt.Sprintf("📊 %s 影片入库汇总\n\n", today)
+		for _, item := range us.items {
+			icon := "🎬"
+			if item.MediaType == "tv" {
+				icon = "📺"
+			}
+			yearStr := ""
+			if item.Year > 0 {
+				yearStr = fmt.Sprintf(" (%d)", item.Year)
+			}
+			msg += fmt.Sprintf("%s %s%s\n", icon, item.Title, yearStr)
+		}
+		msg += fmt.Sprintf("\n共 %d 部，快去 Emby 开刷吧～", len(us.items))
+
+		go s.OnDailySummary(us.telegramID, msg)
+	}
+
+	logger.Info("[ReviewService] 每日汇总已发送：通知 %d 位用户，共 %d 部", len(userMap), len(completions))
 }

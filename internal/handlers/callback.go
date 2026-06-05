@@ -311,7 +311,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		isAdmin = h.adminService.IsAdmin(ctx.UserID)
 	}
 
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat && ai.GetManager().IsEnabled())
 
 	return &callback.Response{
 		Text:     baseMsg,
@@ -1904,7 +1904,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return &callback.Response{
 			Text:     baseMsg,
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat && ai.GetManager().IsEnabled())),
 		}, nil
 	}
 
@@ -2031,7 +2031,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return &callback.Response{
 			Text:      baseMsg,
 			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat && ai.GetManager().IsEnabled())),
 			ParseMode: "HTML",
 		}, nil
 	}
@@ -2053,7 +2053,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		return &callback.Response{
 			Text:      baseMsg,
 			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat)),
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat && ai.GetManager().IsEnabled())),
 			ParseMode: "HTML",
 		}, nil
 	}

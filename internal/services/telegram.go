@@ -1051,8 +1051,9 @@ type SearchItemButton struct {
 }
 
 // BuildStartKeyboard builds the start menu keyboard
+// Deprecated: use BuildStartKeyboardWithOptions directly
 func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
-	return BuildStartKeyboardWithOptions(isAdmin, true)
+	return BuildStartKeyboardWithOptions(isAdmin, false)
 }
 
 // BuildStartKeyboardWithOptions builds start keyboard with options
