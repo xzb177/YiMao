@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/ai"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // AIRecommender provides AI-powered mood-based recommendations.
@@ -94,11 +94,11 @@ func (r *AIRecommender) GetMoodRecommendations(mood string, count int) ([]servic
 func (r *AIRecommender) getTMDBBasedRecommendations(mood string, count int) ([]services.SearchResult, error) {
 	// Map mood to recommendation type
 	typeMap := map[string]string{
-		"放松":   "trending",
-		"治愈":   "new",
-		"烧脑":   "toprated",
-		"感动":   "trending",
-		"随机":   "random",
+		"放松": "trending",
+		"治愈": "new",
+		"烧脑": "toprated",
+		"感动": "trending",
+		"随机": "random",
 	}
 
 	recType := typeMap[mood]
@@ -180,11 +180,11 @@ func (r *AIRecommender) searchByTitleAndYear(title string, year int, mediaType s
 // GetMoodLabel returns the display label for a mood.
 func GetMoodLabel(mood string) string {
 	moodLabels := map[string]string{
-		"放松":   "😌 轻松治愈",
-		"治愈":   "🧘 温暖治愈",
-		"烧脑":   "🤯 烧脑刺激",
-		"感动":   "😭 情绪共鸣",
-		"随机":   "🎲 随机惊喜",
+		"放松": "😌 轻松治愈",
+		"治愈": "🧘 温暖治愈",
+		"烧脑": "🤯 烧脑刺激",
+		"感动": "😭 情绪共鸣",
+		"随机": "🎲 随机惊喜",
 	}
 
 	if label, ok := moodLabels[mood]; ok {
@@ -217,7 +217,7 @@ func shuffleResults(results []services.SearchResult) []services.SearchResult {
 	// Simple shuffle using time as seed
 	seed := time.Now().UnixNano()
 	for i := len(shuffled) - 1; i > 0; i-- {
-		j := int(seed%int64(i+1))
+		j := int(seed % int64(i+1))
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 		seed = seed/7 + 1 // Simple pseudo-random progression
 	}

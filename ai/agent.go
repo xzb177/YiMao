@@ -42,7 +42,7 @@ func NewAgent(apiKey string) *Agent {
 	zhipu := NewZhipuClient("")
 	if zhipu.IsEnabled() {
 		return &Agent{
-			zhipu:    zhipu,
+			zhipu:     zhipu,
 			recommend: NewMediaRecommendationAIWithZhipu(zhipu),
 			search:    NewSearchAIWithZhipu(zhipu),
 			enabled:   true,

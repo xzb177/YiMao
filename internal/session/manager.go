@@ -1,9 +1,9 @@
 package session
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"sync"
 	"time"
 )
@@ -35,14 +35,14 @@ type NavEntry struct {
 
 // SearchItem represents a search result item
 type SearchItem struct {
-	ID       string    `json:"id"`
-	Title    string    `json:"title"`
-	Year     int       `json:"year"`
-	Type     string    `json:"type"`
-	Poster   string    `json:"poster,omitempty"`
-	Rating   float64   `json:"rating,omitempty"`
-	Overview string    `json:"overview,omitempty"`
-	Seasons  []Season  `json:"seasons,omitempty"`
+	ID       string   `json:"id"`
+	Title    string   `json:"title"`
+	Year     int      `json:"year"`
+	Type     string   `json:"type"`
+	Poster   string   `json:"poster,omitempty"`
+	Rating   float64  `json:"rating,omitempty"`
+	Overview string   `json:"overview,omitempty"`
+	Seasons  []Season `json:"seasons,omitempty"`
 }
 
 // Season represents a TV season
@@ -54,14 +54,14 @@ type Season struct {
 
 // AIRecommendationItem represents a cached AI recommendation
 type AIRecommendationItem struct {
-	TmdbID   int    `json:"tmdb_id"`
-	Title    string `json:"title"`
-	Overview string `json:"overview"`
-	Reason   string `json:"reason"`
-	Year     int    `json:"year"`
-	Rating   float64 `json:"rating"`
-	MediaType string `json:"media_type"`
-	CachedAt time.Time `json:"cached_at"`
+	TmdbID    int       `json:"tmdb_id"`
+	Title     string    `json:"title"`
+	Overview  string    `json:"overview"`
+	Reason    string    `json:"reason"`
+	Year      int       `json:"year"`
+	Rating    float64   `json:"rating"`
+	MediaType string    `json:"media_type"`
+	CachedAt  time.Time `json:"cached_at"`
 }
 
 // NewManager creates a new session manager

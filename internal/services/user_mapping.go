@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"strconv"
 	"sync"
@@ -17,29 +17,29 @@ type UserMappingService struct {
 	usernames    map[string]string // telegramID -> moviepilotUsername
 	reverseMap   map[int64]string  // moviepilotID -> telegramID
 	mu           sync.RWMutex
-	dirty        bool              // Track if data needs saving
-	savePending  bool             // Prevent multiple concurrent saves
-	lastSave     time.Time        // Last save time
-	saveTimer    *time.Timer      // Single timer for delayed saves
-	saveMu       sync.Mutex       // Protects saveTimer creation
+	dirty        bool        // Track if data needs saving
+	savePending  bool        // Prevent multiple concurrent saves
+	lastSave     time.Time   // Last save time
+	saveTimer    *time.Timer // Single timer for delayed saves
+	saveMu       sync.Mutex  // Protects saveTimer creation
 }
 
 // BindingRequest represents a pending binding request
 type BindingRequest struct {
-	RequestID        string    `json:"request_id"`
-	TelegramID       int64     `json:"telegram_id"`
-	TelegramName     string    `json:"telegram_name"`
-	TelegramUsername string    `json:"telegram_username"`
-	MoviePilotID     int64     `json:"moviepilot_id"`
-	MoviePilotName   string    `json:"moviepilot_name"`
+	RequestID          string `json:"request_id"`
+	TelegramID         int64  `json:"telegram_id"`
+	TelegramName       string `json:"telegram_name"`
+	TelegramUsername   string `json:"telegram_username"`
+	MoviePilotID       int64  `json:"moviepilot_id"`
+	MoviePilotName     string `json:"moviepilot_name"`
 	MoviePilotUsername string `json:"moviepilot_username"`
 	// Legacy fields for compatibility
-	JellyseerrID        int64     `json:"jellyseerr_id,omitempty"`
-	JellyseerrName      string    `json:"jellyseerr_name,omitempty"`
-	JellyseerrUsername  string    `json:"jellyseerr_username,omitempty"`
-	CreatedAt           string    `json:"created_at"`
-	ExpiresAt           string    `json:"expires_at"`
-	Status              string    `json:"status"` // pending, approved, rejected
+	JellyseerrID       int64  `json:"jellyseerr_id,omitempty"`
+	JellyseerrName     string `json:"jellyseerr_name,omitempty"`
+	JellyseerrUsername string `json:"jellyseerr_username,omitempty"`
+	CreatedAt          string `json:"created_at"`
+	ExpiresAt          string `json:"expires_at"`
+	Status             string `json:"status"` // pending, approved, rejected
 }
 
 const saveDelay = 5 * time.Second // Delay before saving dirty data
@@ -102,7 +102,7 @@ func (s *UserMappingService) load() error {
 
 	// Try alternative format with "mappings" key
 	var altData struct {
-		Mappings map[string]int64  `json:"mappings"`
+		Mappings map[string]int64 `json:"mappings"`
 	}
 	if err := json.Unmarshal(data, &altData); err == nil && altData.Mappings != nil {
 		s.mappings = altData.Mappings

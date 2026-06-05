@@ -15,11 +15,11 @@ const (
 	LogTimestampFormat = "2006-01-02 15:04:05"
 
 	// ANSI color codes for colored output
-	ColorReset = "\033[0m"
-	ColorGray  = "\033[90m"
-	ColorGreen = "\033[32m"
+	ColorReset  = "\033[0m"
+	ColorGray   = "\033[90m"
+	ColorGreen  = "\033[32m"
 	ColorYellow = "\033[33m"
-	ColorRed   = "\033[31m"
+	ColorRed    = "\033[31m"
 )
 
 // Sensitive patterns that should be masked in logs

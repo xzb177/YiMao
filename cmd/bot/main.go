@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -209,6 +210,20 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+	// P1：MP 轮询订阅完成时通知用户（替代 Emby webhook，Emby 不可用时仍能通知）
+	reviewService.OnSubscriptionComplete = func(telegramID int64, title string, year int, mediaType string) {
+		typeLabel := "🎬"
+		if mediaType == "tv" {
+			typeLabel = "📺"
+		}
+		yearStr := ""
+		if year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", year)
+		}
+		text := fmt.Sprintf("%s 《%s》%s 已入库！\n\n✅ 可以前往 Emby 观看了", typeLabel, title, yearStr)
+		telegramClient.SendMessage(telegramID, text, "", nil)
+		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
+	}
 	logger.Info("    - CarpoolService...")
 	carpoolService := services.NewCarpoolService(cfg.DataDir) // #3 拼车 +1 持久化服务
 	logger.Info("  [2/11] Basic services created")

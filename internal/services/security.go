@@ -1,8 +1,8 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"crypto/subtle"
+	"github.com/xzb177/yimao/pkg/logger"
 	"net/http"
 	"strings"
 	"sync"
@@ -11,10 +11,10 @@ import (
 
 // Default Security Config
 const (
-	defaultRateLimitRequests = 60              // requests per minute
-	defaultRateLimitWindow   = time.Minute     // sliding window
-	defaultRateLimitCleanup  = 5 * time.Minute // cleanup interval
-	defaultMaxFailedAttempts = 5               // failed attempts before block
+	defaultRateLimitRequests = 60               // requests per minute
+	defaultRateLimitWindow   = time.Minute      // sliding window
+	defaultRateLimitCleanup  = 5 * time.Minute  // cleanup interval
+	defaultMaxFailedAttempts = 5                // failed attempts before block
 	defaultBlockDuration     = 30 * time.Minute // how long to block
 )
 
@@ -61,10 +61,10 @@ func NewSecurityService() *SecurityService {
 				Keys:    make(map[string]string),
 				Enabled: false,
 			},
-			rateLimits:       make(map[string]*RateLimitEntry),
-			failedAttempts:   make(map[string]int),
-			blockedIPs:       make(map[string]time.Time),
-			cleanupDone:      make(chan bool),
+			rateLimits:        make(map[string]*RateLimitEntry),
+			failedAttempts:    make(map[string]int),
+			blockedIPs:        make(map[string]time.Time),
+			cleanupDone:       make(chan bool),
 			rateLimitRequests: defaultRateLimitRequests,
 			rateLimitWindow:   defaultRateLimitWindow,
 			maxFailedAttempts: defaultMaxFailedAttempts,

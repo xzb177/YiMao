@@ -12,9 +12,9 @@ type TelegramConfig struct {
 
 // MoviePilotConfig holds MoviePilot API settings
 type MoviePilotConfig struct {
-	URL            string
-	APIKey         string
-	DownloadPath   string
+	URL          string
+	APIKey       string
+	DownloadPath string
 }
 
 // EmbyConfig holds Emby/Jellyfin API settings

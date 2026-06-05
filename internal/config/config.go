@@ -17,9 +17,9 @@ type Config struct {
 	TelegramChatID   string
 
 	// MoviePilot
-	MoviePilotURL      string
-	MoviePilotAPIKey   string
-	DownloadSavePath   string // Download save path for subscriptions (optional)
+	MoviePilotURL    string
+	MoviePilotAPIKey string
+	DownloadSavePath string // Download save path for subscriptions (optional)
 
 	// Emby (optional)
 	EmbyURL    string
@@ -109,15 +109,15 @@ type Config struct {
 // Load loads configuration from environment variables and files
 func Load() (*Config, error) {
 	cfg := &Config{
-		TelegramBotToken: getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:   getEnv("TELEGRAM_CHAT_ID", ""),
-		MoviePilotURL:      getEnv("MOVIEPILOT_URL", ""),
-		MoviePilotAPIKey:   getEnv("MOVIEPILOT_API_KEY", ""),
-		DownloadSavePath:   getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
-		EmbyURL:          getEnv("EMBY_URL", ""),
-		EmbyAPIKey:       getEnv("EMBY_API_KEY", ""),
+		TelegramBotToken:  getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:    getEnv("TELEGRAM_CHAT_ID", ""),
+		MoviePilotURL:     getEnv("MOVIEPILOT_URL", ""),
+		MoviePilotAPIKey:  getEnv("MOVIEPILOT_API_KEY", ""),
+		DownloadSavePath:  getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
+		EmbyURL:           getEnv("EMBY_URL", ""),
+		EmbyAPIKey:        getEnv("EMBY_API_KEY", ""),
 		EmbySkipTLSVerify: getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
-		TMDBAPIKey:       getEnv("TMDB_API_KEY", ""),
+		TMDBAPIKey:        getEnv("TMDB_API_KEY", ""),
 		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
 		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
 		ZhipuAPIKey:           getEnv("ZHIPU_API_KEY", ""),
@@ -150,13 +150,13 @@ func Load() (*Config, error) {
 		LogColor:  getEnvBool("LOG_COLOR", false),
 		LogPrefix: getEnv("LOG_PREFIX", "YiMao"),
 		// PT Site Passkeys
-		HDSkyPasskey:          getEnv("HDSKY_PASSKEY", ""),
-		ZhuQuePasskey:         getEnv("ZHUQUE_PASSKEY", ""),
-		ZhuQueRSSKey1:         getEnv("ZHUQUE_RSS_KEY1", ""),
-		ZhuQueRSSKey2:         getEnv("ZHUQUE_RSS_KEY2", ""),
-		MTeamPasskey:          getEnv("MTEAM_PASSKEY", ""),
-		MTeamRSSUID:           getEnv("MTEAM_RSS_UID", ""),
-		MTeamRSSSign:          getEnv("MTEAM_RSS_SIGN", ""),
+		HDSkyPasskey:  getEnv("HDSKY_PASSKEY", ""),
+		ZhuQuePasskey: getEnv("ZHUQUE_PASSKEY", ""),
+		ZhuQueRSSKey1: getEnv("ZHUQUE_RSS_KEY1", ""),
+		ZhuQueRSSKey2: getEnv("ZHUQUE_RSS_KEY2", ""),
+		MTeamPasskey:  getEnv("MTEAM_PASSKEY", ""),
+		MTeamRSSUID:   getEnv("MTEAM_RSS_UID", ""),
+		MTeamRSSSign:  getEnv("MTEAM_RSS_SIGN", ""),
 		// #6 许愿池配置（默认值即 docs 附录 v2 约定值）
 		WishResearchIntervalHours: getEnvInt("WISH_RESEARCH_INTERVAL_HOURS", 24),
 		WishExpireDays:            getEnvInt("WISH_EXPIRE_DAYS", 30),

@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
 	"time"
@@ -13,29 +13,29 @@ import (
 type PreferenceType string
 
 const (
-	PrefMovieNotification    PreferenceType = "movies"
-	PrefTVNotification       PreferenceType = "tv"
-	PrefIssueNotification   PreferenceType = "issues"
-	PrefApproveNotification PreferenceType = "approved"
+	PrefMovieNotification     PreferenceType = "movies"
+	PrefTVNotification        PreferenceType = "tv"
+	PrefIssueNotification     PreferenceType = "issues"
+	PrefApproveNotification   PreferenceType = "approved"
 	PrefAvailableNotification PreferenceType = "available"
-	PrefQuietMode           PreferenceType = "quiet"
-	PrefQuietStart          PreferenceType = "quiet_start"
-	PrefWhitelist           PreferenceType = "whitelist"
-	PrefBlacklist           PreferenceType = "blacklist"
+	PrefQuietMode             PreferenceType = "quiet"
+	PrefQuietStart            PreferenceType = "quiet_start"
+	PrefWhitelist             PreferenceType = "whitelist"
+	PrefBlacklist             PreferenceType = "blacklist"
 )
 
 // UserPreferences represents user notification preferences
 type UserPreferences struct {
-	TelegramID int64                  `json:"telegram_id"`
-	Movies     bool                   `json:"movies"`
-	TV         bool                   `json:"tv"`
-	Issues     bool                   `json:"issues"`
-	Approved   bool                   `json:"approved"`
-	Available  bool                   `json:"available"`
-	QuietMode  bool                   `json:"quiet_mode"`
-	QuietStart string                 `json:"quiet_start"` // HH:MM format
-	Whitelist  []string               `json:"whitelist_keywords"`
-	Blacklist   []string               `json:"blacklist_keywords"`
+	TelegramID int64    `json:"telegram_id"`
+	Movies     bool     `json:"movies"`
+	TV         bool     `json:"tv"`
+	Issues     bool     `json:"issues"`
+	Approved   bool     `json:"approved"`
+	Available  bool     `json:"available"`
+	QuietMode  bool     `json:"quiet_mode"`
+	QuietStart string   `json:"quiet_start"` // HH:MM format
+	Whitelist  []string `json:"whitelist_keywords"`
+	Blacklist  []string `json:"blacklist_keywords"`
 }
 
 // PreferencesService manages user preferences
@@ -120,14 +120,14 @@ func (s *PreferencesService) GetPreferences(telegramID int64) *UserPreferences {
 	// Return default preferences
 	return &UserPreferences{
 		TelegramID: telegramID,
-		Movies:    true,
-		TV:        true,
-		Issues:    true,
-		Approved:  true,
-		Available: true,
-		QuietMode: false,
-		Whitelist: []string{},
-		Blacklist: []string{},
+		Movies:     true,
+		TV:         true,
+		Issues:     true,
+		Approved:   true,
+		Available:  true,
+		QuietMode:  false,
+		Whitelist:  []string{},
+		Blacklist:  []string{},
 	}
 }
 

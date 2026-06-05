@@ -6,26 +6,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xzb177/yimao/pkg/types"
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // MessageAggregator aggregates multiple messages before sending
 type MessageAggregator struct {
-	queues    map[int64]*messageQueue
-	mu        sync.RWMutex
-	flushInt  time.Duration
-	maxWait   time.Duration
-	maxBatch  int
-	telegram  *TelegramClient
-	stopChan  chan struct{}
+	queues   map[int64]*messageQueue
+	mu       sync.RWMutex
+	flushInt time.Duration
+	maxWait  time.Duration
+	maxBatch int
+	telegram *TelegramClient
+	stopChan chan struct{}
 }
 
 type messageQueue struct {
-	messages []queuedMessage
-	mu       sync.Mutex
+	messages   []queuedMessage
+	mu         sync.Mutex
 	flushTimer *time.Timer
-	lastFlush time.Time
+	lastFlush  time.Time
 }
 
 type queuedMessage struct {
@@ -92,8 +92,8 @@ func (ma *MessageAggregator) SendMessage(chatID int64, text string, parseMode st
 	q, exists := ma.queues[chatID]
 	if !exists {
 		q = &messageQueue{
-			messages:   make([]queuedMessage, 0, ma.maxBatch),
-			lastFlush:  time.Now(),
+			messages:  make([]queuedMessage, 0, ma.maxBatch),
+			lastFlush: time.Now(),
 		}
 		ma.queues[chatID] = q
 	}
@@ -135,8 +135,8 @@ func (ma *MessageAggregator) SendAsync(chatID int64, text string, parseMode stri
 	q, exists := ma.queues[chatID]
 	if !exists {
 		q = &messageQueue{
-			messages:   make([]queuedMessage, 0, ma.maxBatch),
-			lastFlush:  time.Now(),
+			messages:  make([]queuedMessage, 0, ma.maxBatch),
+			lastFlush: time.Now(),
 		}
 		ma.queues[chatID] = q
 	}
@@ -299,9 +299,9 @@ func (ma *MessageAggregator) Stats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"active_queues": len(ma.queues),
+		"active_queues":    len(ma.queues),
 		"pending_messages": totalMessages,
-		"flush_interval": ma.flushInt.String(),
-		"max_batch_size": ma.maxBatch,
+		"flush_interval":   ma.flushInt.String(),
+		"max_batch_size":   ma.maxBatch,
 	}
 }

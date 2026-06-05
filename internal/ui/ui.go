@@ -10,10 +10,10 @@ import (
 type UIStyle string
 
 const (
-	StyleNeon  UIStyle = "neon"  // 暗黑霓虹风
-	StyleFilm  UIStyle = "film"  // 文艺胶片风
-	StylePop   UIStyle = "pop"   // 波普艺术风
-	StyleCard  UIStyle = "card"  // 极简卡片风
+	StyleNeon   UIStyle = "neon"   // 暗黑霓虹风
+	StyleFilm   UIStyle = "film"   // 文艺胶片风
+	StylePop    UIStyle = "pop"    // 波普艺术风
+	StyleCard   UIStyle = "card"   // 极简卡片风
 	StyleCinema UIStyle = "cinema" // 沉浸电影风
 )
 

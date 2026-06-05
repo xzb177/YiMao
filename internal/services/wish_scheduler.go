@@ -520,9 +520,9 @@ func (s *WishScheduler) notifyExpired(item *WishItem) {
 type reachState int
 
 const (
-	reachOK          reachState = iota // 明确可达
-	reachOrphaned                      // 明确不可达（退群/封禁）→ 应置 ORPHANED
-	reachTransientErr                  // 临时错误（网络/超时）→ 不可判定，保守保留待重试
+	reachOK           reachState = iota // 明确可达
+	reachOrphaned                       // 明确不可达（退群/封禁）→ 应置 ORPHANED
+	reachTransientErr                   // 临时错误（网络/超时）→ 不可判定，保守保留待重试
 )
 
 // reachability 用 getChatMember 检查用户可达性（坑5 + 坑A）。
@@ -567,6 +567,7 @@ func (s *WishScheduler) runExpirySweep() {
 //   - Telegram API 403 Forbidden（bot 被用户封禁 / 未启动会话）。
 //   - 400 且描述含 user not found / chat not found / user is deactivated 等（用户不存在/注销）。
 //   - 描述含 blocked / kicked / deactivated 等关键词。
+//
 // 其余（超时、连接失败、5xx、429 限流等）一律视为临时错误 → 保留待重试，绝不丢愿。
 func isUnreachableErr(err error) bool {
 	if err == nil {

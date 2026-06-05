@@ -481,8 +481,9 @@ func (s *WishService) ListWishers(canonicalKey string) []int64 {
 // 用 SQL 表达式直接派生 canonical_key，与 CanonicalKey 的格式严格一致：
 //   - tmdb_id != 0 → 'tmdb-<tmdb_id>-<media_type>-<season>'
 //   - 否则           → 'imdb-<imdb_id>-<media_type>-<season>'
+//
 // media_type 空串归一为 'movie'（与 CanonicalKey 一致）。
-// 仅回填有 canonical key 的行（tmdb_id!=0 或 imdb_id!=''），无 id 的脏行跳过。
+// 仅回填有 canonical key 的行（tmdb_id!=0 或 imdb_id!=”），无 id 的脏行跳过。
 // INSERT OR IGNORE + 确定性派生 → 多次启动幂等、不重复污染。
 func (s *WishService) backfillWishers() error {
 	res, err := s.db.Exec(`
@@ -504,8 +505,6 @@ func (s *WishService) backfillWishers() error {
 	}
 	return nil
 }
-
-
 
 // SearchOffsetMinutes 按 hash(item_id)%1440 算错峰偏移（坑2）。导出供调度与测试使用。
 // 注意：入池时 id 尚未生成（AUTOINCREMENT），故入池偏移用 canonical key 计算

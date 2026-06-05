@@ -18,16 +18,16 @@ import (
 // tmdb 优先、无则 imdb，带 media_type/season，media_type 空归一 movie。
 func TestCanonicalKeyAlignment(t *testing.T) {
 	cases := []struct {
-		tmdb        int
-		imdb, mt    string
-		season      int
-		want        string
+		tmdb     int
+		imdb, mt string
+		season   int
+		want     string
 	}{
-		{100, "tt1", "movie", 0, "tmdb-100-movie-0"},  // tmdb 优先（imdb 被忽略）
-		{0, "tt9", "movie", 0, "imdb-tt9-movie-0"},     // 无 tmdb 用 imdb
-		{200, "", "tv", 2, "tmdb-200-tv-2"},            // 带 season
-		{300, "", "", 0, "tmdb-300-movie-0"},           // media_type 空归一 movie
-		{0, " tt7 ", "tv", 1, "imdb-tt7-tv-1"},         // imdb 去空白
+		{100, "tt1", "movie", 0, "tmdb-100-movie-0"}, // tmdb 优先（imdb 被忽略）
+		{0, "tt9", "movie", 0, "imdb-tt9-movie-0"},   // 无 tmdb 用 imdb
+		{200, "", "tv", 2, "tmdb-200-tv-2"},          // 带 season
+		{300, "", "", 0, "tmdb-300-movie-0"},         // media_type 空归一 movie
+		{0, " tt7 ", "tv", 1, "imdb-tt7-tv-1"},       // imdb 去空白
 	}
 	for _, c := range cases {
 		got := CanonicalKey(c.tmdb, c.imdb, c.mt, c.season)
@@ -181,7 +181,7 @@ func TestWishersMigrationBackfill(t *testing.T) {
 		{11, 1000, "", "movie", 0},
 		{12, 2000, "", "tv", 2},
 		{13, 0, "tt500", "movie", 0},
-		{14, 3000, "", "", 0}, // media_type 空，回填应归一 movie
+		{14, 3000, "", "", 0},   // media_type 空，回填应归一 movie
 		{15, 0, "", "movie", 0}, // 无 canonical key 脏行 → 应跳过
 	}
 	for i, r := range rows {

@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"database/sql"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -317,7 +317,7 @@ func (s *SearchHistoryDB) GetPopularSearches(limit int) ([]PopularSearch, error)
 
 // TrendItem represents a search trend
 type TrendItem struct {
-	Query    string
+	Query     string
 	Count     int
 	Yesterday int
 	Growth    float64
@@ -383,7 +383,7 @@ func (s *SearchHistoryDB) GetSearchTrends(days int) ([]TrendItem, error) {
 		}
 
 		trends = append(trends, TrendItem{
-			Query:    query,
+			Query:     query,
 			Count:     recentCount,
 			Yesterday: yesterdayCount,
 			Growth:    growth,

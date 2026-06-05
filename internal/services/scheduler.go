@@ -39,8 +39,8 @@ func NewScheduler(
 		adminService: adminService,
 		userMapping:  userMapping,
 		stopCh:       make(chan struct{}),
-		dailyHour:    9,   // Default 9 AM
-		dailyMinute:  0,   // Default 0 minutes
+		dailyHour:    9, // Default 9 AM
+		dailyMinute:  0, // Default 0 minutes
 		enabled:      true,
 	}
 }

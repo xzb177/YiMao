@@ -1201,11 +1201,11 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 	var result struct {
 		TotalRecordCount int `json:"TotalRecordCount"`
 		Items            []struct {
-			Name            string `json:"Name"`
-			Id              string `json:"Id"`
-			Type            string `json:"Type"`
-			ProductionYear  int    `json:"ProductionYear"`
-			PremiereDate    string `json:"PremiereDate"`
+			Name           string `json:"Name"`
+			Id             string `json:"Id"`
+			Type           string `json:"Type"`
+			ProductionYear int    `json:"ProductionYear"`
+			PremiereDate   string `json:"PremiereDate"`
 		} `json:"Items"`
 	}
 

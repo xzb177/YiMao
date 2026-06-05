@@ -14,10 +14,10 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Router handles HTTP API requests
@@ -121,11 +121,11 @@ func (r *Router) handleStats(w http.ResponseWriter, req *http.Request) {
 	stats := map[string]interface{}{
 		"status": "ok",
 		"stats": map[string]interface{}{
-			"sessions":     sessionStats["total_sessions"],
-			"total_size":   sessionStats["total_size"],
-			"admin_count":  adminCount,
-			"quota_count":  totalQuotas,
-			"uptime":       "active",
+			"sessions":    sessionStats["total_sessions"],
+			"total_size":  sessionStats["total_size"],
+			"admin_count": adminCount,
+			"quota_count": totalQuotas,
+			"uptime":      "active",
 		},
 	}
 
@@ -159,9 +159,9 @@ func (r *Router) getAdmins(w http.ResponseWriter, req *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "ok",
-		"admins":  adminList,
-		"count":   len(adminList),
+		"status": "ok",
+		"admins": adminList,
+		"count":  len(adminList),
 	})
 }
 
@@ -305,9 +305,9 @@ func (r *Router) handleSummary(w http.ResponseWriter, req *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":           "ok",
-		"message":          "Summary sent",
-		"admins_notified":  successCount,
+		"status":          "ok",
+		"message":         "Summary sent",
+		"admins_notified": successCount,
 	})
 }
 

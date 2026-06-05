@@ -4,15 +4,15 @@ import (
 	"fmt"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/ui"
 	"github.com/xzb177/yimao/pkg/errors"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // SearchHistoryHandler handles search history operations
 type SearchHistoryHandler struct {
-	telegram       *services.TelegramClient
+	telegram      *services.TelegramClient
 	searchHistory *services.SearchHistoryDB // 使用数据库版本
 	uiBuilder     *ui.HistoryBuilder
 }
@@ -23,7 +23,7 @@ func NewSearchHistoryHandler(
 	searchHistory *services.SearchHistoryDB,
 ) *SearchHistoryHandler {
 	return &SearchHistoryHandler{
-		telegram:       telegram,
+		telegram:      telegram,
 		searchHistory: searchHistory,
 		uiBuilder:     ui.NewHistoryBuilder(ui.StyleCard), // 使用极简卡片风
 	}

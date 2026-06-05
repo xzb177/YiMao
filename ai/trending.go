@@ -1,9 +1,9 @@
 package ai
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"strings"
 	"sync"
@@ -12,15 +12,15 @@ import (
 
 // TrendingResult represents a trending media item with details
 type TrendingResult struct {
-	Title       string   `json:"title"`
-	Year        int      `json:"year,omitempty"`
-	MediaType   string   `json:"mediaType"` // movie or tv
-	Genre       string   `json:"genre,omitempty"`
-	Rating      float64  `json:"rating,omitempty"`
-	Reason      string   `json:"reason"`       // AI-generated reason
-	TmdbID      int      `json:"tmdbId,omitempty"`
-	ReleaseDate string   `json:"releaseDate,omitempty"`
-	Country     string   `json:"country,omitempty"`
+	Title       string  `json:"title"`
+	Year        int     `json:"year,omitempty"`
+	MediaType   string  `json:"mediaType"` // movie or tv
+	Genre       string  `json:"genre,omitempty"`
+	Rating      float64 `json:"rating,omitempty"`
+	Reason      string  `json:"reason"` // AI-generated reason
+	TmdbID      int     `json:"tmdbId,omitempty"`
+	ReleaseDate string  `json:"releaseDate,omitempty"`
+	Country     string  `json:"country,omitempty"`
 }
 
 // TrendingAIManager handles AI-powered trending recommendations
@@ -34,8 +34,8 @@ type TrendingAIManager struct {
 
 // TrendingCacheItem represents a cached trending result
 type TrendingCacheItem struct {
-	Results    []*TrendingResult
-	ExpiresAt  time.Time
+	Results   []*TrendingResult
+	ExpiresAt time.Time
 }
 
 // NewTrendingAIManager creates a new trending AI manager
@@ -290,6 +290,7 @@ func (m *TrendingAIManager) parseTrendingResults(response string, expectedType s
 
 	return results, nil
 }
+
 // fixTrendingJSON attempts to fix common JSON formatting issues
 func fixTrendingJSON(input string) string {
 	// Remove trailing commas
@@ -531,7 +532,7 @@ func (m *TrendingAIManager) loadFromFile() error {
 	}
 
 	var savedData struct {
-		LastUpdated string                       `json:"last_updated"`
+		LastUpdated string                        `json:"last_updated"`
 		Caches      map[string]*TrendingCacheItem `json:"caches"`
 	}
 

@@ -22,7 +22,7 @@ type SearchQuery struct {
 // ParsedSearchQuery represents the parsed search result
 type ParsedSearchQuery struct {
 	SearchTerm string   `json:"searchTerm"`
-	MediaType  string   `json:"mediaType"`   // movie, tv, or empty
+	MediaType  string   `json:"mediaType"` // movie, tv, or empty
 	Year       int      `json:"year,omitempty"`
 	Genre      string   `json:"genre,omitempty"`
 	Mood       string   `json:"mood,omitempty"`
@@ -31,8 +31,8 @@ type ParsedSearchQuery struct {
 
 // SearchSuggestion represents a search suggestion
 type SearchSuggestion struct {
-	SearchTerm string   `json:"searchTerm"`
-	Reason     string   `json:"reason"`
+	SearchTerm   string   `json:"searchTerm"`
+	Reason       string   `json:"reason"`
 	Alternatives []string `json:"alternatives,omitempty"`
 }
 

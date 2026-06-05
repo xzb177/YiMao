@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
 	"time"
@@ -13,11 +13,11 @@ import (
 type IssueStatus string
 
 const (
-	IssueStatusOpen      IssueStatus = "open"
-	IssueStatusReply     IssueStatus = "reply"
+	IssueStatusOpen       IssueStatus = "open"
+	IssueStatusReply      IssueStatus = "reply"
 	IssueStatusProcessing IssueStatus = "processing"
-	IssueStatusFixed     IssueStatus = "fixed"
-	IssueStatusClosed    IssueStatus = "closed"
+	IssueStatusFixed      IssueStatus = "fixed"
+	IssueStatusClosed     IssueStatus = "closed"
 )
 
 // IssuePriority represents the priority of an issue
@@ -32,34 +32,34 @@ const (
 
 // Issue represents a user-reported issue
 type Issue struct {
-	ID          int64         `json:"id"`
-	UserID      int64         `json:"user_id"`
-	UserName    string        `json:"user_name"`
-	Title       string        `json:"title"`
-	Description string        `json:"description"`
-	Status      IssueStatus   `json:"status"`
-	Priority    IssuePriority `json:"priority"`
-	MediaType   string        `json:"media_type"`
-	MediaID     string        `json:"media_id"`
+	ID           int64         `json:"id"`
+	UserID       int64         `json:"user_id"`
+	UserName     string        `json:"user_name"`
+	Title        string        `json:"title"`
+	Description  string        `json:"description"`
+	Status       IssueStatus   `json:"status"`
+	Priority     IssuePriority `json:"priority"`
+	MediaType    string        `json:"media_type"`
+	MediaID      string        `json:"media_id"`
 	MediaTitle   string        `json:"media_title"`
-	TmdbID      int           `json:"tmdb_id"`
-	PhotoFileID string        `json:"photo_file_id,omitempty"` // 用户反馈附带的图片
-	CreatedAt   time.Time     `json:"created_at"`
-	UpdatedAt   time.Time     `json:"updated_at"`
-	Replies     []IssueReply `json:"replies"`
-	Satisfaction int         `json:"satisfaction,omitempty"` // 1-5 星评价
-	ResolvedAt  *time.Time   `json:"resolved_at,omitempty"`  // 解决时间
+	TmdbID       int           `json:"tmdb_id"`
+	PhotoFileID  string        `json:"photo_file_id,omitempty"` // 用户反馈附带的图片
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+	Replies      []IssueReply  `json:"replies"`
+	Satisfaction int           `json:"satisfaction,omitempty"` // 1-5 星评价
+	ResolvedAt   *time.Time    `json:"resolved_at,omitempty"`  // 解决时间
 }
 
 // IssueReply represents a reply to an issue
 type IssueReply struct {
-	ID        int64     `json:"id"`
-	IssueID   int64     `json:"issue_id"`
-	AuthorID  int64     `json:"author_id"`
+	ID         int64     `json:"id"`
+	IssueID    int64     `json:"issue_id"`
+	AuthorID   int64     `json:"author_id"`
 	AuthorName string    `json:"author_name"`
-	Content   string    `json:"content"`
-	Type      string    `json:"type"` // "template", "custom", "admin", "user"
-	CreatedAt time.Time `json:"created_at"`
+	Content    string    `json:"content"`
+	Type       string    `json:"type"` // "template", "custom", "admin", "user"
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 // IssueService manages user-reported issues
@@ -146,9 +146,9 @@ func (s *IssueService) CreateIssueWithPhoto(userID int64, userName, title, descr
 		Description: description,
 		Status:      IssueStatusOpen,
 		Priority:    PriorityMedium,
-		MediaType:    mediaType,
+		MediaType:   mediaType,
 		MediaID:     mediaID,
-		MediaTitle:   mediaTitle,
+		MediaTitle:  mediaTitle,
 		PhotoFileID: photoFileID,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -231,13 +231,13 @@ func (s *IssueService) AddReply(issueID int64, authorID int64, authorName, conte
 
 	now := time.Now()
 	reply := IssueReply{
-		ID:        int64(len(issue.Replies) + 1),
-		IssueID:  issueID,
-		AuthorID:  authorID,
+		ID:         int64(len(issue.Replies) + 1),
+		IssueID:    issueID,
+		AuthorID:   authorID,
 		AuthorName: authorName,
-		Content:   content,
-		Type:      replyType,
-		CreatedAt: now,
+		Content:    content,
+		Type:       replyType,
+		CreatedAt:  now,
 	}
 
 	issue.Replies = append(issue.Replies, reply)
@@ -292,15 +292,15 @@ func (s *IssueService) cleanupOldIssues() int {
 
 // FeedbackStats represents feedback statistics
 type FeedbackStats struct {
-	Total          int              `json:"total"`
-	Open           int              `json:"open"`
-	Processing     int              `json:"processing"`
-	Fixed          int              `json:"fixed"`
-	Closed         int              `json:"closed"`
-	ThisWeek       int              `json:"this_week"`
-	ThisMonth      int              `json:"this_month"`
-	ByType         map[string]int   `json:"by_type"`
-	AvgResolveTime float64          `json:"avg_resolve_time"` // Average resolution time in hours
+	Total          int            `json:"total"`
+	Open           int            `json:"open"`
+	Processing     int            `json:"processing"`
+	Fixed          int            `json:"fixed"`
+	Closed         int            `json:"closed"`
+	ThisWeek       int            `json:"this_week"`
+	ThisMonth      int            `json:"this_month"`
+	ByType         map[string]int `json:"by_type"`
+	AvgResolveTime float64        `json:"avg_resolve_time"` // Average resolution time in hours
 }
 
 // GetStats returns feedback statistics

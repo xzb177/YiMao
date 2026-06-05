@@ -2,9 +2,9 @@
 package ai
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,159 +25,159 @@ import (
 // RecommendationEngine 推荐引擎核心
 type RecommendationEngine struct {
 	zhipu        *ZhipuClient
-	userProfiles  map[int64]*UserProfileV2
-	profileMutex  sync.RWMutex
-	globalStats   *GlobalMediaStats
-	trendingMgr   *TrendingAIManager
-	enabled       bool
+	userProfiles map[int64]*UserProfileV2
+	profileMutex sync.RWMutex
+	globalStats  *GlobalMediaStats
+	trendingMgr  *TrendingAIManager
+	enabled      bool
 }
 
 // UserProfileV2 用户画像（多维度）
 type UserProfileV2 struct {
-	UserID          int64                    `json:"user_id"`
-	CreatedAt       time.Time                `json:"created_at"`
-	UpdatedAt       time.Time                `json:"updated_at"`
+	UserID    int64     `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 
 	// 行为维度
-	Behavior        *UserBehavior            `json:"behavior"`
-	Preferences     *UserPreferencesV2        `json:"preferences"`
-	Context         *UserContext             `json:"context"`
-	Interaction     *InteractionHistory      `json:"interaction"`
+	Behavior    *UserBehavior       `json:"behavior"`
+	Preferences *UserPreferencesV2  `json:"preferences"`
+	Context     *UserContext        `json:"context"`
+	Interaction *InteractionHistory `json:"interaction"`
 
 	// AI 推理结果（标签）
-	AITags          []string                 `json:"ai_tags"`
-	AIPersona       string                   `json:"ai_persona"` // AI 给用户定义的"观影人格"
-	LastAIAnalysis  time.Time                `json:"last_ai_analysis"`
+	AITags         []string  `json:"ai_tags"`
+	AIPersona      string    `json:"ai_persona"` // AI 给用户定义的"观影人格"
+	LastAIAnalysis time.Time `json:"last_ai_analysis"`
 }
 
 // UserBehavior 用户行为数据
 type UserBehavior struct {
 	// 搜索行为
-	SearchQueries   []string                 `json:"search_queries"`   // 最近搜索
-	SearchFreq      map[string]int           `json:"search_freq"`       // 搜索频率
+	SearchQueries []string       `json:"search_queries"` // 最近搜索
+	SearchFreq    map[string]int `json:"search_freq"`    // 搜索频率
 
 	// 请求行为
-	RequestCount    int                      `json:"request_count"`
-	RequestTypes    map[string]int           `json:"request_types"`     // movie/tv 比例
-	RequestGenres   map[string]int           `json:"request_genres"`    // 类型偏好
-	RequestYears    map[int]int              `json:"request_years"`     // 年份偏好
+	RequestCount  int            `json:"request_count"`
+	RequestTypes  map[string]int `json:"request_types"`  // movie/tv 比例
+	RequestGenres map[string]int `json:"request_genres"` // 类型偏好
+	RequestYears  map[int]int    `json:"request_years"`  // 年份偏好
 
 	// 观看行为（如果有数据）
-	WatchFrequency  string                   `json:"watch_frequency"`  // high/medium/low
-	PeWatchingTime  string                   `json:"pe_watching_time"`  // 偏好时段
-	CompletionRate  float64                  `json:"completion_rate"`   // 完片率（如果有）
+	WatchFrequency string  `json:"watch_frequency"`  // high/medium/low
+	PeWatchingTime string  `json:"pe_watching_time"` // 偏好时段
+	CompletionRate float64 `json:"completion_rate"`  // 完片率（如果有）
 
 	// 社交行为
-	GroupActivity    int                     `json:"group_activity"`    // 群组活跃度
-	HelpRequests     int                     `json:"help_requests"`     // 求助次数
-	FeedbackGiven    int                     `json:"feedback_given"`    // 反馈次数
+	GroupActivity int `json:"group_activity"` // 群组活跃度
+	HelpRequests  int `json:"help_requests"`  // 求助次数
+	FeedbackGiven int `json:"feedback_given"` // 反馈次数
 }
 
 // UserPreferencesV2 用户偏好（显式+隐式）
 type UserPreferencesV2 struct {
 	// 显式偏好
-	FavoriteGenres   []string                 `json:"favorite_genres"`
-	DislikedGenres   []string                 `json:"disliked_genres"`
-	FavoriteActors   []string                 `json:"favorite_actors"`
-	FavoriteDirectors []string                `json:"favorite_directors"`
-	Language         string                   `json:"language"`          // zh/en/both
+	FavoriteGenres    []string `json:"favorite_genres"`
+	DislikedGenres    []string `json:"disliked_genres"`
+	FavoriteActors    []string `json:"favorite_actors"`
+	FavoriteDirectors []string `json:"favorite_directors"`
+	Language          string   `json:"language"` // zh/en/both
 
 	// 隐式偏好（AI 推断）
-	InferredMoods    []string                 `json:"inferred_moods"`
-	InferredThemes   []string                 `json:"inferred_themes"`
-	Openness         float64                  `json:"openness"`         // 接受新内容程度 0-1
-	NostalgiaTendency float64                 `json:"nostalgia_tendency"` // 怀旧倾向 0-1
+	InferredMoods     []string `json:"inferred_moods"`
+	InferredThemes    []string `json:"inferred_themes"`
+	Openness          float64  `json:"openness"`           // 接受新内容程度 0-1
+	NostalgiaTendency float64  `json:"nostalgia_tendency"` // 怀旧倾向 0-1
 
 	// 特殊偏好
-	MinRating        float64                  `json:"min_rating"`        // 最低接受评分
-	ExcludeWatched   bool                     `json:"exclude_watched"`   // 排除已看过
+	MinRating      float64 `json:"min_rating"`      // 最低接受评分
+	ExcludeWatched bool    `json:"exclude_watched"` // 排除已看过
 }
 
 // UserContext 用户上下文
 type UserContext struct {
-	CurrentMood      string                   `json:"current_mood"`
-	LastMoodUpdate   time.Time                `json:"last_mood_update"`
-	TimeOfDayPattern  map[string]string       `json:"time_of_day_pattern"` // 早晚偏好
-	DayOfWeekPattern  map[string]string       `json:"day_of_week_pattern"` // 工作日/周末偏好
-	SeasonalPattern  map[string]string       `json:"seasonal_pattern"`   // 季节偏好
+	CurrentMood      string            `json:"current_mood"`
+	LastMoodUpdate   time.Time         `json:"last_mood_update"`
+	TimeOfDayPattern map[string]string `json:"time_of_day_pattern"` // 早晚偏好
+	DayOfWeekPattern map[string]string `json:"day_of_week_pattern"` // 工作日/周末偏好
+	SeasonalPattern  map[string]string `json:"seasonal_pattern"`    // 季节偏好
 }
 
 // InteractionHistory 交互历史（用于协同过滤）
 type InteractionHistory struct {
-	PositiveItems    []string                 `json:"positive_items"`    // 喜欢的项目
-	NegativeItems    []string                 `json:"negative_items"`    // 不喜欢
-	SkippedItems     []string                 `json:"skipped_items"`      // 跳过
-	LastInteraction  time.Time                `json:"last_interaction"`
+	PositiveItems   []string  `json:"positive_items"` // 喜欢的项目
+	NegativeItems   []string  `json:"negative_items"` // 不喜欢
+	SkippedItems    []string  `json:"skipped_items"`  // 跳过
+	LastInteraction time.Time `json:"last_interaction"`
 }
 
 // GlobalMediaStats 全局媒体统计（用于热门推荐）
 type GlobalMediaStats struct {
-	PopularMovies   []string                 `json:"popular_movies"`
-	PopularTVShows   []string                 `json:"popular_tv_shows"`
-	TrendingGenres   []string                 `json:"trending_genres"`
-	NewReleases      []string                 `json:"new_releases"`
-	LastUpdate       time.Time                `json:"last_update"`
+	PopularMovies  []string  `json:"popular_movies"`
+	PopularTVShows []string  `json:"popular_tv_shows"`
+	TrendingGenres []string  `json:"trending_genres"`
+	NewReleases    []string  `json:"new_releases"`
+	LastUpdate     time.Time `json:"last_update"`
 }
 
 // RecommendationRequest 推荐请求
 type RecommendationRequestV2 struct {
-	UserID           int64                    `json:"user_id"`
-	Count            int                      `json:"count"`
-	Strategy         RecommendStrategy        `json:"strategy"`
-	Context          string                   `json:"context"`           // mood/situation
-	MediaType        string                   `json:"media_type"`        // movie/tv/both
-	ExcludeSeen      bool                     `json:"exclude_seen"`
-	MinRating        float64                  `json:"min_rating"`
+	UserID      int64             `json:"user_id"`
+	Count       int               `json:"count"`
+	Strategy    RecommendStrategy `json:"strategy"`
+	Context     string            `json:"context"`    // mood/situation
+	MediaType   string            `json:"media_type"` // movie/tv/both
+	ExcludeSeen bool              `json:"exclude_seen"`
+	MinRating   float64           `json:"min_rating"`
 }
 
 // RecommendStrategy 推荐策略
 type RecommendStrategy string
 
 const (
-	StrategyPersonalized  RecommendStrategy = "personalized"   // 个性化推荐
-	StrategyTrending      RecommendStrategy = "trending"       // 热门推荐
-	StrategySimilar       RecommendStrategy = "similar"        // 相似推荐
-	StrategyDiscovery     RecommendStrategy = "discovery"      // 发现推荐（探索新内容）
-	StrategyMood          RecommendStrategy = "mood"           // 心情推荐
-	StrategySocial        RecommendStrategy = "social"         // 社交推荐（群组热门）
-	StrategyHybrid        RecommendStrategy = "hybrid"         // 混合策略
+	StrategyPersonalized RecommendStrategy = "personalized" // 个性化推荐
+	StrategyTrending     RecommendStrategy = "trending"     // 热门推荐
+	StrategySimilar      RecommendStrategy = "similar"      // 相似推荐
+	StrategyDiscovery    RecommendStrategy = "discovery"    // 发现推荐（探索新内容）
+	StrategyMood         RecommendStrategy = "mood"         // 心情推荐
+	StrategySocial       RecommendStrategy = "social"       // 社交推荐（群组热门）
+	StrategyHybrid       RecommendStrategy = "hybrid"       // 混合策略
 )
 
 // RecommendationResult 推荐结果（增强版）
 type RecommendationResultV2 struct {
 	// 基本信息
-	Title            string                   `json:"title"`
-	OriginalTitle    string                   `json:"original_title"`
-	Year             int                      `json:"year"`
-	MediaType        string                   `json:"media_type"`
-	Genre            []string                 `json:"genre"`
-	Rating           float64                  `json:"rating"`
-	TmdbID           int                      `json:"tmdb_id"`
-	PosterPath       string                   `json:"poster_path"`
-	Overview         string                   `json:"overview"`
+	Title         string   `json:"title"`
+	OriginalTitle string   `json:"original_title"`
+	Year          int      `json:"year"`
+	MediaType     string   `json:"media_type"`
+	Genre         []string `json:"genre"`
+	Rating        float64  `json:"rating"`
+	TmdbID        int      `json:"tmdb_id"`
+	PosterPath    string   `json:"poster_path"`
+	Overview      string   `json:"overview"`
 
 	// 推荐理由（核心）
-	Reason           string                   `json:"reason"`           // 用户友好的推荐理由
-	Why              []string                 `json:"why"`              // 详细解释（AI 生成）
-	Confidence       float64                  `json:"confidence"`       // 推荐置信度 0-1
+	Reason     string   `json:"reason"`     // 用户友好的推荐理由
+	Why        []string `json:"why"`        // 详细解释（AI 生成）
+	Confidence float64  `json:"confidence"` // 推荐置信度 0-1
 
 	// 标签
-	Tags             []string                 `json:"tags"`             // 如：["和你看过的X相似", "符合你现在的心情"]
-	MatchReasons     map[string]float64       `json:"match_reasons"`    // 各维度的匹配度
+	Tags         []string           `json:"tags"`          // 如：["和你看过的X相似", "符合你现在的心情"]
+	MatchReasons map[string]float64 `json:"match_reasons"` // 各维度的匹配度
 
 	// 交互
-	QuickActions     []string                 `json:"quick_actions"`    // 快捷操作
+	QuickActions []string `json:"quick_actions"` // 快捷操作
 }
 
 // NewRecommendationEngine 创建新的推荐引擎
 func NewRecommendationEngine(zhipu *ZhipuClient, trendingMgr *TrendingAIManager) *RecommendationEngine {
 	return &RecommendationEngine{
-		zhipu:       zhipu,
+		zhipu:        zhipu,
 		userProfiles: make(map[int64]*UserProfileV2),
 		globalStats: &GlobalMediaStats{
 			PopularMovies:  []string{},
-			PopularTVShows:  []string{},
-			TrendingGenres:  []string{},
+			PopularTVShows: []string{},
+			TrendingGenres: []string{},
 			NewReleases:    []string{},
 			LastUpdate:     time.Time{},
 		},
@@ -435,17 +435,17 @@ func (e *RecommendationEngine) trendingRecommend(req *RecommendationRequestV2) (
 	recResults := make([]*RecommendationResultV2, 0, len(results))
 	for _, item := range results {
 		recResults = append(recResults, &RecommendationResultV2{
-			Title:         item.Title,
-			Year:          item.Year,
-			MediaType:     item.MediaType,
-			Genre:         []string{item.Genre},
-			Rating:        item.Rating,
-			TmdbID:        item.TmdbID,
-			Reason:        item.Reason,
-			Why:           []string{"当前热门", "评分不错", "值得一看"},
-			Confidence:    0.8,
-			Tags:          []string{"热门", "新片"},
-			QuickActions:  []string{"立即请求", "查看详情"},
+			Title:        item.Title,
+			Year:         item.Year,
+			MediaType:    item.MediaType,
+			Genre:        []string{item.Genre},
+			Rating:       item.Rating,
+			TmdbID:       item.TmdbID,
+			Reason:       item.Reason,
+			Why:          []string{"当前热门", "评分不错", "值得一看"},
+			Confidence:   0.8,
+			Tags:         []string{"热门", "新片"},
+			QuickActions: []string{"立即请求", "查看详情"},
 		})
 	}
 
@@ -481,23 +481,23 @@ func (e *RecommendationEngine) moodBasedRecommend(req *RecommendationRequestV2) 
 // MoodAnalysis 心情分析结果
 type MoodAnalysis struct {
 	// 基础心情分类
-	MoodCategory    string   `json:"mood_category"`    // 主要分类
-	MoodSubCategory  string   `json:"mood_sub_category"` // 子分类
+	MoodCategory    string `json:"mood_category"`     // 主要分类
+	MoodSubCategory string `json:"mood_sub_category"` // 子分类
 
 	// 推荐特征
-	PreferredGenres  []string `json:"preferred_genres"`  // 推荐类型
-	PreferredTones   []string `json:"preferred_tones"`   // 推荐基调
-	MinRating        float64  `json:"min_rating"`        // 最低评分要求
-	Pace             string   `json:"pace"`              // 节奏：快/中/慢
-	IncludeNew       bool     `json:"include_new"`       // 是否包含新片
-	ShouldIncludeNew bool     `json:"should_include_new"`// 建议包含新片
-	YearPreference   string   `json:"year_preference"`   // 年份偏好
-	DurationHint     string   `json:"duration_hint"`     // 时长建议
+	PreferredGenres  []string `json:"preferred_genres"`   // 推荐类型
+	PreferredTones   []string `json:"preferred_tones"`    // 推荐基调
+	MinRating        float64  `json:"min_rating"`         // 最低评分要求
+	Pace             string   `json:"pace"`               // 节奏：快/中/慢
+	IncludeNew       bool     `json:"include_new"`        // 是否包含新片
+	ShouldIncludeNew bool     `json:"should_include_new"` // 建议包含新片
+	YearPreference   string   `json:"year_preference"`    // 年份偏好
+	DurationHint     string   `json:"duration_hint"`      // 时长建议
 
 	// 上下文因素
-	TimeOfDay        string   `json:"time_of_day"`       // 时间段
-	IsLateNight      bool     `json:"is_late_night"`     // 是否深夜
-	Weekend          bool     `json:"weekend"`           // 是否周末
+	TimeOfDay   string `json:"time_of_day"`   // 时间段
+	IsLateNight bool   `json:"is_late_night"` // 是否深夜
+	Weekend     bool   `json:"weekend"`       // 是否周末
 }
 
 // analyzeMood 分析用户心情（多维度解析）
@@ -525,7 +525,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 	moodMappings := map[string]*MoodAnalysis{
 		// === 开心类 ===
 		"开心": {
-			MoodCategory:   "开心",
+			MoodCategory:    "开心",
 			PreferredGenres: []string{"喜剧", "动画", "音乐", "家庭"},
 			PreferredTones:  []string{"轻松", "愉快", "正能量", "温馨"},
 			Pace:            "中",
@@ -534,14 +534,14 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			DurationHint:    "90-120分钟",
 		},
 		"快乐": {
-			MoodCategory:   "开心",
+			MoodCategory:    "开心",
 			PreferredGenres: []string{"喜剧", "动画", "冒险", "音乐"},
 			PreferredTones:  []string{"轻松", "愉快", "正能量"},
 			Pace:            "快",
 			IncludeNew:      true,
 		},
 		"愉快": {
-			MoodCategory:   "开心",
+			MoodCategory:    "开心",
 			PreferredGenres: []string{"喜剧", "爱情", "家庭"},
 			PreferredTones:  []string{"温馨", "轻松"},
 			Pace:            "慢",
@@ -549,7 +549,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 难过/治愈类 ===
 		"难过": {
-			MoodCategory:   "难过",
+			MoodCategory:    "难过",
 			PreferredGenres: []string{"喜剧", "温情", "治愈", "动画"},
 			PreferredTones:  []string{"温暖", "治愈", "励志", "正能量"},
 			Pace:            "慢",
@@ -558,19 +558,19 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			YearPreference:  "经典",
 		},
 		"沮丧": {
-			MoodCategory:   "难过",
+			MoodCategory:    "难过",
 			PreferredGenres: []string{"励志", "传记", "剧情"},
 			PreferredTones:  []string{"励志", "温暖", "治愈"},
 			Pace:            "中",
 			MinRating:       7.5,
 		},
 		"郁闷": {
-			MoodCategory:   "难过",
+			MoodCategory:    "难过",
 			PreferredGenres: []string{"喜剧", "治愈", "动画"},
 			PreferredTones:  []string{"轻松", "温暖", "治愈"},
 		},
 		"治愈": {
-			MoodCategory:   "治愈",
+			MoodCategory:    "治愈",
 			PreferredGenres: []string{"温情", "动画", "剧情", "家庭"},
 			PreferredTones:  []string{"温暖", "治愈", "宁静"},
 			Pace:            "慢",
@@ -578,7 +578,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 紧张/刺激类 ===
 		"紧张": {
-			MoodCategory:   "紧张",
+			MoodCategory:    "紧张",
 			PreferredGenres: []string{"悬疑", "惊悚", "动作", "犯罪"},
 			PreferredTones:  []string{"紧张", "刺激", "烧脑"},
 			Pace:            "快",
@@ -586,19 +586,19 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			IncludeNew:      true,
 		},
 		"焦虑": {
-			MoodCategory:   "紧张",
+			MoodCategory:    "紧张",
 			PreferredGenres: []string{"悬疑", "惊悚", "犯罪"},
 			PreferredTones:  []string{"烧脑", "紧张"},
 			Pace:            "快",
 		},
 		"刺激": {
-			MoodCategory:   "刺激",
+			MoodCategory:    "刺激",
 			PreferredGenres: []string{"恐怖", "惊悚", "动作", "冒险"},
 			PreferredTones:  []string{"刺激", "紧张", "惊悚"},
 			Pace:            "快",
 		},
 		"恐怖": {
-			MoodCategory:   "刺激",
+			MoodCategory:    "刺激",
 			PreferredGenres: []string{"恐怖", "惊悚", "悬疑"},
 			PreferredTones:  []string{"恐怖", "惊悚"},
 			Pace:            "快",
@@ -606,7 +606,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 无聊类 ===
 		"无聊": {
-			MoodCategory:   "无聊",
+			MoodCategory:    "无聊",
 			PreferredGenres: []string{"惊悚", "科幻", "冒险", "悬疑", "动作"},
 			PreferredTones:  []string{"刺激", "烧脑", "反转"},
 			Pace:            "快",
@@ -614,27 +614,27 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			IncludeNew:      true,
 		},
 		"没劲": {
-			MoodCategory:   "无聊",
+			MoodCategory:    "无聊",
 			PreferredGenres: []string{"喜剧", "科幻", "冒险"},
 			PreferredTones:  []string{"有趣", "新奇"},
 		},
 
 		// === 放松类 ===
 		"放松": {
-			MoodCategory:   "放松",
+			MoodCategory:    "放松",
 			PreferredGenres: []string{"喜剧", "爱情", "动画", "纪录片"},
 			PreferredTones:  []string{"轻松", "温馨", "治愈"},
 			Pace:            "慢",
 			MinRating:       6.5,
 		},
 		"休闲": {
-			MoodCategory:   "放松",
+			MoodCategory:    "放松",
 			PreferredGenres: []string{"喜剧", "爱情", "家庭"},
 			PreferredTones:  []string{"轻松", "温馨"},
 			Pace:            "慢",
 		},
 		"舒适": {
-			MoodCategory:   "放松",
+			MoodCategory:    "放松",
 			PreferredGenres: []string{"动画", "纪录片", "剧情"},
 			PreferredTones:  []string{"宁静", "治愈"},
 			Pace:            "慢",
@@ -642,7 +642,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 兴奋类 ===
 		"兴奋": {
-			MoodCategory:   "兴奋",
+			MoodCategory:    "兴奋",
 			PreferredGenres: []string{"动作", "科幻", "冒险", "超级英雄"},
 			PreferredTones:  []string{"热血", "刺激", "震撼"},
 			Pace:            "快",
@@ -650,7 +650,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			YearPreference:  "近期大片",
 		},
 		"热血": {
-			MoodCategory:   "兴奋",
+			MoodCategory:    "兴奋",
 			PreferredGenres: []string{"动作", "冒险", "超级英雄"},
 			PreferredTones:  []string{"热血", "励志"},
 			Pace:            "快",
@@ -658,21 +658,21 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 思考类 ===
 		"思考": {
-			MoodCategory:   "思考",
+			MoodCategory:    "思考",
 			PreferredGenres: []string{"科幻", "悬疑", "剧情", "传记"},
 			PreferredTones:  []string{"烧脑", "深度", "哲学"},
 			Pace:            "中",
 			MinRating:       7.5,
 		},
 		"烧脑": {
-			MoodCategory:   "思考",
+			MoodCategory:    "思考",
 			PreferredGenres: []string{"悬疑", "科幻", "惊悚"},
 			PreferredTones:  []string{"烧脑", "反转", "复杂"},
 			Pace:            "中",
 			MinRating:       7.0,
 		},
 		"学习": {
-			MoodCategory:   "思考",
+			MoodCategory:    "思考",
 			PreferredGenres: []string{"纪录片", "传记", "历史", "科普"},
 			PreferredTones:  []string{"知识", "深度", "教育"},
 			Pace:            "中",
@@ -680,19 +680,19 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 浪漫类 ===
 		"浪漫": {
-			MoodCategory:   "浪漫",
+			MoodCategory:    "浪漫",
 			PreferredGenres: []string{"爱情", "剧情", "浪漫"},
 			PreferredTones:  []string{"浪漫", "温馨", "甜蜜"},
 			Pace:            "慢",
 		},
 		"甜蜜": {
-			MoodCategory:   "浪漫",
+			MoodCategory:    "浪漫",
 			PreferredGenres: []string{"爱情", "喜剧", "动画"},
 			PreferredTones:  []string{"甜蜜", "温馨"},
 			Pace:            "慢",
 		},
 		"失恋": {
-			MoodCategory:   "难过",
+			MoodCategory:    "难过",
 			PreferredGenres: []string{"励志", "治愈", "喜剧"},
 			PreferredTones:  []string{"治愈", "正能量", "温暖"},
 			Pace:            "慢",
@@ -701,7 +701,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 怀旧类 ===
 		"怀旧": {
-			MoodCategory:   "怀旧",
+			MoodCategory:    "怀旧",
 			PreferredGenres: []string{"经典", "剧情", "家庭"},
 			PreferredTones:  []string{"怀旧", "经典", "回忆"},
 			Pace:            "慢",
@@ -709,7 +709,7 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			YearPreference:  "90年代-2000年代",
 		},
 		"回忆": {
-			MoodCategory:   "怀旧",
+			MoodCategory:    "怀旧",
 			PreferredGenres: []string{"经典", "剧情"},
 			PreferredTones:  []string{"怀旧", "温暖"},
 			YearPreference:  "经典老片",
@@ -717,19 +717,19 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 愤怒/发泄类 ===
 		"生气": {
-			MoodCategory:   "愤怒",
+			MoodCategory:    "愤怒",
 			PreferredGenres: []string{"动作", "犯罪", "惊悚"},
 			PreferredTones:  []string{"爽片", "解压", "动作"},
 			Pace:            "快",
 		},
 		"愤怒": {
-			MoodCategory:   "愤怒",
+			MoodCategory:    "愤怒",
 			PreferredGenres: []string{"动作", "犯罪", "复仇"},
 			PreferredTones:  []string{"爽片", "解压"},
 			Pace:            "快",
 		},
 		"解压": {
-			MoodCategory:   "放松",
+			MoodCategory:    "放松",
 			PreferredGenres: []string{"动作", "喜剧", "爽片"},
 			PreferredTones:  []string{"解压", "爽快"},
 			Pace:            "快",
@@ -737,20 +737,20 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 
 		// === 孤独类 ===
 		"孤独": {
-			MoodCategory:   "孤独",
+			MoodCategory:    "孤独",
 			PreferredGenres: []string{"剧情", "温情", "治愈", "动画"},
 			PreferredTones:  []string{"温暖", "陪伴感", "治愈"},
 			Pace:            "慢",
 		},
 		"寂寞": {
-			MoodCategory:   "孤独",
+			MoodCategory:    "孤独",
 			PreferredGenres: []string{"爱情", "剧情", "温情"},
 			PreferredTones:  []string{"温暖", "治愈"},
 		},
 
 		// === 困倦类 ===
 		"困": {
-			MoodCategory:   "困倦",
+			MoodCategory:    "困倦",
 			PreferredGenres: []string{"喜剧", "动画", "轻松剧情"},
 			PreferredTones:  []string{"轻松", "不需要太烧脑"},
 			Pace:            "慢",
@@ -758,27 +758,27 @@ func (e *RecommendationEngine) analyzeMood(input string, profile *UserProfileV2)
 			DurationHint:    "90分钟以内",
 		},
 		"累了": {
-			MoodCategory:   "困倦",
+			MoodCategory:    "困倦",
 			PreferredGenres: []string{"喜剧", "治愈", "动画"},
 			PreferredTones:  []string{"轻松", "治愈"},
 			Pace:            "慢",
 		},
 		"疲劳": {
-			MoodCategory:   "困倦",
+			MoodCategory:    "困倦",
 			PreferredGenres: []string{"喜剧", "纪录片", "动画"},
 			PreferredTones:  []string{"轻松", "治愈"},
 		},
 
 		// === 探索类 ===
 		"探索": {
-			MoodCategory:   "探索",
+			MoodCategory:    "探索",
 			PreferredGenres: []string{"科幻", "纪录片", "冒险"},
 			PreferredTones:  []string{"新奇", "知识", "探索"},
 			Pace:            "中",
 			IncludeNew:      true,
 		},
 		"好奇": {
-			MoodCategory:   "探索",
+			MoodCategory:    "探索",
 			PreferredGenres: []string{"科幻", "悬疑", "纪录片"},
 			PreferredTones:  []string{"新奇", "烧脑"},
 		},
@@ -1124,17 +1124,17 @@ func (e *RecommendationEngine) ensureUserProfile(userID int64) {
 
 	if _, exists := e.userProfiles[userID]; !exists {
 		e.userProfiles[userID] = &UserProfileV2{
-			UserID:          userID,
-			CreatedAt:       time.Now(),
-			UpdatedAt:       time.Now(),
-			Behavior:        &UserBehavior{
-				SearchQueries:   []string{},
-				SearchFreq:      make(map[string]int),
-				RequestTypes:    make(map[string]int),
-				RequestGenres:   make(map[string]int),
-				RequestYears:    make(map[int]int),
+			UserID:    userID,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+			Behavior: &UserBehavior{
+				SearchQueries: []string{},
+				SearchFreq:    make(map[string]int),
+				RequestTypes:  make(map[string]int),
+				RequestGenres: make(map[string]int),
+				RequestYears:  make(map[int]int),
 			},
-			Preferences:     &UserPreferencesV2{
+			Preferences: &UserPreferencesV2{
 				FavoriteGenres:    []string{},
 				DislikedGenres:    []string{},
 				FavoriteActors:    []string{},
@@ -1146,21 +1146,21 @@ func (e *RecommendationEngine) ensureUserProfile(userID int64) {
 				NostalgiaTendency: 0.3,
 				MinRating:         6.0,
 			},
-			Context:         &UserContext{
-				CurrentMood:       "",
-				TimeOfDayPattern:  make(map[string]string),
-				DayOfWeekPattern:  make(map[string]string),
-				SeasonalPattern:   make(map[string]string),
+			Context: &UserContext{
+				CurrentMood:      "",
+				TimeOfDayPattern: make(map[string]string),
+				DayOfWeekPattern: make(map[string]string),
+				SeasonalPattern:  make(map[string]string),
 			},
-			Interaction:     &InteractionHistory{
-				PositiveItems:    []string{},
-				NegativeItems:    []string{},
-				SkippedItems:     []string{},
-				LastInteraction:  time.Now(),
+			Interaction: &InteractionHistory{
+				PositiveItems:   []string{},
+				NegativeItems:   []string{},
+				SkippedItems:    []string{},
+				LastInteraction: time.Now(),
 			},
-			AITags:          []string{},
-			AIPersona:       "探索者",
-			LastAIAnalysis:  time.Time{},
+			AITags:         []string{},
+			AIPersona:      "探索者",
+			LastAIAnalysis: time.Time{},
 		}
 		logger.Info("[RecEngine] Created profile for user %d", userID)
 	}
@@ -1293,12 +1293,12 @@ func (e *RecommendationEngine) analyzeUserProfile(userID int64) {
 
 	// 解析并更新画像
 	var analysis struct {
-		Persona         string   `json:"persona"`
-		Tags            []string `json:"tags"`
-		Openness        float64  `json:"openness"`
-		Nostalgia       float64  `json:"nostalgia"`
-		InferredMoods   []string `json:"inferred_moods"`
-		InferredThemes  []string `json:"inferred_themes"`
+		Persona        string   `json:"persona"`
+		Tags           []string `json:"tags"`
+		Openness       float64  `json:"openness"`
+		Nostalgia      float64  `json:"nostalgia"`
+		InferredMoods  []string `json:"inferred_moods"`
+		InferredThemes []string `json:"inferred_themes"`
 	}
 
 	if err := json.Unmarshal([]byte(cleanAIResponse(response)), &analysis); err == nil {

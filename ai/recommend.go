@@ -11,15 +11,15 @@ import (
 
 // RecommendationResult represents an AI recommendation result
 type RecommendationResult struct {
-	Title       string   `json:"title"`
-	Year        int      `json:"year,omitempty"`
-	Genre       string   `json:"genre,omitempty"`
-	Reason      string   `json:"reason"`
-	Mood        string   `json:"mood,omitempty"`
-	TmdbID      int      `json:"tmdbId,omitempty"`
-	MediaType   string   `json:"mediaType,omitempty"` // movie or tv
-	Score       float64  `json:"score,omitempty"`
-	Description string   `json:"description,omitempty"`
+	Title       string  `json:"title"`
+	Year        int     `json:"year,omitempty"`
+	Genre       string  `json:"genre,omitempty"`
+	Reason      string  `json:"reason"`
+	Mood        string  `json:"mood,omitempty"`
+	TmdbID      int     `json:"tmdbId,omitempty"`
+	MediaType   string  `json:"mediaType,omitempty"` // movie or tv
+	Score       float64 `json:"score,omitempty"`
+	Description string  `json:"description,omitempty"`
 }
 
 // MediaRecommendationAI handles AI-powered recommendations
@@ -31,13 +31,13 @@ type MediaRecommendationAI struct {
 
 // UserPreference represents user watching preferences
 type UserPreference struct {
-	FavoriteGenres   []string `json:"favoriteGenres"`
-	FavoriteMovies   []string `json:"favoriteMovies"`
-	RecentlyWatched  []string `json:"recentlyWatched"`
-	DislikedGenres   []string `json:"dislikedGenres"`
-	DislikedMovies   []string `json:"dislikedMovies"`
-	PreferredMoods   []string `json:"preferredMoods"`
-	Language         string   `json:"language"`
+	FavoriteGenres  []string `json:"favoriteGenres"`
+	FavoriteMovies  []string `json:"favoriteMovies"`
+	RecentlyWatched []string `json:"recentlyWatched"`
+	DislikedGenres  []string `json:"dislikedGenres"`
+	DislikedMovies  []string `json:"dislikedMovies"`
+	PreferredMoods  []string `json:"preferredMoods"`
+	Language        string   `json:"language"`
 }
 
 // NewMediaRecommendationAI creates a new AI recommendation engine
@@ -139,15 +139,15 @@ func (r *MediaRecommendationAI) GetMoodBasedRecommendations(mood string, count i
 
 // MoodKeywordsAnalysis 心情关键词分析结果
 type MoodKeywordsAnalysis struct {
-	Category      string   `json:"category"`       // 主分类
-	SubCategory   string   `json:"sub_category"`   // 子分类
-	Genres        []string `json:"genres"`         // 推荐类型
-	Tones         []string `json:"tones"`          // 内容基调
-	Pace          string   `json:"pace"`           // 节奏
-	MinRating     float64  `json:"min_rating"`     // 最低评分
-	IncludeNew    bool     `json:"include_new"`    // 是否包含新片
-	YearHint      string   `json:"year_hint"`      // 年份提示
-	ReasonHint    string   `json:"reason_hint"`    // 推荐理由提示
+	Category    string   `json:"category"`     // 主分类
+	SubCategory string   `json:"sub_category"` // 子分类
+	Genres      []string `json:"genres"`       // 推荐类型
+	Tones       []string `json:"tones"`        // 内容基调
+	Pace        string   `json:"pace"`         // 节奏
+	MinRating   float64  `json:"min_rating"`   // 最低评分
+	IncludeNew  bool     `json:"include_new"`  // 是否包含新片
+	YearHint    string   `json:"year_hint"`    // 年份提示
+	ReasonHint  string   `json:"reason_hint"`  // 推荐理由提示
 }
 
 // analyzeMoodKeywords 分析心情关键词
@@ -179,10 +179,10 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "让人感到快乐愉悦",
 		},
 		"愉快": {
-			Category:   "开心",
-			Genres:     []string{"喜剧", "爱情", "家庭"},
-			Tones:      []string{"温馨", "轻松"},
-			Pace:       "慢",
+			Category: "开心",
+			Genres:   []string{"喜剧", "爱情", "家庭"},
+			Tones:    []string{"温馨", "轻松"},
+			Pace:     "慢",
 		},
 
 		// 难过/治愈类
@@ -197,25 +197,25 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "温暖治愈、抚慰心灵",
 		},
 		"沮丧": {
-			Category:  "难过",
-			Genres:    []string{"励志", "传记", "剧情"},
-			Tones:     []string{"励志", "温暖", "治愈"},
-			Pace:      "中",
-			MinRating: 7.5,
+			Category:   "难过",
+			Genres:     []string{"励志", "传记", "剧情"},
+			Tones:      []string{"励志", "温暖", "治愈"},
+			Pace:       "中",
+			MinRating:  7.5,
 			ReasonHint: "励志向上、给人力量",
 		},
 		"郁闷": {
-			Category: "难过",
-			Genres:   []string{"喜剧", "治愈", "动画"},
-			Tones:    []string{"轻松", "温暖", "治愈"},
+			Category:   "难过",
+			Genres:     []string{"喜剧", "治愈", "动画"},
+			Tones:      []string{"轻松", "温暖", "治愈"},
 			ReasonHint: "改善心情、带来慰藉",
 		},
 		"治愈": {
-			Category: "治愈",
-			Genres:   []string{"温情", "动画", "剧情", "家庭"},
-			Tones:    []string{"温暖", "治愈", "宁静"},
-			Pace:     "慢",
-			MinRating: 7.0,
+			Category:   "治愈",
+			Genres:     []string{"温情", "动画", "剧情", "家庭"},
+			Tones:      []string{"温暖", "治愈", "宁静"},
+			Pace:       "慢",
+			MinRating:  7.0,
 			ReasonHint: "温暖治愈、让人放松",
 		},
 
@@ -230,24 +230,24 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "紧张刺激、扣人心弦",
 		},
 		"焦虑": {
-			Category: "紧张",
-			Genres:   []string{"悬疑", "惊悚", "犯罪"},
-			Tones:    []string{"烧脑", "紧张"},
-			Pace:     "快",
+			Category:   "紧张",
+			Genres:     []string{"悬疑", "惊悚", "犯罪"},
+			Tones:      []string{"烧脑", "紧张"},
+			Pace:       "快",
 			ReasonHint: "转移注意力、烧脑解压",
 		},
 		"刺激": {
-			Category: "刺激",
-			Genres:   []string{"恐怖", "惊悚", "动作", "冒险"},
-			Tones:    []string{"刺激", "紧张", "惊悚"},
-			Pace:     "快",
+			Category:   "刺激",
+			Genres:     []string{"恐怖", "惊悚", "动作", "冒险"},
+			Tones:      []string{"刺激", "紧张", "惊悚"},
+			Pace:       "快",
 			ReasonHint: "刺激惊险、肾上腺素飙升",
 		},
 		"恐怖": {
-			Category: "刺激",
-			Genres:   []string{"恐怖", "惊悚", "悬疑"},
-			Tones:    []string{"恐怖", "惊悚"},
-			Pace:     "快",
+			Category:   "刺激",
+			Genres:     []string{"恐怖", "惊悚", "悬疑"},
+			Tones:      []string{"恐怖", "惊悚"},
+			Pace:       "快",
 			ReasonHint: "恐怖氛围、惊悚刺激",
 		},
 
@@ -262,33 +262,33 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "剧情精彩、有反转不无聊",
 		},
 		"没劲": {
-			Category: "无聊",
-			Genres:   []string{"喜剧", "科幻", "冒险"},
-			Tones:    []string{"有趣", "新奇"},
+			Category:   "无聊",
+			Genres:     []string{"喜剧", "科幻", "冒险"},
+			Tones:      []string{"有趣", "新奇"},
 			ReasonHint: "有趣新奇、打发时间",
 		},
 
 		// 放松类
 		"放松": {
-			Category:  "放松",
-			Genres:    []string{"喜剧", "爱情", "动画", "纪录片"},
-			Tones:     []string{"轻松", "温馨", "治愈"},
-			Pace:      "慢",
-			MinRating: 6.5,
+			Category:   "放松",
+			Genres:     []string{"喜剧", "爱情", "动画", "纪录片"},
+			Tones:      []string{"轻松", "温馨", "治愈"},
+			Pace:       "慢",
+			MinRating:  6.5,
 			ReasonHint: "轻松舒适、不费脑子",
 		},
 		"休闲": {
-			Category: "放松",
-			Genres:   []string{"喜剧", "爱情", "家庭"},
-			Tones:    []string{"轻松", "温馨"},
-			Pace:     "慢",
+			Category:   "放松",
+			Genres:     []string{"喜剧", "爱情", "家庭"},
+			Tones:      []string{"轻松", "温馨"},
+			Pace:       "慢",
 			ReasonHint: "轻松休闲、适合放松",
 		},
 		"舒适": {
-			Category: "放松",
-			Genres:   []string{"动画", "纪录片", "剧情"},
-			Tones:    []string{"宁静", "治愈"},
-			Pace:     "慢",
+			Category:   "放松",
+			Genres:     []string{"动画", "纪录片", "剧情"},
+			Tones:      []string{"宁静", "治愈"},
+			Pace:       "慢",
 			ReasonHint: "宁静舒适、治愈系",
 		},
 
@@ -303,59 +303,59 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "热血沸腾、视听震撼",
 		},
 		"热血": {
-			Category: "兴奋",
-			Genres:   []string{"动作", "冒险", "超级英雄"},
-			Tones:    []string{"热血", "励志"},
-			Pace:     "快",
+			Category:   "兴奋",
+			Genres:     []string{"动作", "冒险", "超级英雄"},
+			Tones:      []string{"热血", "励志"},
+			Pace:       "快",
 			ReasonHint: "热血励志、激情澎湃",
 		},
 
 		// 思考类
 		"思考": {
-			Category:  "思考",
-			Genres:    []string{"科幻", "悬疑", "剧情", "传记"},
-			Tones:     []string{"烧脑", "深度", "哲学"},
-			Pace:      "中",
-			MinRating: 7.5,
+			Category:   "思考",
+			Genres:     []string{"科幻", "悬疑", "剧情", "传记"},
+			Tones:      []string{"烧脑", "深度", "哲学"},
+			Pace:       "中",
+			MinRating:  7.5,
 			ReasonHint: "引人深思、有深度",
 		},
 		"烧脑": {
-			Category:  "思考",
-			Genres:    []string{"悬疑", "科幻", "惊悚"},
-			Tones:     []string{"烧脑", "反转", "复杂"},
-			Pace:      "中",
-			MinRating: 7.0,
+			Category:   "思考",
+			Genres:     []string{"悬疑", "科幻", "惊悚"},
+			Tones:      []string{"烧脑", "反转", "复杂"},
+			Pace:       "中",
+			MinRating:  7.0,
 			ReasonHint: "剧情复杂、需要思考",
 		},
 		"学习": {
-			Category: "思考",
-			Genres:   []string{"纪录片", "传记", "历史", "科普"},
-			Tones:    []string{"知识", "深度", "教育"},
-			Pace:     "中",
+			Category:   "思考",
+			Genres:     []string{"纪录片", "传记", "历史", "科普"},
+			Tones:      []string{"知识", "深度", "教育"},
+			Pace:       "中",
 			ReasonHint: "增长知识、开阔眼界",
 		},
 
 		// 浪漫类
 		"浪漫": {
-			Category: "浪漫",
-			Genres:   []string{"爱情", "剧情", "浪漫"},
-			Tones:    []string{"浪漫", "温馨", "甜蜜"},
-			Pace:     "慢",
+			Category:   "浪漫",
+			Genres:     []string{"爱情", "剧情", "浪漫"},
+			Tones:      []string{"浪漫", "温馨", "甜蜜"},
+			Pace:       "慢",
 			ReasonHint: "浪漫温馨、甜蜜动人",
 		},
 		"甜蜜": {
-			Category: "浪漫",
-			Genres:   []string{"爱情", "喜剧", "动画"},
-			Tones:    []string{"甜蜜", "温馨"},
-			Pace:     "慢",
+			Category:   "浪漫",
+			Genres:     []string{"爱情", "喜剧", "动画"},
+			Tones:      []string{"甜蜜", "温馨"},
+			Pace:       "慢",
 			ReasonHint: "甜蜜温馨、浪漫氛围",
 		},
 		"失恋": {
-			Category:  "难过",
-			Genres:    []string{"励志", "治愈", "喜剧"},
-			Tones:     []string{"治愈", "正能量", "温暖"},
-			Pace:      "慢",
-			MinRating: 7.0,
+			Category:   "难过",
+			Genres:     []string{"励志", "治愈", "喜剧"},
+			Tones:      []string{"治愈", "正能量", "温暖"},
+			Pace:       "慢",
+			MinRating:  7.0,
 			ReasonHint: "治愈系、走出阴霾",
 		},
 
@@ -370,72 +370,72 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "怀旧经典、回忆满满",
 		},
 		"回忆": {
-			Category:  "怀旧",
-			Genres:    []string{"经典", "剧情"},
-			Tones:     []string{"怀旧", "温暖"},
-			YearHint:  "经典老片",
+			Category:   "怀旧",
+			Genres:     []string{"经典", "剧情"},
+			Tones:      []string{"怀旧", "温暖"},
+			YearHint:   "经典老片",
 			ReasonHint: "怀旧温暖、回忆杀",
 		},
 
 		// 愤怒/发泄类
 		"生气": {
-			Category: "愤怒",
-			Genres:   []string{"动作", "犯罪", "惊悚"},
-			Tones:    []string{"爽片", "解压", "动作"},
-			Pace:     "快",
+			Category:   "愤怒",
+			Genres:     []string{"动作", "犯罪", "惊悚"},
+			Tones:      []string{"爽片", "解压", "动作"},
+			Pace:       "快",
 			ReasonHint: "爽片解压、发泄情绪",
 		},
 		"愤怒": {
-			Category: "愤怒",
-			Genres:   []string{"动作", "犯罪", "复仇"},
-			Tones:    []string{"爽片", "解压"},
-			Pace:     "快",
+			Category:   "愤怒",
+			Genres:     []string{"动作", "犯罪", "复仇"},
+			Tones:      []string{"爽片", "解压"},
+			Pace:       "快",
 			ReasonHint: "复仇爽片、解压发泄",
 		},
 		"解压": {
-			Category: "放松",
-			Genres:   []string{"动作", "喜剧", "爽片"},
-			Tones:    []string{"解压", "爽快"},
-			Pace:     "快",
+			Category:   "放松",
+			Genres:     []string{"动作", "喜剧", "爽片"},
+			Tones:      []string{"解压", "爽快"},
+			Pace:       "快",
 			ReasonHint: "解压爽片、释放压力",
 		},
 
 		// 孤独类
 		"孤独": {
-			Category: "孤独",
-			Genres:   []string{"剧情", "温情", "治愈", "动画"},
-			Tones:    []string{"温暖", "陪伴感", "治愈"},
-			Pace:     "慢",
+			Category:   "孤独",
+			Genres:     []string{"剧情", "温情", "治愈", "动画"},
+			Tones:      []string{"温暖", "陪伴感", "治愈"},
+			Pace:       "慢",
 			ReasonHint: "温暖治愈、给人陪伴感",
 		},
 		"寂寞": {
-			Category: "孤独",
-			Genres:   []string{"爱情", "剧情", "温情"},
-			Tones:    []string{"温暖", "治愈"},
+			Category:   "孤独",
+			Genres:     []string{"爱情", "剧情", "温情"},
+			Tones:      []string{"温暖", "治愈"},
 			ReasonHint: "温暖治愈、排遣寂寞",
 		},
 
 		// 困倦类
 		"困": {
-			Category:  "困倦",
-			Genres:    []string{"喜剧", "动画", "轻松剧情"},
-			Tones:     []string{"轻松", "不需要太烧脑"},
-			Pace:      "慢",
-			MinRating: 6.0,
-			YearHint:  "90分钟以内",
+			Category:   "困倦",
+			Genres:     []string{"喜剧", "动画", "轻松剧情"},
+			Tones:      []string{"轻松", "不需要太烧脑"},
+			Pace:       "慢",
+			MinRating:  6.0,
+			YearHint:   "90分钟以内",
 			ReasonHint: "轻松不费脑、适合睡前",
 		},
 		"累了": {
-			Category: "困倦",
-			Genres:   []string{"喜剧", "治愈", "动画"},
-			Tones:    []string{"轻松", "治愈"},
-			Pace:     "慢",
+			Category:   "困倦",
+			Genres:     []string{"喜剧", "治愈", "动画"},
+			Tones:      []string{"轻松", "治愈"},
+			Pace:       "慢",
 			ReasonHint: "轻松治愈、不费精力",
 		},
 		"疲劳": {
-			Category: "困倦",
-			Genres:   []string{"喜剧", "纪录片", "动画"},
-			Tones:    []string{"轻松", "治愈"},
+			Category:   "困倦",
+			Genres:     []string{"喜剧", "纪录片", "动画"},
+			Tones:      []string{"轻松", "治愈"},
 			ReasonHint: "轻松舒适、休息放松",
 		},
 
@@ -449,9 +449,9 @@ func analyzeMoodKeywords(mood string) *MoodKeywordsAnalysis {
 			ReasonHint: "新奇有趣、开阔眼界",
 		},
 		"好奇": {
-			Category: "探索",
-			Genres:   []string{"科幻", "悬疑", "纪录片"},
-			Tones:    []string{"新奇", "烧脑"},
+			Category:   "探索",
+			Genres:     []string{"科幻", "悬疑", "纪录片"},
+			Tones:      []string{"新奇", "烧脑"},
 			ReasonHint: "满足好奇心、新奇体验",
 		},
 	}
@@ -517,7 +517,7 @@ type TimeContext struct {
 func getTimeContext() *TimeContext {
 	now := time.Now()
 	hour := now.Hour()
- weekday := now.Weekday()
+	weekday := now.Weekday()
 
 	var timeOfDay string
 	switch {
@@ -741,7 +741,6 @@ func (r *MediaRecommendationAI) buildUserMessage(pref *UserPreference, count int
 
 	return strings.Join(parts, "\n")
 }
-
 
 // parseRecommendations parses the AI response into recommendation results
 func (r *MediaRecommendationAI) parseRecommendations(response string) ([]*RecommendationResult, error) {

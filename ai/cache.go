@@ -8,11 +8,11 @@ import (
 
 // ResponseCache caches AI responses to reduce API calls
 type ResponseCache struct {
-	data      map[string]*CacheEntry
-	mu        sync.RWMutex
-	ttl       time.Duration
-	stopChan  chan struct{}
-	stopped   sync.Once
+	data     map[string]*CacheEntry
+	mu       sync.RWMutex
+	ttl      time.Duration
+	stopChan chan struct{}
+	stopped  sync.Once
 }
 
 // CacheEntry represents a cached response

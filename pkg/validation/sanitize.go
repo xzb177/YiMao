@@ -9,8 +9,8 @@ import (
 
 var (
 	// Common malicious patterns
-	sqlInjectionPattern = regexp.MustCompile(`(?i)(union\s+select|drop\s+table|delete\s+from|insert\s+into|--|;|\/\*|\*\/)`)
-	scriptPattern       = regexp.MustCompile(`(?i)<script|javascript:|onerror|onload|onclick`)
+	sqlInjectionPattern  = regexp.MustCompile(`(?i)(union\s+select|drop\s+table|delete\s+from|insert\s+into|--|;|\/\*|\*\/)`)
+	scriptPattern        = regexp.MustCompile(`(?i)<script|javascript:|onerror|onload|onclick`)
 	pathTraversalPattern = regexp.MustCompile(`\.\.\/|\.\.\\`)
 )
 

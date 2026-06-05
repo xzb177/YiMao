@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/xzb177/yimao/internal/services"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Orchestrator coordinates the search flow.
@@ -34,9 +34,9 @@ func NewOrchestrator(
 
 // SearchResult represents the result of a search operation.
 type SearchResult struct {
-	Results []services.SearchResult
-	Query   string
-	FallbackUsed bool
+	Results       []services.SearchResult
+	Query         string
+	FallbackUsed  bool
 	FallbackQuery string
 }
 

@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
 	"time"
@@ -11,60 +11,60 @@ import (
 
 // WeeklyReport 用户每周观影报告
 type WeeklyReport struct {
-	UserID         int64             `json:"user_id"`
-	UserName       string            `json:"user_name"`
-	WeekStart      time.Time         `json:"week_start"`
-	WeekEnd        time.Time         `json:"week_end"`
+	UserID    int64     `json:"user_id"`
+	UserName  string    `json:"user_name"`
+	WeekStart time.Time `json:"week_start"`
+	WeekEnd   time.Time `json:"week_end"`
 
 	// 统计数据
-	SearchCount    int               `json:"search_count"`
-	RequestCount   int               `json:"request_count"`
-	ApprovedCount  int               `json:"approved_count"`
+	SearchCount   int `json:"search_count"`
+	RequestCount  int `json:"request_count"`
+	ApprovedCount int `json:"approved_count"`
 
 	// 搜索内容分析
-	TopSearches    []string          `json:"top_searches"`
-	GenrePrefs     map[string]int    `json:"genre_prefs"`     // 类型偏好
-	YearPrefs      []int             `json:"year_prefs"`       // 年份偏好
+	TopSearches []string       `json:"top_searches"`
+	GenrePrefs  map[string]int `json:"genre_prefs"` // 类型偏好
+	YearPrefs   []int          `json:"year_prefs"`  // 年份偏好
 
 	// 行为标签
-	BehaviorTags   []string          `json:"behavior_tags"`    // "追剧达人", "电影爱好者" 等
+	BehaviorTags []string `json:"behavior_tags"` // "追剧达人", "电影爱好者" 等
 
 	// 推荐
-	Recommendations []string         `json:"recommendations"`  // 基于本周行为推荐
+	Recommendations []string `json:"recommendations"` // 基于本周行为推荐
 
-	LastSentAt     time.Time         `json:"last_sent_at"`
-	IsSent         bool              `json:"is_sent"`
+	LastSentAt time.Time `json:"last_sent_at"`
+	IsSent     bool      `json:"is_sent"`
 }
 
 // MediaReminder 媒体提醒（用户搜索的影片上线时通知）
 type MediaReminder struct {
-	ID             string            `json:"id"`
-	UserID         int64             `json:"user_id"`
-	UserName       string            `json:"user_name"`
-	TmdbID         int               `json:"tmdb_id"`
-	MediaTitle     string            `json:"media_title"`
-	MediaType      string            `json:"media_type"`
-	SearchDate     time.Time         `json:"search_date"`
-	IsNotified     bool              `json:"is_notified"`
-	NotifiedAt     time.Time         `json:"notified_at,omitempty"`
+	ID         string    `json:"id"`
+	UserID     int64     `json:"user_id"`
+	UserName   string    `json:"user_name"`
+	TmdbID     int       `json:"tmdb_id"`
+	MediaTitle string    `json:"media_title"`
+	MediaType  string    `json:"media_type"`
+	SearchDate time.Time `json:"search_date"`
+	IsNotified bool      `json:"is_notified"`
+	NotifiedAt time.Time `json:"notified_at,omitempty"`
 }
 
 // WeeklyReportService manages weekly reports and media reminders
 type WeeklyReportService struct {
-	dataFile       string
-	reports        map[string]*WeeklyReport    // "userID_weekStart" -> report
-	reminders      map[string]*MediaReminder   // id -> reminder
-	reminderIndex  map[int64][]string          // userID -> reminder IDs
-	mu             sync.RWMutex
-	searchHistory  *SearchHistoryDB
-	quotaService   *QuotaService
-	reviewService  *ReviewService
-	telegram       *TelegramClient
-	tmdbClient     *TMDBClient
+	dataFile      string
+	reports       map[string]*WeeklyReport  // "userID_weekStart" -> report
+	reminders     map[string]*MediaReminder // id -> reminder
+	reminderIndex map[int64][]string        // userID -> reminder IDs
+	mu            sync.RWMutex
+	searchHistory *SearchHistoryDB
+	quotaService  *QuotaService
+	reviewService *ReviewService
+	telegram      *TelegramClient
+	tmdbClient    *TMDBClient
 
 	// 定时任务
-	ticker         *time.Ticker
-	stopChan       chan bool
+	ticker   *time.Ticker
+	stopChan chan bool
 }
 
 // NewWeeklyReportService creates a new weekly report service
@@ -109,9 +109,9 @@ func (s *WeeklyReportService) load() error {
 	}
 
 	var fileData struct {
-		Reports        map[string]*WeeklyReport  `json:"reports"`
-		Reminders      map[string]*MediaReminder `json:"reminders"`
-		ReminderIndex  map[int64][]string         `json:"reminder_index"`
+		Reports       map[string]*WeeklyReport  `json:"reports"`
+		Reminders     map[string]*MediaReminder `json:"reminders"`
+		ReminderIndex map[int64][]string        `json:"reminder_index"`
 	}
 
 	if err := json.Unmarshal(data, &fileData); err != nil {
@@ -132,8 +132,8 @@ func (s *WeeklyReportService) save() error {
 	defer s.mu.RUnlock()
 
 	data, err := json.MarshalIndent(map[string]interface{}{
-		"reports":       s.reports,
-		"reminders":     s.reminders,
+		"reports":        s.reports,
+		"reminders":      s.reminders,
 		"reminder_index": s.reminderIndex,
 	}, "", "  ")
 	if err != nil {
@@ -192,7 +192,7 @@ func (s *WeeklyReportService) GenerateReport(userID int64, userName string) (*We
 			searchFreq := make(map[string]int)
 			for _, entry := range history {
 				// Filter entries within the week range
-				if (entry.Timestamp.Before(weekStart) || entry.Timestamp.After(weekEnd)) {
+				if entry.Timestamp.Before(weekStart) || entry.Timestamp.After(weekEnd) {
 					continue
 				}
 				report.SearchCount += entry.Count

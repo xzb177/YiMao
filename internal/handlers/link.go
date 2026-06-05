@@ -4,19 +4,19 @@ import (
 	"fmt"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // LinkHandler handles account linking
 type LinkHandler struct {
-	cfg                *config.Config
-	sessMgr            *session.Manager
-	telegram           *services.TelegramClient
-	moviepilot         *services.MoviePilotClient
-	userMapping        *services.UserMappingService
+	cfg                   *config.Config
+	sessMgr               *session.Manager
+	telegram              *services.TelegramClient
+	moviepilot            *services.MoviePilotClient
+	userMapping           *services.UserMappingService
 	bindingRequestService *services.BindingRequestService
 }
 
@@ -29,11 +29,11 @@ func NewLinkHandler(
 	bindingRequestService *services.BindingRequestService,
 ) *LinkHandler {
 	return &LinkHandler{
-		cfg:                  cfg,
-		sessMgr:              sessMgr,
-		telegram:             telegram,
-		moviepilot:           moviepilot,
-		userMapping:          userMapping,
+		cfg:                   cfg,
+		sessMgr:               sessMgr,
+		telegram:              telegram,
+		moviepilot:            moviepilot,
+		userMapping:           userMapping,
 		bindingRequestService: bindingRequestService,
 	}
 }
@@ -47,8 +47,8 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		sess.Set("moviepilot_id", int(moviepilotID))
 
 		return &callback.Response{
-			Text:   "✅ 已绑定\n\n你的账号已绑定，可以使用完整功能",
-			Edit:   true,
+			Text: "✅ 已绑定\n\n你的账号已绑定，可以使用完整功能",
+			Edit: true,
 		}, nil
 	}
 
@@ -56,8 +56,8 @@ func (h *LinkHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 	// Show link instructions
 	return &callback.Response{
-		Text:   h.getLinkInstructions(),
-		Edit:   true,
+		Text: h.getLinkInstructions(),
+		Edit: true,
 	}, nil
 }
 
@@ -105,12 +105,12 @@ func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password
 	requestID := fmt.Sprintf("bind_%d_%d", telegramID, user.ID)
 
 	req := &services.BindingRequest{
-		RequestID:        requestID,
-		TelegramID:       telegramID,
-		MoviePilotID:     user.ID,
-		MoviePilotName:   user.Username,
+		RequestID:          requestID,
+		TelegramID:         telegramID,
+		MoviePilotID:       user.ID,
+		MoviePilotName:     user.Username,
 		MoviePilotUsername: user.Username,
-		Status:           "approved", // Auto-approve for direct login
+		Status:             "approved", // Auto-approve for direct login
 	}
 
 	if err := h.bindingRequestService.CreateRequest(req); err != nil {

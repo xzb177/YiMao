@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // FeedbackHandler handles user feedback callbacks
@@ -297,11 +297,11 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 
 // getTypeInfo returns type label and quick options for each issue type
 func getTypeInfo(issueType string) struct {
-	label         string
+	label        string
 	quickOptions []string
 } {
 	typeMap := map[string]struct {
-		label         string
+		label        string
 		quickOptions []string
 	}{
 		"quality": {
@@ -367,7 +367,7 @@ func getTypeInfo(issueType string) struct {
 	info, ok := typeMap[issueType]
 	if !ok {
 		return struct {
-			label         string
+			label        string
 			quickOptions []string
 		}{label: "问题反馈", quickOptions: []string{}}
 	}
@@ -1095,9 +1095,9 @@ func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingSt
 	kb.AddButton("🏠 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		Text:        msg.Build(),
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 		CallbackMsg: "感谢评价",
 	}, nil
 }
@@ -1267,9 +1267,9 @@ func (h *FeedbackHandler) handleStopFollowUp(ctx *callback.Context) (*callback.R
 	kb.AddButton("🏠 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		Text:        msg.Build(),
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 		CallbackMsg: "已退出追问模式",
 	}, nil
 }

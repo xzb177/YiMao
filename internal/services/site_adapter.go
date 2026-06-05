@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -33,9 +33,9 @@ type SiteAdapter interface {
 
 // SiteRegistry manages available site adapters
 type SiteRegistry struct {
-	adapters      map[string]SiteAdapter // key: domain
-	httpClient    *http.Client
-	rssCookie     string // Optional RSS cookie for authentication
+	adapters   map[string]SiteAdapter // key: domain
+	httpClient *http.Client
+	rssCookie  string // Optional RSS cookie for authentication
 }
 
 // NewSiteRegistry creates a new site adapter registry
@@ -85,7 +85,7 @@ func (r *SiteRegistry) GetBySiteID(siteID int, sites []SiteInfo) (SiteAdapter, b
 
 	// Map site names to domains - more flexible matching
 	siteDomainMap := map[string][]string{
-		"hdsky.me": {"天空", "hd-sky", "hdsky", "hd sky", "sky"},
+		"hdsky.me":  {"天空", "hd-sky", "hdsky", "hd sky", "sky"},
 		"zhuque.in": {"朱雀", "zhuque", "zhu-que", "zhu que"},
 		"m-team.cc": {"馒头", "m-team", "mteam", "m team", "m-team.cc"},
 	}
@@ -511,15 +511,15 @@ func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, 
 
 // MTeamAdapter searches M-Team (m-team.cc) via API or RSS
 type MTeamAdapter struct {
-	baseURL      string
-	apiURL       string
-	rssURL       string
-	httpClient   *http.Client
-	apiKey       string
-	passkey      string
-	rssBaseURL   string // New RSS base URL
-	rssUID       string // RSS user ID
-	rssSign      string // RSS signature (dynamic)
+	baseURL    string
+	apiURL     string
+	rssURL     string
+	httpClient *http.Client
+	apiKey     string
+	passkey    string
+	rssBaseURL string // New RSS base URL
+	rssUID     string // RSS user ID
+	rssSign    string // RSS signature (dynamic)
 }
 
 // NewMTeamAdapter creates a new M-Team adapter
@@ -805,7 +805,7 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 		if strings.Contains(data, "<item>") {
 			itemStart := strings.Index(data, "<item>")
 			if itemStart > 0 && len(data) > itemStart+800 {
-				itemSample := data[itemStart:itemStart+800]
+				itemSample := data[itemStart : itemStart+800]
 				logger.Info("[RSS] Sample item structure:\n%s\n", itemSample)
 			}
 		}

@@ -23,8 +23,8 @@ const (
 
 // AdminInfo represents an admin user with role
 type AdminInfo struct {
-	UserID int64    `json:"user_id"`
-	Name   string   `json:"name"`
+	UserID int64     `json:"user_id"`
+	Name   string    `json:"name"`
 	Role   AdminRole `json:"role"`
 }
 
@@ -32,7 +32,7 @@ type AdminInfo struct {
 type AdminService struct {
 	adminsFile string
 	admins     map[int64]*AdminInfo // userID -> AdminInfo
-	rootUserID  int64               // The first/root admin
+	rootUserID int64                // The first/root admin
 	mu         sync.RWMutex
 }
 
@@ -72,8 +72,8 @@ func (s *AdminService) load() error {
 
 	// Try new format first with AdminInfo
 	var fileData struct {
-		Admins  map[int64]*AdminInfo `json:"admins"`
-		RootID  int64                `json:"root_id"`
+		Admins map[int64]*AdminInfo `json:"admins"`
+		RootID int64                `json:"root_id"`
 	}
 
 	if err := json.Unmarshal(data, &fileData); err == nil && len(fileData.Admins) > 0 {
@@ -162,8 +162,8 @@ func (s *AdminService) loadFromEnv() error {
 // save saves admins to file
 func (s *AdminService) save() error {
 	data, err := json.MarshalIndent(map[string]interface{}{
-		"admins":   s.admins,
-		"root_id":  s.rootUserID,
+		"admins":  s.admins,
+		"root_id": s.rootUserID,
 	}, "", "  ")
 	if err != nil {
 		return err

@@ -313,13 +313,13 @@ func getFilmQuoteForMood(mood string) string {
 // 辅助函数：获取状态描述
 func getStatusDescription(state string) string {
 	descriptions := map[string]string{
-		"pending":    "等待中...",
-		"recycled":   "重新搜索中...",
-		"searching":  "正在寻找...",
+		"pending":     "等待中...",
+		"recycled":    "重新搜索中...",
+		"searching":   "正在寻找...",
 		"downloading": "下载中...",
-		"completed":  "已完成，可以观看了。",
-		"failed":     "遇到了一些问题。",
-		"cancelled":  "已取消。",
+		"completed":   "已完成，可以观看了。",
+		"failed":      "遇到了一些问题。",
+		"cancelled":   "已取消。",
 	}
 	if desc, ok := descriptions[state]; ok {
 		return desc

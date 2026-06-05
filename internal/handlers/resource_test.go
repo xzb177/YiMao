@@ -8,7 +8,7 @@ import (
 
 func TestResourceHandlerActions(t *testing.T) {
 	parser := callback.NewParser()
-	
+
 	tests := []struct {
 		name   string
 		input  string
@@ -21,19 +21,19 @@ func TestResourceHandlerActions(t *testing.T) {
 		{"ResourceNext", "res_next", callback.ActionResourceNext},
 		{"ShortPick", "rp:0", "rp"},
 	}
-	
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cb, err := parser.Parse(tt.input)
 			if err != nil {
 				t.Fatalf("Parse(%q) error = %v", tt.input, err)
 			}
-			
+
 			// 验证 action 是否正确匹配
 			if cb.Action != tt.action {
 				t.Errorf("Action = %q, want %q", cb.Action, tt.action)
 			}
-			
+
 			// 验证 params 是否正确解析
 			if tt.name == "ResourceList" {
 				if cb.Params["id"] != "123" {
@@ -54,7 +54,7 @@ func TestResourceHandlerActions(t *testing.T) {
 					t.Errorf("Params[by] = %q, want seeders", cb.Params["by"])
 				}
 			}
-			
+
 			t.Logf("✓ %s: action=%s, params=%v", tt.name, cb.Action, cb.Params)
 		})
 	}

@@ -10,17 +10,17 @@ type ErrorCode string
 
 const (
 	// General errors
-	ErrCodeInternal   ErrorCode = "INTERNAL_ERROR"
+	ErrCodeInternal     ErrorCode = "INTERNAL_ERROR"
 	ErrCodeInvalidInput ErrorCode = "INVALID_INPUT"
-	ErrCodeNotFound    ErrorCode = "NOT_FOUND"
+	ErrCodeNotFound     ErrorCode = "NOT_FOUND"
 	ErrCodeUnauthorized ErrorCode = "UNAUTHORIZED"
-	ErrCodeForbidden   ErrorCode = "FORBIDDEN"
-	ErrCodeRateLimit   ErrorCode = "RATE_LIMIT_EXCEEDED"
+	ErrCodeForbidden    ErrorCode = "FORBIDDEN"
+	ErrCodeRateLimit    ErrorCode = "RATE_LIMIT_EXCEEDED"
 
 	// Bot-specific errors
 	ErrCodeCallbackInvalid ErrorCode = "CALLBACK_INVALID"
-	ErrCodeSessionExpired ErrorCode = "SESSION_EXPIRED"
-	ErrCodeQuotaExceeded  ErrorCode = "QUOTA_EXCEEDED"
+	ErrCodeSessionExpired  ErrorCode = "SESSION_EXPIRED"
+	ErrCodeQuotaExceeded   ErrorCode = "QUOTA_EXCEEDED"
 
 	// Service errors
 	ErrCodeMoviePilotError ErrorCode = "MOVIEPILOT_ERROR"

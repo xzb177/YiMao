@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
 	"time"
@@ -11,25 +11,25 @@ import (
 
 // UserQuota represents a user's quota usage
 type UserQuota struct {
-	TelegramID        int64     `json:"telegram_id"`
-	MoviePilotID      int64     `json:"moviepilot_id"`
-	JellyseerrID      int64     `json:"jellyseerr_id,omitempty"` // Legacy field for compatibility
-	MovieUsed         int       `json:"movie_used"`
-	MovieLimit        int       `json:"movie_limit"`
-	TVUsed            int       `json:"tv_used"`
-	TVLimit           int       `json:"tv_limit"`
-	LastSync          time.Time `json:"last_sync"`
-	LastResetDate     string    `json:"last_reset_date"` // YYYY-MM-DD format
-	FollowupDisabled  bool      `json:"followup_disabled"` // 禁用追问功能
+	TelegramID       int64     `json:"telegram_id"`
+	MoviePilotID     int64     `json:"moviepilot_id"`
+	JellyseerrID     int64     `json:"jellyseerr_id,omitempty"` // Legacy field for compatibility
+	MovieUsed        int       `json:"movie_used"`
+	MovieLimit       int       `json:"movie_limit"`
+	TVUsed           int       `json:"tv_used"`
+	TVLimit          int       `json:"tv_limit"`
+	LastSync         time.Time `json:"last_sync"`
+	LastResetDate    string    `json:"last_reset_date"`   // YYYY-MM-DD format
+	FollowupDisabled bool      `json:"followup_disabled"` // 禁用追问功能
 }
 
 // QuotaService manages user quotas
 type QuotaService struct {
-	quotasFile     string
-	quotas         map[int64]*UserQuota // telegramID -> quota
-	moviepilot     *MoviePilotClient
-	mu             sync.RWMutex
-	adminIDs       map[int64]bool       // admin users with unlimited quota
+	quotasFile string
+	quotas     map[int64]*UserQuota // telegramID -> quota
+	moviepilot *MoviePilotClient
+	mu         sync.RWMutex
+	adminIDs   map[int64]bool // admin users with unlimited quota
 }
 
 // NewQuotaService creates a new quota service

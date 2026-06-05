@@ -68,9 +68,9 @@ const (
 
 // Recommender provides media recommendation services.
 type Recommender struct {
-	tmdb     *services.TMDBClient
-	mp       *services.MoviePilotClient
-	cache    *RecommendationCache
+	tmdb  *services.TMDBClient
+	mp    *services.MoviePilotClient
+	cache *RecommendationCache
 }
 
 // NewRecommender creates a new recommender service.

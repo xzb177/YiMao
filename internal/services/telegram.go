@@ -160,7 +160,7 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 
 	payload := map[string]interface{}{
 		"callback_query_id": callbackID,
-		"show_alert":       showAlert,
+		"show_alert":        showAlert,
 	}
 
 	// Only include text if it's not empty
@@ -345,9 +345,9 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 	logger.Info("[Telegram] sendPhoto response status: %d, body preview: %s", resp2.StatusCode, string(body[:previewLen]))
 
 	var result struct {
-		OK      bool                     `json:"ok"`
-		Result  *types.TelegramMessage  `json:"result"`
-		Error   *types.TelegramError    `json:"error"`
+		OK     bool                   `json:"ok"`
+		Result *types.TelegramMessage `json:"result"`
+		Error  *types.TelegramError   `json:"error"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -483,9 +483,9 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	}
 
 	var result struct {
-		OK      bool                  `json:"ok"`
-		Result  *types.TelegramMessage `json:"result"`
-		Error   *types.TelegramError  `json:"error"`
+		OK     bool                   `json:"ok"`
+		Result *types.TelegramMessage `json:"result"`
+		Error  *types.TelegramError   `json:"error"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -596,7 +596,7 @@ func (c *TelegramClient) GetUpdates(offset int, limit int) ([]types.TelegramUpda
 	}
 
 	var response struct {
-		OK     bool                     `json:"ok"`
+		OK     bool                   `json:"ok"`
 		Result []types.TelegramUpdate `json:"result"`
 	}
 
@@ -627,8 +627,8 @@ func (c *TelegramClient) GetWebhookInfo() (map[string]interface{}, error) {
 	}
 
 	var result struct {
-		OK     bool                      `json:"ok"`
-		Result map[string]interface{}    `json:"result"`
+		OK     bool                   `json:"ok"`
+		Result map[string]interface{} `json:"result"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -666,10 +666,10 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 
 	var result struct {
-		OK             bool                  `json:"ok"`
-		Result         *types.TelegramMessage `json:"result"`
-		ErrorCode      int    `json:"error_code,omitempty"`
-		ErrorDesc      string `json:"description,omitempty"`
+		OK        bool                   `json:"ok"`
+		Result    *types.TelegramMessage `json:"result"`
+		ErrorCode int                    `json:"error_code,omitempty"`
+		ErrorDesc string                 `json:"description,omitempty"`
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
@@ -683,8 +683,8 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 		// 这是一个常见的 Telegram API 行为，可以安全忽略
 		if result.ErrorCode == 400 &&
 			(strings.Contains(errorMsg, "message not modified") ||
-			 strings.Contains(errorMsg, "消息未修改") ||
-			 strings.Contains(errorMsg, "message is not modified")) {
+				strings.Contains(errorMsg, "消息未修改") ||
+				strings.Contains(errorMsg, "message is not modified")) {
 			// 静默忽略，返回 nil 表示操作成功（消息已经正确）
 			return nil, nil
 		}
@@ -755,8 +755,8 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 		// 特殊处理：消息未被修改不是真正的错误
 		if result.ErrorCode == 400 &&
 			(strings.Contains(errorMsg, "message not modified") ||
-			 strings.Contains(errorMsg, "消息未修改") ||
-			 strings.Contains(errorMsg, "message is not modified")) {
+				strings.Contains(errorMsg, "消息未修改") ||
+				strings.Contains(errorMsg, "message is not modified")) {
 			return nil // 静默忽略
 		}
 		if errorMsg != "" {
@@ -829,14 +829,14 @@ func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode strin
 
 // KeyboardBuilder helps build inline keyboards
 type KeyboardBuilder struct {
-	buttons [][]types.TelegramInlineKeyboardButton
+	buttons    [][]types.TelegramInlineKeyboardButton
 	currentRow []types.TelegramInlineKeyboardButton
 }
 
 // NewKeyboardBuilder creates a new keyboard builder
 func NewKeyboardBuilder() *KeyboardBuilder {
 	return &KeyboardBuilder{
-		buttons: make([][]types.TelegramInlineKeyboardButton, 0),
+		buttons:    make([][]types.TelegramInlineKeyboardButton, 0),
 		currentRow: make([]types.TelegramInlineKeyboardButton, 0),
 	}
 }
@@ -911,7 +911,7 @@ func FormatHTML(text string) string {
 
 // MessageBuilder helps build messages
 type MessageBuilder struct {
-	buffer strings.Builder
+	buffer    strings.Builder
 	parseMode string
 }
 

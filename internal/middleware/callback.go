@@ -4,8 +4,8 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
-	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/errors"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Logger logs callback processing

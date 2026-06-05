@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/api"
+	botHandlers "github.com/xzb177/yimao/internal/bot"
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
-	botHandlers "github.com/xzb177/yimao/internal/bot"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
@@ -112,15 +112,15 @@ func New(
 // toBotDeps converts server Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *botHandlers.Dependencies {
 	return &botHandlers.Dependencies{
-		Telegram:       deps.Telegram,
-		MoviePilot:     deps.MoviePilot,
-		SessionMgr:     deps.SessionMgr,
-		UserMapping:    deps.UserMapping,
-		BindingRequest: deps.BindingRequest,
-		AdminService:   deps.AdminService,
-		QuotaService:   deps.QuotaService,
-		IssueService:   deps.IssueService,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		QuotaService:    deps.QuotaService,
+		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
-		WishHandler:    deps.WishHandler,
+		WishHandler:     deps.WishHandler,
 	}
 }

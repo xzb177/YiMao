@@ -1,10 +1,10 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"sync"
 	"time"
 )

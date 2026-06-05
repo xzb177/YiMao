@@ -1,8 +1,8 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 func (s *WebhookService) HandleMoviePilotWebhook(payload MoviePilotWebhookPayload) error {

@@ -5,7 +5,6 @@ import (
 	"time"
 )
 
-
 // EmbyWebhookPayload represents an Emby webhook payload
 // Emby uses camelCase starting with lowercase
 type EmbyWebhookPayload struct {
@@ -183,7 +182,6 @@ type EpisodeAggregation struct {
 	mu           sync.Mutex  // Mutex for this specific aggregation
 }
 
-
 // EmbyEnhancedInfo holds enhanced media information from Emby API
 type EmbyEnhancedInfo struct {
 	Title        string
@@ -212,4 +210,3 @@ type EmbySearchResult struct {
 	Overview  string
 	RunTime   int64 // in ticks
 }
-

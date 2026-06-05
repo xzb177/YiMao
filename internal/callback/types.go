@@ -1,9 +1,9 @@
 package callback
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"regexp"
 	"sort"
 	"strings"
@@ -158,20 +158,20 @@ var validActions = map[Action]bool{
 	"admin_feedback_template":      true, // Quick reply template
 
 	// User Feedback actions
-	"feedback_follow_up": true, // User follow-up message
-	"feedback_close":     true, // User close feedback
-	"feedback_rate_1":    true, // 1 star rating
-	"feedback_rate_2":    true, // 2 star rating
-	"feedback_rate_3":    true, // 3 star rating
-	"feedback_rate_4":    true, // 4 star rating
-	"feedback_rate_5":    true, // 5 star rating
-	"feedback_add_photo": true, // Add photo to existing feedback
-	"feedback_quick":     true, // Quick option selection (with encoded text)
+	"feedback_follow_up":   true, // User follow-up message
+	"feedback_close":       true, // User close feedback
+	"feedback_rate_1":      true, // 1 star rating
+	"feedback_rate_2":      true, // 2 star rating
+	"feedback_rate_3":      true, // 3 star rating
+	"feedback_rate_4":      true, // 4 star rating
+	"feedback_rate_5":      true, // 5 star rating
+	"feedback_add_photo":   true, // Add photo to existing feedback
+	"feedback_quick":       true, // Quick option selection (with encoded text)
 	"feedback_stop_follow": true, // Stop follow-up mode
 
 	// Weekly Report actions
-	"weekly_report":       true, // Show weekly report
-	"weekly_report_send":  true, // Send weekly report
+	"weekly_report":      true, // Show weekly report
+	"weekly_report_send": true, // Send weekly report
 
 	// Resource candidate actions
 	ActionResourceList: true,

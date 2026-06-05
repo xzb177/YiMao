@@ -51,9 +51,10 @@ func (r *TitleResolver) ResolveMovieTitle(item *MediaItem, filename string) stri
 
 // extractFromFilename extracts a clean title from a filename
 // Examples:
-//   "Oppenheimer.2023.1080p.BluRay.x265.mkv" -> "Oppenheimer (2023)"
-//   "Dune.Part.Two.2024.2160p.WEB-DL.HEVC.mkv" -> "Dune Part Two (2024)"
-//   "流浪地球2.2023.4K.mkv" -> "流浪地球2 (2023)"
+//
+//	"Oppenheimer.2023.1080p.BluRay.x265.mkv" -> "Oppenheimer (2023)"
+//	"Dune.Part.Two.2024.2160p.WEB-DL.HEVC.mkv" -> "Dune Part Two (2024)"
+//	"流浪地球2.2023.4K.mkv" -> "流浪地球2 (2023)"
 func (r *TitleResolver) extractFromFilename(filename string) string {
 	// Get base filename (remove path and extension)
 	base := filename

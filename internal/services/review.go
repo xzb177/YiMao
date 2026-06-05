@@ -54,6 +54,10 @@ type ReviewService struct {
 	mu              sync.RWMutex
 	moviepilot      *MoviePilotClient // For updating subscription status
 	autoResubscribe bool
+	// OnSubscriptionComplete 订阅完成时的通知回调（由 main 注入）。
+	// 参数：telegramID, mediaTitle, year, mediaType。
+	// 解耦 ReviewService 与 Telegram client，Emby 不可用时用 MP 轮询触发此回调即可。
+	OnSubscriptionComplete func(telegramID int64, title string, year int, mediaType string)
 }
 
 // NewReviewService creates a new review service
@@ -619,6 +623,18 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 					oldState := review.SubscriptionState
 					review.SubscriptionState = actualState
 					logger.Info("[ReviewService] Updated %s: %s -> %s (lack=%d/%d)", item.requestID, oldState, actualState, sub.LackEpisode, sub.TotalEpisode)
+
+					// P1 通知：订阅完成时通知用户（替代 Emby webhook，用 MP 轮询触发）
+					if actualState == "C" && oldState != "C" && s.OnSubscriptionComplete != nil {
+						go func(r *ReviewRequest) {
+							defer func() {
+								if rec := recover(); rec != nil {
+									logger.Info("[ReviewService] Panic in completion notification: %v", rec)
+								}
+							}()
+							s.OnSubscriptionComplete(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
+						}(review)
+					}
 
 					// If state is "R" (Recycled), mark for resubscription (dedupe by subscription ID)
 					// Only trigger resubscribe if not completed

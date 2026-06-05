@@ -1,10 +1,10 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"io"
 	"net/http"
 	"os"
@@ -17,11 +17,11 @@ import (
 // ImageCache 本地图片缓存服务
 // 减少对 Emby 服务器的重复请求，降低带宽消耗
 type ImageCache struct {
-	cacheDir    string
-	maxAge      time.Duration // 缓存过期时间
-	httpClient  *http.Client
-	mu          sync.RWMutex
-	enabled     bool
+	cacheDir   string
+	maxAge     time.Duration // 缓存过期时间
+	httpClient *http.Client
+	mu         sync.RWMutex
+	enabled    bool
 }
 
 // NewImageCache 创建图片缓存服务

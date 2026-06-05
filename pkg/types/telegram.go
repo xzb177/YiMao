@@ -2,39 +2,39 @@ package types
 
 // TelegramUpdate represents an incoming update from Telegram
 type TelegramUpdate struct {
-	UpdateID int64 `json:"update_id"`
-	Message  *TelegramMessage `json:"message,omitempty"`
+	UpdateID      int64                  `json:"update_id"`
+	Message       *TelegramMessage       `json:"message,omitempty"`
 	CallbackQuery *TelegramCallbackQuery `json:"callback_query,omitempty"`
-	EditedMessage *TelegramMessage `json:"edited_message,omitempty"`
+	EditedMessage *TelegramMessage       `json:"edited_message,omitempty"`
 }
 
 // TelegramMessage represents a message
 type TelegramMessage struct {
-	MessageID       int64 `json:"message_id"`
-	From            *TelegramUser `json:"from"`
-	Chat            *TelegramChat `json:"chat"`
-	Date            int64 `json:"date"`
-	Text            string `json:"text,omitempty"`
-	Photo           []*TelegramPhotoSize `json:"photo,omitempty"`
-	ReplyToMessage  *TelegramMessage `json:"reply_to_message,omitempty"`
+	MessageID      int64                `json:"message_id"`
+	From           *TelegramUser        `json:"from"`
+	Chat           *TelegramChat        `json:"chat"`
+	Date           int64                `json:"date"`
+	Text           string               `json:"text,omitempty"`
+	Photo          []*TelegramPhotoSize `json:"photo,omitempty"`
+	ReplyToMessage *TelegramMessage     `json:"reply_to_message,omitempty"`
 }
 
 // TelegramCallbackQuery represents a callback query
 type TelegramCallbackQuery struct {
-	ID      string `json:"id"`
-	From    *TelegramUser `json:"from"`
+	ID      string           `json:"id"`
+	From    *TelegramUser    `json:"from"`
 	Message *TelegramMessage `json:"message,omitempty"`
-	Data    string `json:"data,omitempty"`
+	Data    string           `json:"data,omitempty"`
 }
 
 // TelegramUser represents a user
 type TelegramUser struct {
-	ID        int64  `json:"id"`
-	FirstName string `json:"first_name,omitempty"`
-	LastName  string `json:"last_name,omitempty"`
-	Username  string `json:"username,omitempty"`
+	ID           int64  `json:"id"`
+	FirstName    string `json:"first_name,omitempty"`
+	LastName     string `json:"last_name,omitempty"`
+	Username     string `json:"username,omitempty"`
 	LanguageCode string `json:"language_code,omitempty"`
-	IsBot     bool   `json:"is_bot,omitempty"`
+	IsBot        bool   `json:"is_bot,omitempty"`
 }
 
 // TelegramChat represents a chat
@@ -67,18 +67,18 @@ type TelegramInlineKeyboardButton struct {
 
 // SendMessageRequest represents a send message request
 type SendMessageRequest struct {
-	ChatID      int64 `json:"chat_id"`
-	Text        string `json:"text"`
-	ParseMode   string `json:"parse_mode,omitempty"`
+	ChatID      int64                   `json:"chat_id"`
+	Text        string                  `json:"text"`
+	ParseMode   string                  `json:"parse_mode,omitempty"`
 	ReplyMarkup *TelegramInlineKeyboard `json:"reply_markup,omitempty"`
 }
 
 // EditMessageRequest represents an edit message request
 type EditMessageRequest struct {
-	ChatID      int64 `json:"chat_id"`
-	MessageID   int64 `json:"message_id"`
-	Text        string `json:"text"`
-	ParseMode   string `json:"parse_mode,omitempty"`
+	ChatID      int64                   `json:"chat_id"`
+	MessageID   int64                   `json:"message_id"`
+	Text        string                  `json:"text"`
+	ParseMode   string                  `json:"parse_mode,omitempty"`
 	ReplyMarkup *TelegramInlineKeyboard `json:"reply_markup,omitempty"`
 }
 
@@ -91,15 +91,15 @@ type AnswerCallbackRequest struct {
 
 // TelegramAPIResponse represents a generic Telegram API response
 type TelegramAPIResponse struct {
-	OK     bool   `json:"ok"`
-	Result any    `json:"result,omitempty"`
+	OK     bool           `json:"ok"`
+	Result any            `json:"result,omitempty"`
 	Error  *TelegramError `json:"error,omitempty"`
 }
 
 // TelegramError represents a Telegram API error
 type TelegramError struct {
-	Code      int    `json:"error_code"`
-	Message   string `json:"description"`
+	Code    int    `json:"error_code"`
+	Message string `json:"description"`
 }
 
 func (e *TelegramError) Error() string {

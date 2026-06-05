@@ -1,9 +1,9 @@
 package services
 
 import (
-	"github.com/xzb177/yimao/pkg/logger"
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
 	"time"
@@ -11,12 +11,12 @@ import (
 
 // NotificationService handles user notifications for request status updates
 type NotificationService struct {
-	telegram       *TelegramClient
-	moviepilot     *MoviePilotClient
-	userMapping    *UserMappingService
-	notifyFile     string
-	knownUsers     map[int64]int64 // telegramID -> moviepilotID
-	mu             sync.RWMutex
+	telegram    *TelegramClient
+	moviepilot  *MoviePilotClient
+	userMapping *UserMappingService
+	notifyFile  string
+	knownUsers  map[int64]int64 // telegramID -> moviepilotID
+	mu          sync.RWMutex
 }
 
 // NewNotificationService creates a new notification service
@@ -28,26 +28,26 @@ func NewNotificationService(telegram *TelegramClient, moviepilot *MoviePilotClie
 		moviepilot:  moviepilot,
 		userMapping: userMapping,
 		notifyFile:  notifyFile,
-		knownUsers:   make(map[int64]int64),
+		knownUsers:  make(map[int64]int64),
 	}
 }
 
 // StatusUpdate represents a status update to send to users
 type StatusUpdate struct {
-	RequestID    int    `json:"request_id"`
-	MediaTitle  string `json:"media_title"`
-	MediaYear   string `json:"media_year"`
-	MediaType   string `json:"media_type"` // movie or tv
-	OldState     string `json:"old_state"`
-	NewState     string `json:"new_state"`
-	Username    string `json:"username,omitempty"`
-	SavePath     string `json:"save_path,omitempty"`
-	Percent      int    `json:"percent,omitempty"`
-	CurrentEp    int    `json:"current_episode,omitempty"`
-	TotalEp      int    `json:"total_episode,omitempty"`
-	ErrorMessage string `json:"error_message,omitempty"`
+	RequestID    int       `json:"request_id"`
+	MediaTitle   string    `json:"media_title"`
+	MediaYear    string    `json:"media_year"`
+	MediaType    string    `json:"media_type"` // movie or tv
+	OldState     string    `json:"old_state"`
+	NewState     string    `json:"new_state"`
+	Username     string    `json:"username,omitempty"`
+	SavePath     string    `json:"save_path,omitempty"`
+	Percent      int       `json:"percent,omitempty"`
+	CurrentEp    int       `json:"current_episode,omitempty"`
+	TotalEp      int       `json:"total_episode,omitempty"`
+	ErrorMessage string    `json:"error_message,omitempty"`
 	Timestamp    time.Time `json:"timestamp"`
-	Notified     bool   `json:"notified"`
+	Notified     bool      `json:"notified"`
 }
 
 // LoadStatusUpdates loads pending notifications from file
@@ -93,17 +93,17 @@ func (s *NotificationService) NotifyStatusUpdate(requestID int, status *Subscrib
 	// For now, we'll store notifications and process them periodically
 
 	update := &StatusUpdate{
-		RequestID:    status.ID,
-		MediaTitle:  status.Name,
-		MediaYear:   status.Year,
-		OldState:     "",
-		NewState:     status.State,
-		SavePath:     status.SavePath,
-		Percent:      status.Percent,
-		CurrentEp:    status.CurrentEpisode,
-		TotalEp:      status.TotalEpisode,
-		Timestamp:    time.Now(),
-		Notified:     false,
+		RequestID:  status.ID,
+		MediaTitle: status.Name,
+		MediaYear:  status.Year,
+		OldState:   "",
+		NewState:   status.State,
+		SavePath:   status.SavePath,
+		Percent:    status.Percent,
+		CurrentEp:  status.CurrentEpisode,
+		TotalEp:    status.TotalEpisode,
+		Timestamp:  time.Now(),
+		Notified:   false,
 	}
 
 	// Load existing updates
