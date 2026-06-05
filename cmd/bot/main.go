@@ -633,6 +633,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("rp", resourceHandler.Handle)
 
 	// 通知设置回调
+	notifySettingsHandler := handlers.NewNotificationSettingsHandler(deps.Preferences)
 	registry.RegisterFunc("notify_settings", notifySettingsHandler.Handle)
 	registry.RegisterFunc("notify_toggle", notifySettingsHandler.HandleToggle)
 
