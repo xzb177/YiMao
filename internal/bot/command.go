@@ -172,6 +172,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
+	// 使用 DashBuilder 带用户名的首页（ChatID 可获取用户信息，但这里用简化版）
 	menuText := ui.BuildMenu("云海影视", "你的私人选片师")
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 	telegram.SendMessage(chatID, menuText, "", keyboard)

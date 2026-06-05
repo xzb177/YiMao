@@ -29,7 +29,25 @@ func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
 	sb.WriteString(fmt.Sprintf("%s  🌊 %s\n", boxLine, title))
-	sb.WriteString(fmt.Sprintf("%s  %s\n", boxLine, subtitle))
+	if subtitle != "" {
+		sb.WriteString(fmt.Sprintf("%s  %s\n", boxLine, subtitle))
+	}
+	sb.WriteString(fmt.Sprintf("%s\n", boxBot))
+	sb.WriteString("\n")
+	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
+	return sb.String()
+}
+
+// BuildMenuWithName 带用户名的首页。
+func (b *DashBuilder) BuildMenuWithName(name string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
+	sb.WriteString(fmt.Sprintf("%s  🌊 云海影视\n", boxLine))
+	if name != "" {
+		sb.WriteString(fmt.Sprintf("%s  你好，%s 👋\n", boxLine, name))
+	} else {
+		sb.WriteString(fmt.Sprintf("%s  你的私人选片师\n", boxLine))
+	}
 	sb.WriteString(fmt.Sprintf("%s\n", boxBot))
 	sb.WriteString("\n")
 	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
@@ -44,10 +62,10 @@ func (b *DashBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString(fmt.Sprintf("%s\n", sep))
 
 	if len(results) == 0 {
-		sb.WriteString("\n这部片暂时没搜到～\n\n")
-		sb.WriteString("💡 试试：\n")
-		sb.WriteString("  换个说法或用英文原名\n")
-		sb.WriteString("  点「许愿池」许愿，有源了通知你\n")
+		sb.WriteString("\n😢 暂时没有找到可用源\n\n")
+		sb.WriteString("💡 可以试试：\n")
+		sb.WriteString("  换个片名搜搜\n")
+		sb.WriteString("  去许愿池许愿，有源了第一时间通知你\n")
 		return sb.String()
 	}
 
