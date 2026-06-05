@@ -56,6 +56,15 @@ func (h *AdminHandler) SetIssueService(svc *services.IssueService) {
 
 // Handle handles admin callbacks
 func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	// 统一入口权限检查：非管理员直接拒绝
+	if h.adminService == nil || !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			Text:        "❌ 此操作仅限管理员",
+			CallbackMsg: "无权限",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	switch ctx.Callback.Action {
 	case "admin_approve":
 		return h.handleApprove(ctx)

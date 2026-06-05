@@ -103,7 +103,7 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 
 	service.load()
 	service.loadNotifiedSubs()
-	service.dailySummaryHour = 21 // 默认 21:00 发汇总
+	service.dailySummaryHour = getDailySummaryHour() // 默认 21:00，可通过 DAILY_SUMMARY_HOUR 环境变量配置
 	service.dailySummaryMin = 0
 
 	// Start cleanup routine for old reviews
@@ -162,6 +162,17 @@ func (s *ReviewService) saveLocked() error {
 
 	logger.Info("[ReviewService] 保存 %d 条审核请求", len(s.reviews))
 	return nil
+}
+
+// getDailySummaryHour 从环境变量读取每日汇总时间（小时），默认 21。
+func getDailySummaryHour() int {
+	h := 21
+	if v := os.Getenv("DAILY_SUMMARY_HOUR"); v != "" {
+		if n, err := fmt.Sscanf(v, "%d", &h); n == 1 && err == nil && h >= 0 && h <= 23 {
+			return h
+		}
+	}
+	return 21
 }
 
 // ── 全量 MP 订阅完成检测（Issue #1）──

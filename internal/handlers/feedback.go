@@ -1064,7 +1064,7 @@ func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingSt
 	}
 
 	// Save rating
-	if err := h.issueService.RateSatisfaction(issueID, rating); err != nil {
+	if err := h.issueService.RateSatisfaction(issueID, rating, ctx.UserID); err != nil {
 		logger.Info("[FeedbackHandler] Failed to save rating: %v", err)
 		return &callback.Response{
 			CallbackMsg: "评分失败",

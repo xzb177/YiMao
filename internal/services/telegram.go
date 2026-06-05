@@ -1053,22 +1053,26 @@ type SearchItemButton struct {
 // BuildStartKeyboard builds the start menu keyboard
 // Deprecated: use BuildStartKeyboardWithOptions directly
 func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
-	return BuildStartKeyboardWithOptions(isAdmin, false)
+	return BuildStartKeyboardWithOptions(isAdmin, false, true)
 }
 
 // BuildStartKeyboardWithOptions builds start keyboard with options
 // showAI: whether to show AI recommendation button (only in private chats)
-func BuildStartKeyboardWithOptions(isAdmin, showAI bool) *types.TelegramInlineKeyboard {
+func BuildStartKeyboardWithOptions(isAdmin, showAI, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
 	// 核心入口
 	kb.AddButton("🔍 搜影片", "start_search")
-	kb.AddButton("🎬 今晚看什么", "start_ai")
+	if showAI {
+		kb.AddButton("🎬 今晚看什么", "start_ai")
+	}
 
-	// 状态 + 许愿
+	// 状态
 	kb.NewRow()
 	kb.AddButton("📊 求片进度", "start_requests")
-	kb.AddButton("✨ 许愿池", "start_wish")
+	if showWish {
+		kb.AddButton("✨ 许愿池", "start_wish")
+	}
 
 	// 低频
 	kb.NewRow()

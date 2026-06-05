@@ -563,14 +563,14 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 		}
 		// 候选列表仅用于让用户确认「有片源」，不提供手动选源——
 		// MoviePilot 会自动挑选最佳源，手动选是伪需求且此前并未真正下发。
-		// 用「求片（自动选最佳源）」替代原来的假「选择 #N」按钮。
+		// 用「求片」替代原来的假「选择 #N」按钮。
 		text.WriteString("💡 系统会自动选最佳源，点下方「求片」即可\n")
 	}
 
 	// 真·求片按钮：直接触发自动求片（MoviePilot 自动选最佳源）。
 	// 仅在有候选时展示，避免 0 源时误导用户。
 	if len(rl.Resources) > 0 {
-		kb.AddButton("🎬 求片（自动选最佳源）", callback.BuildRequestCallback(
+		kb.AddButton("🎬 求片", callback.BuildRequestCallback(
 			fmt.Sprintf("%d", rl.TMDBID), rl.MediaType, 0))
 		kb.NewRow()
 	}
@@ -666,14 +666,14 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	res := rl.Resources[idx]
 
 	// 历史遗留按钮兜底：旧消息里可能还残留「选择 #N」按钮（此前是假动作，
-	// 并未真正下发 MoviePilot）。现在统一引导到「求片（自动选最佳源）」，
+	// 并未真正下发 MoviePilot）。现在统一引导到「求片」，
 	// 不再制造「已选源」的错觉。
 	subscribeResult := fmt.Sprintf("ℹ️ 手动选源已下线\n\n📦 %s\n\nMoviePilot 会自动挑选最佳源，点下方「求片」即可。",
 		truncateTitle(res.Title, 40))
 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 求片（自动选最佳源）", callback.BuildRequestCallback(
+	kb.AddButton("🎬 求片", callback.BuildRequestCallback(
 		fmt.Sprintf("%d", rl.TMDBID), rl.MediaType, 0))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回详情", callback.BuildDetailCallback(

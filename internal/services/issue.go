@@ -434,17 +434,24 @@ func (s *IssueService) UpdatePriority(issueID int64, priority IssuePriority) err
 }
 
 // RateSatisfaction records user satisfaction rating
-func (s *IssueService) RateSatisfaction(issueID int64, rating int) error {
+// RateSatisfaction rates the satisfaction of an issue (only the creator can rate)
+func (s *IssueService) RateSatisfaction(issueID int64, rating int, userID int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if issue, exists := s.issues[issueID]; exists {
-		issue.Satisfaction = rating
-		issue.UpdatedAt = time.Now()
-		return s.save()
+	issue, exists := s.issues[issueID]
+	if !exists {
+		return fmt.Errorf("issue not found: %d", issueID)
 	}
 
-	return fmt.Errorf("issue not found: %d", issueID)
+	// Only the user who created the issue can rate it
+	if issue.UserID != userID {
+		return fmt.Errorf("user %d is not allowed to rate issue %d", userID, issueID)
+	}
+
+	issue.Satisfaction = rating
+	issue.UpdatedAt = time.Now()
+	return s.save()
 }
 
 // CloseByUser closes an issue by the user who reported it
