@@ -332,11 +332,13 @@ func (s *PreferencesService) IsNotifyEnabled(userID int64, notifyKey string) boo
 
 // SetNotify 设置用户的某类通知开关。
 func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled bool) error {
-	prefs := s.GetPreferences(userID)
-	if prefs == nil {
+	s.mu.Lock()
+	prefs, exists := s.prefs[userID]
+	if !exists {
 		prefs = &UserPreferences{TelegramID: userID}
 		s.prefs[userID] = prefs
 	}
+	s.mu.Unlock()
 	switch notifyKey {
 	case NotifyDownload:
 		prefs.NotifyDownload = &enabled
