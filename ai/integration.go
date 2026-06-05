@@ -47,6 +47,23 @@ func GetManager() *Manager {
 	}
 	managerMu.RUnlock()
 
+	// 支持手动声明 AI 可用（适用于 Mimo 等非 Zhipu/Claude 提供商）
+	// 设 AI_ENABLED=true 即可让 AI 按钮显示，实际调用走 minis-model-use 代理。
+	if os.Getenv("AI_ENABLED") == "true" {
+		mgr := &Manager{
+			agent:   &Agent{},
+			enabled: true,
+		}
+		managerMu.Lock()
+		if globalManager == nil {
+			globalManager = mgr
+		}
+		managerMu.Unlock()
+		managerMu.RLock()
+		defer managerMu.RUnlock()
+		return globalManager
+	}
+
 	// Try to initialize from environment - 优先使用智谱 AI
 	apiKey := os.Getenv("ZHIPU_API_KEY")
 	if apiKey == "" {
