@@ -746,7 +746,7 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 func handleAIChatMessage(userID, chatID int64, text string, telegram *services.TelegramClient, sessMgr *session.Manager) {
 	// Check if AI is enabled
 	if !ai.GetManager().IsEnabled() {
-		telegram.SendMessage(chatID, "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY", "", nil)
+		telegram.SendMessage(chatID, "🤖 AI 功能暂未启用\n\n💡 请联系管理员在 .env 中设置 AI_ENABLED=true", "", nil)
 		return
 	}
 

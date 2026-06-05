@@ -150,28 +150,23 @@ var validActions = map[Action]bool{
 	"wish_add":        true, // #1 搜索无结果「🌟 加入许愿池」按钮（片名存 session，回调不带超长参数）
 
 	// Admin Feedback Panel actions
-	"admin_feedback":               true, // Feedback management main panel
-	"admin_feedback_stats":         true, // Feedback statistics
-	"admin_feedback_list":          true, // Feedback list
-	"admin_feedback_filter":        true, // Filter by status
-	"admin_feedback_close":         true, // Admin force close
-	"admin_feedback_priority":      true, // Adjust priority
-	"admin_feedback_priority_menu": true, // Priority selection menu
-	"admin_feedback_detail":        true, // View feedback detail
-	"admin_feedback_reply":         true, // Reply to feedback
-	"admin_feedback_template":      true, // Quick reply template
+	"admin_feedback":          true, // Feedback management main panel
+	"admin_feedback_stats":    true, // Feedback statistics
+	"admin_feedback_list":     true, // Feedback list
+	"admin_feedback_filter":   true, // Filter by status
+	"admin_feedback_priority": true, // Adjust priority
+	"admin_feedback_detail":   true, // View feedback detail
+	"admin_feedback_reply":    true, // Reply to feedback
+	"admin_feedback_template": true, // Quick reply template
 
 	// User Feedback actions
-	"feedback_follow_up":   true, // User follow-up message
-	"feedback_close":       true, // User close feedback
-	"feedback_rate_1":      true, // 1 star rating
-	"feedback_rate_2":      true, // 2 star rating
-	"feedback_rate_3":      true, // 3 star rating
-	"feedback_rate_4":      true, // 4 star rating
-	"feedback_rate_5":      true, // 5 star rating
-	"feedback_add_photo":   true, // Add photo to existing feedback
-	"feedback_quick":       true, // Quick option selection (with encoded text)
-	"feedback_stop_follow": true, // Stop follow-up mode
+	"feedback_follow_up": true, // User follow-up message
+	"feedback_close":     true, // User close feedback
+	"feedback_rate_1":    true, // 1 star rating
+	"feedback_rate_2":    true, // 2 star rating
+	"feedback_rate_3":    true, // 3 star rating
+	"feedback_rate_4":    true, // 4 star rating
+	"feedback_rate_5":    true, // 5 star rating
 
 	// Weekly Report actions
 	"weekly_report":      true, // Show weekly report
