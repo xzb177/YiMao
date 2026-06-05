@@ -36,7 +36,7 @@ func NewBuilder(style UIStyle) MessageBuilder {
 	case StylePop:
 		return &PopBuilder{}
 	case StyleCard:
-		return &CardBuilder{}
+		return &DashBuilder{}
 	case StyleCinema:
 		return &CinemaBuilder{}
 	default:

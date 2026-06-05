@@ -7,48 +7,55 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 )
 
-// CardBuilder 极简卡片风格构建器
-type CardBuilder struct{}
+// ─────────────────────────────────────
+// 云海影视 · 全新 UI
+// 设计理念：管家迎门、信息有层次、文案有人味
+// ─────────────────────────────────────
 
 const (
-	cardSeparator = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	cardBoxStart  = "┌─────────────────────────────┐"
-	cardBoxEnd    = "└─────────────────────────────┘"
+	sep     = "─────────────────────────"
+	boxTop  = "╭──────────────────────────╮"
+	boxMid  = "├──────────────────────────┤"
+	boxBot  = "╰──────────────────────────╯"
+	boxLine = "│"
+	dot     = "·"
 )
 
-// BuildMenu 构建主菜单
-func (b *CardBuilder) BuildMenu(title, subtitle string) string {
+// DashBuilder 仪表盘风格构建器
+type DashBuilder struct{}
+
+// BuildMenu 首页仪表盘
+func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 	var sb strings.Builder
-
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString(fmt.Sprintf("🎬 %s\n", title))
-	sb.WriteString(cardSeparator + "\n\n")
-
-	sb.WriteString("直接发片名给我，就能找到想看的电影和剧集\n\n")
-
-	sb.WriteString("👇 选一个开始\n")
-
+	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
+	sb.WriteString(fmt.Sprintf("%s  🌊 %s\n", boxLine, title))
+	sb.WriteString(fmt.Sprintf("%s  %s\n", boxLine, subtitle))
+	sb.WriteString(fmt.Sprintf("%s\n", boxBot))
+	sb.WriteString("\n")
+	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
 	return sb.String()
 }
 
-// BuildSearchResults 构建搜索结果
-func (b *CardBuilder) BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
+// BuildSearchResults 搜索结果（卡片流）
+func (b *DashBuilder) BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
 	var sb strings.Builder
 
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString(fmt.Sprintf("🔍 \"%s\"\n\n", query))
+	sb.WriteString(fmt.Sprintf("🔍 %s\n", query))
+	sb.WriteString(fmt.Sprintf("%s\n", sep))
 
 	if len(results) == 0 {
-		sb.WriteString("没找到，换个说法试试？\n\n")
-		sb.WriteString("💡 建议：\n")
-		sb.WriteString("• 用简短的关键词\n")
-		sb.WriteString("• 换个中文名或英文名\n")
-		sb.WriteString("• 点下方看看别人在搜什么\n")
+		sb.WriteString("\n这部片暂时没搜到～\n\n")
+		sb.WriteString("💡 试试：\n")
+		sb.WriteString("  换个说法或用英文原名\n")
+		sb.WriteString("  点「许愿池」许愿，有源了通知你\n")
 		return sb.String()
 	}
 
-	sb.WriteString(fmt.Sprintf("找到 %d 个结果\n\n", total))
-	sb.WriteString(cardSeparator + "\n\n")
+	sb.WriteString(fmt.Sprintf("找到 %d 个结果", total))
+	if total > 8 {
+		sb.WriteString(fmt.Sprintf("，显示前 %d 个", len(results)))
+	}
+	sb.WriteString("\n\n")
 
 	displayCount := len(results)
 	if displayCount > 8 {
@@ -57,82 +64,86 @@ func (b *CardBuilder) BuildSearchResults(query string, results []services.Search
 
 	for i := 0; i < displayCount; i++ {
 		item := results[i]
-		icon := getMediaTypeIcon(item.Type)
-		year := ""
-		if item.Year > 0 {
-			year = fmt.Sprintf(" (%d)", item.Year)
-		}
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" [%.1f]", item.Rating)
-		}
+		sb.WriteString(b.buildResultCard(i+1, item))
+	}
 
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+	sb.WriteString(sep + "\n")
+	sb.WriteString("点编号看详情，或继续搜其他片名\n")
 
-		if item.Overview != "" {
-			overview := truncateText(item.Overview, 50)
-			sb.WriteString(fmt.Sprintf("   %s\n", overview))
-		}
+	return sb.String()
+}
+
+// buildResultCard 单条搜索结果卡片
+func (b *DashBuilder) buildResultCard(index int, item services.SearchResult) string {
+	var sb strings.Builder
+
+	icon := getMediaTypeIcon(item.Type)
+	year := ""
+	if item.Year > 0 {
+		year = fmt.Sprintf(" · %d", item.Year)
+	}
+	rating := ""
+	if item.Rating > 0 {
+		rating = fmt.Sprintf("  ⭐%.1f", item.Rating)
+	}
+
+	sb.WriteString(fmt.Sprintf("╭─ %d ──────────────────────╮\n", index))
+	sb.WriteString(fmt.Sprintf("│ %s %s%s%s\n", icon, item.Title, year, rating))
+
+	if item.Overview != "" {
+		overview := truncateText(item.Overview, 48)
+		sb.WriteString(fmt.Sprintf("│ %s\n", overview))
+	}
+	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
+
+	return sb.String()
+}
+
+// BuildMediaDetail 媒体详情页
+func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
+	var sb strings.Builder
+
+	icon := getMediaTypeIcon(result.Type)
+	year := ""
+	if result.Year > 0 {
+		year = fmt.Sprintf(" · %d", result.Year)
+	}
+
+	sb.WriteString(fmt.Sprintf("╭──────────────────────────╮\n"))
+	sb.WriteString(fmt.Sprintf("│ %s %s%s\n", icon, result.Title, year))
+
+	// 评分行
+	if result.Rating > 0 {
+		stars := getStarDisplay(result.Rating)
+		sb.WriteString(fmt.Sprintf("│ %s %.1f/10\n", stars, result.Rating))
+	}
+
+	sb.WriteString(fmt.Sprintf("│ %s · %s\n", getMediaTypeLabel(result.Type), fmt.Sprintf("TMDB #%d", result.ID)))
+	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
+
+	// 简介
+	if result.Overview != "" {
+		sb.WriteString("\n📖 ")
+		sb.WriteString(wrapText(result.Overview, 28))
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString("点数字看详情，或继续搜索其他片名\n")
-
 	return sb.String()
 }
 
-// BuildMediaDetail 构建媒体详情
-func (b *CardBuilder) BuildMediaDetail(result *services.SearchResult) string {
+// BuildRecommendation 推荐内容
+func (b *DashBuilder) BuildRecommendation(title string, results []services.SearchResult, mood string) string {
 	var sb strings.Builder
 
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
-	if int(result.Year) > 0 {
-		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
-	}
-	sb.WriteString("\n")
-
-	sb.WriteString(cardSeparator + "\n\n")
-
-	// 信息卡片
-	sb.WriteString(cardBoxStart + "\n")
-	if result.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("  📊 评分: %.1f\n", result.Rating))
-	}
-	sb.WriteString(fmt.Sprintf("  🎬 类型: %s\n", getMediaTypeLabel(result.Type)))
-	sb.WriteString(cardBoxEnd + "\n\n")
-
-	// 概要卡片
-	if result.Overview != "" {
-		sb.WriteString(cardBoxStart + "\n")
-		sb.WriteString("  📖 剧情简介\n")
-		sb.WriteString(cardSeparator + "\n")
-		sb.WriteString(fmt.Sprintf("  %s\n", wrapText(result.Overview, 26)))
-		sb.WriteString(cardBoxEnd + "\n\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
-
-	return sb.String()
-}
-
-// BuildRecommendation 构建推荐内容
-func (b *CardBuilder) BuildRecommendation(title string, results []services.SearchResult, mood string) string {
-	var sb strings.Builder
-
-	sb.WriteString(cardSeparator + "\n")
 	sb.WriteString(fmt.Sprintf("🎬 %s\n", title))
-	sb.WriteString(cardSeparator + "\n\n")
+	sb.WriteString(fmt.Sprintf("%s\n\n", sep))
 
 	if mood != "" {
-		sb.WriteString(fmt.Sprintf("😊 %s\n\n", mood))
-		sb.WriteString(cardSeparator + "\n\n")
+		sb.WriteString(fmt.Sprintf("%s\n\n", mood))
 	}
 
 	if len(results) == 0 {
-		sb.WriteString("暂时没有找到，换个心情试试？\n\n")
-		sb.WriteString("💡 点「🔄 换一批」刷新\n")
+		sb.WriteString("暂时没找到合适的，换一批试试？\n")
 		return sb.String()
 	}
 
@@ -142,65 +153,34 @@ func (b *CardBuilder) BuildRecommendation(title string, results []services.Searc
 	}
 
 	for i, item := range results[:displayCount] {
-		icon := getMediaTypeIcon(item.Type)
-		year := ""
-		if item.Year > 0 {
-			year = fmt.Sprintf(" (%d)", item.Year)
-		}
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" [%.1f]", item.Rating)
-		}
-
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
-
-		if item.Overview != "" {
-			overview := truncateText(item.Overview, 40)
-			sb.WriteString(fmt.Sprintf("   %s\n", overview))
-		}
-		sb.WriteString("\n")
+		sb.WriteString(b.buildResultCard(i+1, item))
 	}
 
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString("点数字看详情\n")
+	sb.WriteString(sep + "\n")
+	sb.WriteString("点编号看详情\n")
 
 	return sb.String()
 }
 
-// BuildRequestList 构建请求列表
-func (b *CardBuilder) BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string {
+// BuildRequestList 请求列表
+func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string {
 	var sb strings.Builder
 
-	sb.WriteString(cardSeparator + "\n")
-	sb.WriteString("📋 我的请求\n")
-	sb.WriteString(cardSeparator + "\n\n")
+	sb.WriteString("📊 求片进度\n")
+	sb.WriteString(fmt.Sprintf("%s\n", sep))
 
 	if total == 0 {
-		sb.WriteString("还没有提交过求片\n\n")
-		sb.WriteString("💡 搜影片 → 点数字 → 求片\n")
+		sb.WriteString("\n还没有求过片～\n\n")
+		sb.WriteString("💡 搜片名 → 选一部 → 求片\n")
 		return sb.String()
 	}
 
-	// 统计状态
-	pending := 0
-	completed := 0
-	failed := 0
-	for _, req := range requests {
-		switch req.State {
-		case "PENDING", "RECYCLED", "SEARCHING", "DOWNLOADING":
-			pending++
-		case "COMPLETED":
-			completed++
-		case "FAILED", "CANCELLED":
-			failed++
-		}
-	}
+	// 统计
+	pending, completed, failed := countRequestStates(requests)
+	sb.WriteString(fmt.Sprintf("共 %d 条  ·  ", total))
+	sb.WriteString(fmt.Sprintf("进行中 %d · 完成 %d · 异常 %d", pending, completed, failed))
+	sb.WriteString(fmt.Sprintf("\n%s\n\n", sep))
 
-	sb.WriteString(fmt.Sprintf("共 %d 条，第 %d/%d 页\n", total, page, totalPages))
-	sb.WriteString(fmt.Sprintf("进行中 %d · 已完成 %d · 异常 %d\n", pending, completed, failed))
-	sb.WriteString("────────\n\n")
-
-	// 计算分页
 	requestsPerPage := 10
 	startIdx := (page - 1) * requestsPerPage
 	endIdx := startIdx + requestsPerPage
@@ -208,76 +188,88 @@ func (b *CardBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 		endIdx = total
 	}
 
-	// 按状态分组显示
-	pendingItems := []services.SubscribeItem{}
-	doneItems := []services.SubscribeItem{}
-	failedItems := []services.SubscribeItem{}
-
-	for i := startIdx; i < endIdx; i++ {
-		req := requests[i]
-		switch req.State {
-		case "PENDING", "RECYCLED", "SEARCHING", "DOWNLOADING":
-			pendingItems = append(pendingItems, req)
-		case "COMPLETED":
-			doneItems = append(doneItems, req)
-		default:
-			failedItems = append(failedItems, req)
-		}
-	}
+	// 分组
+	pendingItems, doneItems, failedItems := groupRequests(requests, startIdx, endIdx)
 
 	if len(pendingItems) > 0 {
-		sb.WriteString("【进行中】\n")
+		sb.WriteString("⏳ 进行中\n")
 		for _, req := range pendingItems {
-			statusEmoji := getRequestStatusEmoji(req.State)
-			typeIcon := getMediaTypeIcon(req.Type)
-			title := req.Name
-			if req.Year != "" && req.Year != "0" {
-				title = fmt.Sprintf("%s (%s)", title, req.Year)
-			}
-			line := fmt.Sprintf("%s %s %s", statusEmoji, title, typeIcon)
-			if req.Date != "" && len(req.Date) >= 10 {
-				line += fmt.Sprintf(" · %s", req.Date[:10])
-			}
-			sb.WriteString(line + "\n")
+			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(doneItems) > 0 {
-		sb.WriteString("【已完成】\n")
+		sb.WriteString("✅ 已完成\n")
 		for _, req := range doneItems {
-			statusEmoji := getRequestStatusEmoji(req.State)
-			typeIcon := getMediaTypeIcon(req.Type)
-			title := req.Name
-			if req.Year != "" && req.Year != "0" {
-				title = fmt.Sprintf("%s (%s)", title, req.Year)
-			}
-			line := fmt.Sprintf("%s %s %s", statusEmoji, title, typeIcon)
-			if req.Date != "" && len(req.Date) >= 10 {
-				line += fmt.Sprintf(" · %s", req.Date[:10])
-			}
-			sb.WriteString(line + "\n")
+			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(failedItems) > 0 {
-		sb.WriteString("【异常】\n")
+		sb.WriteString("⚠️ 异常\n")
 		for _, req := range failedItems {
-			statusEmoji := getRequestStatusEmoji(req.State)
-			typeIcon := getMediaTypeIcon(req.Type)
-			title := req.Name
-			if req.Year != "" && req.Year != "0" {
-				title = fmt.Sprintf("%s (%s)", title, req.Year)
-			}
-			line := fmt.Sprintf("%s %s %s", statusEmoji, title, typeIcon)
-			if req.Date != "" && len(req.Date) >= 10 {
-				line += fmt.Sprintf(" · %s", req.Date[:10])
-			}
-			sb.WriteString(line + "\n")
+			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
 
 	return sb.String()
+}
+
+// ─── 共享辅助函数（其他 builder 也会用到）───
+
+func countRequestStates(requests []services.SubscribeItem) (pending, completed, failed int) {
+	for _, req := range requests {
+		switch req.State {
+		case "P", "R", "S", "D":
+			pending++
+		case "C":
+			completed++
+		default:
+			failed++
+		}
+	}
+	return
+}
+
+func groupRequests(requests []services.SubscribeItem, startIdx, endIdx int) (pending, done, failed []services.SubscribeItem) {
+	for i := startIdx; i < endIdx && i < len(requests); i++ {
+		req := requests[i]
+		switch req.State {
+		case "P", "R", "S", "D":
+			pending = append(pending, req)
+		case "C":
+			done = append(done, req)
+		default:
+			failed = append(failed, req)
+		}
+	}
+	return
+}
+
+func formatRequestLine(req services.SubscribeItem) string {
+	emoji := getRequestStatusEmoji(req.State)
+	icon := getMediaTypeIcon(req.Type)
+	title := req.Name
+	if req.Year != "" && req.Year != "0" {
+		title = fmt.Sprintf("%s (%s)", title, req.Year)
+	}
+	line := fmt.Sprintf("%s %s %s", emoji, title, icon)
+	if req.Date != "" && len(req.Date) >= 10 {
+		line += fmt.Sprintf(" · %s", req.Date[:10])
+	}
+	return line
+}
+
+func getStarDisplay(rating float64) string {
+	if rating <= 0 {
+		return ""
+	}
+	full := int(rating / 2)
+	if full > 5 {
+		full = 5
+	}
+	return strings.Repeat("★", full) + strings.Repeat("☆", 5-full)
 }

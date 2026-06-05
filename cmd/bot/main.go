@@ -220,7 +220,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		if year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", year)
 		}
-		text := fmt.Sprintf("%s 《%s》%s 已入库！\n\n✅ 可以前往 Emby 观看了", typeLabel, title, yearStr)
+		text := fmt.Sprintf("%s 《%s》%s 到货了！🍿\n\n快去 Emby 开刷吧～", typeLabel, title, yearStr)
 		telegramClient.SendMessage(telegramID, text, "", nil)
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
 	}
@@ -477,6 +477,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
 	registry.RegisterFunc("start_ai", startHandler.Handle)
+	registry.RegisterFunc("start_search", searchHandler.Handle)       // 搜影片入口
+	registry.RegisterFunc("start_requests", myRequestsHandler.Handle) // 求片进度入口
+	registry.RegisterFunc("start_wish", wishHandler.Handle)           // 许愿池入口
 	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)

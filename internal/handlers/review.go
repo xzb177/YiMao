@@ -203,7 +203,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		}
 		// Notify user about approval but submission failed
 		h.telegram.SendMessage(review.TelegramID,
-			fmt.Sprintf("✅ 你的求片请求已通过审核\n\n📺 %s\n\n⚠️ 自动提交下载器暂时失败，系统已记录，管理员会重试，无需重复提交。\n可在「我的请求」查看状态。", review.MediaTitle), "", nil)
+			fmt.Sprintf("✅ 《%s》已通过审核\n\n⚠️ 正在同步到下载器，稍等一下就好\n去「求片进度」查看状态", review.MediaTitle), "", nil)
 		return &callback.Response{
 			Text:        "⚠️ 已批准，但提交 MoviePilot 失败（已进入重试兜底，可在管理面板手动重试）",
 			CallbackMsg: "已批准·待重试",

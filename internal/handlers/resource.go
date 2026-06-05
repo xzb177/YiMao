@@ -515,7 +515,7 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 
 	// Header text
 	var text strings.Builder
-	text.WriteString(fmt.Sprintf("🔍 候选资源列表\n\n"))
+	text.WriteString(fmt.Sprintf("🔍 候选资源\n\n"))
 	text.WriteString(fmt.Sprintf("📺 《%s》 (%d)\n", rl.Title, rl.Year))
 	text.WriteString(fmt.Sprintf("🔑 搜索词: %s\n", rl.Keyword))
 
@@ -564,7 +564,7 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 		// 候选列表仅用于让用户确认「有片源」，不提供手动选源——
 		// MoviePilot 会自动挑选最佳源，手动选是伪需求且此前并未真正下发。
 		// 用「求片（自动选最佳源）」替代原来的假「选择 #N」按钮。
-		text.WriteString("💡 已自动按做种数排序，点下方「求片」即可，系统会自动选最佳源\n")
+		text.WriteString("💡 系统会自动选最佳源，点下方「求片」即可\n")
 	}
 
 	// 真·求片按钮：直接触发自动求片（MoviePilot 自动选最佳源）。

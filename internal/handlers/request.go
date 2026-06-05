@@ -285,7 +285,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
 			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 			return &callback.Response{
-				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s\n\n🕛 配额将于次日 00:00 自动重置", quotaText),
+				Text:        fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText),
 				CallbackMsg: "配额已用完",
 				ShowAlert:   true,
 			}, nil
@@ -335,7 +335,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "✅ 求片已提交，等待管理员审核",
+		Text:        "收到！求片已排上队 ✨\n\n审核通过后会自动下载，去「求片进度」随时看动态",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
@@ -505,7 +505,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
 			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
 			return &callback.Response{
-				Text:        fmt.Sprintf("📊 今日配额已用完\n\n%s\n\n🕛 配额将于次日 00:00 自动重置", quotaText),
+				Text:        fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText),
 				CallbackMsg: "配额已用完",
 				ShowAlert:   true,
 			}, nil
@@ -643,7 +643,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "✅ 求片已提交，等待管理员审核",
+		Text:        "收到！求片已排上队 ✨\n\n审核通过后会自动下载，去「求片进度」随时看动态",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil

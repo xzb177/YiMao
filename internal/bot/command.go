@@ -172,13 +172,8 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	// 使用 UI 包构建主菜单（极简卡片风格）
-	menuText := ui.BuildMenu("云海影视助手", "你的私人选片师")
-
-	// 构建键盘
+	menuText := ui.BuildMenu("云海影视", "你的私人选片师")
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
-
-	// 发送消息（纯文本，不需要特殊解析模式）
 	telegram.SendMessage(chatID, menuText, "", keyboard)
 }
 

@@ -333,11 +333,11 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 // sendRecommendationMenu sends the recommendation menu
 func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 精选推荐").Newline()
+	msg.Bold("🎬 今晚看什么").Newline()
 	msg.Newline()
-	msg.Text("发现你喜欢的精彩内容").Newline()
+	msg.Text("选一种心情，帮你挑片").Newline()
 	msg.Newline()
-	msg.Italic("💡 选择推荐类型开始探索")
+	msg.Italic("💡 也可以直接发片名搜索")
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 本周热门", "search:type:trending")
@@ -762,14 +762,16 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 	msg := services.NewMessageBuilder()
 	msg.Text(response).Newline()
 	msg.Newline()
-	msg.Italic("💬 继续发送消息获取更多推荐，或点击下方按钮切换模式")
+	msg.Italic("💡 推荐结束啦，继续发片名将直接搜索影片")
 
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔍 搜索模式", "start_search")
-	kb.AddButton("🎬 看推荐", "start_ai")
+	kb.AddButton("🎬 继续推荐", "start_ai")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
+
+	// AI 单次交互后自动退出，下一条文本回归搜索
+	sessMgr.GetOrCreate(userID).Delete("ai_chat_mode")
 }
