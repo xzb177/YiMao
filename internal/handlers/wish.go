@@ -297,6 +297,52 @@ func wishStateText(state string) string {
 	}
 }
 
+// HandleEntry 许愿池入口（主菜单 start_wish 按钮，剥前缀后为 wish）。
+func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, error) {
+	if h.wish == nil {
+		return &callback.Response{Text: "✨ 许愿池暂未开放", Edit: true}, nil
+	}
+
+	items, err := h.wish.ListByUser(ctx.UserID)
+	if err != nil {
+		return &callback.Response{Text: "❌ 查询失败，请稍后再试", Edit: true}, nil
+	}
+
+	var b strings.Builder
+	if len(items) == 0 {
+		b.WriteString("✨ 许愿池\n\n")
+		b.WriteString("这里是你的专属许愿池～\n\n")
+		b.WriteString("💡 搜不到的片？用 /wish 片名 许个愿\n")
+		b.WriteString("找到源第一时间私信通知你\n")
+	} else {
+		b.WriteString(fmt.Sprintf("✨ 我的许愿（%d 部）\n\n", len(items)))
+		for _, it := range items {
+			icon := "🎬"
+			if it.MediaType == "tv" {
+				icon = "📺"
+			}
+			b.WriteString(fmt.Sprintf("%s %s", icon, it.Title))
+			if it.Year > 0 {
+				b.WriteString(fmt.Sprintf(" (%d)", it.Year))
+			}
+			if s := wishStateText(it.State); s != "" {
+				b.WriteString("  " + s)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n💡 出源后会私信你「🎬 立即求片」按钮")
+	}
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⬅️ 返回", "start")
+
+	return &callback.Response{
+		Text:     b.String(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
 // Handle 处理 wish_request 回调（出源喜报「立即求片」按钮）。
 func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	if h.wish == nil || h.reqHandler == nil {

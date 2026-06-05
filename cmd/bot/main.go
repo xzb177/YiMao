@@ -477,9 +477,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
 	registry.RegisterFunc("start_ai", startHandler.Handle)
-	registry.RegisterFunc("start_search", searchHandler.Handle)       // 搜影片入口
-	registry.RegisterFunc("start_requests", myRequestsHandler.Handle) // 求片进度入口
-	registry.RegisterFunc("start_wish", wishHandler.Handle)           // 许愿池入口
+	registry.RegisterFunc("wish", wishHandler.HandleEntry) // start_wish 剥前缀后 = wish（许愿池入口）
 	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
