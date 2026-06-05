@@ -632,6 +632,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Short format callback for resource pick (to stay under 64 bytes)
 	registry.RegisterFunc("rp", resourceHandler.Handle)
 
+	// 通知设置回调
+	registry.RegisterFunc("notify_settings", notifySettingsHandler.Handle)
+	registry.RegisterFunc("notify_toggle", notifySettingsHandler.HandleToggle)
+
 	logger.Info("✅ Callback handlers registered")
 
 	// Build full dependencies with handlers included

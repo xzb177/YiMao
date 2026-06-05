@@ -25,11 +25,11 @@ func (h *NotificationSettingsHandler) Handle(ctx *callback.Context) (*callback.R
 	msg.Text("选择要开关的通知类型").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(notifyToggle("📥 入库通知", status[services.NotifyDownload]), "notify_toggle:download")
-	kb.AddButton(notifyToggle("🎬 每日推荐", status[services.NotifyRecommend]), "notify_toggle:recommend")
+	kb.AddButton(notifyToggle("📥 入库通知", status[services.NotifyDownload]), "notify_toggle:key:download")
+	kb.AddButton(notifyToggle("🎬 每日推荐", status[services.NotifyRecommend]), "notify_toggle:key:recommend")
 	kb.NewRow()
-	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:weekly")
-	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:announce")
+	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
+	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回设置", "start_settings")
 
@@ -68,11 +68,11 @@ func (h *NotificationSettingsHandler) HandleToggle(ctx *callback.Context) (*call
 	msg.Text("选择要开关的通知类型").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(notifyToggle("📥 入库通知", status[services.NotifyDownload]), "notify_toggle:download")
-	kb.AddButton(notifyToggle("🎬 每日推荐", status[services.NotifyRecommend]), "notify_toggle:recommend")
+	kb.AddButton(notifyToggle("📥 入库通知", status[services.NotifyDownload]), "notify_toggle:key:download")
+	kb.AddButton(notifyToggle("🎬 每日推荐", status[services.NotifyRecommend]), "notify_toggle:key:recommend")
 	kb.NewRow()
-	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:weekly")
-	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:announce")
+	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
+	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回设置", "start_settings")
 
