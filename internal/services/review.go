@@ -58,6 +58,10 @@ type ReviewService struct {
 	// 参数：telegramID, mediaTitle, year, mediaType。
 	// 解耦 ReviewService 与 Telegram client，Emby 不可用时用 MP 轮询触发此回调即可。
 	OnSubscriptionComplete func(telegramID int64, title string, year int, mediaType string)
+
+	// Alert 当 review 进入 stuck（MP 提交失败）时的告警回调（由 main 注入）。
+	// 参数：requestID, mediaTitle, retryCount, lastError。
+	Alert func(requestID, title string, retryCount int, lastError string)
 }
 
 // NewReviewService creates a new review service
@@ -358,6 +362,11 @@ func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
 	logger.Info("[ReviewService] 请求提交 MP 失败进入 stuck 兜底: %s, 第 %d 次, err=%s",
 		requestID, review.RetryCount, errMsg)
 
+	// B4: 告警 — stuck 时通知管理员
+	if s.Alert != nil {
+		go s.Alert(requestID, review.MediaTitle, review.RetryCount, errMsg)
+	}
+
 	return s.saveLocked()
 }
 
@@ -448,6 +457,35 @@ func (s *ReviewService) DeleteRequest(requestID string) error {
 	delete(s.reviews, requestID)
 
 	logger.Info("[ReviewService] Deleted review request: %s", requestID)
+
+	return s.saveLocked()
+}
+
+// CancelByUser 允许用户撤回自己 pending 状态的请求。
+// 仅 pending 可撤回；已审核通过/已拒绝的不允许（防止撤回绕过审核）。
+func (s *ReviewService) CancelByUser(requestID string, telegramID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+
+	if review.TelegramID != telegramID {
+		return fmt.Errorf("permission denied: not your request")
+	}
+
+	if review.Status != "pending" {
+		return fmt.Errorf("cannot cancel: status is %s, only pending can be cancelled", review.Status)
+	}
+
+	review.Status = "cancelled"
+	review.RejectionReason = "用户主动撤回"
+	review.ReviewedAt = time.Now()
+
+	logger.Info("[ReviewService] 用户撤回请求: %s, 用户: %d, 影片: %s",
+		requestID, telegramID, review.MediaTitle)
 
 	return s.saveLocked()
 }

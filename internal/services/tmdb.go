@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/xzb177/yimao/pkg/logger"
@@ -34,7 +35,21 @@ type TMDBClient struct {
 	baseURL     string
 	httpClient  *http.Client
 	retryConfig *RetryConfig
+
+	// C4: 搜索结果内存缓存（减少重复 API 调用）
+	cacheMu   sync.RWMutex
+	cache     map[string]*tmdbCacheEntry
+	cacheTTL  time.Duration
+	cacheSize int
 }
+
+type tmdbCacheEntry struct {
+	result    *TMDBSearchResult
+	expiresAt time.Time
+}
+
+const tmdbCacheMaxSize = 500
+const tmdbCacheDefaultTTL = 1 * time.Hour
 
 // NewTMDBClient creates a new TMDB client
 func NewTMDBClient(apiKey string) *TMDBClient {
@@ -45,6 +60,8 @@ func NewTMDBClient(apiKey string) *TMDBClient {
 			Timeout: 30 * time.Second,
 		},
 		retryConfig: DefaultRetryConfig(),
+		cache:       make(map[string]*tmdbCacheEntry),
+		cacheTTL:    tmdbCacheDefaultTTL,
 	}
 }
 
@@ -143,6 +160,12 @@ func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, err
 		return nil, fmt.Errorf("search query cannot be empty")
 	}
 
+	// C4: 缓存查询
+	cacheKey := fmt.Sprintf("search:%s:%d", query, page)
+	if cached := c.cacheGet(cacheKey); cached != nil {
+		return cached, nil
+	}
+
 	encodedQuery := url.QueryEscape(query)
 	url := c.buildURL("/search/multi", "query", encodedQuery, "page", fmt.Sprintf("%d", page))
 
@@ -166,6 +189,9 @@ func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, err
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, fmt.Errorf("failed to decode search results: %w", err)
 	}
+
+	// C4: 缓存写入
+	c.cacheSet(cacheKey, &result)
 
 	return &result, nil
 }
@@ -673,4 +699,40 @@ func (c *TMDBClient) doRequest(req *http.Request) (*http.Response, error) {
 // SetRetryConfig sets custom retry configuration
 func (c *TMDBClient) SetRetryConfig(cfg *RetryConfig) {
 	c.retryConfig = cfg
+}
+
+// C4: 缓存辅助方法
+
+func (c *TMDBClient) cacheGet(key string) *TMDBSearchResult {
+	c.cacheMu.RLock()
+	defer c.cacheMu.RUnlock()
+
+	entry, ok := c.cache[key]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil
+	}
+	return entry.result
+}
+
+func (c *TMDBClient) cacheSet(key string, result *TMDBSearchResult) {
+	c.cacheMu.Lock()
+	defer c.cacheMu.Unlock()
+
+	// 超过容量时清理最旧的
+	if len(c.cache) >= tmdbCacheMaxSize {
+		oldest := ""
+		for k, v := range c.cache {
+			if oldest == "" || v.expiresAt.Before(c.cache[oldest].expiresAt) {
+				oldest = k
+			}
+		}
+		if oldest != "" {
+			delete(c.cache, oldest)
+		}
+	}
+
+	c.cache[key] = &tmdbCacheEntry{
+		result:    result,
+		expiresAt: time.Now().Add(c.cacheTTL),
+	}
 }

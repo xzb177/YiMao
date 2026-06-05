@@ -19,6 +19,7 @@ type MyRequestsHandler struct {
 	moviepilot  *services.MoviePilotClient
 	userMapping *services.UserMappingService
 	reviewSvc   *services.ReviewService
+	quotaSvc    *services.QuotaService
 }
 
 const (
@@ -46,6 +47,68 @@ func (h *MyRequestsHandler) SetUserMapping(um *services.UserMappingService) {
 // 修复「刚提交的请求在『我的请求』里看不到」（pending 存在 ReviewService，MP 还没有）。
 func (h *MyRequestsHandler) SetReviewService(rs *services.ReviewService) {
 	h.reviewSvc = rs
+}
+
+// SetQuotaService 注入配额服务（撤回请求时退配额）。
+func (h *MyRequestsHandler) SetQuotaService(qs *services.QuotaService) {
+	h.quotaSvc = qs
+}
+
+// HandleCancelReview 处理用户撤回 pending 求片申请。
+// 逻辑：查 ReviewService 找该用户最近一条 pending 请求 → CancelByUser → 退配额。
+func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback.Response, error) {
+	if h.reviewSvc == nil {
+		return &callback.Response{
+			Text:        "❌ 服务未就绪",
+			CallbackMsg: "服务未就绪",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 找该用户最近一条 pending 请求
+	reviews := h.reviewSvc.GetUserRequests(ctx.UserID)
+	var target *services.ReviewRequest
+	for _, rv := range reviews {
+		if rv.Status == "pending" {
+			target = rv
+			break // GetUserRequests 已按时间倒序，第一条就是最近的
+		}
+	}
+
+	if target == nil {
+		return &callback.Response{
+			Text:        "📋 没有待审核的求片申请可以撤回",
+			CallbackMsg: "没有可撤回的申请",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 撤回
+	if err := h.reviewSvc.CancelByUser(target.RequestID, ctx.UserID); err != nil {
+		logger.Info("[MyRequestsHandler] 撤回失败: %v", err)
+		return &callback.Response{
+			Text:        "❌ 撤回失败，请稍后再试",
+			CallbackMsg: "撤回失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 退配额
+	if h.quotaSvc != nil {
+		h.quotaSvc.RestoreQuota(ctx.UserID, string(target.MediaType))
+	}
+
+	// 通知用户
+	text := fmt.Sprintf("✅ 已撤回「%s」的求片申请\n\n配额已退还，可以重新使用", target.MediaTitle)
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📊 求片进度", "requests")
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		Text:     text,
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
 
 // Handle displays the first page of user requests
@@ -534,11 +597,17 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 		rows = append(rows, paginationButtons)
 	}
 
-	// Row 3: Refresh button
-	rows = append(rows, []callback.Button{{
-		Text:         "刷新",
-		CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page)}),
-	}})
+	// Row 3: Refresh + Cancel pending
+	rows = append(rows, []callback.Button{
+		{
+			Text:         "刷新",
+			CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page)}),
+		},
+		{
+			Text:         "↩️ 撤回申请",
+			CallbackData: "myreq_cancel",
+		},
+	})
 
 	// Row 4: Back button
 	rows = append(rows, []callback.Button{{

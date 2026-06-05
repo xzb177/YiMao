@@ -210,6 +210,19 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+
+	// A4: 数据自动备份（每 24h 备份一次，保留 7 天，启动时立即执行一次）
+	backupService := services.NewDataBackupService(cfg.DataDir, 24*time.Hour, 7*24*time.Hour)
+	backupService.Start()
+	logger.Info("    - BackupService started (interval=24h, retention=7d)")
+
+	// B4: 系统告警（stuck 未处理 / MP API 连续失败 时通知管理员）
+	// 用第一个管理员作为告警接收人（adminService 已加载完管理员列表）
+	var alertService *services.AlertService
+	if adminIDs := adminService.GetAdminIDs(); len(adminIDs) > 0 {
+		alertService = services.NewAlertService(telegramClient, adminIDs[0], 30*time.Minute)
+		logger.Info("    - AlertService initialized (admin=%d)", adminIDs[0])
+	}
 	// P1：MP 轮询订阅完成时通知用户（替代 Emby webhook，Emby 不可用时仍能通知）
 	reviewService.OnSubscriptionComplete = func(telegramID int64, title string, year int, mediaType string) {
 		typeLabel := "🎬"
@@ -223,6 +236,13 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		text := fmt.Sprintf("%s 《%s》%s 到货了！🍿\n\n快去 Emby 开刷吧～", typeLabel, title, yearStr)
 		telegramClient.SendMessage(telegramID, text, "", nil)
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
+	}
+	// B4: stuck 告警 — 审核通过但 MP 提交失败时通知管理员
+	reviewService.Alert = func(requestID, title string, retryCount int, lastError string) {
+		alertService.Warn("review_stuck",
+			fmt.Sprintf("求片提交失败: %s", title),
+			fmt.Sprintf("请求 %s，已重试 %d 次\n最后错误: %s\n请检查 MoviePilot 状态", requestID, retryCount, lastError),
+		)
 	}
 	logger.Info("    - CarpoolService...")
 	carpoolService := services.NewCarpoolService(cfg.DataDir) // #3 拼车 +1 持久化服务
@@ -459,6 +479,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler.SetIssueService(deps.IssueService)
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
 	myRequestsHandler.SetReviewService(deps.ReviewService)
+	myRequestsHandler.SetQuotaService(deps.QuotaService)
 	searchHandler.SetSearchHistory(deps.SearchHistory)
 	feedbackHandler.SetIssueService(deps.IssueService)
 	feedbackHandler.SetTMDBClient(deps.TMDBClient)
@@ -477,7 +498,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
 	registry.RegisterFunc("start_ai", startHandler.Handle)
-	registry.RegisterFunc("wish", wishHandler.HandleEntry) // start_wish 剥前缀后 = wish（许愿池入口）
+	registry.RegisterFunc("wish", wishHandler.HandleEntry)                      // start_wish 剥前缀后 = wish（许愿池入口）
+	registry.RegisterFunc("myreq_cancel", myRequestsHandler.HandleCancelReview) // 用户撤回 pending 求片申请
 	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
