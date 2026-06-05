@@ -62,6 +62,13 @@ type ReviewService struct {
 	// Alert 当 review 进入 stuck（MP 提交失败）时的告警回调（由 main 注入）。
 	// 参数：requestID, mediaTitle, retryCount, lastError。
 	Alert func(requestID, title string, retryCount int, lastError string)
+
+	// ── 全量 MP 订阅完成检测（Issue #1）──
+	// notifiedSubs 记录「已通知过的 MP 订阅 ID」，避免重复通知。
+	notifiedSubsFile string
+	notifiedSubs     map[int]bool
+	// userMapping 用于 MP 用户名 → Telegram ID 反查。
+	userMapping *UserMappingService
 }
 
 // NewReviewService creates a new review service
@@ -69,17 +76,25 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 	reviewsFile := fmt.Sprintf("%s/review_requests.json", dataDir)
 
 	service := &ReviewService{
-		reviewsFile:     reviewsFile,
-		reviews:         make(map[string]*ReviewRequest),
-		autoResubscribe: autoResubscribe,
+		reviewsFile:      reviewsFile,
+		reviews:          make(map[string]*ReviewRequest),
+		autoResubscribe:  autoResubscribe,
+		notifiedSubsFile: fmt.Sprintf("%s/notified_subs.json", dataDir),
+		notifiedSubs:     make(map[int]bool),
 	}
 
 	service.load()
+	service.loadNotifiedSubs()
 
 	// Start cleanup routine for old reviews
 	go service.cleanupRoutine()
 
 	return service
+}
+
+// SetUserMapping 注入用户映射服务（用于 MP 用户名 → Telegram ID 反查）。
+func (s *ReviewService) SetUserMapping(um *UserMappingService) {
+	s.userMapping = um
 }
 
 // SetMoviePilotClient sets the MoviePilot client (called after initialization)
@@ -125,6 +140,120 @@ func (s *ReviewService) saveLocked() error {
 
 	logger.Info("[ReviewService] 保存 %d 条审核请求", len(s.reviews))
 	return nil
+}
+
+// ── 全量 MP 订阅完成检测（Issue #1）──
+
+// loadNotifiedSubs 从文件加载已通知的订阅 ID 集合。
+func (s *ReviewService) loadNotifiedSubs() {
+	data, err := os.ReadFile(s.notifiedSubsFile)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Info("[ReviewService] 加载 notified_subs 失败: %v", err)
+		}
+		return
+	}
+	var ids []int
+	if err := json.Unmarshal(data, &ids); err != nil {
+		logger.Info("[ReviewService] 解析 notified_subs 失败: %v", err)
+		return
+	}
+	for _, id := range ids {
+		s.notifiedSubs[id] = true
+	}
+	logger.Info("[ReviewService] 已加载 %d 条已通知订阅记录", len(ids))
+}
+
+// saveNotifiedSubs 持久化已通知的订阅 ID 集合。
+func (s *ReviewService) saveNotifiedSubs() {
+	ids := make([]int, 0, len(s.notifiedSubs))
+	for id := range s.notifiedSubs {
+		ids = append(ids, id)
+	}
+	data, err := json.MarshalIndent(ids, "", "  ")
+	if err != nil {
+		logger.Info("[ReviewService] 序列化 notified_subs 失败: %v", err)
+		return
+	}
+	if err := atomicWriteFile(s.notifiedSubsFile, data, 0644); err != nil {
+		logger.Info("[ReviewService] 写入 notified_subs 失败: %v", err)
+	}
+}
+
+// checkAllNewCompletions 全量检测 MP 中新完成的订阅（不仅是 YiMao 发起的）。
+// 流程：拉 MP 全部订阅 → 过滤 state=="C" → 去重（已通知的跳过）→ 用户名反查 TG ID → 触发通知。
+func (s *ReviewService) checkAllNewCompletions() {
+	if s.moviepilot == nil || s.userMapping == nil || s.OnSubscriptionComplete == nil {
+		return
+	}
+
+	subs, err := s.moviepilot.GetAllSubscriptions()
+	if err != nil {
+		logger.Info("[ReviewService] 全量检测拉取 MP 订阅失败: %v", err)
+		return
+	}
+
+	newCount := 0
+	for i := range subs {
+		sub := &subs[i]
+
+		// 只关心已完成的
+		if sub.State != StateCompleted {
+			continue
+		}
+
+		// 已通知过的跳过
+		if s.notifiedSubs[sub.ID] {
+			continue
+		}
+
+		// 检查是否已有审核单跟踪（已有审核单的走 updateAllSubscriptionStatus，不重复通知）
+		s.mu.RLock()
+		alreadyTracked := false
+		for _, rv := range s.reviews {
+			if rv.SubscriptionID == sub.ID {
+				alreadyTracked = true
+				break
+			}
+		}
+		s.mu.RUnlock()
+		if alreadyTracked {
+			// 标记已通知，避免下次重复检查
+			s.notifiedSubs[sub.ID] = true
+			continue
+		}
+
+		// MP 用户名 → Telegram ID
+		tgID, found := s.userMapping.GetTelegramIDByMoviePilotUsername(sub.Username)
+		if !found || tgID == 0 {
+			// 找不到对应用户，标记已通知避免下次重复检查
+			logger.Info("[ReviewService] 全量检测：订阅 %d (%s) 用户 %s 未绑定 TG，跳过", sub.ID, sub.Name, sub.Username)
+			s.notifiedSubs[sub.ID] = true
+			continue
+		}
+
+		// 解析年份
+		year := 0
+		fmt.Sscanf(sub.Year, "%d", &year)
+
+		// 触发通知
+		mediaType := sub.Type
+		if mediaType == "" {
+			mediaType = "movie"
+		}
+
+		logger.Info("[ReviewService] 全量检测：新完成订阅 %d (%s)，通知用户 %d", sub.ID, sub.Name, tgID)
+		go s.OnSubscriptionComplete(tgID, sub.Name, year, mediaType)
+
+		// 标记已通知
+		s.notifiedSubs[sub.ID] = true
+		newCount++
+	}
+
+	if newCount > 0 {
+		s.saveNotifiedSubs()
+		logger.Info("[ReviewService] 全量检测完成：新增通知 %d 条", newCount)
+	}
 }
 
 // CreateRequest creates a new review request
@@ -575,6 +704,7 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 			}
 		}()
 		s.updateAllSubscriptionStatus()
+		s.checkAllNewCompletions()
 	}()
 
 	for range ticker.C {
@@ -585,6 +715,8 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 				}
 			}()
 			s.updateAllSubscriptionStatus()
+			// 全量检测：MP 中所有新完成的订阅（不仅是 YiMao 发起的）
+			s.checkAllNewCompletions()
 		}()
 	}
 }

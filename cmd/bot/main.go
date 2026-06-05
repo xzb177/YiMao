@@ -210,6 +210,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+	reviewService.SetUserMapping(userMappingService) // Issue #1: 全量检测需要 MP 用户名→TG ID 反查
 
 	// A4: 数据自动备份（每 24h 备份一次，保留 7 天，启动时立即执行一次）
 	backupService := services.NewDataBackupService(cfg.DataDir, 24*time.Hour, 7*24*time.Hour)
