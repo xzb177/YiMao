@@ -219,6 +219,7 @@ type StartHandler struct {
 	telegram     *services.TelegramClient
 	moviepilot   *services.MoviePilotClient
 	adminService *services.AdminService
+	userMapping  *services.UserMappingService
 }
 
 func NewStartHandler(
@@ -238,6 +239,11 @@ func NewStartHandler(
 // SetAdminService sets the admin service
 func (h *StartHandler) SetAdminService(adminSvc *services.AdminService) {
 	h.adminService = adminSvc
+}
+
+// SetUserMapping sets the user mapping service (设置页显示绑定状态用)
+func (h *StartHandler) SetUserMapping(um *services.UserMappingService) {
+	h.userMapping = um
 }
 
 func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -590,7 +596,17 @@ func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response
 	msg := services.NewMessageBuilder()
 	msg.Bold("⚙️ 设置").Newline()
 	msg.Newline()
-	msg.Text("账号和偏好设置")
+
+	// 显示绑定状态
+	if h.userMapping != nil {
+		if _, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
+			msg.Text("🔗 账号状态：已绑定 ✅").Newline()
+		} else {
+			msg.Text("🔗 账号状态：未绑定").Newline()
+		}
+	}
+
+	msg.Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔗 绑定账号", "start_link")
