@@ -52,6 +52,11 @@ func HandleCommand(
 	case "/ai":
 		sendRecommendationMenu(telegram, msg.Chat.ID)
 	case "/requests":
+		// 群组隐私保护：群内不发长卡片，引导去私聊
+		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+			telegram.SendMessage(msg.Chat.ID, "🔒 为了保护您的观影隐私，请私聊查看完整进度", "", nil)
+			return
+		}
 		if myRequestsHandler != nil {
 			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
 			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
@@ -69,6 +74,11 @@ func HandleCommand(
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/quota":
+		// 群组隐私保护：群内不暴露配额
+		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+			telegram.SendMessage(msg.Chat.ID, "🔒 为了保护您的隐私，请私聊查看配额详情", "", nil)
+			return
+		}
 		HandleQuotaCommand(telegram, msg, quotaService)
 	case "/wish":
 		// #6 许愿池入口：/wish <片名> 入池；/wish 无参列出我的许愿。

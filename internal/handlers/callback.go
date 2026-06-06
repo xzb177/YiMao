@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"html"
 	"strconv"
 	"strings"
 
