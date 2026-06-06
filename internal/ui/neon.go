@@ -239,7 +239,7 @@ func (b *NeonBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	}
 
 	sb.WriteString(neonSeparator + "\n")
-	sb.WriteString("输入数字查看详情 · 翻页浏览\n")
+	sb.WriteString("点击编号查看详情 · 翻页浏览\n")
 
 	return sb.String()
 }
