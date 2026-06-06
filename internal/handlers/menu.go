@@ -23,6 +23,7 @@ type MyRequestsHandler struct {
 	adminSvc    *services.AdminService
 	// OnCarpoolNotify 拼车用户通知回调（撤回时触发）。
 	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
+	wishSvc         *services.WishService
 }
 
 // SetAdminService 注入管理员服务（用于撤回时通知管理员）。
@@ -60,6 +61,11 @@ func (h *MyRequestsHandler) SetReviewService(rs *services.ReviewService) {
 // SetQuotaService 注入配额服务（撤回请求时退配额）。
 func (h *MyRequestsHandler) SetQuotaService(qs *services.QuotaService) {
 	h.quotaSvc = qs
+}
+
+// SetWishService 注入许愿池服务（用于「我的请求」显示许愿列表）。
+func (h *MyRequestsHandler) SetWishService(ws *services.WishService) {
+	h.wishSvc = ws
 }
 
 // HandleCancelReview 处理用户撤回 pending 求片申请。
@@ -266,6 +272,28 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	// 从而修复「pending / 已审核同步中(stuck) 在『我的请求』里看不到」。
 	requests = h.mergePendingReviews(ctx.UserID, requests)
 
+	// 合并许愿池：把用户的活跃许愿追加到列表末尾
+	if h.wishSvc != nil {
+		if wishes, err := h.wishSvc.ListByUser(ctx.UserID); err == nil && len(wishes) > 0 {
+			for _, w := range wishes {
+				typeStr := "电影"
+				if w.MediaType == "tv" {
+					typeStr = "电视剧"
+				}
+				requests = append(requests, services.SubscribeItem{
+					ID:     0,
+					Name:   w.Title,
+					Year:   fmt.Sprintf("%d", w.Year),
+					Type:   typeStr,
+					State:  "WISH",
+					Season: w.Season,
+					TMDBID: w.TmdbID,
+					Date:   w.CreatedAt.Format("2006-01-02"),
+				})
+			}
+		}
+	}
+
 	// Calculate pagination
 	totalRequests := len(requests)
 	totalPages := (totalRequests + requestsPerPage - 1) / requestsPerPage
@@ -330,12 +358,14 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		States map[string]bool
 	}{
 		{Key: "processing", Label: "进行中", States: map[string]bool{stateReviewing: true, stateStuck: true, services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
+		{Key: "wish", Label: "许愿中", States: map[string]bool{"WISH": true}},
 		{Key: "done", Label: "已完成", States: map[string]bool{services.StateCompleted: true}},
 		{Key: "failed", Label: "异常/失败", States: map[string]bool{services.StateFailed: true, services.StateCancelled: true}},
 	}
 
 	bucket := map[string][]int{
 		"processing": {},
+		"wish":       {},
 		"done":       {},
 		"failed":     {},
 		"other":      {},
@@ -507,6 +537,8 @@ func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []serv
 // getStateEmoji returns the emoji for a subscription state
 func getStateEmoji(state string) string {
 	switch state {
+	case "WISH":
+		return "✨"
 	case stateReviewing:
 		return "📝"
 	case stateStuck:
