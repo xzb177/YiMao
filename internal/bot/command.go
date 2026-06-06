@@ -3,6 +3,8 @@ package bot
 import (
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/config"
@@ -78,10 +80,62 @@ func HandleCommand(
 	}
 }
 
+// linkAttempts 记录 /link 命令的失败尝试次数（防暴力破解）
+var (
+	linkAttempts   = make(map[int64]int)
+	linkBlocked    = make(map[int64]time.Time)
+	linkAttemptsMu sync.Mutex
+)
+
+const (
+	maxLinkAttempts = 5                // 最多 5 次失败
+	linkBlockTime   = 15 * time.Minute // 锁定 15 分钟
+)
+
+func checkLinkRateLimit(userID int64) (blocked bool, remaining time.Duration) {
+	linkAttemptsMu.Lock()
+	defer linkAttemptsMu.Unlock()
+
+	if until, ok := linkBlocked[userID]; ok {
+		if time.Now().Before(until) {
+			return true, time.Until(until)
+		}
+		delete(linkBlocked, userID)
+		delete(linkAttempts, userID)
+	}
+	return false, 0
+}
+
+func recordLinkFailure(userID int64) {
+	linkAttemptsMu.Lock()
+	defer linkAttemptsMu.Unlock()
+
+	linkAttempts[userID]++
+	if linkAttempts[userID] >= maxLinkAttempts {
+		linkBlocked[userID] = time.Now().Add(linkBlockTime)
+		delete(linkAttempts, userID)
+	}
+}
+
+func resetLinkAttempts(userID int64) {
+	linkAttemptsMu.Lock()
+	defer linkAttemptsMu.Unlock()
+	delete(linkAttempts, userID)
+	delete(linkBlocked, userID)
+}
+
 // HandleLinkCommand handles /link command with optional username and password
 // Also supports direct credential input: "username password" (without /link prefix)
 func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping *services.UserMappingService) {
-	logger.Info("[LinkCommand] Processing /link command from user %d: %s", msg.From.ID, msg.Text)
+	logger.Info("[LinkCommand] Processing /link command from user %d", msg.From.ID)
+
+	// 防暴力破解：检查是否被锁定
+	if blocked, remaining := checkLinkRateLimit(msg.From.ID); blocked {
+		minutes := int(remaining.Minutes()) + 1
+		telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("⏱️ 绑定尝试次数过多，请 %d 分钟后再试", minutes), "", nil)
+		return
+	}
+
 	parts := strings.Fields(msg.Text)
 	logger.Info("[LinkCommand] Parsed parts: %v (len=%d)", parts, len(parts))
 
@@ -140,6 +194,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	userID, err := mpClient.Authenticate(sanitizedUsername, sanitizedPassword)
 	if err != nil {
 		logger.Info("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
+		recordLinkFailure(msg.From.ID)
 		text := "❌ 绑定失败：用户名或密码错误"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
@@ -165,6 +220,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	logger.Info("[LinkCommand] AddMapping completed, sending success message")
+	resetLinkAttempts(msg.From.ID)
 	text := "✅ 绑定成功！现在可以求片了～"
 	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
 		logger.Info("[LinkCommand] Failed to send success message: %v", err)

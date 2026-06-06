@@ -23,6 +23,10 @@ import (
 )
 
 func main() {
+	// 强制初始化时区为 Asia/Shanghai，不依赖宿主机 Alpine 镜像的时区配置
+	if loc, err := time.LoadLocation("Asia/Shanghai"); err == nil {
+		time.Local = loc
+	}
 	log.Println("🚀 Starting Emby Telegram Bot...")
 
 	// Load configuration
