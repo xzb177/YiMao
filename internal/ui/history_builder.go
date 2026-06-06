@@ -182,7 +182,7 @@ func (b *HistoryBuilder) buildCardHistoryKeyboard(history []services.SearchEntry
 		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
 
 		// Build callback with escape
-		callbackData := fmt.Sprintf("search:hist:%d", i)
+		callbackData := fmt.Sprintf("search:pop:%d", i)
 
 		rows[len(rows)-1] = append(rows[len(rows)-1], callback.Button{
 			Text:         buttonText,
@@ -239,7 +239,7 @@ func (b *HistoryBuilder) buildNeonHistoryKeyboard(history []services.SearchEntry
 		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
 
 		// Build callback with escape
-		callbackData := fmt.Sprintf("search:hist:%d", i)
+		callbackData := fmt.Sprintf("search:pop:%d", i)
 
 		rows[len(rows)-1] = append(rows[len(rows)-1], callback.Button{
 			Text:         buttonText,
@@ -320,7 +320,7 @@ func (b *HistoryBuilder) BuildPopularSearchesKeyboard(popular []services.Popular
 
 		query := popular[i].Query
 		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
-		callbackData := fmt.Sprintf("search:hist:%d", i)
+		callbackData := fmt.Sprintf("search:pop:%d", i)
 
 		rows[len(rows)-1] = append(rows[len(rows)-1], callback.Button{
 			Text:         buttonText,
