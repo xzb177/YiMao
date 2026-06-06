@@ -526,7 +526,7 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
 			Text:         "➡️ 下一页",
-			CallbackData: fmt.Sprintf("search:query:%s:page:2", query),
+			CallbackData: "search:page:2",
 		})
 	}
 	keyboardRows = append(keyboardRows, navRow)

@@ -8,7 +8,6 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -1031,10 +1030,10 @@ func BuildSearchKeyboard(items []SearchItemButton, page int, totalPages int, que
 	// Add navigation buttons
 	if totalPages > 1 {
 		if page > 1 {
-			kb.AddButton("⬅️ 上一页", fmt.Sprintf("search:query:%s:page:%d", url.QueryEscape(query), page-1))
+			kb.AddButton("⬅️ 上一页", fmt.Sprintf("search:page:%d", page-1))
 		}
 		if page < totalPages {
-			kb.AddButton("➡️ 下一页", fmt.Sprintf("search:query:%s:page:%d", url.QueryEscape(query), page+1))
+			kb.AddButton("➡️ 下一页", fmt.Sprintf("search:page:%d", page+1))
 		}
 		kb.NewRow()
 	}

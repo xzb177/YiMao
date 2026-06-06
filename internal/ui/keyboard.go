@@ -40,7 +40,7 @@ func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string) *type
 	if itemCount >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
 			Text:         "➡️ 下一页",
-			CallbackData: fmt.Sprintf("search:query:%s:page:2", query),
+			CallbackData: "search:page:2",
 		})
 	}
 	rows = append(rows, navRow)

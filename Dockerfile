@@ -19,21 +19,22 @@ RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 # Final stage
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata
-
-# Create non-root user
-RUN addgroup -S yimao && adduser -S yimao -G yimao
+RUN apk add --no-cache ca-certificates tzdata shadow
 
 WORKDIR /app
 
 # Copy binary from builder
 COPY --from=builder /app/yimao .
 
-# Create data directory with proper ownership
-RUN mkdir -p /app/data && chown -R yimao:yimao /app
+# Create data directory
+RUN mkdir -p /app/data
 
 # Set timezone
 ENV TZ=Asia/Shanghai
+
+# PUID/PGID 动态适配：容器启动时根据 .env 传入的 PUID/PGID 创建用户
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
 
 # Expose port
 EXPOSE 8080
@@ -42,8 +43,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
   CMD wget -q --spider http://localhost:${PORT:-8080}/health || exit 1
 
-# Run as non-root user
-USER yimao
-
-# Run the application
+# Run via entrypoint (handles PUID/PGID)
+ENTRYPOINT ["/docker-entrypoint.sh"]
 CMD ["./yimao"]

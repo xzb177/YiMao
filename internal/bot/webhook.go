@@ -387,7 +387,7 @@ func PerformSearch(
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
 			Text:         "➡️ 下一页",
-			CallbackData: fmt.Sprintf("search:query:%s:page:2", query),
+			CallbackData: "search:page:2",
 		})
 	}
 

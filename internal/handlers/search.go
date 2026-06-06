@@ -216,19 +216,20 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	page := 1
 	fmt.Sscanf(pageStr, "%d", &page)
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("📄 分页功能").Newline()
-	msg.Newline()
-	msg.Textf("第 %d 页功能开发中...", page)
+	// 从 session 读取之前的搜索上下文（query 存在 session 里，不走 callback data，避免 64 字节超限）
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	_, _, query, ok := sess.GetSearchResults()
+	if !ok || query == "" {
+		return &callback.Response{
+			Text:        "⚠️ 搜索会话已过期，请重新输入片名",
+			CallbackMsg: "会话过期",
+			ShowAlert:   true,
+		}, nil
+	}
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "start")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
+	// 重新搜索并展示指定页
+	h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
+	return &callback.Response{CallbackMsg: fmt.Sprintf("第 %d 页", page)}, nil
 }
 
 func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*callback.Response, error) {
@@ -638,7 +639,7 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
 			Text:         "➡️ 下一页",
-			CallbackData: fmt.Sprintf("search:query:%s:page:2", query),
+			CallbackData: "search:page:2",
 		})
 	}
 	keyboardRows = append(keyboardRows, navRow)

@@ -120,10 +120,19 @@ func main() {
 
 	logger.Info("🛑 Shutting down server...")
 
-	// Stop security service
+	// 第一步：阻断流量（先关 HTTP，等已有请求处理完毕）
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Info("❌ Server shutdown error: %v", err)
+	}
+	logger.Info("✅ HTTP server stopped")
+
+	// 第二步：停止后台任务
 	securityService.Stop()
 
-	// #6 停止许愿池调度 + 关闭数据库（优雅关停）。
+	// 第三步：关闭底层资源（DB 等）
+	// 必须在 HTTP 关闭之后，否则正在处理的请求会 panic（database is closed）
 	if depsWithHandlers.WishScheduler != nil {
 		depsWithHandlers.WishScheduler.Stop()
 	}
@@ -133,15 +142,7 @@ func main() {
 		}
 	}
 
-	// Graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		logger.Info("❌ Server shutdown error: %v", err)
-	}
-
-	logger.Info("✅ Server stopped")
+	logger.Info("✅ All services stopped")
 }
 
 // Dependencies holds all service dependencies
