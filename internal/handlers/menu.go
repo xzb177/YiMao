@@ -20,6 +20,12 @@ type MyRequestsHandler struct {
 	userMapping *services.UserMappingService
 	reviewSvc   *services.ReviewService
 	quotaSvc    *services.QuotaService
+	adminSvc    *services.AdminService
+}
+
+// SetAdminService 注入管理员服务（用于撤回时通知管理员）。
+func (h *MyRequestsHandler) SetAdminService(svc *services.AdminService) {
+	h.adminSvc = svc
 }
 
 const (
@@ -96,6 +102,15 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 	// 退配额
 	if h.quotaSvc != nil {
 		h.quotaSvc.RestoreQuota(ctx.UserID, string(target.MediaType))
+	}
+
+	// 通知管理员：用户主动撤回了求片申请
+	if h.adminSvc != nil {
+		adminIDs := h.adminSvc.GetAdminIDs()
+		notifyMsg := fmt.Sprintf("📋 用户撤回求片\n\n📺 %s\n👤 用户 %d", target.MediaTitle, ctx.UserID)
+		for _, adminID := range adminIDs {
+			go h.telegram.SendMessage(adminID, notifyMsg, "", nil)
+		}
 	}
 
 	// 通知用户

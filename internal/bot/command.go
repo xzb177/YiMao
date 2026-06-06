@@ -88,7 +88,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	// Check if user is already linked
 	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
 		logger.Info("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
-		text := fmt.Sprintf("✅ 账号已绑定\n\n您已经绑定了 MoviePilot 账号 (ID: %d)\n\n如需更换账号，请先联系管理员解绑", mpID)
+		text := "✅ 账号已绑定\n\n如需更换账号，请先联系管理员解绑"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}

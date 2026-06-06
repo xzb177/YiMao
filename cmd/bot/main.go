@@ -501,6 +501,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
 	myRequestsHandler.SetReviewService(deps.ReviewService)
 	myRequestsHandler.SetQuotaService(deps.QuotaService)
+	myRequestsHandler.SetAdminService(deps.AdminService)
 	searchHandler.SetSearchHistory(deps.SearchHistory)
 	feedbackHandler.SetIssueService(deps.IssueService)
 	feedbackHandler.SetTMDBClient(deps.TMDBClient)

@@ -232,8 +232,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	// Notify user about approval
 	h.telegram.SendMessage(review.TelegramID,
-		fmt.Sprintf("✅ 你的求片请求已批准并提交！\n\n📺 %s (%d)\n\n订阅 ID: %d\n状态: %s",
-			review.MediaTitle, review.MediaYear, req.ID, statusText), "", nil)
+		fmt.Sprintf("✅ 《%s》已通过审核！\n\n📥 已提交下载，完成后会通知你\n去「求片进度」随时看状态",
+			review.MediaTitle), "", nil)
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 已批准并提交\n\n📺 %s", review.MediaTitle),
@@ -325,8 +325,8 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 
 	// Notify user about rejection
 	h.telegram.SendMessage(review.TelegramID,
-		fmt.Sprintf("❌ 你的求片请求已被拒绝\n\n📺 %s (%d)\n\n如果需要帮助，请联系管理员",
-			review.MediaTitle, review.MediaYear), "", nil)
+		fmt.Sprintf("❌ 《%s》未通过审核\n\n💡 已自动退还配额，换个片名再试？",
+			review.MediaTitle), "", nil)
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("❌ 已拒绝\n\n📺 %s", review.MediaTitle),
