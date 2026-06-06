@@ -66,12 +66,12 @@ func getPosterURL(poster string) string {
 		return ""
 	}
 	if strings.HasPrefix(poster, "http") {
-		return poster
+		return ui.EnsureSafePosterURL(poster)
 	}
 	if strings.HasPrefix(poster, "/") {
-		return "https://image.tmdb.org/t/p/w500" + poster
+		return ui.EnsureSafePosterURL("https://image.tmdb.org/t/p/w500" + poster)
 	}
-	return "https://image.tmdb.org/t/p/w500/" + poster
+	return ui.EnsureSafePosterURL("https://image.tmdb.org/t/p/w500/" + poster)
 }
 
 // cacheMediaInfo saves media info to session for later use (e.g., resource list)
