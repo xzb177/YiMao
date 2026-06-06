@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 
@@ -899,82 +900,74 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 
 	// For TV shows, fetch full details with seasons
 	if media.MediaType == "tv" && h.tmdb != nil {
-		// From TMDB directly, assume MoviePilot availability is unknown (default to false to show warning)
 		posterURL := getPosterURL(media.PosterPath)
 		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false, posterURL)
 	}
 
-	msg := services.NewMessageBuilder()
+	safeTitle := html.EscapeString(media.GetTitle())
+	safeOrgTitle := html.EscapeString(media.OriginalTitle)
 
-	// Type icon
-	typeIcon := "🎬"
+	var sb strings.Builder
 
-	// Header
-	msg.Bold(fmt.Sprintf("%s %s", typeIcon, media.GetTitle())).Newline()
-
-	// Year and rating
-	infoLine := ""
+	// 1. Header
 	year := media.GetYear()
+	header := fmt.Sprintf("🎬 <b>%s</b>", safeTitle)
 	if year > 0 {
-		infoLine = fmt.Sprintf("📅 %d年", year)
+		header += fmt.Sprintf(" (%d)", year)
 	}
-	if media.VoteAverage > 0 {
-		if infoLine != "" {
-			infoLine += "  •  "
-		}
-		infoLine += fmt.Sprintf("⭐ %.1f分", media.VoteAverage)
+	sb.WriteString(header + "\n")
+	if safeOrgTitle != "" && safeOrgTitle != safeTitle {
+		sb.WriteString(fmt.Sprintf("<i>%s</i>\n", safeOrgTitle))
 	}
-	if infoLine != "" {
-		msg.Text(infoLine).Newline()
-	}
+	sb.WriteString("\n")
 
-	// Runtime
+	// 2. Spec dashboard
+	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
+	if media.VoteAverage > 0 {
+		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10", media.VoteAverage))
+		if media.VoteCount > 0 {
+			sb.WriteString(fmt.Sprintf(" (%d票)", media.VoteCount))
+		}
+		sb.WriteString("\n")
+	}
+	genres := media.GetGenres()
+	if genres != "" {
+		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(genres)))
+	}
 	runtime := media.GetRuntime()
 	if runtime > 0 {
 		hours := runtime / 60
 		mins := runtime % 60
 		if hours > 0 {
-			msg.Text(fmt.Sprintf("⏱️ 时长: %d小时%d分钟", hours, mins))
+			sb.WriteString(fmt.Sprintf("│  ⏱️ 时长: <code>%d小时%d分</code>\n", hours, mins))
 		} else {
-			msg.Text(fmt.Sprintf("⏱️ 时长: %d分钟", runtime))
+			sb.WriteString(fmt.Sprintf("│  ⏱️ 时长: <code>%d分钟</code>\n", runtime))
 		}
-		msg.Newline()
 	}
+	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// Genres
-	genres := media.GetGenres()
-	if genres != "" {
-		msg.Text(fmt.Sprintf("🎭 %s", genres)).Newline()
-	}
-
-	msg.Newline()
-
-	// Overview (truncate if too long)
+	// 3. Overview
 	if media.Overview != "" {
-		overview := media.Overview
-		if len(overview) > 200 {
-			overview = overview[:200] + "..."
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		overview := html.EscapeString(media.Overview)
+		if len([]rune(overview)) > 200 {
+			overview = string([]rune(overview)[:200]) + "..."
 		}
-		msg.Text(overview).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	// TMDB ID
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", media.ID)).Newline()
-
-	// Keyboard
+	// 4. Keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
-	// #3 拼车「我也想看 +1」按钮
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
 	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
 	kb.NewRow()
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回列表", "back")
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
