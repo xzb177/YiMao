@@ -106,10 +106,10 @@ func (b *DashBuilder) buildResultCard(index int, item services.SearchResult) str
 	}
 
 	sb.WriteString(fmt.Sprintf("╭─ %d ──────────────────────╮\n", index))
-	sb.WriteString(fmt.Sprintf("│ %s %s%s%s\n", icon, item.Title, year, rating))
+	sb.WriteString(fmt.Sprintf("│ %s %s%s%s\n", icon, escapeText(item.Title), year, rating))
 
 	if item.Overview != "" {
-		overview := truncateText(item.Overview, 48)
+		overview := truncateAndEscape(item.Overview, 48)
 		sb.WriteString(fmt.Sprintf("│ %s\n", overview))
 	}
 	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
@@ -128,7 +128,7 @@ func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	}
 
 	sb.WriteString(fmt.Sprintf("╭──────────────────────────╮\n"))
-	sb.WriteString(fmt.Sprintf("│ %s %s%s\n", icon, result.Title, year))
+	sb.WriteString(fmt.Sprintf("│ %s %s%s\n", icon, escapeText(result.Title), year))
 
 	// 评分行
 	if result.Rating > 0 {
@@ -142,7 +142,7 @@ func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	// 简介
 	if result.Overview != "" {
 		sb.WriteString("\n📖 ")
-		sb.WriteString(wrapText(result.Overview, 28))
+		sb.WriteString(wrapText(escapeText(result.Overview), 28))
 		sb.WriteString("\n")
 	}
 

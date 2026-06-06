@@ -2,9 +2,22 @@ package ui
 
 import (
 	"fmt"
-	"github.com/xzb177/yimao/internal/services"
+	"html"
 	"strings"
+
+	"github.com/xzb177/yimao/internal/services"
 )
+
+// escapeText 转义 HTML 特殊字符（< > & "），
+// 防止外部文本（Overview/Title）里的 < > 破坏 Telegram HTML 解析。
+func escapeText(text string) string {
+	return html.EscapeString(text)
+}
+
+// truncateAndEscape 截断 + 转义，用于外部文本的安全展示。
+func truncateAndEscape(text string, maxLen int) string {
+	return escapeText(truncateText(text, maxLen))
+}
 
 // UI 风格类型
 type UIStyle string

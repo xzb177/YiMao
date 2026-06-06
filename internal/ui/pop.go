@@ -77,10 +77,10 @@ func (b *PopBuilder) BuildSearchResults(query string, results []services.SearchR
 			rating = fmt.Sprintf(" ★%.1f", item.Rating)
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, escapeText(item.Title), year, icon, rating))
 
 		if item.Overview != "" {
-			overview := truncateText(item.Overview, 45)
+			overview := truncateAndEscape(item.Overview, 45)
 			sb.WriteString(fmt.Sprintf("   %s\n", overview))
 		}
 		sb.WriteString("\n")
@@ -99,7 +99,7 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	sb.WriteString(popSeparator + "\n")
 
 	// 标题
-	sb.WriteString(fmt.Sprintf("🎬 %s", result.Title))
+	sb.WriteString(fmt.Sprintf("🎬 %s", escapeText(result.Title)))
 	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf(" (%d)", result.Year))
 	}
@@ -174,10 +174,10 @@ func (b *PopBuilder) BuildRecommendation(title string, results []services.Search
 			rating = fmt.Sprintf(" ★%.1f", item.Rating)
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, escapeText(item.Title), year, icon, rating))
 
 		if item.Overview != "" {
-			overview := truncateText(item.Overview, 40)
+			overview := truncateAndEscape(item.Overview, 40)
 			sb.WriteString(fmt.Sprintf("   %s\n", overview))
 		}
 		sb.WriteString("\n")

@@ -72,7 +72,10 @@ type WishService struct {
 func NewWishService(dataDir string) (*WishService, error) {
 	dbPath := fmt.Sprintf("%s/wishpool.db", dataDir)
 
-	db, err := sql.Open("sqlite", dbPath)
+	// WAL 模式：允许读写并发，大幅减少锁表概率。
+	// busy_timeout=5000：写入锁定时最多等 5 秒再报错，而不是立刻死掉。
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open wishpool database: %w", err)
 	}

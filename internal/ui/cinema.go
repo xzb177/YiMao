@@ -82,10 +82,10 @@ func (b *CinemaBuilder) BuildSearchResults(query string, results []services.Sear
 			rating = fmt.Sprintf(" ★%.1f", item.Rating)
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, escapeText(item.Title), year, icon, rating))
 
 		if item.Overview != "" {
-			overview := truncateText(item.Overview, 50)
+			overview := truncateAndEscape(item.Overview, 50)
 			sb.WriteString(fmt.Sprintf("   %s\n", overview))
 		}
 		sb.WriteString("\n")
@@ -104,7 +104,7 @@ func (b *CinemaBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	sb.WriteString(cinemaSeparator + "\n\n")
 
 	// 标题
-	sb.WriteString(fmt.Sprintf("              🎬 %s\n", result.Title))
+	sb.WriteString(fmt.Sprintf("              🎬 %s\n", escapeText(result.Title)))
 	if int(result.Year) > 0 {
 		sb.WriteString(fmt.Sprintf("              (%d)\n", result.Year))
 	}
@@ -185,10 +185,10 @@ func (b *CinemaBuilder) BuildRecommendation(title string, results []services.Sea
 			rating = fmt.Sprintf(" ★%.1f", item.Rating)
 		}
 
-		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, item.Title, year, icon, rating))
+		sb.WriteString(fmt.Sprintf("%d. %s%s%s%s\n", i+1, escapeText(item.Title), year, icon, rating))
 
 		if item.Overview != "" {
-			overview := truncateText(item.Overview, 45)
+			overview := truncateAndEscape(item.Overview, 45)
 			sb.WriteString(fmt.Sprintf("   %s\n", overview))
 		}
 		sb.WriteString("\n")
