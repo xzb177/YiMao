@@ -306,18 +306,24 @@ func (s *QuotaService) UseMovieQuota(telegramID int64) error {
 
 // UseTVQuota uses one TV quota
 func (s *QuotaService) UseTVQuota(telegramID int64) error {
+	// 剧集扣 3 配额（一整季对服务器资源消耗远大于电影）
+	return s.UseTVQuotaN(telegramID, 3)
+}
+
+// UseTVQuotaN 扣除 N 个剧集配额。
+func (s *QuotaService) UseTVQuotaN(telegramID int64, n int) error {
 	s.mu.Lock()
 
 	// Use unsafe version to avoid recursive locking
 	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	s.checkAndResetUnsafe(telegramID)
 
-	if quota.TVLimit != -1 && quota.TVUsed >= quota.TVLimit {
+	if quota.TVLimit != -1 && quota.TVUsed+n > quota.TVLimit {
 		s.mu.Unlock()
 		return fmt.Errorf("TV quota exceeded")
 	}
 
-	quota.TVUsed++
+	quota.TVUsed += n
 
 	// Make a copy for async save
 	quotasCopy := make(map[int64]*UserQuota)

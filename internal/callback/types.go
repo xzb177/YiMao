@@ -80,6 +80,7 @@ var validActions = map[Action]bool{
 	"start_settings":    true, // Settings page
 	"start_ai":          true, // AI recommendations page (renamed from start_mood)
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
+	"wish_cancel":       true, // 许愿撤回
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
 	"ai_chat":           true, // AI chat recommendation
 	"notify_settings":   true, // 通知设置页

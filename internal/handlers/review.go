@@ -19,6 +19,9 @@ type ReviewHandler struct {
 	reviewService  *services.ReviewService
 	quotaService   *services.QuotaService
 	webhookService *services.WebhookService
+	// OnCarpoolNotify 拼车用户通知回调（拒绝/撤回时触发）。
+	// 参数：tmdbID, mediaType, title, reason
+	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
 }
 
 func NewReviewHandler(
@@ -330,6 +333,11 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))
+
+	// 通知拼车用户
+	if h.OnCarpoolNotify != nil {
+		go h.OnCarpoolNotify(review.TmdbID, string(review.MediaType), review.MediaTitle, "管理员拒绝")
+	}
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("❌ 已拒绝\n\n📺 %s", review.MediaTitle),

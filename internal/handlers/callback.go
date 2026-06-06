@@ -877,6 +877,8 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", item.TmdbID), "type": item.MediaType}))
+	kb.NewRow()
 	// #3 拼车「我也想看 +1」按钮
 	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", item.TmdbID, item.MediaType))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", item.TmdbID, item.MediaType, item.Title))

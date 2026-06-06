@@ -433,6 +433,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
 
+	// 拼车取消/拒绝通知
+	carpoolNotifyFunc := func(tmdbID int, mediaType, title, reason string) {
+		userIDs := deps.CarpoolService.GetAndClear(tmdbID, mediaType)
+		for _, uid := range userIDs {
+			deps.Telegram.SendMessage(uid, fmt.Sprintf("📢 拼车通知\n\n《%s》%s，本次拼车已取消", title, reason), "", nil)
+		}
+	}
+	reviewHandler.OnCarpoolNotify = carpoolNotifyFunc
+	myRequestsHandler.OnCarpoolNotify = carpoolNotifyFunc
+
 	// #3 拼车 +1 回调处理器
 	carpoolHandler := handlers.NewCarpoolHandler(deps.CarpoolService)
 	// #1 注入 Telegram，用于拼车 +1 时尝试打通私聊通道（打招呼）。
@@ -525,7 +535,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
 	registry.RegisterFunc("start_ai", startHandler.Handle)
-	registry.RegisterFunc("wish", wishHandler.HandleEntry)                      // start_wish 剥前缀后 = wish（许愿池入口）
+	if wishHandler != nil {
+		registry.RegisterFunc("wish", wishHandler.HandleEntry)
+		registry.RegisterFunc("wish_cancel", wishHandler.HandleCancel)
+	}
 	registry.RegisterFunc("myreq_cancel", myRequestsHandler.HandleCancelReview) // 用户撤回 pending 求片申请
 	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)

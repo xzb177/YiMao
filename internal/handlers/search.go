@@ -235,6 +235,9 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*callback.Response, error) {
 	logger.Info("[SearchHandler] Recommendation request: %s", tType)
 
+	// 给用户即时反馈，避免连续狂点触发限流
+	_ = h.telegram.AnswerCallback(ctx.CallbackID, "✨ 正在为你精选...", false)
+
 	if ctx.ChatType != "private" {
 		return &callback.Response{
 			Text:        "⚠️ 推荐功能仅在私聊中可用",

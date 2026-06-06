@@ -316,21 +316,32 @@ func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, er
 		b.WriteString("找到源第一时间私信通知你\n")
 	} else {
 		b.WriteString(fmt.Sprintf("✨ 我的许愿（%d 部）\n\n", len(items)))
+		kb := services.NewKeyboardBuilder()
 		for _, it := range items {
 			icon := "🎬"
 			if it.MediaType == "tv" {
 				icon = "📺"
 			}
-			b.WriteString(fmt.Sprintf("%s %s", icon, it.Title))
+			title := it.Title
 			if it.Year > 0 {
-				b.WriteString(fmt.Sprintf(" (%d)", it.Year))
+				title += fmt.Sprintf(" (%d)", it.Year)
 			}
+			stateText := ""
 			if s := wishStateText(it.State); s != "" {
-				b.WriteString("  " + s)
+				stateText = " " + s
 			}
-			b.WriteString("\n")
+			b.WriteString(fmt.Sprintf("%s %s%s\n", icon, title, stateText))
+			kb.AddButton(fmt.Sprintf("🗑️ %s", truncateTitle(it.Title, 8)),
+				fmt.Sprintf("wish_cancel:id:%d", it.ID))
+			kb.NewRow()
 		}
 		b.WriteString("\n💡 出源后会私信你「🎬 立即求片」按钮")
+		kb.AddButton("⬅️ 返回", "start")
+		return &callback.Response{
+			Text:     b.String(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
 	}
 
 	kb := services.NewKeyboardBuilder()
@@ -341,6 +352,37 @@ func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, er
 		Edit:     true,
 		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// HandleCancel 处理许愿撤回（wish_cancel 回调）。
+func (h *WishHandler) HandleCancel(ctx *callback.Context) (*callback.Response, error) {
+	if h.wish == nil {
+		return &callback.Response{CallbackMsg: "服务未就绪", ShowAlert: true}, nil
+	}
+
+	idStr := ctx.Callback.Params["id"]
+	var wishID int64
+	fmt.Sscanf(idStr, "%d", &wishID)
+
+	if wishID == 0 {
+		return &callback.Response{CallbackMsg: "无效的许愿ID", ShowAlert: true}, nil
+	}
+
+	// 验证归属
+	item, err := h.wish.GetByID(wishID)
+	if err != nil || item == nil {
+		return &callback.Response{CallbackMsg: "许愿记录不存在", ShowAlert: true}, nil
+	}
+	if item.UserID != ctx.UserID {
+		return &callback.Response{CallbackMsg: "这不是你的许愿哦", ShowAlert: true}, nil
+	}
+
+	if err := h.wish.MarkExpired(wishID); err != nil {
+		return &callback.Response{CallbackMsg: "取消失败，请稍后再试", ShowAlert: true}, nil
+	}
+
+	// 重新渲染列表
+	return h.HandleEntry(ctx)
 }
 
 // Handle 处理 wish_request 回调（出源喜报「立即求片」按钮）。
