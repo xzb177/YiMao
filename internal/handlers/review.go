@@ -232,6 +232,9 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		fmt.Sprintf("✅ 《%s》已通过审核！\n\n📥 已提交下载，完成后会通知你\n去「求片进度」随时看状态",
 			review.MediaTitle), "", nil)
 
+	// 通知其他管理员：此请求已被处理
+	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
+
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 已批准并提交\n\n📺 %s", review.MediaTitle),
 		CallbackMsg: "已批准",
@@ -324,6 +327,9 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	h.telegram.SendMessage(review.TelegramID,
 		fmt.Sprintf("❌ 《%s》未通过审核\n\n💡 已自动退还配额，换个片名再试？",
 			review.MediaTitle), "", nil)
+
+	// 通知其他管理员：此请求已被处理
+	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("❌ 已拒绝\n\n📺 %s", review.MediaTitle),
@@ -462,4 +468,18 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 		Text: text,
 		Edit: true,
 	}, nil
+}
+
+// notifyOtherAdmins 通知除当前操作管理员以外的其他管理员。
+func (h *ReviewHandler) notifyOtherAdmins(currentAdminID int64, message string) {
+	if h.adminService == nil {
+		return
+	}
+	adminIDs := h.adminService.GetAdminIDs()
+	for _, adminID := range adminIDs {
+		if adminID == currentAdminID {
+			continue
+		}
+		go h.telegram.SendMessage(adminID, message, "", nil)
+	}
 }
