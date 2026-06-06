@@ -82,7 +82,33 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		return h.handleTrending(ctx, tType)
 	}
 
-	// Check if this is a search history query
+	// Check if this is a popular search query (by index)
+	if idxStr, hasPop := ctx.Callback.Params["pop"]; hasPop {
+		var idx int
+		fmt.Sscanf(idxStr, "%d", &idx)
+		query := h.getPopularQuery(idx)
+		if query != "" {
+			logger.Info("[SearchHandler] Popular search: idx=%d query=%s", idx, query)
+			h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
+			return &callback.Response{CallbackMsg: "搜索中...", ShowAlert: false}, nil
+		}
+		return &callback.Response{Text: "⚠️ 热门数据已过期", ShowAlert: true}, nil
+	}
+
+	// Check if this is a search history query (by index, avoiding 64-byte callback limit)
+	if idxStr, hasHist := ctx.Callback.Params["hist"]; hasHist {
+		var idx int
+		fmt.Sscanf(idxStr, "%d", &idx)
+		query := h.getHistoryQuery(ctx.UserID, idx)
+		if query != "" {
+			logger.Info("[SearchHandler] History search: idx=%d query=%s", idx, query)
+			h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
+			return &callback.Response{CallbackMsg: "搜索中...", ShowAlert: false}, nil
+		}
+		return &callback.Response{Text: "⚠️ 历史记录已过期，请重新搜索", ShowAlert: true}, nil
+	}
+
+	// Check if this is a search history query (by legacy format with query in callback data)
 	if query, hasQuery := ctx.Callback.Params["query"]; hasQuery {
 		logger.Info("[SearchHandler] Quick search from history: query=%s", query)
 		h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
@@ -110,6 +136,34 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	}
 
 	return h.showSearchHistoryOrPrompt(ctx)
+}
+
+// getPopularQuery 根据索引从热门搜索中取回 query。
+func (h *SearchHandler) getPopularQuery(idx int) string {
+	if h.searchHistoryDB != nil {
+		pops, err := h.searchHistoryDB.GetPopularSearches(20)
+		if err == nil && idx >= 0 && idx < len(pops) {
+			return pops[idx].Query
+		}
+	}
+	return ""
+}
+
+// getHistoryQuery 根据索引从搜索历史中取回 query。
+func (h *SearchHandler) getHistoryQuery(userID int64, idx int) string {
+	if h.searchHistoryDB != nil {
+		entries, err := h.searchHistoryDB.GetHistory(userID, 20)
+		if err == nil && idx >= 0 && idx < len(entries) {
+			return entries[idx].Query
+		}
+	}
+	if h.searchHistory != nil {
+		entries := h.searchHistory.GetHistory(userID)
+		if idx >= 0 && idx < len(entries) {
+			return entries[idx].Query
+		}
+	}
+	return ""
 }
 
 // HandleSearchQuery handles a text search query

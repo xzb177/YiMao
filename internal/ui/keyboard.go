@@ -89,7 +89,7 @@ func (b *KeyboardBuilder) BuildRecommendationKeyboard(itemCount int, recType str
 	for i := 1; i <= itemCount && i <= 8; i++ {
 		row = append(row, types.TelegramInlineKeyboardButton{
 			Text:         fmt.Sprintf("%d", i),
-			CallbackData: fmt.Sprintf("detail:id:%d:type:movie", i), // Simplified
+			CallbackData: fmt.Sprintf("detail:id:%d:type:movie", i),
 		})
 
 		if len(row) == 4 || i == itemCount {

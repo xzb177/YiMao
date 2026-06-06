@@ -283,7 +283,7 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	// 使用 UI 包构建主菜单消息（波普艺术风格）
-	baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
+	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
 	// 添加用户观影人格显示（如果有的话）
 	isPrivateChat := ctx.ChatType == "private"
@@ -1882,7 +1882,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
 		// No history, show start menu using UI package
-		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
 		// 添加用户观影人格显示（如果有的话）
 		isPrivateChat := ctx.ChatType == "private"
@@ -2009,7 +2009,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		}
 
 		// Show start menu using UI package for any other source
-		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师")
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
 		// 添加用户观影人格显示（如果有的话）
 		isPrivateChat := ctx.ChatType == "private"
@@ -2047,7 +2047,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu using UI package
 		logger.Info("[BackHandler] Search results expired or empty, showing start menu")
-		baseMsg := ui.BuildMenu("云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 		isPrivateChat := ctx.ChatType == "private"

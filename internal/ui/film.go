@@ -88,7 +88,7 @@ func (b *FilmBuilder) BuildSearchResults(query string, results []services.Search
 	}
 
 	sb.WriteString(filmSeparator + "\n")
-	sb.WriteString("选择数字 · 或继续探索\n")
+	sb.WriteString("点击编号查看详情 · 或继续探索\n")
 
 	return sb.String()
 }

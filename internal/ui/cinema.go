@@ -92,7 +92,7 @@ func (b *CinemaBuilder) BuildSearchResults(query string, results []services.Sear
 	}
 
 	sb.WriteString(cinemaLine + "\n\n")
-	sb.WriteString("选择数字 · 或继续探索\n\n")
+	sb.WriteString("点击编号查看详情 · 或继续探索\n\n")
 
 	return sb.String()
 }

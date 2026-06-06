@@ -57,37 +57,29 @@ func NewBuilder(style UIStyle) MessageBuilder {
 	}
 }
 
-// DefaultStyle 全局默认 UI 风格，可通过 main.go 从配置设置。
-var DefaultStyle = StyleCard
-
-// BuildMenu 构建主菜单
-func BuildMenu(title, subtitle string) string {
-	builder := NewBuilder(DefaultStyle)
-	return builder.BuildMenu(title, subtitle)
+// BuildMenuWith 构建主菜单（指定风格）
+func BuildMenuWith(style UIStyle, title, subtitle string) string {
+	return NewBuilder(style).BuildMenu(title, subtitle)
 }
 
-// BuildSearchResults 构建搜索结果
-func BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
-	builder := NewBuilder(DefaultStyle)
-	return builder.BuildSearchResults(query, results, page, total)
+// BuildSearchResultsWith 构建搜索结果（指定风格）
+func BuildSearchResultsWith(style UIStyle, query string, results []services.SearchResult, page, total int) string {
+	return NewBuilder(style).BuildSearchResults(query, results, page, total)
 }
 
-// BuildMediaDetail 构建媒体详情
-func BuildMediaDetail(result *services.SearchResult) string {
-	builder := NewBuilder(DefaultStyle)
-	return builder.BuildMediaDetail(result)
+// BuildMediaDetailWith 构建媒体详情（指定风格）
+func BuildMediaDetailWith(style UIStyle, result *services.SearchResult) string {
+	return NewBuilder(style).BuildMediaDetail(result)
 }
 
-// BuildRecommendation 构建推荐内容
-func BuildRecommendation(title string, results []services.SearchResult, mood string) string {
-	builder := NewBuilder(DefaultStyle)
-	return builder.BuildRecommendation(title, results, mood)
+// BuildRecommendationWith 构建推荐内容（指定风格）
+func BuildRecommendationWith(style UIStyle, title string, results []services.SearchResult, mood string) string {
+	return NewBuilder(style).BuildRecommendation(title, results, mood)
 }
 
-// BuildRequestList 构建请求列表
-func BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string {
-	builder := NewBuilder(DefaultStyle)
-	return builder.BuildRequestList(requests, page, totalPages, total)
+// BuildRequestListWith 构建请求列表（指定风格）
+func BuildRequestListWith(style UIStyle, requests []services.SubscribeItem, page, totalPages, total int) string {
+	return NewBuilder(style).BuildRequestList(requests, page, totalPages, total)
 }
 
 // 辅助函数：截断文本

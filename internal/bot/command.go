@@ -229,7 +229,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	menuText := ui.BuildMenu("云海影视", "你的私人选片师")
+	menuText := ui.BuildMenuWith(ui.StyleCard, "云海影视", "你的私人选片师")
 	// AI 按钮只在 AI 功能开启时显示
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, ai.GetManager().IsEnabled(), true)
 	telegram.SendMessage(chatID, menuText, "", keyboard)
