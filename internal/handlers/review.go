@@ -227,9 +227,6 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		logger.Info("[ReviewHandler] Failed to update subscription info: %v", err)
 	}
 
-	// Get subscription status
-	statusText := services.GetSubscriptionStateText("N")
-
 	// Notify user about approval
 	h.telegram.SendMessage(review.TelegramID,
 		fmt.Sprintf("✅ 《%s》已通过审核！\n\n📥 已提交下载，完成后会通知你\n去「求片进度」随时看状态",
