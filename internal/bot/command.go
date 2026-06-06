@@ -54,7 +54,7 @@ func HandleCommand(
 			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
 			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
 		} else {
-			telegram.SendMessage(msg.Chat.ID, "📋 请使用 /start 菜单中的 我的请求 功能", "", nil)
+			telegram.SendMessage(msg.Chat.ID, "📋 服务未就绪，请稍后再试", "", nil)
 		}
 	case "/watchlist":
 		// 片单 == 我的请求（已订阅/进行中），与 /requests 同源，不再踢皮球。
@@ -62,7 +62,7 @@ func HandleCommand(
 			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
 			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
 		} else {
-			telegram.SendMessage(msg.Chat.ID, "📎 请使用 /start 菜单中的 我的片单 功能", "", nil)
+			telegram.SendMessage(msg.Chat.ID, "📎 服务未就绪，请稍后再试", "", nil)
 		}
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)

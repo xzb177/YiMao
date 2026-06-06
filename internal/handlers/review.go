@@ -180,7 +180,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
 		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 已拦截：MP 已存在订阅（#%d）", sub.ID),
+			Text:        fmt.Sprintf("⚠️ 已拦截：MoviePilot 已有相同订阅", sub.ID),
 			CallbackMsg: "已有订阅",
 			ShowAlert:   true,
 			Edit:        true,
