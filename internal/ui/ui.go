@@ -57,33 +57,36 @@ func NewBuilder(style UIStyle) MessageBuilder {
 	}
 }
 
-// BuildMenu 构建主菜单（使用极简卡片风格）
+// DefaultStyle 全局默认 UI 风格，可通过 main.go 从配置设置。
+var DefaultStyle = StyleCard
+
+// BuildMenu 构建主菜单
 func BuildMenu(title, subtitle string) string {
-	builder := NewBuilder(StyleCard)
+	builder := NewBuilder(DefaultStyle)
 	return builder.BuildMenu(title, subtitle)
 }
 
-// BuildSearchResults 构建搜索结果（使用极简卡片风格）
+// BuildSearchResults 构建搜索结果
 func BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
-	builder := NewBuilder(StyleCard)
+	builder := NewBuilder(DefaultStyle)
 	return builder.BuildSearchResults(query, results, page, total)
 }
 
-// BuildMediaDetail 构建媒体详情（使用极简卡片风格）
+// BuildMediaDetail 构建媒体详情
 func BuildMediaDetail(result *services.SearchResult) string {
-	builder := NewBuilder(StyleCard)
+	builder := NewBuilder(DefaultStyle)
 	return builder.BuildMediaDetail(result)
 }
 
-// BuildRecommendation 构建推荐内容（使用极简卡片风格）
+// BuildRecommendation 构建推荐内容
 func BuildRecommendation(title string, results []services.SearchResult, mood string) string {
-	builder := NewBuilder(StyleCard)
+	builder := NewBuilder(DefaultStyle)
 	return builder.BuildRecommendation(title, results, mood)
 }
 
-// BuildRequestList 构建请求列表（使用极简卡片风格）
+// BuildRequestList 构建请求列表
 func BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string {
-	builder := NewBuilder(StyleCard)
+	builder := NewBuilder(DefaultStyle)
 	return builder.BuildRequestList(requests, page, totalPages, total)
 }
 

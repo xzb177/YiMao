@@ -16,7 +16,7 @@ func NewKeyboardBuilder() *KeyboardBuilder {
 }
 
 // BuildSearchKeyboard builds a keyboard for search results.
-func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string) *types.TelegramInlineKeyboard {
+func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string, currentPage, totalPages int) *types.TelegramInlineKeyboard {
 	var rows [][]types.TelegramInlineKeyboardButton
 
 	// Result buttons
@@ -33,14 +33,26 @@ func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string) *type
 		}
 	}
 
-	// Navigation row
+	// Navigation row: dynamic pagination
+	if currentPage < 1 {
+		currentPage = 1
+	}
+	if totalPages < 1 {
+		totalPages = 1
+	}
 	navRow := []types.TelegramInlineKeyboardButton{
 		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 	}
-	if itemCount >= 20 {
+	if currentPage > 1 {
+		navRow = append(navRow, types.TelegramInlineKeyboardButton{
+			Text:         "⬅️ 上一页",
+			CallbackData: fmt.Sprintf("search:page:%d", currentPage-1),
+		})
+	}
+	if currentPage < totalPages {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
 			Text:         "➡️ 下一页",
-			CallbackData: "search:page:2",
+			CallbackData: fmt.Sprintf("search:page:%d", currentPage+1),
 		})
 	}
 	rows = append(rows, navRow)
@@ -164,9 +176,10 @@ func (b *KeyboardBuilder) BuildNoResultsKeyboard() *types.TelegramInlineKeyboard
 	return &types.TelegramInlineKeyboard{
 		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 			{
-				{Text: "🔥 热门搜索", CallbackData: "start_ai"},
+				{Text: "🌟 加入许愿池", CallbackData: "wish_add"},
 			},
 			{
+				{Text: "🔥 热门搜索", CallbackData: "start_ai"},
 				{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 			},
 		},

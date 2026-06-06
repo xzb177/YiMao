@@ -85,7 +85,7 @@ func (b *NeonBuilder) BuildSearchResults(query string, results []services.Search
 	}
 
 	sb.WriteString(neonSeparator + "\n")
-	sb.WriteString("输入数字选择 · 或翻页 ↓\n")
+	sb.WriteString("点击编号查看详情 · 或翻页 ↓\n")
 
 	return sb.String()
 }
