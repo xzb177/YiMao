@@ -1011,6 +1011,23 @@ func (c *MoviePilotClient) ReshareSubscription(subscriptionID string) error {
 	return err
 }
 
+// CancelSubscription cancels a MoviePilot subscription by setting its state to cancelled.
+func (c *MoviePilotClient) CancelSubscription(subscriptionID string) error {
+	endpoint := fmt.Sprintf("/api/v1/subscription/%s", subscriptionID)
+
+	payload := map[string]interface{}{
+		"state": StateCancelled,
+	}
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal payload: %w", err)
+	}
+
+	_, err = c.makeRequest("PUT", endpoint, data)
+	return err
+}
+
 // SubscribeStatus represents the detailed status of a subscription
 type SubscribeStatus struct {
 	ID             int    `json:"id"`

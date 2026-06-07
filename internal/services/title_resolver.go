@@ -29,9 +29,8 @@ func (r *TitleResolver) ResolveMovieTitle(item *MediaItem, filename string) stri
 		return item.Title
 	}
 
-	// Priority 2: Try common alternatives from embedded data
-	// (These might be in different fields depending on the source)
-	// For now, we'll rely on the filename extraction
+	// Priority 2: source-specific alternative fields are normalized before MediaItem reaches this resolver.
+	// Fall back to robust filename extraction here.
 
 	// Priority 3: Try filename extraction
 	if filename != "" {

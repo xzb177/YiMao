@@ -16,6 +16,7 @@ type NotificationService struct {
 	userMapping *UserMappingService
 	notifyFile  string
 	knownUsers  map[int64]int64 // telegramID -> moviepilotID
+	review      *ReviewService  // optional: resolve MoviePilot subscription/request ID back to Telegram user
 	mu          sync.RWMutex
 	// NotifyEnabled 检查用户是否开启了某类通知（由 main 注入）。
 	// 参数：userID, notifyKey。返回 true 表示允许发送。
@@ -23,13 +24,14 @@ type NotificationService struct {
 }
 
 // NewNotificationService creates a new notification service
-func NewNotificationService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, dataDir string) *NotificationService {
+func NewNotificationService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, review *ReviewService, dataDir string) *NotificationService {
 	notifyFile := dataDir + "/notifications.json"
 
 	return &NotificationService{
 		telegram:    telegram,
 		moviepilot:  moviepilot,
 		userMapping: userMapping,
+		review:      review,
 		notifyFile:  notifyFile,
 		knownUsers:  make(map[int64]int64),
 	}
@@ -93,7 +95,7 @@ func (s *NotificationService) NotifyStatusUpdate(requestID int, status *Subscrib
 	defer s.mu.Unlock()
 
 	// Find all users who should be notified (admin who submitted or the request owner)
-	// For now, we'll store notifications and process them periodically
+	// Store notifications and process them asynchronously so webhook/API callers are not blocked by Telegram delivery.
 
 	update := &StatusUpdate{
 		RequestID:  status.ID,
@@ -184,9 +186,34 @@ func (s *NotificationService) processNotifications(updates []StatusUpdate) {
 
 // findUserForRequest finds the Telegram user ID for a request
 func (s *NotificationService) findUserForRequest(requestID int) int64 {
-	// For now, we'll return a placeholder
-	// In production, you would map requests to users
-	// This could be enhanced to track who made each request
+	if requestID <= 0 {
+		return 0
+	}
+
+	// Prefer ReviewService because approved reviews persist the MoviePilot subscription ID.
+	if s.review != nil {
+		s.review.mu.RLock()
+		defer s.review.mu.RUnlock()
+		for _, review := range s.review.reviews {
+			if review == nil {
+				continue
+			}
+			if review.SubscriptionID == requestID {
+				return review.TelegramID
+			}
+		}
+	}
+
+	// Fallback: some MoviePilot status payloads include username. Resolve it via UserMapping if available.
+	if s.moviepilot != nil && s.userMapping != nil {
+		status, err := s.moviepilot.GetSubscriptionStatus(requestID)
+		if err == nil && status != nil && status.Username != "" {
+			if telegramID, ok := s.userMapping.GetTelegramIDByMoviePilotUsername(status.Username); ok {
+				return telegramID
+			}
+		}
+	}
+
 	return 0
 }
 
@@ -322,9 +349,53 @@ func (s *NotificationService) StartNotificationWorker() {
 	}()
 }
 
-// checkStatusUpdates polls for status changes on subscribed items
+// checkStatusUpdates polls for status changes on tracked subscribed items.
 func (s *NotificationService) checkStatusUpdates() {
-	// Get all subscribe requests and check their status
-	// This would require maintaining a list of tracked requests
-	// For now, this is a placeholder for the implementation
+	updates, err := s.LoadStatusUpdates()
+	if err != nil {
+		logger.Info("[Notification] Failed to load status updates: %v", err)
+		return
+	}
+	if len(updates) == 0 || s.moviepilot == nil {
+		return
+	}
+
+	changed := false
+	for i := range updates {
+		requestID := updates[i].RequestID
+		if requestID <= 0 {
+			continue
+		}
+		status, err := s.moviepilot.GetSubscriptionStatus(requestID)
+		if err != nil {
+			logger.Info("[Notification] Failed to poll subscription %d: %v", requestID, err)
+			continue
+		}
+		if status == nil || status.State == "" || status.State == updates[i].NewState {
+			continue
+		}
+
+		updates[i].OldState = updates[i].NewState
+		updates[i].NewState = status.State
+		updates[i].MediaTitle = status.Name
+		updates[i].MediaYear = status.Year
+		updates[i].MediaType = status.Type
+		updates[i].SavePath = status.SavePath
+		updates[i].Percent = status.Percent
+		updates[i].CurrentEp = status.CurrentEpisode
+		updates[i].TotalEp = status.TotalEpisode
+		updates[i].ErrorMessage = status.ErrorMessage
+		updates[i].Timestamp = time.Now()
+		updates[i].Notified = false
+		changed = true
+	}
+
+	if !changed {
+		return
+	}
+	if err := s.SaveStatusUpdates(updates); err != nil {
+		logger.Info("[Notification] Failed to save polled status updates: %v", err)
+		return
+	}
+	go s.processNotifications(updates)
 }

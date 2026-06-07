@@ -76,6 +76,11 @@ func HandleCommand(
 			telegram.SendMessage(msg.Chat.ID, "📋 服务未就绪，请稍后再试", "", nil)
 		}
 	case "/watchlist":
+		// 群组隐私保护：群内不暴露片单/进度
+		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+			telegram.SendMessage(msg.Chat.ID, "🔒 为了保护您的观影隐私，请私聊查看完整片单", "", nil)
+			return
+		}
 		// 片单 == 我的请求（已订阅/进行中），与 /requests 同源，不再踢皮球。
 		if myRequestsHandler != nil {
 			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)

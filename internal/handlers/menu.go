@@ -767,6 +767,12 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 			},
 			{
 				{
+					Text:         "🚫 取消订阅",
+					CallbackData: callback.BuildCallback("myreqs_item", map[string]string{"action": "cancel", "id": itemID, "page": strconv.Itoa(page)}),
+				},
+			},
+			{
+				{
 					Text:         "⬅️ 返回列表",
 					CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": strconv.Itoa(page)}),
 				},
@@ -802,11 +808,56 @@ func (h *MyRequestsHandler) handleReshare(ctx *callback.Context, itemID string, 
 	}, nil
 }
 
-// handleCancel handles cancel subscription (placeholder)
+// handleCancel cancels a MoviePilot subscription owned by the current user.
 func (h *MyRequestsHandler) handleCancel(ctx *callback.Context, itemID string, page int) (*callback.Response, error) {
+	if h.moviepilot == nil {
+		return &callback.Response{
+			Text:        "❌ MoviePilot 服务未就绪",
+			CallbackMsg: "服务未就绪",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Ownership check: only allow cancelling subscriptions visible in the user's own list.
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	moviepilotID := sess.GetMoviePilotUserID()
+	requests, err := h.moviepilot.GetUserRequests(moviepilotID)
+	if err != nil {
+		logger.Info("[MyRequestsHandler] Load user requests before cancel failed user=%d item=%s: %v", ctx.UserID, itemID, err)
+		return &callback.Response{
+			Text:        "❌ 获取请求失败，请稍后再试",
+			CallbackMsg: "获取失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	owned := false
+	for _, req := range requests {
+		if fmt.Sprintf("%d", req.ID) == itemID {
+			owned = true
+			break
+		}
+	}
+	if !owned {
+		return &callback.Response{
+			Text:        "❌ 请求不存在或不属于你",
+			CallbackMsg: "无权限",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	if err := h.moviepilot.CancelSubscription(itemID); err != nil {
+		logger.Info("[MyRequestsHandler] Cancel failed for item %s: %v", itemID, err)
+		return &callback.Response{
+			Text:        "❌ 取消订阅失败，请稍后再试",
+			CallbackMsg: "取消失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
 	return &callback.Response{
-		Text:        "💬 取消功能请联系管理员",
-		CallbackMsg: "需要管理员处理",
+		Text:        "✅ 已取消订阅\n\n刷新列表后可查看最新状态。",
+		CallbackMsg: "已取消",
 		ShowAlert:   true,
 	}, nil
 }

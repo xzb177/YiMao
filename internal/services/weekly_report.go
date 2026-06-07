@@ -61,6 +61,7 @@ type WeeklyReportService struct {
 	searchHistory *SearchHistoryDB
 	quotaService  *QuotaService
 	reviewService *ReviewService
+	userMapping   *UserMappingService
 	telegram      *TelegramClient
 	tmdbClient    *TMDBClient
 
@@ -73,7 +74,7 @@ type WeeklyReportService struct {
 }
 
 // NewWeeklyReportService creates a new weekly report service
-func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quota *QuotaService, review *ReviewService, telegram *TelegramClient, tmdb *TMDBClient) *WeeklyReportService {
+func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quota *QuotaService, review *ReviewService, userMapping *UserMappingService, telegram *TelegramClient, tmdb *TMDBClient) *WeeklyReportService {
 	dataFile := fmt.Sprintf("%s/weekly_reports.json", dataDir)
 
 	service := &WeeklyReportService{
@@ -84,6 +85,7 @@ func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quot
 		searchHistory: searchHistory,
 		quotaService:  quota,
 		reviewService: review,
+		userMapping:   userMapping,
 		telegram:      telegram,
 		tmdbClient:    tmdb,
 		stopChan:      make(chan bool),
@@ -474,28 +476,79 @@ func (s *WeeklyReportService) weeklyRoutine() {
 
 // sendWeeklyReports sends reports to all active users
 func (s *WeeklyReportService) sendWeeklyReports() {
-	logger.Info("[WeeklyReport] Starting weekly report sending - using existing report data")
+	logger.Info("[WeeklyReport] Starting weekly report sending - generating reports for active users")
 
-	// Send reports for users who already have generated reports
-	s.mu.RLock()
-	var userIDs []int64
-	for _, report := range s.reports {
-		if !report.IsSent {
-			userIDs = append(userIDs, report.UserID)
-		}
+	userIDs := s.collectWeeklyReportUsers()
+	if len(userIDs) == 0 {
+		logger.Info("[WeeklyReport] No active users found for weekly report")
+		return
 	}
-	s.mu.RUnlock()
 
+	sent := 0
 	for _, userID := range userIDs {
-		userName := "用户" // Can be fetched from session
+		userName := "用户"
+		if s.userMapping != nil {
+			if name := s.userMapping.GetTelegramUsername(userID); name != "" {
+				userName = name
+			}
+		}
 		if err := s.SendReport(userID, userName); err != nil {
 			logger.Info("[WeeklyReport] Failed to send report to %d: %v", userID, err)
+			continue
 		}
+		sent++
 		// Add delay to avoid rate limiting
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	logger.Info("[WeeklyReport] Sent %d weekly reports", len(userIDs))
+	logger.Info("[WeeklyReport] Sent %d/%d weekly reports", sent, len(userIDs))
+}
+
+func (s *WeeklyReportService) collectWeeklyReportUsers() []int64 {
+	seen := make(map[int64]bool)
+	var userIDs []int64
+	add := func(id int64) {
+		if id == 0 || seen[id] {
+			return
+		}
+		seen[id] = true
+		userIDs = append(userIDs, id)
+	}
+
+	// Include users with already generated unsent reports for backward compatibility.
+	s.mu.RLock()
+	for _, report := range s.reports {
+		if report != nil && !report.IsSent {
+			add(report.UserID)
+		}
+	}
+	s.mu.RUnlock()
+
+	// Include bound users so weekly report can be pushed without a manual preview first.
+	if s.userMapping != nil {
+		for _, id := range s.userMapping.GetAllTelegramUsers() {
+			add(id)
+		}
+	}
+
+	weekStart, _ := getWeekRange(time.Now())
+	if s.searchHistory != nil {
+		if ids, err := s.searchHistory.GetActiveUsers(weekStart); err != nil {
+			logger.Info("[WeeklyReport] Failed to collect search active users: %v", err)
+		} else {
+			for _, id := range ids {
+				add(id)
+			}
+		}
+	}
+
+	if s.reviewService != nil {
+		for _, id := range s.reviewService.GetActiveUserIDs(weekStart) {
+			add(id)
+		}
+	}
+
+	return userIDs
 }
 
 // reminderRoutine checks for media availability reminders hourly
@@ -527,10 +580,8 @@ func (s *WeeklyReportService) checkReminders() {
 			continue
 		}
 
-		// Check if media is available (simplified check)
-		// In real implementation, check Emby/MoviePilot availability
-		// For now, just check if enough time has passed (3 days)
-		if time.Since(reminder.SearchDate) > 3*24*time.Hour {
+		ready, reason := s.reminderReady(reminder)
+		if ready {
 			// 检查用户是否开启了推荐通知
 			if s.NotifyEnabled != nil && !s.NotifyEnabled(reminder.UserID, NotifyRecommend) {
 				reminder.IsNotified = true
@@ -538,7 +589,7 @@ func (s *WeeklyReportService) checkReminders() {
 			}
 
 			// Send reminder
-			msg := fmt.Sprintf("🔔 你之前搜索的「%s」可能已经更新啦！快去搜索看看吧 👉 /search", reminder.MediaTitle)
+			msg := fmt.Sprintf("🔔 你之前搜索的「%s」%s\n\n👉 可以回到机器人里重新搜索/查看进度", reminder.MediaTitle, reason)
 			s.telegram.SendMessage(reminder.UserID, msg, "", nil)
 
 			reminder.IsNotified = true
@@ -550,6 +601,27 @@ func (s *WeeklyReportService) checkReminders() {
 	}
 
 	go s.save()
+}
+
+func (s *WeeklyReportService) reminderReady(reminder *MediaReminder) (bool, string) {
+	if reminder == nil {
+		return false, ""
+	}
+	if s.reviewService != nil {
+		for _, req := range s.reviewService.GetUserRequests(reminder.UserID) {
+			if req == nil || req.TmdbID != reminder.TmdbID {
+				continue
+			}
+			if req.SubscriptionState == StateCompleted {
+				return true, "已经到货啦"
+			}
+		}
+	}
+
+	if time.Since(reminder.SearchDate) > 3*24*time.Hour {
+		return true, "已经过了 3 天，可以再查一次是否有源"
+	}
+	return false, ""
 }
 
 // AddReminder adds a media reminder

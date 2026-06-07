@@ -483,6 +483,32 @@ func (s *SearchHistoryDB) UpdateEntryMedia(userID int64, index int, mediaID int,
 	return err
 }
 
+// GetActiveUsers returns Telegram user IDs that searched after the given time.
+func (s *SearchHistoryDB) GetActiveUsers(since time.Time) ([]int64, error) {
+	rows, err := s.db.Query(
+		"SELECT DISTINCT user_id FROM search_history WHERE timestamp >= ? ORDER BY user_id",
+		since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get active users: %w", err)
+	}
+	defer rows.Close()
+
+	var users []int64
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan active user: %w", err)
+		}
+		users = append(users, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate active users: %w", err)
+	}
+
+	return users, nil
+}
+
 // Close closes the database connection
 func (s *SearchHistoryDB) Close() error {
 	return s.db.Close()

@@ -126,7 +126,7 @@ func (ma *MessageAggregator) SendMessage(chatID int64, text string, parseMode st
 		q.mu.Unlock()
 	}
 
-	return &types.TelegramMessage{MessageID: 0}, nil // Return placeholder
+	return nil, nil // queued for asynchronous delivery; use priority=2 when the caller needs the Telegram MessageID
 }
 
 // SendAsync sends a message asynchronously with callback

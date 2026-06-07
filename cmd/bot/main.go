@@ -308,7 +308,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Initialize Notification Service
 	logger.Info("  [8/11] Creating notification service...")
-	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, cfg.DataDir)
+	notificationService := services.NewNotificationService(telegramClient, moviepilotClient, userMappingService, reviewService, cfg.DataDir)
 	notificationService.NotifyEnabled = func(userID int64, key string) bool {
 		return preferencesService.IsNotifyEnabled(userID, key)
 	}
@@ -338,7 +338,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("    - WeeklyReportService...")
 	var weeklyReportSvc *services.WeeklyReportService
 	if searchHistoryDB != nil {
-		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, telegramClient, tmdbClient)
+		weeklyReportSvc = services.NewWeeklyReportService(cfg.DataDir, searchHistoryDB, quotaService, reviewService, userMappingService, telegramClient, tmdbClient)
 		weeklyReportSvc.NotifyEnabled = func(userID int64, key string) bool {
 			return preferencesService.IsNotifyEnabled(userID, key)
 		}
@@ -514,6 +514,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
+	adminHandler.SetReviewService(deps.ReviewService)
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
 	myRequestsHandler.SetReviewService(deps.ReviewService)
 	myRequestsHandler.SetQuotaService(deps.QuotaService)

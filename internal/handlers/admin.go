@@ -23,6 +23,7 @@ type AdminHandler struct {
 	quotaService         *services.QuotaService
 	mediaNotificationSvc *services.MediaNotificationService
 	issueService         *services.IssueService
+	reviewService        *services.ReviewService
 }
 
 // NewAdminHandler creates a new admin handler
@@ -52,6 +53,11 @@ func (h *AdminHandler) SetMediaNotificationService(svc *services.MediaNotificati
 // SetIssueService sets the issue service
 func (h *AdminHandler) SetIssueService(svc *services.IssueService) {
 	h.issueService = svc
+}
+
+// SetReviewService sets the review service used by admin panels.
+func (h *AdminHandler) SetReviewService(svc *services.ReviewService) {
+	h.reviewService = svc
 }
 
 // Handle handles admin callbacks
@@ -221,19 +227,55 @@ func (h *AdminHandler) handlePending(ctx *callback.Context) (*callback.Response,
 		}, nil
 	}
 
-	if h.moviepilot == nil {
+	if h.reviewService == nil {
 		return &callback.Response{
-			Text: "❌ MoviePilot API 未配置",
+			Text: "❌ 审核服务未就绪",
 			Edit: true,
 		}, nil
 	}
 
-	// Get pending requests - placeholder for MoviePilot API
-	message := "📋 待处理请求\n\n💡 MoviePilot API 集成中，请直接访问 MoviePilot 网页管理请求"
+	pending := h.reviewService.GetPendingRequests()
+	if len(pending) == 0 {
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("⬅️ 返回管理面板", "admin_menu")
+		return &callback.Response{
+			Text:     "📋 待处理请求\n\n✅ 暂无待审核请求",
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+
+	msg := services.NewMessageBuilder()
+	msg.Bold("📋 待处理请求").Newline()
+	msg.Italic(fmt.Sprintf("当前共有 %d 条待审核", len(pending))).Newline()
+	msg.Newline()
+
+	limit := len(pending)
+	if limit > 10 {
+		limit = 10
+	}
+	for i := 0; i < limit; i++ {
+		req := pending[i]
+		mediaType := "电影"
+		if req.MediaType == services.MediaTypeTV {
+			mediaType = "剧集"
+		}
+		msg.Textf("%d. %s《%s》(%d)", i+1, mediaType, req.MediaTitle, req.MediaYear).Newline()
+		msg.Textf("   👤 %s · %s", req.TelegramName, req.CreatedAt.Format("01-02 15:04")).Newline()
+	}
+	if len(pending) > limit {
+		msg.Newline().Italic(fmt.Sprintf("还有 %d 条，请进入审核列表分页处理", len(pending)-limit))
+	}
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🧾 进入审核列表", "review_list")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理面板", "admin_menu")
 
 	return &callback.Response{
-		Text: message,
-		Edit: true,
+		Text:     msg.Build(),
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
 	}, nil
 }
 

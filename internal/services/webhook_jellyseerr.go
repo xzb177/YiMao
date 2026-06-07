@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 	"regexp"
 	"strconv"
 	"strings"
@@ -285,15 +286,57 @@ func (s *WebhookService) notifyAdminsAboutIssue(issueID int64, payload Jellyseer
 
 // handleIssueComment handles new comment on issue
 func (s *WebhookService) handleIssueComment(payload JellyseerrWebhookPayload) error {
-	// For now, just log it
-	logger.Info("[Webhook] Issue comment: %s", payload.Message)
+	issueID := int64(0)
+	if payload.Issue != nil {
+		issueID = payload.Issue.ID
+	}
+	message := fmt.Sprintf("💬 Jellyseerr 问题有新评论\n\n%s", payload.Subject)
+	if payload.Message != "" {
+		message += fmt.Sprintf("\n\n📝 %s", payload.Message)
+	}
+	if payload.User != nil && payload.User.Username != "" {
+		message += fmt.Sprintf("\n\n👤 评论人: %s", payload.User.Username)
+	}
+
+	var keyboard *types.TelegramInlineKeyboard
+	if issueID != 0 {
+		keyboard = convertToInlineKeyboard([][]map[string]string{{
+			{"text": "💬 回复", "callback_data": fmt.Sprintf("admin_issue_reply:id:%d", issueID)},
+			{"text": "✅ 已修复", "callback_data": fmt.Sprintf("admin_issue_fixed:id:%d", issueID)},
+		}})
+	}
+
+	for _, adminID := range s.adminService.GetAdminIDs() {
+		if _, err := s.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
+			logger.Info("[Webhook] Failed to notify admin %d about issue comment: %v", adminID, err)
+		}
+	}
 	return nil
 }
 
 // handleIssueResolved handles issue resolved event
 func (s *WebhookService) handleIssueResolved(payload JellyseerrWebhookPayload) error {
-	// For now, just log it
-	logger.Info("[Webhook] Issue resolved: %s", payload.Subject)
+	message := fmt.Sprintf("✅ Jellyseerr 问题已解决\n\n%s", payload.Subject)
+	if payload.Media != nil && payload.Media.Title != "" {
+		message += fmt.Sprintf("\n\n🎬 %s", payload.Media.Title)
+	}
+	if payload.User != nil && payload.User.Username != "" {
+		message += fmt.Sprintf("\n👤 %s", payload.User.Username)
+	}
+
+	if payload.User != nil {
+		if telegramID, ok := s.userMapping.GetTelegramIDByJellyseerrID(payload.User.ID); ok {
+			if _, err := s.telegram.SendMessage(telegramID, message, "", nil); err != nil {
+				logger.Info("[Webhook] Failed to notify user %d about issue resolved: %v", telegramID, err)
+			}
+		}
+	}
+
+	for _, adminID := range s.adminService.GetAdminIDs() {
+		if _, err := s.telegram.SendMessage(adminID, message, "", nil); err != nil {
+			logger.Info("[Webhook] Failed to notify admin %d about issue resolved: %v", adminID, err)
+		}
+	}
 	return nil
 }
 

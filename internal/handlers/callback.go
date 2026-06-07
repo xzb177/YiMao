@@ -360,7 +360,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	// Check if AI is enabled
 	if !ai.GetManager().IsEnabled() {
 		return &callback.Response{
-			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY",
+			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一",
 			CallbackMsg: "AI 未启用",
 			ShowAlert:   true,
 		}, nil
@@ -440,7 +440,7 @@ func (h *StartHandler) HandleAIChat(ctx *callback.Context) (*callback.Response, 
 	// Check if AI is enabled
 	if !ai.GetManager().IsEnabled() {
 		return &callback.Response{
-			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 ZHIPU_API_KEY",
+			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一",
 			CallbackMsg: "AI 未启用",
 			ShowAlert:   true,
 		}, nil

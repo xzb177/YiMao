@@ -427,6 +427,28 @@ func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	return userReviews
 }
 
+// GetActiveUserIDs returns users who created review requests after the given time.
+func (s *ReviewService) GetActiveUserIDs(since time.Time) []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	seen := make(map[int64]bool)
+	var users []int64
+	for _, review := range s.reviews {
+		if review == nil || review.TelegramID == 0 {
+			continue
+		}
+		if !since.IsZero() && review.CreatedAt.Before(since) {
+			continue
+		}
+		if !seen[review.TelegramID] {
+			seen[review.TelegramID] = true
+			users = append(users, review.TelegramID)
+		}
+	}
+	return users
+}
+
 // HasActiveSimilarRequest checks if user already has a similar active request
 func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
 	s.mu.RLock()
