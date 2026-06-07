@@ -817,77 +817,40 @@ func isAIRecommendationQuery(query string) bool {
 }
 
 func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
-	// Cache media info for resource list
-	cacheMediaInfo(sess, item.TmdbID, item.Title, item.Year)
+	safeTitle := html.EscapeString(item.Title)
+	safeOverview := html.EscapeString(item.Overview)
+	var sb strings.Builder
 
-	msg := services.NewMessageBuilder()
-
-	// Type icon and label
 	typeIcon := "🎬"
-	typeLabel := "电影"
 	if item.MediaType == "tv" {
 		typeIcon = "📺"
-		typeLabel = "剧集"
 	}
-
-	// Header with title
-	msg.Bold(fmt.Sprintf("%s %s", typeIcon, item.Title)).Newline()
-
-	// Year and rating on same line
-	infoLine := ""
+	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
 	if item.Year > 0 {
-		infoLine = fmt.Sprintf("📅 %d年", item.Year)
+		header += fmt.Sprintf(" (%d)", item.Year)
 	}
+	sb.WriteString(header + "\n\n")
+
 	if item.Rating > 0 {
-		if infoLine != "" {
-			infoLine += "  •  "
+		sb.WriteString(fmt.Sprintf("╭── 🍿 <b>影片信息</b> ────────────────╮\n"))
+		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", item.Rating))
+		sb.WriteString("╰──────────────────────────────────────╯\n\n")
+	}
+
+	if safeOverview != "" {
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		if len([]rune(safeOverview)) > 200 {
+			safeOverview = string([]rune(safeOverview)[:200]) + "..."
 		}
-		infoLine += fmt.Sprintf("⭐ %.1f分", item.Rating)
-	}
-	if infoLine != "" {
-		msg.Text(infoLine).Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", safeOverview))
 	}
 
-	// Media type badge
-	msg.Text(fmt.Sprintf("🏷️ %s", typeLabel)).Newline()
-	msg.Newline()
-
-	// AI Reason
-	if item.Reason != "" {
-		msg.Bold("💭 推荐理由").Newline()
-		msg.Text(item.Reason).Newline()
-		msg.Newline()
-	}
-
-	// Overview (truncate if too long)
-	if item.Overview != "" {
-		overview := item.Overview
-		if len(overview) > 150 {
-			overview = overview[:150] + "..."
-		}
-		msg.Text(overview).Newline()
-		msg.Newline()
-	}
-
-	// Request button label
-	buttonLabel := "✅ 立即求片"
-	if item.MediaType == "tv" {
-		buttonLabel = "✅ 求剧集"
-	}
-
-	// Keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", item.TmdbID), "type": item.MediaType}))
-	kb.NewRow()
-	// #3 拼车「我也想看 +1」按钮
-	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", item.TmdbID, item.MediaType))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", item.TmdbID, item.MediaType, item.Title))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回列表", "back")
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
@@ -1134,76 +1097,50 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 }
 
 func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *session.Session) *callback.Response {
-	msg := services.NewMessageBuilder()
+	cacheMediaInfo(sess, media.ID, media.Title, media.Year.Int())
 
-	// Get title
-	title := media.Title
+	isTV := media.Type == services.MediaTypeTV
+	safeTitle := html.EscapeString(media.Title)
+	var sb strings.Builder
 
-	// Type icon
 	typeIcon := "🎬"
-	if media.Type == services.MediaTypeTV {
+	if isTV {
 		typeIcon = "📺"
 	}
-
-	// Header
-	msg.Bold(fmt.Sprintf("%s %s", typeIcon, title)).Newline()
-
-	// Year and rating
-	infoLine := ""
+	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
 	if media.Year > 0 {
-		infoLine = fmt.Sprintf("📅 %d年", media.Year)
+		header += fmt.Sprintf(" (%d)", media.Year.Int())
 	}
+	sb.WriteString(header + "\n\n")
+
+	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
 	if media.Rating > 0 {
-		if infoLine != "" {
-			infoLine += "  •  "
-		}
-		infoLine += fmt.Sprintf("⭐ %.1f分", media.Rating)
+		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", media.Rating))
 	}
-	if infoLine != "" {
-		msg.Text(infoLine).Newline()
+	if len(media.Genres) > 0 {
+		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(media.Genres, "/"))))
 	}
+	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// Genres - not available in MoviePilot MediaInfo
-	// Skip genre display for now
-
-	msg.Newline()
-
-	// Overview (truncate if too long)
 	if media.Overview != "" {
-		overview := media.Overview
-		if len(overview) > 200 {
-			overview = overview[:200] + "..."
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		overview := html.EscapeString(media.Overview)
+		if len([]rune(overview)) > 200 {
+			overview = string([]rune(overview)[:200]) + "..."
 		}
-		msg.Text(overview).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	// TMDB ID
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", media.ID)).Newline()
-
-	// Request button label
-	buttonLabel := "✅ 立即求片"
-	if media.Type == services.MediaTypeTV {
-		buttonLabel = "✅ 求剧集"
-	}
-
-	// Keyboard
-	mediaTypeStr := "movie"
-	if media.Type == services.MediaTypeTV {
-		mediaTypeStr = "tv"
-	}
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", media.ID, mediaTypeStr))
-	// #3 拼车「我也想看 +1」按钮
-	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", media.ID, mediaTypeStr))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s:title:%s", media.ID, mediaTypeStr, media.Title))
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": mediaTypeStr}))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回列表", "back")
+	if isTV {
+		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", media.ID))
+	} else {
+		kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
+	}
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
@@ -1261,197 +1198,96 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
 func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query string) *callback.Response {
-	// Cache media info for resource list
 	cacheMediaInfo(sess, info.ID, info.Title, info.Year.Int())
 
-	msg := services.NewMessageBuilder()
-
-	// Determine media type
 	isTV := info.Type == services.MediaTypeTV
+	safeTitle := html.EscapeString(info.Title)
+	var sb strings.Builder
+
 	typeIcon := "🎬"
-	typeLabel := "电影"
 	if isTV {
 		typeIcon = "📺"
-		typeLabel = "剧集"
 	}
-
-	// Title header
-	msg.Bold(fmt.Sprintf("%s %s", typeIcon, info.Title)).Newline()
-	msg.Newline()
-
-	// Info section - Year, Rating, Type
+	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
 	if info.Year > 0 {
-		msg.Textf("📅 %d年  ", info.Year.Int())
+		header += fmt.Sprintf(" (%d)", info.Year.Int())
 	}
+	sb.WriteString(header + "\n\n")
+
+	// Spec dashboard
+	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
 	if info.Rating > 0 {
-		msg.Textf("⭐ %.1f分  ", info.Rating)
+		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", info.Rating))
 	}
-	msg.Textf("🏷️ %s", typeLabel).Newline()
-	msg.Newline()
-
-	// Genres/Category
 	if len(info.Genres) > 0 {
-		msg.Textf("🎭 %s", strings.Join(info.Genres, "、")).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(info.Genres, "/"))))
 	}
+	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// TV show seasons info - prefer TMDB for complete season list
-	seasons := extractSeasons(info)
-	var numberOfSeasons int
+	// TV seasons
 	if isTV && h.tmdb != nil && info.ID > 0 {
-		// Try to get complete season info from TMDB
 		tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
-		if err != nil {
-			// Log TMDB error for debugging
-			logger.Info("[DetailHandler] TMDB API failed for ID %d: %v, falling back to MoviePilot", info.ID, err)
-		}
 		if err == nil && len(tmdbDetails.Seasons) > 0 {
-			// Use TMDB seasons for complete list
-			numberOfSeasons = tmdbDetails.NumberOfSeasons
-			seasons = make([]session.Season, len(tmdbDetails.Seasons))
-			for i, s := range tmdbDetails.Seasons {
-				seasons[i] = session.Season{
-					SeasonNumber: s.SeasonNumber,
-					EpisodeCount: s.EpisodeCount,
-					Name:         s.Name,
+			regularSeasonCount := 0
+			for _, s := range tmdbDetails.Seasons {
+				if s.SeasonNumber > 0 {
+					regularSeasonCount++
 				}
 			}
-			logger.Info("[DetailHandler] Using TMDB seasons: %d seasons found", len(seasons))
-		} else if len(seasons) > 0 {
-			// Fallback to MoviePilot seasons
-			numberOfSeasons = len(seasons)
-			logger.Info("[DetailHandler] Using MoviePilot seasons: %d seasons found", len(seasons))
-		} else {
-			logger.Info("[DetailHandler] No seasons found from TMDB or MoviePilot for ID %d", info.ID)
-		}
-	} else if isTV && len(seasons) > 0 {
-		// No TMDB client, use MoviePilot seasons
-		numberOfSeasons = len(seasons)
-		logger.Info("[DetailHandler] Using MoviePilot seasons (no TMDB client): %d seasons found", len(seasons))
-	}
-
-	if isTV && len(seasons) > 0 {
-		if numberOfSeasons == 0 {
-			numberOfSeasons = len(seasons)
-		}
-		msg.Bold(fmt.Sprintf("📺 共 %d 季", numberOfSeasons)).Newline()
-		for i, s := range seasons {
-			if i >= 3 {
-				msg.Textf("   ... 还有 %d 季", len(seasons)-3).Newline()
-				break
+			if regularSeasonCount > 0 {
+				sb.WriteString(fmt.Sprintf("📺 共 <b>%d 季</b> · %d 集\n\n", regularSeasonCount, tmdbDetails.NumberOfEpisodes))
 			}
-			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
-			if s.Name != "" {
-				seasonName = s.Name
-			}
-			msg.Text(fmt.Sprintf("   • %s (%d集)", seasonName, s.EpisodeCount)).Newline()
 		}
-		msg.Newline()
 	}
 
 	// Overview
 	if info.Overview != "" {
-		overview := info.Overview
-		if len(overview) > MaxOverviewLength {
-			overview = overview[:MaxOverviewLength] + "..."
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		overview := html.EscapeString(info.Overview)
+		if len([]rune(overview)) > 200 {
+			overview = string([]rune(overview)[:200]) + "..."
 		}
-		msg.Italic("📖 剧情简介").Newline()
-		msg.Text(overview).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	// TMDB ID at bottom
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", info.ID)).Newline()
-
-	// Build keyboard
+	// Keyboard
 	kb := services.NewKeyboardBuilder()
-
-	if isTV && len(seasons) > 0 {
-		// TV show - first row: main action buttons (subscribe + feedback)
+	if isTV {
 		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", info.ID, info.Title))
-		kb.NewRow()
-		// #3 拼车「我也想看 +1」按钮（剧集）
 		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", info.ID))
 		kb.NewRow()
-
-		// Second row: resource list button
-		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": "tv"}))
-		kb.NewRow()
-
-		// Third row: navigation buttons
-		// Use "back" callback for all cases - BackHandler will handle correctly
-		kb.AddButton("⬅️ 返回", "back")
-		if len(seasons) > 6 {
-			kb.AddButton(fmt.Sprintf("📺 全部 %d 季", len(seasons)), fmt.Sprintf("detail_seasons:id:%d", info.ID))
-		}
-		kb.NewRow()
-
-		// Show seasons in a clean grid layout (3 per row)
-		displayCount := len(seasons)
-		if displayCount > 6 {
-			displayCount = 6
-		}
-		for i, s := range seasons {
-			if i >= displayCount {
-				break
-			}
-			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
-			if s.SeasonNumber == 0 {
-				seasonName = "特别篇"
-			}
-			kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
-			if (i+1)%3 == 0 {
-				kb.NewRow()
+		if h.tmdb != nil {
+			tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
+			if err == nil && len(tmdbDetails.Seasons) > 0 {
+				displayCount := len(tmdbDetails.Seasons)
+				if displayCount > 9 {
+					displayCount = 9
+				}
+				for i, s := range tmdbDetails.Seasons {
+					if i >= displayCount {
+						break
+					}
+					seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+					if s.SeasonNumber == 0 {
+						seasonName = "特别篇"
+					}
+					kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
+					if (i+1)%3 == 0 {
+						kb.NewRow()
+					}
+				}
 			}
 		}
 	} else {
-		// Movie - single subscribe button
-		kb.AddButton("✅ 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
-		kb.NewRow()
-		// #3 拼车「我也想看 +1」按钮（电影）
+		kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
 		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", info.ID))
-		kb.NewRow()
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", info.ID, info.Title))
-		kb.NewRow()
-		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": "movie"}))
-		kb.NewRow()
-		// Back button - use "back" callback, BackHandler will handle correctly
-		kb.AddButton("⬅️ 返回", "back")
 	}
-
-	// Check for poster image first
-	photoURL := ""
-	if info.Poster != "" {
-		if strings.HasPrefix(info.Poster, "http") {
-			photoURL = info.Poster
-		} else {
-			photoURL = "https://image.tmdb.org/t/p/w500" + info.Poster
-		}
-	}
-
-	// Check for backdrop (higher quality image)
-	if info.Backdrop != "" {
-		if strings.HasPrefix(info.Backdrop, "http") {
-			photoURL = info.Backdrop
-		} else {
-			photoURL = "https://image.tmdb.org/t/p/original" + info.Backdrop
-		}
-	}
-
-	// If we have a photo, send it
-	if photoURL != "" {
-		return &callback.Response{
-			Photo:        photoURL,
-			PhotoCaption: msg.Build(),
-			Edit:         false,
-			Keyboard:     convertKeyboard(kb.Build()),
-			ParseMode:    "HTML",
-		}
-	}
+	kb.NewRow()
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": string(info.Type)}))
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
@@ -1460,172 +1296,39 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 
 // buildBasicDetailFromSearch builds basic detail page when MoviePilot API fails
 func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string, query string, mpNotAvailable bool) *callback.Response {
-	msg := services.NewMessageBuilder()
+	safeTitle := html.EscapeString(item.Title)
+	var sb strings.Builder
 
-	// Type icon and label
 	typeIcon := "🎬"
-	typeLabel := "电影"
-	isTV := mediaType == "tv" || item.Type == "tv"
-	if isTV {
+	if mediaType == "tv" || item.Type == "tv" {
 		typeIcon = "📺"
-		typeLabel = "剧集"
 	}
-
-	// Header with title
-	msg.Bold(fmt.Sprintf("%s %s", typeIcon, item.Title)).Newline()
-	msg.Newline()
-
-	// Info section
+	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
 	if item.Year > 0 {
-		msg.Textf("📅 %d年  ", item.Year)
+		header += fmt.Sprintf(" (%d)", item.Year)
 	}
-	if item.Rating > 0 {
-		msg.Textf("⭐ %.1f分  ", item.Rating)
-	}
-	msg.Textf("🏷️ %s", typeLabel).Newline()
-	msg.Newline()
+	sb.WriteString(header + "\n\n")
 
-	// TV show seasons
-	if isTV && len(item.Seasons) > 0 {
-		msg.Bold(fmt.Sprintf("📺 共 %d 季", len(item.Seasons))).Newline()
-		for i, s := range item.Seasons {
-			if i >= 3 {
-				msg.Textf("   ... 还有 %d 季", len(item.Seasons)-3).Newline()
-				break
-			}
-			seasonName := fmt.Sprintf("第%d季", s.SeasonNumber)
-			if s.Name != "" {
-				seasonName = s.Name
-			}
-			msg.Text(fmt.Sprintf("   • %s (%d集)", seasonName, s.EpisodeCount)).Newline()
-		}
-		msg.Newline()
-	}
-
-	// Overview
 	if item.Overview != "" {
-		overview := item.Overview
-		if len(overview) > MaxOverviewLength {
-			overview = overview[:MaxOverviewLength] + "..."
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		overview := html.EscapeString(item.Overview)
+		if len([]rune(overview)) > 200 {
+			overview = string([]rune(overview)[:200]) + "..."
 		}
-		msg.Italic("📖 剧情简介").Newline()
-		msg.Text(overview).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %s", item.ID)).Newline()
-
-	// Warning if MoviePilot doesn't have this media
 	if mpNotAvailable {
-		msg.Newline()
-		msg.Bold("⚠️ 资源库暂无").Newline()
-		msg.Text("当前资源库中暂无此影片，求片后将尝试自动搜索").Newline()
+		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n\n")
 	}
 
-	// Build keyboard
+	tmdbID, _ := strconv.Atoi(item.ID)
 	kb := services.NewKeyboardBuilder()
-
-	// Change button text if MoviePilot doesn't have the media
-	requestButtonText := "✅ 立即求片"
-	if mpNotAvailable {
-		requestButtonText = "🔄 尝试求片"
-	}
-
-	// Check if we'll be sending a photo (poster exists)
-	willSendPhoto := false
-	if item.Poster != "" {
-		willSendPhoto = true
-	}
-
-	if isTV && len(item.Seasons) > 0 {
-		// First row: main action buttons (subscribe + feedback)
-		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:tv:season:0", item.ID))
-		// For photo messages, use simplified format without title to avoid 64-byte limit
-		if willSendPhoto {
-			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv", item.ID))
-		} else {
-			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", item.ID, item.Title))
-		}
-		kb.NewRow()
-
-		// #3 拼车「我也想看 +1」按钮（剧集，搜索基础详情页）
-		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%s:type:tv", item.ID))
-		kb.NewRow()
-
-		// Second row: resource list button
-		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": item.ID, "type": "tv"}))
-		kb.NewRow()
-
-		// Third row: navigation - use "back" callback
-		kb.AddButton("⬅️ 返回", "back")
-		if len(item.Seasons) > 6 {
-			kb.AddButton(fmt.Sprintf("更多... (%d季)", len(item.Seasons)), fmt.Sprintf("detail_seasons:id:%s", item.ID))
-		}
-		kb.NewRow()
-
-		// Season buttons (3 per row for consistent layout)
-		for i, s := range item.Seasons {
-			if i >= 6 {
-				break
-			}
-			seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
-			if s.SeasonNumber == 0 {
-				seasonName = "特别篇"
-			}
-			kb.AddButton(fmt.Sprintf("📺 %s", seasonName), fmt.Sprintf("request:id:%s:type:tv:season:%d", item.ID, s.SeasonNumber))
-			if (i+1)%3 == 0 {
-				kb.NewRow()
-			}
-		}
-	} else {
-		// Non-TV (movie or other): request + feedback + back
-		kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%s:type:%s", item.ID, item.Type))
-		// For photo messages, use simplified format without title to avoid 64-byte limit
-		if willSendPhoto {
-			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s", item.ID, item.Type))
-		} else {
-			kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:%s:title:%s", item.ID, item.Type, item.Title))
-		}
-		kb.NewRow()
-
-		// #3 拼车「我也想看 +1」按钮（非剧集，按 movie 归类）
-		kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%s:type:movie", item.ID))
-		kb.NewRow()
-
-		// Resource list button
-		kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": item.ID, "type": item.Type}))
-		kb.NewRow()
-
-		// Back button - use "back" callback
-		kb.AddButton("⬅️ 返回", "back")
-	}
-
-	// Check for poster
-	photoURL := ""
-	if item.Poster != "" {
-		if strings.HasPrefix(item.Poster, "http") {
-			photoURL = item.Poster
-		} else if strings.HasPrefix(item.Poster, "/") {
-			photoURL = "https://image.tmdb.org/t/p/w500" + item.Poster
-		} else {
-			photoURL = "https://image.tmdb.org/t/p/w500/" + item.Poster
-		}
-	}
-
-	if photoURL != "" {
-		// Build HTML caption for photo
-		caption := buildPlainCaptionFromItem(item, mpNotAvailable)
-		return &callback.Response{
-			Photo:        photoURL,
-			PhotoCaption: caption,
-			Edit:         false,
-			Keyboard:     convertKeyboard(kb.Build()),
-			ParseMode:    "HTML",
-		}
-	}
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
+	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
@@ -1634,46 +1337,20 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 
 // buildSimpleDetail builds a simple detail page when API fails
 func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *session.Session) *callback.Response {
-	msg := services.NewMessageBuilder()
-
-	// Type icon and label
-	typeIcon := "🎬"
-	typeLabel := "电影"
+	var sb strings.Builder
+	header := "🎬"
 	if mediaType == "tv" {
-		typeIcon = "📺"
-		typeLabel = "剧集"
+		header = "📺"
 	}
+	sb.WriteString(fmt.Sprintf("%s <b>影片详情</b>\n\n", header))
+	sb.WriteString("暂无法获取详细信息，请尝试直接求片\n")
 
-	// Header
-	msg.Bold(fmt.Sprintf("%s 影片详情", typeIcon)).Newline().Newline()
-
-	// TMDB ID
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", tmdbID)).Newline()
-	msg.Text(fmt.Sprintf("🏷️ 类型: %s", typeLabel)).Newline()
-	msg.Newline()
-
-	// Note
-	msg.Italic("💡 信息暂不可用，但仍可发起请求").Newline().Newline()
-
-	// Request button label
-	buttonLabel := "✅ 立即求片"
-	if mediaType == "tv" {
-		buttonLabel = "✅ 求剧集"
-	}
-
-	// Keyboard
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
-	// #3 拼车「我也想看 +1」按钮
-	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:%s", tmdbID, mediaType))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:%s", tmdbID, mediaType))
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": mediaType}))
-	kb.NewRow()
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("⬅️ 返回", "back")
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
