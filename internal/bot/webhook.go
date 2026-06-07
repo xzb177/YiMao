@@ -227,6 +227,59 @@ func HandleWebhookMessage(
 		}
 	}
 
+	// Check admin pending text-input states before generic commands/search.
+	if deps.AdminHandler != nil {
+		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
+			if _, exists := sess.Get("waiting_for_add_admin"); exists {
+				logger.Info("[Webhook] User %d is in add admin state", msg.From.ID)
+				if resp, err := deps.AdminHandler.HandleAdminAddMessage(msg.From.ID, msg.Chat.ID, msg); resp != nil {
+					if err != nil {
+						logger.Info("[Webhook] HandleAdminAddMessage error: %v", err)
+					}
+					if resp.Text != "" {
+						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", ConvertKeyboard(resp.Keyboard))
+					}
+				}
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+
+			if _, exists := sess.Get("waiting_for_time_input"); exists {
+				logger.Info("[Webhook] User %d is in custom time input state", msg.From.ID)
+				if resp, err := deps.AdminHandler.HandleNotifCustomTimeInput(msg.From.ID, msg.Chat.ID, msg.Text); resp != nil {
+					if err != nil {
+						logger.Info("[Webhook] HandleNotifCustomTimeInput error: %v", err)
+					}
+					if resp.Text != "" {
+						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", ConvertKeyboard(resp.Keyboard))
+					}
+					sess.Delete("waiting_for_time_input")
+					w.WriteHeader(http.StatusOK)
+					fmt.Fprint(w, "OK")
+					return
+				}
+			}
+
+			if pendingFeedbackIDVal, exists := sess.Get("pending_feedback_reply"); exists {
+				logger.Info("[Webhook] Admin %d is in feedback reply state", msg.From.ID)
+				handleAdminPendingReplyText(deps, sess, msg, pendingFeedbackIDVal, "pending_feedback_reply", "反馈")
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+
+			if pendingIssueIDVal, exists := sess.Get("pending_issue_reply"); exists {
+				logger.Info("[Webhook] Admin %d is in issue reply state", msg.From.ID)
+				handleAdminPendingReplyText(deps, sess, msg, pendingIssueIDVal, "pending_issue_reply", "问题")
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+		}
+	}
+
 	// Handle commands
 	if strings.HasPrefix(msg.Text, "/") {
 		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
@@ -259,6 +312,50 @@ func HandleWebhookMessage(
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK")
+}
+
+func handleAdminPendingReplyText(deps *Dependencies, sess interface{ Delete(string) }, msg *types.TelegramMessage, rawIssueID interface{}, stateKey string, label string) {
+	var issueID int64
+	switch v := rawIssueID.(type) {
+	case int64:
+		issueID = v
+	case int:
+		issueID = int64(v)
+	case float64:
+		issueID = int64(v)
+	case string:
+		fmt.Sscanf(v, "%d", &issueID)
+	}
+	if issueID <= 0 {
+		sess.Delete(stateKey)
+		deps.Telegram.SendMessage(msg.Chat.ID, "❌ 回复状态异常，请重新打开面板再试", "", nil)
+		return
+	}
+
+	sess.Delete(stateKey)
+	adminName := "管理员"
+	if userSess := deps.SessionMgr.GetOrCreate(msg.From.ID); userSess != nil {
+		if name, ok := userSess.GetString("name"); ok && name != "" {
+			adminName = name
+		}
+	}
+
+	if deps.IssueService == nil {
+		deps.Telegram.SendMessage(msg.Chat.ID, "❌ 反馈服务未就绪", "", nil)
+		return
+	}
+
+	_, err := deps.IssueService.AddReply(issueID, msg.From.ID, adminName, msg.Text, "admin")
+	if err != nil {
+		deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 回复失败: %v", err), "", nil)
+		return
+	}
+
+	if issue, exists := deps.IssueService.GetIssue(issueID); exists && issue.UserID != msg.From.ID {
+		notifyMsg := fmt.Sprintf("💬 管理员回复了您的%s\n\n问题 #%d: %s\n\n📝 回复: %s", label, issue.ID, issue.Title, msg.Text)
+		deps.Telegram.SendMessage(issue.UserID, notifyMsg, "", nil)
+	}
+	deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("✅ %s回复已发送\n\n问题 #%d", label, issueID), "", nil)
 }
 
 // HandleWebhookGroupChat handles group chat messages from webhook

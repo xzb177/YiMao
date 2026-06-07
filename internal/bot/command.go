@@ -36,7 +36,13 @@ func HandleCommand(
 		return
 	}
 
-	command := parts[0]
+	rawCommand := parts[0]
+	command := strings.SplitN(rawCommand, "@", 2)[0]
+	inlineArgs := ""
+	if strings.HasPrefix(command, "/ai") && command != "/ai" {
+		inlineArgs = strings.TrimPrefix(command, "/ai")
+		command = "/ai"
+	}
 	logger.Info("[Command] Parsed command: %s", command)
 
 	switch command {
@@ -64,7 +70,10 @@ func HandleCommand(
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/ai":
-		args := strings.TrimSpace(strings.TrimPrefix(msg.Text, command))
+		args := strings.TrimSpace(strings.TrimPrefix(msg.Text, rawCommand))
+		if inlineArgs != "" {
+			args = strings.TrimSpace(inlineArgs + " " + args)
+		}
 		if args != "" {
 			handleAIChatMessage(msg.From.ID, msg.Chat.ID, args, telegram, sessMgr)
 			return
