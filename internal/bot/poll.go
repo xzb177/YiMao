@@ -844,8 +844,17 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	return result
 }
 
-func trimAIRecommendationText(text string) string {
-	return strings.TrimSpace(text)
+func isTonightRecommendationPhrase(text string) bool {
+	text = strings.TrimSpace(text)
+	return text == "今晚看什么" || text == "今晚看什么？" || text == "今晚看什么?"
+}
+
+func normalizeAIRecommendationPrompt(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || isTonightRecommendationPhrase(text) {
+		return "今晚想随便看点适合放松的影视，帮我推荐几部"
+	}
+	return text
 }
 
 // handleAIChatMessage handles messages in AI chat mode
@@ -856,13 +865,8 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 		return
 	}
 
-	// Get AI recommendations based on explicit user input
-	prompt := trimAIRecommendationText(text)
-	if prompt == "" {
-		telegram.SendMessage(chatID, "请告诉我你的口味/心情，比如：\n• 想看一部烧脑悬疑\n• 推荐治愈系的\n• 适合今晚轻松看的电影", "", nil)
-		return
-	}
-
+	// Get AI recommendations based on user input
+	prompt := normalizeAIRecommendationPrompt(text)
 	response, err := ai.GetAIRecommendations(prompt, 5)
 	if err != nil {
 		logger.Info("[AIChat] Failed to get AI recommendations: %v", err)
