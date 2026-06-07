@@ -844,6 +844,14 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	return result
 }
 
+func normalizeAIRecommendationPrompt(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || text == "今晚看什么" || text == "今晚看什么？" || text == "今晚看什么?" {
+		return "今晚想随便看点适合放松的影视，帮我推荐几部"
+	}
+	return text
+}
+
 // handleAIChatMessage handles messages in AI chat mode
 func handleAIChatMessage(userID, chatID int64, text string, telegram *services.TelegramClient, sessMgr *session.Manager) {
 	// Check if AI is enabled
@@ -853,7 +861,8 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 	}
 
 	// Get AI recommendations based on user input
-	response, err := ai.GetAIRecommendations(text, 5)
+	prompt := normalizeAIRecommendationPrompt(text)
+	response, err := ai.GetAIRecommendations(prompt, 5)
 	if err != nil {
 		logger.Info("[AIChat] Failed to get AI recommendations: %v", err)
 		telegram.SendMessage(chatID, fmt.Sprintf("😓 AI 推荐暂时不可用: %v\n\n💡 请稍后再试或使用普通搜索", err), "", nil)
@@ -869,6 +878,7 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 	// Build keyboard
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎬 继续推荐", "start_ai")
+	kb.AddButton("🔍 搜影片", "search")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 

@@ -74,6 +74,7 @@ func HandleWebhookCallback(
 	ctx := &callback.Context{
 		UserID:     cb.From.ID,
 		ChatID:     cb.Message.Chat.ID,
+		ChatType:   cb.Message.Chat.Type,
 		MessageID:  cb.Message.MessageID,
 		CallbackID: cb.ID,
 		Callback:   parsed,
