@@ -331,7 +331,7 @@ func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, er
 				stateText = " " + s
 			}
 			b.WriteString(fmt.Sprintf("%s %s%s\n", icon, title, stateText))
-			kb.AddButton(fmt.Sprintf("🗑️ %s", truncateTitle(it.Title, 8)),
+			kb.AddButton(fmt.Sprintf("撤回·%s", truncateTitle(it.Title, 8)),
 				fmt.Sprintf("wish_cancel:id:%d", it.ID))
 			kb.NewRow()
 		}

@@ -893,10 +893,17 @@ func (h *ResourceHandler) buildBackKeyboard(mediaID, mediaType, seasonStr string
 // Helper functions
 
 func truncateTitle(title string, maxLen int) string {
-	if len(title) <= maxLen {
+	if maxLen <= 0 {
+		return ""
+	}
+	runes := []rune(title)
+	if len(runes) <= maxLen {
 		return title
 	}
-	return title[:maxLen-3] + "..."
+	if maxLen <= 1 {
+		return "…"
+	}
+	return string(runes[:maxLen-1]) + "…"
 }
 
 // searchViaSiteAdapter searches using direct SiteAdapter (fallback when MP API fails)
