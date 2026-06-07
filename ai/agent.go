@@ -111,6 +111,10 @@ func (a *Agent) HandleAICommand(userID int64, args string) (string, error) {
 	}
 
 	// Treat args as mood preference
+	if a.recommend == nil {
+		return "🤖 AI 推荐服务未初始化\n\n💡 请在 .env 文件中配置 ZHIPU_API_KEY 或 CLAUDE_API_KEY", nil
+	}
+
 	results, err := a.recommend.GetMoodBasedRecommendations(args, 3)
 	if err != nil {
 		return "", fmt.Errorf("获取推荐失败: %w", err)

@@ -91,6 +91,9 @@ func (r *MediaRecommendationAI) GetRecommendations(pref *UserPreference, count i
 
 // GetMoodBasedRecommendations gets recommendations based on mood (enhanced version)
 func (r *MediaRecommendationAI) GetMoodBasedRecommendations(mood string, count int) ([]*RecommendationResult, error) {
+	if r == nil {
+		return nil, fmt.Errorf("AI recommendation service not initialized")
+	}
 	if (r.claude == nil || !r.claude.IsEnabled()) && (r.zhipu == nil || !r.zhipu.IsEnabled()) {
 		return nil, fmt.Errorf("AI is not enabled")
 	}

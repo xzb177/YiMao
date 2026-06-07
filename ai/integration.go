@@ -139,7 +139,12 @@ func GetAIRecommendations(mood string, count int) (string, error) {
 		return "", fmt.Errorf("AI is not enabled")
 	}
 
-	results, err := manager.GetAgent().GetRecommendation().GetMoodBasedRecommendations(mood, count)
+	rec := manager.GetAgent().GetRecommendation()
+	if rec == nil {
+		return "", fmt.Errorf("AI recommendation service not initialized — please configure ZHIPU_API_KEY, CLAUDE_API_KEY, or ANTHROPIC_API_KEY")
+	}
+
+	results, err := rec.GetMoodBasedRecommendations(mood, count)
 	if err != nil {
 		return "", err
 	}
@@ -154,7 +159,12 @@ func GetAISimilarRecommendations(title, mediaType string, count int) (string, er
 		return "", fmt.Errorf("AI is not enabled")
 	}
 
-	results, err := manager.GetAgent().GetRecommendation().GetSimilarRecommendations(title, mediaType, count)
+	rec := manager.GetAgent().GetRecommendation()
+	if rec == nil {
+		return "", fmt.Errorf("AI recommendation service not initialized — please configure ZHIPU_API_KEY, CLAUDE_API_KEY, or ANTHROPIC_API_KEY")
+	}
+
+	results, err := rec.GetSimilarRecommendations(title, mediaType, count)
 	if err != nil {
 		return "", err
 	}
