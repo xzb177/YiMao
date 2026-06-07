@@ -288,20 +288,13 @@ func HandleWebhookMessage(
 		return
 	}
 
-	// Check if user is in AI chat mode
-	if deps.SessionMgr != nil {
-		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
-		if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
-			if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
-				if aiEnabled, ok := aiChatMode.(bool); ok && aiEnabled {
-					logger.Info("[Webhook] User %d is in AI chat mode, handling with AI", msg.From.ID)
-					handleAIChatMessage(msg.From.ID, msg.Chat.ID, msg.Text, deps.Telegram, deps.SessionMgr)
-					w.WriteHeader(http.StatusOK)
-					fmt.Fprint(w, "OK")
-					return
-				}
-			}
-		}
+	// Check if user is in explicit AI chat mode.
+	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
+		logger.Info("[Webhook] User %d is in AI chat mode, handling with AI", msg.From.ID)
+		handleAIChatMessage(msg.From.ID, msg.Chat.ID, msg.Text, deps.Telegram, deps.SessionMgr)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+		return
 	}
 
 	// Handle search queries (non-command text)

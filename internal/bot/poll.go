@@ -299,16 +299,11 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		return
 	}
 
-	// Check if user is in AI chat mode
-	sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
-	if sess != nil && deps.SessionMgr.IsValid(msg.From.ID) {
-		if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
-			if aiEnabled, ok := aiChatMode.(bool); ok && aiEnabled {
-				logger.Info("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
-				handleAIChatMessage(msg.From.ID, msg.Chat.ID, sanitizedText, deps.Telegram, deps.SessionMgr)
-				return
-			}
-		}
+	// Check if user is in explicit AI chat mode.
+	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
+		logger.Info("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
+		handleAIChatMessage(msg.From.ID, msg.Chat.ID, sanitizedText, deps.Telegram, deps.SessionMgr)
+		return
 	}
 
 	// Check if user is not linked and input looks like credentials (userID + password)
@@ -396,6 +391,9 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, use
 	if ai.GetManager().IsEnabled() {
 		if sessMgr != nil {
 			sessMgr.GetOrCreate(userID).Set("ai_chat_mode", true)
+			if chatID != 0 && chatID != userID {
+				sessMgr.GetOrCreate(chatID).Set("ai_chat_mode", true)
+			}
 		}
 		msg.Text("直接告诉我你的口味/心情，我帮你挑一部。").Newline()
 		msg.Newline()
@@ -423,6 +421,38 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, use
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), kb.Build())
+}
+
+func isAIChatMode(sessMgr *session.Manager, userID, chatID int64) bool {
+	if sessMgr == nil {
+		return false
+	}
+	for _, id := range []int64{userID, chatID} {
+		if id == 0 {
+			continue
+		}
+		sess := sessMgr.GetOrCreate(id)
+		if sess == nil || !sessMgr.IsValid(id) {
+			continue
+		}
+		if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
+			if enabled, ok := aiChatMode.(bool); ok && enabled {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func clearAIChatMode(sessMgr *session.Manager, userID, chatID int64) {
+	if sessMgr == nil {
+		return
+	}
+	for _, id := range []int64{userID, chatID} {
+		if id != 0 {
+			sessMgr.GetOrCreate(id).Delete("ai_chat_mode")
+		}
+	}
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
@@ -845,5 +875,5 @@ func handleAIChatMessage(userID, chatID int64, text string, telegram *services.T
 	telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
 
 	// AI 单次交互后自动退出，下一条文本回归搜索
-	sessMgr.GetOrCreate(userID).Delete("ai_chat_mode")
+	clearAIChatMode(sessMgr, userID, chatID)
 }
