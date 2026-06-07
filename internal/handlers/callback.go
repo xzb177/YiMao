@@ -294,9 +294,9 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	// 添加用户观影人格显示（如果有的话）
 	isPrivateChat := ctx.ChatType == "private"
 	if isPrivateChat {
-		sess := h.sessMgr.GetOrCreate(ctx.UserID)
 		// Clear AI chat mode when returning to main menu
-		sess.Delete("ai_chat_mode")
+		h.disableAIChatMode(ctx)
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
 		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
 			moodMap := map[string]string{
 				"relax":     "解压轻松",
@@ -328,8 +328,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
 	// Clear AI chat mode when entering search mode
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Delete("ai_chat_mode")
+	h.disableAIChatMode(ctx)
 
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜影片").Newline()
@@ -345,6 +344,16 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 		Edit:     true,
 		Keyboard: &callback.Keyboard{},
 	}, nil
+}
+
+func (h *StartHandler) disableAIChatMode(ctx *callback.Context) {
+	if h == nil || h.sessMgr == nil || ctx == nil {
+		return
+	}
+	h.sessMgr.GetOrCreate(ctx.UserID).Delete("ai_chat_mode")
+	if ctx.ChatID != 0 && ctx.ChatID != ctx.UserID {
+		h.sessMgr.GetOrCreate(ctx.ChatID).Delete("ai_chat_mode")
+	}
 }
 
 func (h *StartHandler) enableAIChatMode(ctx *callback.Context) {

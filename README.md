@@ -6,7 +6,7 @@
 
 与 MoviePilot + Emby/Jellyfin 配合使用，无需切换应用
 
-[![Go Version](https://img.shields.io/badge/Go-1.23+-00ADD8?logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![Docker Pull](https://img.shields.io/badge/docker-xzb177%2Fyimao-blue?logo=docker)](https://hub.docker.com/r/xzb177/yimao)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
@@ -126,7 +126,8 @@ docker compose up -d
 | `TMDB_API_KEY` | TMDB API Key | 内置默认值 |
 | `TELEGRAM_CHAT_ID` | 群组 Chat ID（通知用） | - |
 | `ZHIPU_API_KEY` | 智谱 AI Key（推荐功能） | - |
-| `CLAUDE_API_KEY` | Claude API Key（AI 功能） | - |
+| `CLAUDE_API_KEY` / `ANTHROPIC_API_KEY` | Claude/Anthropic AI Key（AI 功能） | - |
+| `AI_ENABLED` | 显示并启用 AI 入口（需配合可用 AI Key/代理） | `false` |
 | `TZ` | 时区 | `Asia/Shanghai` |
 | `PORT` | 健康检查端口 | `8080` |
 
@@ -139,10 +140,18 @@ docker compose up -d
 | 命令 | 作用 |
 |---|---|
 | `/start` | 打开主菜单 |
-| `/search 关键词` | 搜索影视 |
-| `/ai` | 打开推荐菜单 |
-| `/requests` | 查看我的请求 |
+| `/search` | 进入搜片提示；私聊里也可以直接发片名搜索 |
+| `/ai` | 进入“今晚看什么”一次性 AI 推荐模式 |
+| `/ai <需求>` | 直接按口味/心情获取 AI 推荐 |
+| `/requests` | 查看我的求片/订阅进度 |
+| `/watchlist` | 查看片单/我的请求，同 `/requests` 同源 |
+| `/wish` | 查看我的许愿池 |
+| `/wish <片名>` | 加入许愿池，出源后通知 |
 | `/link 账号 密码` | 绑定 MoviePilot 账号 |
+| `/quota` | 查看配额 |
+| `/help` | 帮助中心 |
+| `/status` | 查看 Bot 状态 |
+| `/id` | 查看当前聊天 ID / 用户 ID |
 
 ### 管理员命令（私聊机器人）
 
