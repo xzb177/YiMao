@@ -126,7 +126,7 @@ func (m *Manager) GetAgent() *Agent {
 func HandleAICommand(userID int64, args string) (string, error) {
 	manager := GetManager()
 	if !manager.IsEnabled() {
-		return "🤖 AI 功能暂未启用\n\n💡 请联系管理员在 .env 中设置 AI_ENABLED=true", nil
+		return "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一", nil
 	}
 
 	return manager.GetAgent().HandleAICommand(userID, args)

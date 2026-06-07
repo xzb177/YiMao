@@ -95,7 +95,7 @@ func (a *Agent) GetSearch() *SearchAI {
 // HandleAICommand handles the /ai command
 func (a *Agent) HandleAICommand(userID int64, args string) (string, error) {
 	if !a.IsEnabled() {
-		return "🤖 AI 功能暂未启用\n\n💡 请在 .env 文件中配置 ZHIPU_API_KEY 或 CLAUDE_API_KEY", nil
+		return "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一", nil
 	}
 
 	if args == "" {

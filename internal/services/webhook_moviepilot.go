@@ -72,13 +72,7 @@ func (s *WebhookService) handleMoviePilotSubscribe(payload MoviePilotWebhookPayl
 	}
 
 	for _, adminID := range adminIDs {
-		// Add action buttons for subscription management
-		keyboard := [][]map[string]string{
-			{
-				{"text": "✅ 已处理", "callback_data": fmt.Sprintf("mp_done_%d", payload.Data.ID)},
-			},
-		}
-		s.sendWithCacheAndKeyboard(adminID, adminMessage, convertToInlineKeyboard(keyboard))
+		s.sendWithCache(adminID, adminMessage)
 	}
 
 	return nil

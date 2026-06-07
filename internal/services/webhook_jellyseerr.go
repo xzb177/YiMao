@@ -110,8 +110,8 @@ func (s *WebhookService) notifyAdminsAboutRequest(payload JellyseerrWebhookPaylo
 	for _, adminID := range adminIDs {
 		keyboard := [][]map[string]string{
 			{
-				{"text": "✅ 批准", "callback_data": fmt.Sprintf("admin_approve_%s", requestID)},
-				{"text": "❌ 拒绝", "callback_data": fmt.Sprintf("admin_decline_%s", requestID)},
+				{"text": "✅ 批准", "callback_data": fmt.Sprintf("admin_approve:id:%s", requestID)},
+				{"text": "❌ 拒绝", "callback_data": fmt.Sprintf("admin_decline:id:%s", requestID)},
 			},
 		}
 
@@ -266,12 +266,12 @@ func (s *WebhookService) notifyAdminsAboutIssue(issueID int64, payload Jellyseer
 	// Add action buttons
 	keyboard := [][]map[string]string{
 		{
-			{"text": "💬 回复", "callback_data": fmt.Sprintf("issue_reply_%d", issueID)},
-			{"text": "✅ 已修复", "callback_data": fmt.Sprintf("issue_fixed_%d", issueID)},
+			{"text": "💬 回复", "callback_data": fmt.Sprintf("admin_issue_reply:id:%d", issueID)},
+			{"text": "✅ 已修复", "callback_data": fmt.Sprintf("admin_issue_fixed:id:%d", issueID)},
 		},
 		{
-			{"text": "ℹ️ 处理中", "callback_data": fmt.Sprintf("issue_processing_%d", issueID)},
-			{"text": "❌ 关闭", "callback_data": fmt.Sprintf("issue_close_%d", issueID)},
+			{"text": "ℹ️ 处理中", "callback_data": fmt.Sprintf("admin_issue_processing:id:%d", issueID)},
+			{"text": "❌ 关闭", "callback_data": fmt.Sprintf("admin_issue_close:id:%d", issueID)},
 		},
 	}
 
