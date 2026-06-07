@@ -351,8 +351,8 @@ func handleAdminPendingReplyText(deps *Dependencies, sess interface{ Delete(stri
 	deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("✅ %s回复已发送\n\n问题 #%d", label, issueID), "", nil)
 }
 
-// HandleWebhookGroupChat handles group chat messages from webhook
-// 群组中完全禁用交互功能，仅用于接收入库通知推送
+// HandleWebhookGroupChat handles group chat messages from webhook.
+// 群组只做轻量引导和通知，不在群里展开搜索结果/求片进度，避免暴露观影隐私。
 func HandleWebhookGroupChat(
 	telegram *services.TelegramClient,
 	msg *types.TelegramMessage,
@@ -361,9 +361,27 @@ func HandleWebhookGroupChat(
 	searchHistory *services.SearchHistoryService,
 	tmdb *services.TMDBClient,
 ) {
-	// 群组中不响应任何消息，只用于接收入库通知
-	logger.Info("[WebhookGroupChat] ChatID=%d: Message ignored (groups are notifications only)", msg.Chat.ID)
-	return
+	text := strings.TrimSpace(msg.Text)
+	logger.Info("[WebhookGroupChat] ChatID=%d, Text=%q", msg.Chat.ID, text)
+
+	if !strings.HasPrefix(text, "/") {
+		return
+	}
+
+	cmd := strings.Fields(text)[0]
+	if idx := strings.Index(cmd, "@"); idx >= 0 {
+		cmd = cmd[:idx]
+	}
+
+	switch cmd {
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai":
+		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
+	case "/id":
+		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
+		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
+	default:
+		return
+	}
 }
 
 // HandleWebhookTextQuery handles text queries from webhook
