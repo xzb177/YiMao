@@ -75,7 +75,6 @@ var validActions = map[Action]bool{
 	ActionHelpTopic:     true,
 	ActionSettings:      true,
 	ActionFeedback:      true,
-	ActionRandom:        true,
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page
 	"start_ai":          true, // AI recommendations page (renamed from start_mood)
