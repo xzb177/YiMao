@@ -74,11 +74,11 @@ func HandleCommand(
 		if inlineArgs != "" {
 			args = strings.TrimSpace(inlineArgs + " " + args)
 		}
-		if args != "" {
-			handleAIChatMessage(msg.From.ID, msg.Chat.ID, args, telegram, sessMgr)
+		if args == "" {
+			telegram.SendMessage(msg.Chat.ID, "🎬 今晚看什么\n\n直接把你的口味/心情告诉我，比如：\n• 想看一部烧脑悬疑\n• 推荐治愈系的\n• 适合今晚轻松看的电影", "", nil)
 			return
 		}
-		sendRecommendationMenu(telegram, msg.Chat.ID, msg.From.ID, sessMgr)
+		handleAIChatMessage(msg.From.ID, msg.Chat.ID, args, telegram, sessMgr)
 	case "/requests":
 		// 群组隐私保护：群内不发长卡片，引导去私聊
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {

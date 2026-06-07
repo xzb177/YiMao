@@ -844,9 +844,14 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	return result
 }
 
+func isTonightRecommendationPhrase(text string) bool {
+	text = strings.TrimSpace(text)
+	return text == "今晚看什么" || text == "今晚看什么？" || text == "今晚看什么?"
+}
+
 func normalizeAIRecommendationPrompt(text string) string {
 	text = strings.TrimSpace(text)
-	if text == "" || text == "今晚看什么" || text == "今晚看什么？" || text == "今晚看什么?" {
+	if text == "" || isTonightRecommendationPhrase(text) {
 		return "今晚想随便看点适合放松的影视，帮我推荐几部"
 	}
 	return text
