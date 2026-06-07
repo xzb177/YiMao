@@ -48,11 +48,12 @@ func GetManager() *Manager {
 	managerMu.RUnlock()
 
 	// 支持手动声明 AI 可用（适用于 Mimo 等非 Zhipu/Claude 提供商）
-	// 设 AI_ENABLED=true 即可让 AI 按钮显示，实际调用走 minis-model-use 代理。
+	// 设 AI_ENABLED=true 让 AI 按钮显示，同时走 NewAgent 完整初始化。
 	if os.Getenv("AI_ENABLED") == "true" {
+		agent := NewAgent("")
 		mgr := &Manager{
-			agent:   &Agent{},
-			enabled: true,
+			agent:   agent,
+			enabled: agent.enabled,
 		}
 		managerMu.Lock()
 		if globalManager == nil {
