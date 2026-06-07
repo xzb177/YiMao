@@ -10,6 +10,7 @@ import (
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/internal/ui"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
@@ -25,6 +26,7 @@ func HandleCommand(
 	bindingRequest *services.BindingRequestService,
 	quotaService *services.QuotaService,
 	userMapping *services.UserMappingService,
+	sessMgr *session.Manager,
 	wishHandler *handlers.WishHandler,
 	myRequestsHandler *handlers.MyRequestsHandler,
 ) {
@@ -62,7 +64,12 @@ func HandleCommand(
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/ai":
-		sendRecommendationMenu(telegram, msg.Chat.ID)
+		args := strings.TrimSpace(strings.TrimPrefix(msg.Text, command))
+		if args != "" {
+			handleAIChatMessage(msg.From.ID, msg.Chat.ID, args, telegram, sessMgr)
+			return
+		}
+		sendRecommendationMenu(telegram, msg.Chat.ID, msg.From.ID, sessMgr)
 	case "/requests":
 		// 群组隐私保护：群内不发长卡片，引导去私聊
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {

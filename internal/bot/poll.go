@@ -257,7 +257,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Private chat: Handle commands and search query
 	if strings.HasPrefix(sanitizedText, "/") {
 		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.WishHandler, deps.MyRequests)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
 		return
 	}
 
@@ -350,14 +350,28 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 }
 
-// sendRecommendationMenu sends the recommendation menu
-func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64) {
+// sendRecommendationMenu sends the recommendation menu and enters one-shot AI chat mode.
+func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, userID int64, sessMgr *session.Manager) {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🎬 今晚看什么").Newline()
 	msg.Newline()
-	msg.Text("选一种心情，帮你挑片").Newline()
-	msg.Newline()
-	msg.Italic("💡 也可以直接发片名搜索")
+	if ai.GetManager().IsEnabled() {
+		if sessMgr != nil {
+			sessMgr.GetOrCreate(userID).Set("ai_chat_mode", true)
+		}
+		msg.Text("直接告诉我你的口味/心情，我帮你挑一部。").Newline()
+		msg.Newline()
+		msg.Text("比如：").Newline()
+		msg.Text("• 想看一部轻松治愈的").Newline()
+		msg.Text("• 来点烧脑悬疑，不要太长").Newline()
+		msg.Text("• 适合今晚和朋友一起看的电影").Newline()
+		msg.Newline()
+		msg.Italic("💡 下一条文字会走 AI 推荐；想搜片请点“搜影片”或返回主菜单")
+	} else {
+		msg.Text("AI 推荐暂未启用，但你可以先用下面的精选入口。").Newline()
+		msg.Newline()
+		msg.Italic("💡 管理员配置 AI 后，这里会支持直接发口味描述")
+	}
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 本周热门", "search:type:trending")
