@@ -241,7 +241,7 @@ func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 func countRequestStates(requests []services.SubscribeItem) (pending, completed, failed int) {
 	for _, req := range requests {
 		switch req.State {
-		case "P", "R", "S", "D":
+		case "P", "R", "S", "D", "WISH", "REVIEWING", "STUCK":
 			pending++
 		case "C":
 			completed++

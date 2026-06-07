@@ -62,54 +62,6 @@ func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string, curre
 	}
 }
 
-// BuildRecommendationKeyboard builds a keyboard for recommendation results.
-func (b *KeyboardBuilder) BuildRecommendationKeyboard(itemCount int, recType string) *types.TelegramInlineKeyboard {
-	var rows [][]types.TelegramInlineKeyboardButton
-
-	if itemCount == 0 {
-		// Empty state keyboard - simplified
-		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "🔥 热门", CallbackData: "search:type:trending"},
-			{Text: "⭐ 高分", CallbackData: "search:type:toprated"},
-		})
-		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "🆕 新片", CallbackData: "search:type:new"},
-			{Text: "🎲 随机", CallbackData: "search:type:random"},
-		})
-		rows = append(rows, []types.TelegramInlineKeyboardButton{
-			{Text: "⬅️ 返回主菜单", CallbackData: "start"},
-		})
-		return &types.TelegramInlineKeyboard{
-			InlineKeyboard: rows,
-		}
-	}
-
-	// Result buttons
-	row := []types.TelegramInlineKeyboardButton{}
-	for i := 1; i <= itemCount && i <= 8; i++ {
-		row = append(row, types.TelegramInlineKeyboardButton{
-			Text:         fmt.Sprintf("%d", i),
-			CallbackData: fmt.Sprintf("detail:id:%d:type:movie", i),
-		})
-
-		if len(row) == 4 || i == itemCount {
-			rows = append(rows, row)
-			row = []types.TelegramInlineKeyboardButton{}
-		}
-	}
-
-	// Navigation row
-	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "🔄 换一批", CallbackData: fmt.Sprintf("search:type:%s", recType)},
-		{Text: "⬅️ 返回", CallbackData: "start_ai"},
-	}
-	rows = append(rows, navRow)
-
-	return &types.TelegramInlineKeyboard{
-		InlineKeyboard: rows,
-	}
-}
-
 // BuildMoodKeyboard builds a keyboard for mood-based recommendations.
 func (b *KeyboardBuilder) BuildMoodKeyboard() *types.TelegramInlineKeyboard {
 	rows := [][]types.TelegramInlineKeyboardButton{
