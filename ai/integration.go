@@ -53,7 +53,7 @@ func GetManager() *Manager {
 		agent := NewAgent("")
 		mgr := &Manager{
 			agent:   agent,
-			enabled: agent.enabled,
+			enabled: true, // 按钮显示，API key 不齐时点进去给提示
 		}
 		managerMu.Lock()
 		if globalManager == nil {
