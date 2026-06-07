@@ -42,21 +42,15 @@ func HandleCommand(
 		isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
 	case "/status":
+		isAdminStatus := adminService != nil && adminService.IsAdmin(msg.From.ID)
 		var sb strings.Builder
-		sb.WriteString("🤖 <b>云海影视 Bot</b>
-
-")
-		sb.WriteString(fmt.Sprintf("📊 版本: <code>%s</code>
-", "v1.0"))
-		sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>
-", time.Now().Format("2006-01-02 15:04:05")))
-		sb.WriteString(fmt.Sprintf("👤 当前用户: <code>%d</code>
-", msg.From.ID))
-		sb.WriteString(fmt.Sprintf("💬 聊天类型: <code>%s</code>
-", msg.Chat.Type))
-		if isAdmin {
-			sb.WriteString("
-🛡️ 身份: <b>管理员</b>")
+		sb.WriteString("🤖 <b>云海影视 Bot</b>\n\n")
+		sb.WriteString(fmt.Sprintf("📊 版本: <code>%s</code>\n", "v1.0"))
+		sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
+		sb.WriteString(fmt.Sprintf("👤 当前用户: <code>%d</code>\n", msg.From.ID))
+		sb.WriteString(fmt.Sprintf("💬 聊天类型: <code>%s</code>\n", msg.Chat.Type))
+		if isAdminStatus {
+			sb.WriteString("\n🛡️ 身份: <b>管理员</b>")
 		}
 		telegram.SendMessage(msg.Chat.ID, sb.String(), "HTML", nil)
 	case "/help":
