@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
+	"html"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -319,63 +321,86 @@ func (s *WeeklyReportService) generateRecommendations(report *WeeklyReport) []st
 
 // FormatReport formats a weekly report as message text
 func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
-	weekStr := report.WeekStart.Format("01月02日")
-	toStr := report.WeekEnd.Format("01月02日")
+	weekStr := report.WeekStart.Format("01.02")
+	toStr := report.WeekEnd.Format("01.02")
 
-	var msg string
-	msg += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-	msg += fmt.Sprintf("📊 %s 的观影周报\n", report.UserName)
-	msg += fmt.Sprintf("📅 %s - %s\n\n", weekStr, toStr)
+	var sb strings.Builder
 
-	// Stats
-	msg += "📈 本周数据\n"
-	msg += fmt.Sprintf("   🔍 搜索 %d 次\n", report.SearchCount)
-	msg += fmt.Sprintf("   📋 求片 %d 次\n", report.RequestCount)
+	// Header
+	sb.WriteString(fmt.Sprintf("📊 <b>观影周报 · %s</b>\n", html.EscapeString(report.UserName)))
+	sb.WriteString(fmt.Sprintf("📅 %s - %s\n\n", weekStr, toStr))
+
+	// 1. 数据仪表盘
+	sb.WriteString("╭── 📈 <b>本周数据</b> ────────────────╮\n")
+	sb.WriteString(fmt.Sprintf("│  🔍 搜索: <b>%d</b> 次\n", report.SearchCount))
+	sb.WriteString(fmt.Sprintf("│  📋 求片: <b>%d</b> 次\n", report.RequestCount))
 	if report.ApprovedCount > 0 {
-		msg += fmt.Sprintf("   ✅ 通过 %d 个\n", report.ApprovedCount)
+		sb.WriteString(fmt.Sprintf("│  ✅ 通过: <b>%d</b> 个\n", report.ApprovedCount))
 	}
-	msg += "\n"
+	// 配额信息
+	if s.quotaService != nil {
+		quotaInfo := s.quotaService.GetQuotaInfo(report.UserID)
+		if quotaInfo != nil {
+			movieRemain := quotaInfo.MovieLimit - quotaInfo.MovieUsed
+			tvRemain := quotaInfo.TVLimit - quotaInfo.TVUsed
+			if quotaInfo.MovieLimit == -1 {
+				movieRemain = -1
+			}
+			if quotaInfo.TVLimit == -1 {
+				tvRemain = -1
+			}
+			movieStr := "∞"
+			if movieRemain >= 0 {
+				movieStr = fmt.Sprintf("%d", movieRemain)
+			}
+			tvStr := "∞"
+			if tvRemain >= 0 {
+				tvStr = fmt.Sprintf("%d", tvRemain)
+			}
+			sb.WriteString(fmt.Sprintf("│  💎 剩余配额: <code>电影 %s / 剧集 %s</code>\n", movieStr, tvStr))
+		}
+	}
+	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// Behavior tags
+	// 2. 行为标签
 	if len(report.BehaviorTags) > 0 {
-		msg += "🏷️ 本周标签\n"
+		sb.WriteString("🏷️ <b>本周标签</b>\n")
 		for _, tag := range report.BehaviorTags {
-			msg += fmt.Sprintf("   %s\n", tag)
+			sb.WriteString(fmt.Sprintf("  %s\n", tag))
 		}
-		msg += "\n"
+		sb.WriteString("\n")
 	}
 
-	// Top searches
+	// 3. 热搜关键词
 	if len(report.TopSearches) > 0 {
-		msg += "🔥 热搜关键词\n"
+		sb.WriteString("╭── 🔥 <b>热搜关键词</b> ────────────────╮\n")
 		for _, search := range report.TopSearches {
-			msg += fmt.Sprintf("   • %s\n", search)
+			sb.WriteString(fmt.Sprintf("│  • %s\n", html.EscapeString(search)))
 		}
-		msg += "\n"
+		sb.WriteString("╰──────────────────────────────────────╯\n\n")
 	}
 
-	// Genre preferences
+	// 4. 类型偏好
 	if len(report.GenrePrefs) > 0 {
-		msg += "🎭 类型偏好\n"
+		sb.WriteString("🎭 <b>类型偏好</b>\n")
 		for genre, count := range report.GenrePrefs {
-			msg += fmt.Sprintf("   %s: %d次\n", genre, count)
+			sb.WriteString(fmt.Sprintf("  %s: %d次\n", html.EscapeString(genre), count))
 		}
-		msg += "\n"
+		sb.WriteString("\n")
 	}
 
-	// Recommendations
+	// 5. AI 建议
 	if len(report.Recommendations) > 0 {
-		msg += "💡 专属建议\n"
+		sb.WriteString("💡 <b>专属建议</b>\n")
+		sb.WriteString("<blockquote>")
 		for _, rec := range report.Recommendations {
-			msg += fmt.Sprintf("   %s\n", rec)
+			sb.WriteString(html.EscapeString(rec) + "\n")
 		}
-		msg += "\n"
+		sb.WriteString("</blockquote>\n")
 	}
 
-	msg += "━━━━━━━━━━━━━━━━━━━━━━━━\n"
-	msg += "👇 下周继续探索精彩内容！"
-
-	return msg
+	sb.WriteString("──────────────────────────────────────")
+	return sb.String()
 }
 
 // SendReport sends a weekly report to a user
