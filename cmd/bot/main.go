@@ -510,6 +510,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Inject dependencies
 	startHandler.SetAdminService(deps.AdminService)
 	startHandler.SetUserMapping(deps.UserMapping)
+	startHandler.SetWeeklyReportService(deps.WeeklyReportSvc)
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)

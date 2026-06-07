@@ -215,12 +215,13 @@ func buildPlainCaptionFromItem(item session.SearchItem, mpNotAvailable bool) str
 
 // StartHandler handles start menu callbacks
 type StartHandler struct {
-	cfg          *config.Config
-	sessMgr      *session.Manager
-	telegram     *services.TelegramClient
-	moviepilot   *services.MoviePilotClient
-	adminService *services.AdminService
-	userMapping  *services.UserMappingService
+	cfg             *config.Config
+	sessMgr         *session.Manager
+	telegram        *services.TelegramClient
+	moviepilot      *services.MoviePilotClient
+	adminService    *services.AdminService
+	userMapping     *services.UserMappingService
+	weeklyReportSvc *services.WeeklyReportService
 }
 
 func NewStartHandler(
@@ -245,6 +246,10 @@ func (h *StartHandler) SetAdminService(adminSvc *services.AdminService) {
 // SetUserMapping sets the user mapping service (设置页显示绑定状态用)
 func (h *StartHandler) SetUserMapping(um *services.UserMappingService) {
 	h.userMapping = um
+}
+
+func (h *StartHandler) SetWeeklyReportService(svc *services.WeeklyReportService) {
+	h.weeklyReportSvc = svc
 }
 
 func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -696,28 +701,61 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 
 // HandleWeeklyReport shows the weekly report
 func (h *StartHandler) HandleWeeklyReport(ctx *callback.Context) (*callback.Response, error) {
-	// Build a simple report message (full implementation would use WeeklyReportService)
-	msg := services.NewMessageBuilder()
-	msg.Bold("📊 每周观影报告").Newline()
-	msg.Newline()
-	msg.Text("报告功能开发中...").Newline()
-	msg.Newline()
-	msg.Italic("💡 每周一上午9点自动推送您的观影统计")
+	if h.weeklyReportSvc == nil {
+		return &callback.Response{
+			Text:        "📊 周报服务未就绪，请稍后再试",
+			CallbackMsg: "服务未就绪",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 获取用户名
+	userName := ctx.Callback.Params["name"]
+	if userName == "" {
+		userName = "影迷"
+	}
+
+	report, err := h.weeklyReportSvc.GenerateReport(ctx.UserID, userName)
+	if err != nil {
+		return &callback.Response{
+			Text:        "📊 周报生成失败，请稍后再试",
+			CallbackMsg: "生成失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	reportText := h.weeklyReportSvc.FormatReport(report)
 
 	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📬 推送到私聊", "weekly_report_send")
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:      reportText,
+		Edit:      true,
+		Keyboard:  convertKeyboard(kb.Build()),
+		ParseMode: "HTML",
 	}, nil
 }
 
-// HandleWeeklyReportSend sends the weekly report to user
+// HandleWeeklyReportSend sends the weekly report to user's DM
 func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.Response, error) {
+	if h.weeklyReportSvc == nil {
+		return &callback.Response{CallbackMsg: "服务未就绪", ShowAlert: true}, nil
+	}
+
+	userName := "影迷"
+	report, err := h.weeklyReportSvc.GenerateReport(ctx.UserID, userName)
+	if err != nil {
+		return &callback.Response{CallbackMsg: "📊 报告生成失败", ShowAlert: true}, nil
+	}
+
+	reportText := h.weeklyReportSvc.FormatReport(report)
+	h.telegram.SendMessage(ctx.UserID, reportText, "HTML", nil)
+
 	return &callback.Response{
-		CallbackMsg: "📊 报告已生成",
+		CallbackMsg: "📬 报告已推送到您的私聊！",
 		ShowAlert:   true,
 	}, nil
 }
