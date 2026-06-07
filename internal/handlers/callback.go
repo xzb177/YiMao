@@ -347,6 +347,16 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 	}, nil
 }
 
+func (h *StartHandler) enableAIChatMode(ctx *callback.Context) {
+	if h == nil || h.sessMgr == nil || ctx == nil {
+		return
+	}
+	h.sessMgr.GetOrCreate(ctx.UserID).Set("ai_chat_mode", true)
+	if ctx.ChatID != 0 && ctx.ChatID != ctx.UserID {
+		h.sessMgr.GetOrCreate(ctx.ChatID).Set("ai_chat_mode", true)
+	}
+}
+
 func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, error) {
 	// Recommendation is only available in private chats
 	if ctx.ChatType != "private" {
@@ -383,8 +393,7 @@ func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, erro
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	// Set session mode to AI chat
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Set("ai_chat_mode", true)
+	h.enableAIChatMode(ctx)
 	logger.Info("[HandleAI] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
@@ -466,8 +475,7 @@ func (h *StartHandler) HandleAIChat(ctx *callback.Context) (*callback.Response, 
 	kb.AddButton("⬅️ 返回", "start_ai")
 
 	// Set session mode to AI chat
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Set("ai_chat_mode", true)
+	h.enableAIChatMode(ctx)
 	logger.Info("[HandleAIChat] Enabled AI chat mode for user %d", ctx.UserID)
 
 	return &callback.Response{
