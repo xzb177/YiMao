@@ -980,7 +980,6 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
 		logger.Info("[DetailHandler] Failed to get TV details from TMDB: %v", err)
-		// Fallback to simple detail
 		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable, posterURL)
 	}
 
@@ -991,40 +990,32 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	}
 	cacheMediaInfo(sess, tmdbID, title, year)
 
-	msg := services.NewMessageBuilder()
+	safeTitle := html.EscapeString(title)
+	var sb strings.Builder
 
-	// Header with title
-	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
-	msg.Newline()
-
-	// Year and rating
-	infoLine := ""
-	if tvDetails.FirstAirDate != "" && len(tvDetails.FirstAirDate) >= 4 {
-		year := tvDetails.FirstAirDate[:4]
-		infoLine = fmt.Sprintf("📅 %s年", year)
+	// 1. Header
+	header := fmt.Sprintf("📺 <b>%s</b>", safeTitle)
+	if year > 0 {
+		header += fmt.Sprintf(" (%d)", year)
 	}
+	sb.WriteString(header + "\n\n")
+
+	// 2. Spec dashboard
+	sb.WriteString("╭── 🍿 <b>剧集信息</b> ────────────────╮\n")
 	if tvDetails.VoteAverage > 0 {
-		if infoLine != "" {
-			infoLine += "  •  "
+		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10", tvDetails.VoteAverage))
+		if tvDetails.VoteCount > 0 {
+			sb.WriteString(fmt.Sprintf(" (%d票)", tvDetails.VoteCount))
 		}
-		infoLine += fmt.Sprintf("⭐ %.1f分", tvDetails.VoteAverage)
+		sb.WriteString("\n")
 	}
-	if infoLine != "" {
-		msg.Text(infoLine).Newline()
-	}
-
-	// Genres
 	if len(tvDetails.Genres) > 0 {
 		genreNames := make([]string, 0)
 		for _, g := range tvDetails.Genres {
 			genreNames = append(genreNames, g.Name)
 		}
-		if len(genreNames) > 0 {
-			msg.Text(fmt.Sprintf("🎭 %s", strings.Join(genreNames, "、"))).Newline()
-		}
+		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(genreNames, "/"))))
 	}
-
-	// Show number of seasons and episodes (count only regular seasons, exclude S0)
 	regularSeasonCount := 0
 	for _, s := range tvDetails.Seasons {
 		if s.SeasonNumber > 0 {
@@ -1032,71 +1023,42 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		}
 	}
 	if regularSeasonCount > 0 {
-		msg.Text(fmt.Sprintf("📺 共 %d 季 · %d 集", regularSeasonCount, tvDetails.NumberOfEpisodes)).Newline()
+		sb.WriteString(fmt.Sprintf("│  📺 共 <b>%d 季</b> · %d 集\n", regularSeasonCount, tvDetails.NumberOfEpisodes))
 	}
+	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	msg.Newline()
-
-	// Overview (truncate if too long)
+	// 3. Overview
 	if tvDetails.Overview != "" {
-		overview := tvDetails.Overview
-		if len(overview) > 200 {
-			overview = overview[:200] + "..."
+		sb.WriteString("📖 <b>剧情简介</b>\n")
+		overview := html.EscapeString(tvDetails.Overview)
+		if len([]rune(overview)) > 200 {
+			overview = string([]rune(overview)[:200]) + "..."
 		}
-		msg.Italic("📖 剧情简介").Newline()
-		msg.Text(overview).Newline()
-		msg.Newline()
+		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	// TMDB ID
-	msg.Text(fmt.Sprintf("🆔 TMDB ID: %d", tvDetails.ID)).Newline()
-
-	// Warning if MoviePilot doesn't have this media
+	// 4. Warning if MP doesn't have this
 	if mpNotAvailable {
-		msg.Newline()
-		msg.Bold("⚠️ 资源库暂无").Newline()
-		msg.Text("当前资源库中暂无此剧集，求片后将尝试自动搜索").Newline()
+		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n\n")
 	}
 
-	// Build keyboard with season buttons
+	// 5. Season grid (buttons)
 	kb := services.NewKeyboardBuilder()
-
-	// Change button text if MoviePilot doesn't have the media
 	requestButtonText := "✅ 订阅全季"
 	if mpNotAvailable {
 		requestButtonText = "🔄 尝试求片"
 	}
-
-	// Check if we'll be sending a photo (posterURL exists)
-	willSendPhoto := posterURL != ""
-
-	// First row: main action buttons (subscribe + feedback)
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
-	// For photo messages, use simplified format without title to avoid 64-byte limit
-	if willSendPhoto {
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tvDetails.ID))
-	} else {
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tvDetails.ID, title))
-	}
-	kb.NewRow()
-
-	// #3 拼车「我也想看 +1」按钮（剧集）
 	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", tvDetails.ID))
 	kb.NewRow()
-
-	// Resource list button
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tvDetails.ID), "type": "tv"}))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tvDetails.ID))
 	kb.NewRow()
-
-	// Third row: navigation buttons
 	kb.AddButton("⬅️ 返回", "back")
 	if len(tvDetails.Seasons) > 9 {
 		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", regularSeasonCount), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
 	}
 	kb.NewRow()
-
-	// Show seasons in a clean grid layout (3 per row)
-	// Show all seasons (increased from 6 to 9)
 	displayCount := len(tvDetails.Seasons)
 	if displayCount > 9 {
 		displayCount = 9
@@ -1115,11 +1077,10 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		}
 	}
 
-	// Check for poster URL to display photo
 	if posterURL != "" {
 		return &callback.Response{
 			Photo:        posterURL,
-			PhotoCaption: msg.Build(),
+			PhotoCaption: sb.String(),
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
 			ParseMode:    "HTML",
@@ -1127,7 +1088,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	}
 
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
@@ -1136,63 +1097,36 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
 func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
-	msg := services.NewMessageBuilder()
-	msg.Bold(fmt.Sprintf("📺 %s", title)).Newline()
-	msg.Newline()
-	msg.Italic("暂无法获取季数信息，请尝试直接订阅全季").Newline()
-
-	// Warning if MoviePilot doesn't have this media
+	safeTitle := html.EscapeString(title)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("📺 <b>%s</b>\n\n", safeTitle))
 	if mpNotAvailable {
-		msg.Newline()
-		msg.Bold("⚠️ 资源库暂无").Newline()
-		msg.Text("当前资源库中暂无此剧集，求片后将尝试自动搜索").Newline()
+		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n")
+	} else {
+		sb.WriteString("暂无法获取季数信息，请尝试直接订阅全季\n")
 	}
 
 	kb := services.NewKeyboardBuilder()
-
-	// Change button text if MoviePilot doesn't have the media
 	requestButtonText := "✅ 订阅全季"
 	if mpNotAvailable {
 		requestButtonText = "🔄 尝试求片"
 	}
-
-	// Check if we'll be sending a photo (posterURL exists)
-	willSendPhoto := posterURL != ""
-
-	// First row: main action buttons
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
-	// For photo messages, use simplified format without title to avoid 64-byte limit
-	if willSendPhoto {
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tmdbID))
-	} else {
-		kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv:title:%s", tmdbID, title))
-	}
-	kb.NewRow()
-
-	// #3 拼车「我也想看 +1」按钮（剧集，简易详情页）
 	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
 	kb.NewRow()
-
-	// Resource list button
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": "tv"}))
-	kb.NewRow()
-
-	// Third row: navigation
 	kb.AddButton("⬅️ 返回", "back")
 
-	// Check for poster URL to display photo
 	if posterURL != "" {
 		return &callback.Response{
 			Photo:        posterURL,
-			PhotoCaption: msg.Build(),
+			PhotoCaption: sb.String(),
 			Edit:         false,
 			Keyboard:     convertKeyboard(kb.Build()),
 			ParseMode:    "HTML",
 		}
 	}
-
 	return &callback.Response{
-		Text:      msg.Build(),
+		Text:      sb.String(),
 		Edit:      true,
 		Keyboard:  convertKeyboard(kb.Build()),
 		ParseMode: "HTML",
