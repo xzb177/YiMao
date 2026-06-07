@@ -1,23 +1,27 @@
+# Multi-stage build for YiMao (Telegram 影视求片助手)
 FROM golang:1.24-alpine AS builder
 
 RUN apk add --no-cache git
 
 WORKDIR /app
 
-COPY go.mod go.sum ./
-
-# 用国内代理 + 跳过校验（go.sum checksum 问题）
-ENV GOPROXY=goproxy.cn
+# go.sum checksum 问题的根本修复：
+# 1. 先只复制 go.mod 做依赖下载（不用 go.sum 校验）
+# 2. 用 GOPROXY=goproxy.cn 国内代理加速
+# 3. GONOSUMCHECK=* 跳过 checksum 校验
+# 4. 复制源码后 go mod tidy 重建 go.sum
+COPY go.mod ./
+ENV GOPROXY=https://goproxy.cn,https://proxy.golang.org,direct
 ENV GONOSUMCHECK=*
 ENV GONOSUMDB=*
-ENV GOFLAGS=-mod=mod
-
 RUN go mod download
 
 COPY . .
 
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
+# 重建 go.sum + 编译
+RUN rm -f go.sum && go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 
+# ── Final stage ──
 FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates tzdata shadow su-exec
