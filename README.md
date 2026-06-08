@@ -2,17 +2,17 @@
 
 <div align="center">
 
-**在 Telegram 内完成「搜索影片 → 发起请求 → 查看进度 → 接收通知」的闭环**
+**在 Telegram 内完成「搜片 → 求片 → 查进度 → 收通知」的完整闭环**
 
-与 MoviePilot + Emby/Jellyfin 配合使用，无需切换应用
+配合 MoviePilot + Emby/Jellyfin 使用，求片众筹、追剧进度一站搞定，无需切换 App
 
-[![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go)](https://golang.org)
+[![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)
 [![Docker Pull](https://img.shields.io/badge/docker-xzb177%2Fyimao-blue?logo=docker)](https://hub.docker.com/r/xzb177/yimao)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/xzb177/YiMao?style=social)](https://github.com/xzb177/YiMao/stargazers)
 
-[功能特性](#-核心功能) · [快速开始](#-快速开始) · [部署指南](#-部署指南) · [命令说明](#-命令说明)
+[核心功能](#-核心功能) · [命令速查](#-命令速查) · [快速开始](#-快速开始) · [配置说明](#%EF%B8%8F-配置说明) · [部署指南](#-部署指南)
 
 </div>
 
@@ -20,283 +20,253 @@
 
 ## ⚠️ 更新提示
 
-**更新前请务必查看 [更新指南](docs/UPDATE.md) 以避免数据丢失！**
+**更新前请务必阅读 [更新指南](docs/UPDATE.md)，避免数据丢失。**
 
 ---
 
-## ⚡ 快速开始
+## 简介
 
-### 方式一：Docker 一键部署（推荐）
+YiMao（云海影视助手）是一个 Telegram Bot，把"找片—求片—等片—看片"这条链路全部搬进聊天窗口：
+
+- **搜片**：直接发片名，Bot 返回 TMDB 候选，点进去看详情。
+- **求片**：详情页一键发起，走管理员审核 + 配额控制，通过后由 MoviePilot 自动下载。
+- **等片**：候选列表有"预产期灯牌"给心理预期；搜不到的片可以丢进**许愿池**，找到源主动私信通知；多人想看的同一部片可以**拼车 +1**。
+- **看片**：入库后自动推送通知；追剧能看到**集数进度条**；还有每日入库汇总、每周观影周报。
+
+下载、刮削、入库由 **MoviePilot** 负责，媒体库与入库回调由 **Emby / Jellyfin** 提供，YiMao 是把这套后端能力包装成"人话"交互的前台。
+
+> 隐私保护：搜片、求片、进度、配额等个人操作在私聊中进行；群组仅用于接收入库通知、拼车到货提醒和公告。
+
+---
+
+## ✨ 核心功能
+
+### 🔍 智能搜片
+私聊直接发送片名（中英文均可），返回 TMDB 候选列表；点击进入详情页查看简介、年份、海报，并决定是否求片。也支持 `🔥 本周热门 / 📺 热门剧集 / ⭐ 必看神作 / 🆕 最新上映 / 🎲 随机探索` 等精选入口。
+
+### 🎬 求片（审核流 + 配额）
+详情页点「求片」即可发起请求：
+- **绑定校验**：首次需用 `/link 用户名 密码` 绑定 MoviePilot 账号。
+- **配额扣减**：电影扣 **1**，剧集扣 **3**（一整季对服务器资源消耗更大），每日 `00:00` 重置（按访问惰性刷新）。默认电影/剧集各 2 个/天。
+- **去重提醒**：媒体库已存在或已有相同请求时会提示，可选择"仍要订阅"。
+- **审核流**：请求进入管理员审核，管理员可 **✅ 批准 / ❌ 拒绝**。批准后调用 MoviePilot 下单；若下单失败会标记为 **stuck**（兜底保留，可重试，不会丢单）；拒绝时自动**返还配额**。
+
+### 🚦 候选预产期灯牌
+浏览某部片的候选资源列表时，根据已扫到的站点做种情况给出一个轻量"状态灯牌"（只给预期、不承诺精确时间）：
+
+| 灯牌 | 含义 | 判定（去重后"有做种"的站点数） |
+| --- | --- | --- |
+| ⚡ | 资源充足，很快到货 | ≥ `ETA_THRESHOLD_HIGH`（默认 3） |
+| 🔄 | 已有源，需等做种 | 1 ~ 阈值−1 |
+| 🐢 | 暂无站点出源 | 0 |
+| ❓ | 数据不足，仍在找源 | 候选为空 / 数据缺失 |
+
+### 📈 剧集进度条
+追剧时在入库通知里展示集数进度条，如 `📈 已更 S03E07/S03E16 ▓▓▓▓░░░░ 44%（距完结还差 9 集）`，完结显示 `100%（已完结）`。分母取自 TMDB 当季实际集数，支持本季 / 全剧双口径。
+
+### 🙋 拼车 +1
+详情页点「我也想看」，把自己加入这部片的拼车列表，并提示"已加入，共 N 人想看"。该片到货时会在群里 @ 拼过车的用户。
+
+### 🌟 许愿池（`/wish`）
+搜不到的片可以许愿，找到源第一时间通知你：
+- `/wish 片名` 入池：TMDB 强校验匹配、与现有订阅去重、容量上限（每人 20 条 / 全局 500 条）。
+- `/wish`（无参）列出"我的许愿"，可取消。
+- **众筹计数**：同一部片多人许愿会合并，重复许愿时提示"目前 **N 人在等**，出源会自动通知你"。
+- **定时重搜**：调度器约每天对每条许愿重搜一次（错峰），命中（做种数 ≥ `WISH_MIN_SEEDERS`）后**主动私信**许愿人"🎉 你许愿的影片出源啦！"并附「🎬 立即求片」按钮；其他许愿者也会收到提醒。出源后**仅通知不自动求片**，需用户点按钮确认后才走求片流程。
+- **超期处理**：入池 `WISH_EXPIRE_DAYS`（默认 30）天仍无源会做一次最终重搜，仍无源则取消并私信发起人。
+
+> 状态机：`PENDING → SEARCHING → FOUND → NOTIFIED → FULFILLED`，旁路 `EXPIRED`（超期/放弃）/ `ORPHANED`（用户退群/不可达）。
+
+### 📋 我的请求（聚合视图）
+`/requests`（或 `/watchlist`）把分散的状态聚合成一页，按状态分组展示并标出计数：
+
+- **【进行中】**：审核中 / 下载中 / 搜索中等
+- **【许愿中】**：许愿池里待出源的条目
+- **【已完成】**：已入库
+- **【异常/失败】**：失败 / 已取消
+
+数据同时来自 MoviePilot 订阅、待处理的审核单和许愿池，避免来回切界面查状态。
+
+### 🎬 AI 推荐 · 今晚看什么
+点「🎬 今晚看什么」或发送 `/ai`，进入一次性 AI 对话模式，把口味/心情用一句话告诉 Bot（如"想看烧脑悬疑、别太长"），由 AI 帮你挑片。需配置 AI Key 或将 `AI_ENABLED=true`。
+
+> 说明：AI 推荐是**按钮/命令触发**的交互，不存在"AI 电台主动定时推送"。系统自带的每日 9:00 推荐是基于 MoviePilot 热门榜（非 AI 生成），且受用户通知开关控制。
+
+### 📊 观影周报
+每周一 9:00 自动生成并按用户通知开关推送（也可在通知设置中开关）。内容包括本周搜索/求片/通过数、剩余配额、行为标签、热搜关键词、类型偏好与专属建议。
+
+### 🔔 通知设置与每日汇总
+「设置 → 通知设置」可单独开关：入库通知 / 每日推荐 / 周报 / 公告。每日 `DAILY_SUMMARY_HOUR`（默认 21:00）推送当天的入库汇总。
+
+### 🤖 /status
+查看 Bot 运行状态：版本、服务端时间、当前用户 ID、聊天类型、是否管理员。
+
+---
+
+## ⌨️ 命令速查
+
+| 命令 | 作用 | 权限 |
+| --- | --- | --- |
+| `/start` | 打开主菜单 | 所有人 |
+| `/search` | 提示进入搜片（直接发片名即可） | 所有人 |
+| `/ai [描述]` | 今晚看什么 · AI 推荐（需启用 AI） | 所有人 |
+| `/wish [片名]` | 许愿入池 / 查看我的许愿 | 所有人 |
+| `/requests` | 我的请求聚合视图（私聊） | 所有人 |
+| `/watchlist` | 我的片单（同 `/requests`，私聊） | 所有人 |
+| `/quota` | 查看今日配额（私聊） | 所有人 |
+| `/link 用户名 密码` | 绑定 MoviePilot 账号 | 所有人 |
+| `/status` | 查看 Bot 运行状态 | 所有人 |
+| `/id` | 查看当前聊天 / 用户 ID | 所有人 |
+| `/help` | 功能与命令帮助 | 所有人 |
+
+> 管理操作（审核、配额管理等）通过菜单内「🛠️ 管理」入口进入，仅管理员可见。
+
+---
+
+## 🚀 快速开始
+
+### 方式一：Docker（推荐）
 
 ```bash
-# 1. 拉取镜像并创建配置文件
-mkdir -p yimao && cd yimao
-curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/docker-compose.yml -o docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/.env.example -o .env
+# 1. 准备配置
+cp .env.example .env
+vim .env        # 至少填写 TELEGRAM_BOT_TOKEN / MOVIEPILOT_URL / MOVIEPILOT_API_KEY
 
-# 2. 编辑 .env 文件，填入必填配置
-nano .env  # 或使用其他编辑器
-
-# 3. 启动服务
+# 2. 拉起（host 网络，便于访问内网 MoviePilot / Emby）
 docker compose up -d
 
-# 4. 查看日志
+# 3. 查看日志
 docker compose logs -f
 ```
 
-### 方式二：安装脚本部署
+`docker-compose.yml` 默认使用 `network_mode: host`，数据持久化到 `./data`。
+
+### 方式二：本地构建运行
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/xzb177/YiMao/master/install.sh | bash
+# 需要 Go 1.24
+go build -o yimao ./cmd/bot
+export $(grep -v '^#' .env | xargs)
+./yimao
 ```
 
-### 方式三：源码编译
-
-```bash
-git clone https://github.com/xzb177/YiMao.git
-cd YiMao
-cp .env.example .env
-# 编辑 .env 后
-docker compose up -d
-```
-
-启动后在 Telegram 输入 `/start` 即可。
+服务默认监听 `:8080`，提供 `/health` 健康检查。首次部署后，用 `/link` 绑定的第一个用户会自动成为管理员，也可用 `ADMIN_USER_IDS` 预先指定。
 
 ---
 
-## 核心功能
+## ⚙️ 配置说明
 
-### 主流程
+所有配置通过环境变量提供，完整示例见 [`.env.example`](.env.example)。
 
-| 功能 | 说明 |
-|------|------|
-| 🔍 **搜索影片** | 支持中英文片名、模糊搜索 |
-| 📬 **发起请求** | 命中后一键求片，自动走 MoviePilot 流程 |
-| 📊 **查看进度** | 实时跟踪请求状态（排队/搜索/下载/完成） |
-| 🔔 **接收通知** | 单集推送 + 每日汇总，可自定义时间 |
+### 核心（必需）
 
-### 增强功能
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `TELEGRAM_BOT_TOKEN` | ✅ | — | 从 @BotFather 获取的 Bot Token |
+| `ADMIN_USER_IDS` | 推荐 | 空 | 管理员 TG ID，逗号分隔；留空则首个 `/link` 用户成为管理员 |
+| `TELEGRAM_CHAT_ID` | | 空 | 群组 Chat ID，用于群组通知；留空则不发群通知 |
+| `PORT` | | `8080` | 服务监听端口 |
+| `TZ` | | `Asia/Shanghai` | 时区 |
 
-| 功能 | 说明 |
-|------|------|
-| 📺 **剧集订阅** | 支持按季选择，避免整剧误下 |
-| 🎬 **智能推荐** | 结合 TMDB 提供热门、高分、随机推荐 |
-| 🤖 **AI 选片** | 按心情入口推荐内容（需配置 API Key） |
-| 📜 **搜索历史** | 记录搜索记录，支持快速再次搜索 |
-| 🔗 **账号绑定** | 支持 MoviePilot 多用户映射，各看各的记录 |
-| 🎨 **统一卡片 UI** | 默认极简卡片风，重点优化搜索、详情、进度与通知的可读性 |
-| 🌐 **候选列表** | 直观查看所有站点候选资源，支持分页 |
+### MoviePilot（必需）
 
-### 管理能力
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `MOVIEPILOT_URL` | ✅ | `http://localhost:4500` | MoviePilot 地址 |
+| `MOVIEPILOT_API_KEY` | ✅ | — | MoviePilot API Key（候选资源列表依赖此项） |
+| `DOWNLOAD_SAVE_PATH` | | 空 | 自定义下载目录，多实例共用一个 MoviePilot 时区分用 |
 
-| 功能 | 说明 |
-|------|------|
-| ✅ **审核流** | 管理员可审核请求，降低滥用风险 |
-| 📊 **配额策略** | 按用户限制求片次数 |
-| 🐞 **反馈闭环** | 用户提交反馈，管理员统一处理 |
-| 🔄 **自动回收** | 自动回收长期未下载的订阅 |
+### Emby / Jellyfin（可选但推荐）
 
----
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `EMBY_URL` | | 空 | Emby / Jellyfin 地址（用于媒体库查重与入库通知） |
+| `EMBY_API_KEY` | 条件 | 空 | 设置了 `EMBY_URL` 时必填 |
+| `EMBY_SKIP_TLS_VERIFY` | | `false` | 跳过 Emby TLS 校验（仅信任的自签名证书） |
+| `NOTIFICATION_FORMAT` | | `detailed` | 通知格式：`simple` / `detailed` |
 
-## 部署指南
+### 配额 / 会话
 
-### 部署前检查
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `MAX_SESSIONS` | | `1000` | 最大并发会话数（1–10000） |
+| `MAX_SESSION_AGE` | | `24` | 会话最大存活时长（小时，1–168） |
 
-- [ ] 已从 @BotFather 获取 `TELEGRAM_BOT_TOKEN`
-- [ ] MoviePilot 已安装并可访问
-- [ ] 已从 MoviePilot 获取 API Key
-- [ ] 确认 MoviePilot 地址（跨机器部署勿用 localhost）
-- [ ] （可选）Emby/Jellyfin 地址和 API Key
+> 配额额度（电影/剧集每人每日上限）由服务在运行时管理（默认各 2，电影扣 1、剧集扣 3），并可与 MoviePilot 同步。
 
-### 必填环境变量
+### 许愿池（`WISH_*`）
 
-| 变量名 | 说明 | 获取方式 |
-|---|---|---|
-| `TELEGRAM_BOT_TOKEN` | Telegram 机器人 Token | [@BotFather](https://t.me/BotFather) |
-| `MOVIEPILOT_URL` | MoviePilot 地址 | 如 `http://192.168.1.100:4500` |
-| `MOVIEPILOT_API_KEY` | MoviePilot API Key | MoviePilot 设置→安全设置 |
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `WISH_RESEARCH_INTERVAL_HOURS` | | `24` | 重搜调度间隔 / 锁定窗口（小时），旧锁超期自动自愈 |
+| `WISH_EXPIRE_DAYS` | | `30` | 入池后无源自动过期天数 |
+| `WISH_MIN_SEEDERS` | | `1` | 重搜"命中"判定的最低做种数 |
+| `WISH_SEARCH_LOCK_TTL_MINUTES` | | `60` | `searching_at` 自愈锁 TTL（分钟） |
 
-### 可选环境变量
+### 预产期灯牌（`ETA_*`）
 
-| 变量名 | 说明 | 默认值 |
-|---|---|---|
-| `ADMIN_USER_IDS` | 管理员 Telegram ID（逗号分隔） | 首个绑定用户自动成为管理员 |
-| `EMBY_URL` | Emby/Jellyfin 地址 | - |
-| `EMBY_API_KEY` | Emby API Key | - |
-| `TMDB_API_KEY` | TMDB API Key | 内置默认值 |
-| `TELEGRAM_CHAT_ID` | 群组 Chat ID（通知用） | - |
-| `ZHIPU_API_KEY` | 智谱 AI Key（推荐功能） | - |
-| `CLAUDE_API_KEY` / `ANTHROPIC_API_KEY` | Claude/Anthropic AI Key（AI 功能） | - |
-| `AI_ENABLED` | 显示并启用 AI 入口（需配合可用 AI Key/代理） | `false` |
-| `TZ` | 时区 | `Asia/Shanghai` |
-| `PORT` | 健康检查端口 | `8080` |
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `ETA_THRESHOLD_HIGH` | | `3` | ⚡"资源充足"档位的站点做种数阈值 |
 
----
+### AI（可选）
 
-## 命令说明
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `AI_ENABLED` | | `false` | 设为 `true` 显示 AI 推荐按钮（适用于 Mimo 等非 Zhipu/Claude 提供商） |
+| `ZHIPU_API_KEY` | | 空 | 智谱 AI API Key |
+| `CLAUDE_API_KEY` / `ANTHROPIC_API_KEY` | | 空 | Anthropic/Claude API Key（二选一） |
+| `TMDB_API_KEY` | | 内置默认 | TMDB API Key |
 
-### 用户命令
+### 通知 / 调度
 
-| 命令 | 作用 |
-|---|---|
-| `/start` | 打开主菜单 |
-| `/search` | 进入搜片提示；私聊里也可以直接发片名搜索 |
-| `/ai` | 进入“今晚看什么”一次性 AI 推荐模式 |
-| `/ai <需求>` | 直接按口味/心情获取 AI 推荐 |
-| `/requests` | 查看我的求片/订阅进度 |
-| `/watchlist` | 查看片单/我的请求，同 `/requests` 同源 |
-| `/wish` | 查看我的许愿池 |
-| `/wish <片名>` | 加入许愿池，出源后通知 |
-| `/link 账号 密码` | 绑定 MoviePilot 账号 |
-| `/quota` | 查看配额 |
-| `/help` | 帮助中心 |
-| `/status` | 查看 Bot 状态 |
-| `/id` | 查看当前聊天 ID / 用户 ID |
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `DAILY_SUMMARY_HOUR` | | `21` | 每日入库汇总推送时间（0–23） |
 
-### 管理员命令（私聊机器人）
+### 其他
 
-- 审核请求
-- 配置通知策略
-- 查看反馈
-- 管理配额
+| 变量 | 必填 | 默认 | 说明 |
+| --- | :---: | --- | --- |
+| `WEBHOOK_SECRET` | | 空 | 设置后入站 Webhook 须携带有效签名（`X-Webhook-Signature: sha256=<hex>`） |
+| `WEBHOOK_URL` | | 空 | 设置后 Bot 使用 Webhook 模式接收 Telegram 更新（否则轮询） |
+| `UI_STYLE` | | `card` | 菜单风格：`neon` / `film` / `pop` / `card` / `cinema` |
+| `LOG_LEVEL` | | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
+| `LOG_PREFIX` | | `YiMao` | 日志前缀 |
+| `LOG_COLOR` | | `false` | 彩色日志输出 |
+| `PUID` / `PGID` | | `0` / `0` | 容器内运行用户 UID/GID（与 `data` 目录权限匹配） |
 
 ---
 
-## 维护与更新
+## 📦 部署指南
 
-> **重要：更新前请务必备份数据！** 详见 [更新指南](docs/UPDATE.md)
+### 服务端点
+- `GET /health`、`GET /api/health`：健康检查
+- `POST /webhook`、`/telegram-webhook`：Telegram 更新（Webhook 模式）
+- `POST /webhook/emby`、`/webhook/moviepilot`、`/webhook/mp`、`/webhook/jellyseerr`、`/api/summary`：媒体后端入库回调
 
-### 快速更新
+在 Emby/Jellyfin 与 MoviePilot 中配置对应 Webhook 指向上述地址，YiMao 即可在入库时推送通知、更新剧集进度、触发拼车与许愿出源逻辑。若设置了 `WEBHOOK_SECRET`，回调请求需携带签名。
 
-```bash
-# 使用管理脚本（推荐）
-./manage.sh update
+### 数据持久化
+运行数据（配额、管理员、偏好、反馈、许愿池 SQLite 等）保存在 `DATA_DIR`（容器内默认 `/app/data`，已挂载到 `./data`）。升级前请备份该目录。
 
-# 查看运行日志
-./manage.sh logs-f
-
-# 重启服务
-./manage.sh restart
-```
-
-### 手动更新
-
-```bash
-# 拉取最新代码
-git pull
-
-# 重新构建镜像
-docker compose build
-
-# 重启服务
-docker compose up -d
-```
-
-### 更新注意事项
-
-1. **每次更新前务必备份数据**
-   - `data/` 目录
-   - `*.json` 配置文件
-
-2. **查看更新内容**
-   ```bash
-   git log HEAD@{1}..HEAD --oneline
-   ```
-
-3. **检查配置变更**
-   ```bash
-   git diff HEAD@{1} .env.example
-   ```
+### 更新
+更新前务必阅读 **[docs/UPDATE.md](docs/UPDATE.md)**，按指引迁移数据后再拉取新镜像 / 重新构建。
 
 ---
 
-## 架构概览
+## 🧱 技术栈与架构
 
-```
-┌─────────────┐
-│ Telegram User │
-└──────┬──────┘
-       ▼
-┌─────────────────────────────────────┐
-│         YiMao Bot                    │
-│  (Handlers / Services / Session)     │
-└──┬────────────────────────────────┬──┘
-   │                                │
-   ▼                                ▼
-┌─────────┐                    ┌─────────┐
-│MoviePilot│              Emby/Jellyfin│
-│ 请求处理  │                 库检查     │
-│ 下载链路  │                 媒体状态   │
-└─────────┘                    └─────────┘
-```
+- **语言/运行时**：Go 1.24，单二进制，Docker 多阶段构建（`alpine` 运行）
+- **存储**：本地 JSON（配额/管理员/偏好等）+ SQLite（`modernc.org/sqlite`，纯 Go，免 CGO；许愿池、搜索历史等）
+- **交互**：Telegram Bot API（轮询 / Webhook 双模式）
+- **后端集成**：MoviePilot（搜索、订阅下载、热门榜）、Emby/Jellyfin（媒体库查重、入库回调）、TMDB（元数据）
+- **后台任务**：每日推荐（9:00，热门榜）、每日入库汇总（`DAILY_SUMMARY_HOUR`）、每周周报（周一 9:00）、许愿池每分钟错峰重搜与过期清理
 
-### 代码结构
-
-- `internal/handlers` — 命令与回调入口
-- `internal/services` — 对外部系统能力封装
-- `internal/session` — 会话与流程状态
-- `internal/ui` — UI 构建系统
-- `ai/` — AI 推荐模块
-- `pkg/*` — 通用类型、校验与工具
-
----
-
-## 项目文档
-
-**部署与维护**
-- [UPDATE.md](docs/UPDATE.md) — 更新指南（必读）
-- [DEPLOY.md](docs/DEPLOY.md) — 部署说明
-- [DOCKER.md](docs/DOCKER.md) — Docker 管理
-
-**功能说明**
-- [COMMANDS.md](docs/COMMANDS.md) — 命令与回调说明
-- [FEATURES.md](docs/FEATURES.md) — 功能特性
-
-**开发文档**
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — 架构设计
-- [CHANGELOG.md](CHANGELOG.md) — 版本变更记录
-- [CONTRIBUTING.md](docs/CONTRIBUTING.md) — 贡献指南
-
----
-
-## 技术栈
-
-- **语言**: Go 1.23+
-- **框架**: Telegram Bot API
-- **存储**: JSON 文件（轻量部署）
-- **容器**: Docker + Docker Compose
-
----
-
-## 相关项目
-
-- [MoviePilot](https://github.com/jxxghp/MoviePilot) — 自动化媒体整理工具
-- [Emby](https://emby.media/) — 媒体服务器
-- [TMDB](https://www.themoviedb.org/) — 电影数据库
+更多设计细节见 [`docs/`](docs/)（`ARCHITECTURE.md`、`FEATURES.md`、`COMMANDS.md`、`DEPLOY.md` 等）。
 
 ---
 
 ## License
 
 [MIT](LICENSE)
-
----
-
-<div align="center">
-
-**[功能特性](#-核心功能) · [快速开始](#-快速开始) · [部署指南](#-部署指南)**
-
-Made with ❤️ by [xzb177](https://github.com/xzb177)
-
-</div>
-
----
-
-## 🌟 支持本项目
-
-如果觉得本项目对你有帮助，欢迎支持：
-
-[![VSLLM](https://img.shields.io/badge/Powered%20by-VSLLM-blue?logo=data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCI+PHBhdGggZD0iTTEyIDJMMyA3djEwbDkgNSA5LTVIN0wxMiAyeiIgZmlsbD0iI2ZmZiIvPjwvc3ZnPg==)](https://vsllm.com)
-
-> 🔗 [维云模型开放平台](https://vsllm.com) - 稳定极速的大模型API聚合平台
-
