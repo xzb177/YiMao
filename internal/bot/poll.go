@@ -139,6 +139,23 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		return
 	}
 
+	// 【P0 dead-end 逃逸修复】用户处于任意“等待文本输入”的 pending 态时，命令(/cancel /start 等)
+	// 必须能逃出，而不是被当成输入内容吞掉。统一处理：当文本以 "/" 开头时，先清除所有 pending
+	// 输入态键，再放行到下方命令处理；若原本处于 pending 态且命令为 /cancel，则给出明确反馈并返回。
+	if strings.HasPrefix(sanitizedText, "/") {
+		if clearPendingInputStatesPoll(deps, msg.From.ID) {
+			cmd := strings.ToLower(strings.TrimSpace(sanitizedText))
+			if cmd == "/cancel" || cmd == "/取消" {
+				deps.Telegram.SendMessage(msg.Chat.ID, "✅ 已退出当前输入", "", nil)
+				return
+			}
+		}
+		// 其它命令(如 /start /requests)：已清除 pending 态，直接执行命令。
+		msg.Text = sanitizedText // Update with sanitized text
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
+		return
+	}
+
 	// Check if user is feedback process
 	logger.Info("[Poll] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
 	if deps.FeedbackHandler != nil {
@@ -292,12 +309,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		}
 	}
 
-	// Private chat: Handle commands and search query
-	if strings.HasPrefix(sanitizedText, "/") {
-		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
-		return
-	}
+	// Private chat: command handling —— 已在前面统一处理(含 pending 逃逸)，此处无需再判命令。
 
 	// Check if user is in explicit AI chat mode.
 	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
@@ -343,6 +355,42 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		msg.Text = sanitizedText // Update with sanitized text
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
+}
+
+// clearPendingInputStatesPoll 清除用户所有“等待文本输入”的 pending 态键，用于命令逃逸(poll 入口)。
+// 【P0 dead-end 逃逸修复】与 webhook 入口逻辑一致。返回 true 表示用户原本确实处于某个 pending 态。
+func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
+	if deps == nil || deps.SessionMgr == nil {
+		return false
+	}
+	sess := deps.SessionMgr.GetOrCreate(userID)
+	if sess == nil || !deps.SessionMgr.IsValid(userID) {
+		return false
+	}
+
+	hadPending := false
+	pendingKeys := []string{
+		// 反馈流程（描述输入步骤）
+		"feedback_step",
+		"feedback_tmdb_id",
+		"feedback_media_type",
+		"feedback_media_title",
+		"feedback_issue_type",
+		// 反馈追问会话
+		"feedback_conversation_issue_id",
+		// 管理员添加管理员 / 自定义时间 / 回复反馈 / 回复问题
+		"waiting_for_add_admin",
+		"waiting_for_time_input",
+		"pending_feedback_reply",
+		"pending_issue_reply",
+	}
+	for _, key := range pendingKeys {
+		if _, exists := sess.Get(key); exists {
+			hadPending = true
+			sess.Delete(key)
+		}
+	}
+	return hadPending
 }
 
 // allDigits checks if a string contains only digits

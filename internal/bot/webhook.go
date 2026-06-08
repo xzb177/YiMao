@@ -190,6 +190,27 @@ func HandleWebhookMessage(
 
 	// 私聊中处理所有功能
 
+	// 【P0 dead-end 逃逸修复】用户处于任意“等待文本输入”的 pending 态时，命令(/cancel /start 等)
+	// 必须能逃出，而不是被当成输入内容吞掉。统一处理：当 msg.Text 以 "/" 开头时，先清除所有
+	// pending 输入态键，再放行到下方命令处理；如果原本处于 pending 态且命令为 /cancel，则给出
+	// 明确反馈并直接返回（/cancel 不是真命令）。
+	if strings.HasPrefix(msg.Text, "/") {
+		if clearPendingInputStates(deps, msg.From.ID) {
+			cmd := strings.ToLower(strings.TrimSpace(msg.Text))
+			if cmd == "/cancel" || cmd == "/取消" {
+				deps.Telegram.SendMessage(msg.Chat.ID, "✅ 已退出当前输入", "", nil)
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+		}
+		// 其它命令(如 /start /requests)：已清除 pending 态，直接落到下方命令处理。
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+		return
+	}
+
 	// 【关键修复】首先检查用户是否处于反馈流程中
 	logger.Info("[Webhook] Checking feedback process for user %d, FeedbackHandler=%v", msg.From.ID, deps.FeedbackHandler != nil)
 	if deps.FeedbackHandler != nil {
@@ -281,13 +302,7 @@ func HandleWebhookMessage(
 		}
 	}
 
-	// Handle commands
-	if strings.HasPrefix(msg.Text, "/") {
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
-		return
-	}
+	// Handle commands —— 已在前面统一处理(含 pending 逃逸)，此处无需再判命令。
 
 	// Check if user is in explicit AI chat mode.
 	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
@@ -306,6 +321,44 @@ func HandleWebhookMessage(
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK")
+}
+
+// clearPendingInputStates 清除用户所有“等待文本输入”的 pending 态键，用于命令逃逸。
+// 【P0 dead-end 逃逸修复】当用户在任意 pending 输入态打命令时调用本函数清状态，
+// 让命令得以正常执行而不被吞掉。返回 true 表示用户原本确实处于某个 pending 态。
+func clearPendingInputStates(deps *Dependencies, userID int64) bool {
+	if deps == nil || deps.SessionMgr == nil {
+		return false
+	}
+	sess := deps.SessionMgr.GetOrCreate(userID)
+	if sess == nil || !deps.SessionMgr.IsValid(userID) {
+		return false
+	}
+
+	hadPending := false
+	// 反馈流程 + 管理员各类等待输入态
+	pendingKeys := []string{
+		// 反馈流程（描述输入步骤）
+		"feedback_step",
+		"feedback_tmdb_id",
+		"feedback_media_type",
+		"feedback_media_title",
+		"feedback_issue_type",
+		// 反馈追问会话
+		"feedback_conversation_issue_id",
+		// 管理员添加管理员 / 自定义时间 / 回复反馈 / 回复问题
+		"waiting_for_add_admin",
+		"waiting_for_time_input",
+		"pending_feedback_reply",
+		"pending_issue_reply",
+	}
+	for _, key := range pendingKeys {
+		if _, exists := sess.Get(key); exists {
+			hadPending = true
+			sess.Delete(key)
+		}
+	}
+	return hadPending
 }
 
 func handleAdminPendingReplyText(deps *Dependencies, sess interface{ Delete(string) }, msg *types.TelegramMessage, rawIssueID interface{}, stateKey string, label string) {
