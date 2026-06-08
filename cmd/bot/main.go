@@ -316,7 +316,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Initialize Scheduler for daily recommendations
 	logger.Info("  [10/11] Creating scheduler...")
-	scheduler := services.NewScheduler(notificationService, moviepilotClient, adminService, userMappingService)
+	scheduler := services.NewScheduler(notificationService, moviepilotClient, tmdbClient, adminService, userMappingService)
 	scheduler.SetDailyTime(9, 0) // 9 AM daily
 	scheduler.Start()
 	logger.Info("  [11/11] Scheduler started")

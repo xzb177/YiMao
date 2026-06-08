@@ -864,6 +864,9 @@ func (c *MoviePilotClient) DeleteRequest(requestID int) error {
 }
 
 // GetTrending retrieves trending media
+//
+// Deprecated: MoviePilot v2.13.5 没有 /api/v1/media/trending 端点（返回 Invalid HTTP request），
+// 每日推荐已改用 TMDB 热门接口（见 scheduler.fetchTrendingMovies）。保留此方法仅为兼容，请勿在新代码中使用。
 func (c *MoviePilotClient) GetTrending(mediaType MediaType, page int) (*SearchResponse, error) {
 	typeStr := "电影"
 	if mediaType == MediaTypeTV {

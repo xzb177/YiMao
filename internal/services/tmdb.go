@@ -383,6 +383,37 @@ type TMDBPopularResult struct {
 	TotalResults int                     `json:"total_results"`
 }
 
+// GetTitle 返回热门条目的标题（优先中文标题，回退到原始标题/剧名）
+func (m *TMDBTrendingMediaInfo) GetTitle() string {
+	if m.Title != "" {
+		return m.Title
+	}
+	if m.Name != "" {
+		return m.Name
+	}
+	if m.OriginalTitle != "" {
+		return m.OriginalTitle
+	}
+	if m.OriginalName != "" {
+		return m.OriginalName
+	}
+	return "未知标题"
+}
+
+// GetYear 从发行日期/首播日期解析出年份，解析失败返回 0
+func (m *TMDBTrendingMediaInfo) GetYear() int {
+	date := m.ReleaseDate
+	if date == "" {
+		date = m.FirstAirDate
+	}
+	if len(date) >= 4 {
+		year := 0
+		fmt.Sscanf(date[:4], "%d", &year)
+		return year
+	}
+	return 0
+}
+
 // GetTrendingMovies gets trending movies from TMDB
 // timeWindow can be "day" or "week"
 func (c *TMDBClient) GetTrendingMovies(timeWindow string) (*TMDBTrendingResult, error) {

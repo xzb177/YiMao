@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"math/rand"
 	"sync"
 	"time"
@@ -12,6 +13,7 @@ import (
 type Scheduler struct {
 	notification *NotificationService
 	moviepilot   *MoviePilotClient
+	tmdb         *TMDBClient // 每日推荐数据源：改用 TMDB 热门接口
 	adminService *AdminService
 	userMapping  *UserMappingService
 	stopCh       chan struct{}
@@ -30,12 +32,14 @@ type Scheduler struct {
 func NewScheduler(
 	notification *NotificationService,
 	moviepilot *MoviePilotClient,
+	tmdb *TMDBClient,
 	adminService *AdminService,
 	userMapping *UserMappingService,
 ) *Scheduler {
 	return &Scheduler{
 		notification: notification,
 		moviepilot:   moviepilot,
+		tmdb:         tmdb,
 		adminService: adminService,
 		userMapping:  userMapping,
 		stopCh:       make(chan struct{}),
@@ -127,24 +131,55 @@ func (s *Scheduler) nextDailyRun() time.Time {
 	return next
 }
 
+// fetchTrendingMovies 从 TMDB 获取本周热门电影并转换为 []SearchResult，
+// 以复用现有的 shuffleAndPick / TrendingResultItem 转换逻辑。
+// 当未配置 TMDB client 或请求失败时，返回 error 由调用方优雅降级（跳过本次推荐）。
+func (s *Scheduler) fetchTrendingMovies() ([]SearchResult, error) {
+	if s.tmdb == nil {
+		return nil, fmt.Errorf("TMDB client 未初始化，跳过本次推荐")
+	}
+
+	// 使用 TMDB 真实端点 GET /3/trending/movie/week（带 api_key + language=zh-CN）
+	trending, err := s.tmdb.GetTrendingMovies("week")
+	if err != nil {
+		return nil, fmt.Errorf("获取 TMDB 热门电影失败: %w", err)
+	}
+
+	// 将 TMDB 热门结果转换为内部统一的 SearchResult 结构
+	results := make([]SearchResult, 0, len(trending.Results))
+	for _, m := range trending.Results {
+		results = append(results, SearchResult{
+			ID:       m.ID,
+			Title:    m.GetTitle(),
+			Year:     FlexibleYear(m.GetYear()),
+			Type:     string(MediaTypeMovie),
+			Poster:   s.tmdb.GetPosterURL(m.PosterPath), // 拼接完整 TMDB 海报 URL
+			Rating:   m.VoteAverage,
+			Overview: m.Overview,
+		})
+	}
+	return results, nil
+}
+
 // sendDailyRecommendations sends daily recommendations to all users
 func (s *Scheduler) sendDailyRecommendations() {
 	logger.Info("[Scheduler] Sending daily recommendations...")
 
-	// Get trending movies
-	trending, err := s.moviepilot.GetTrending(MediaTypeMovie, 1)
+	// 改用 TMDB 获取热门电影（MoviePilot 没有 trending 端点）
+	results, err := s.fetchTrendingMovies()
 	if err != nil {
+		// 优雅降级：记日志跳过本次推荐，不 panic、不发空消息
 		logger.Info("[Scheduler] Failed to get trending movies: %v", err)
 		return
 	}
 
-	if len(trending.Results) == 0 {
+	if len(results) == 0 {
 		logger.Info("[Scheduler] No trending movies found")
 		return
 	}
 
 	// Shuffle and pick top recommendations
-	movies := s.shuffleAndPick(trending.Results, 5)
+	movies := s.shuffleAndPick(results, 5)
 
 	// Get all users to notify
 	userIDs := s.getActiveUsers()
@@ -204,18 +239,17 @@ func (s *Scheduler) shuffleAndPick(results []SearchResult, n int) []SearchResult
 
 // SendTestRecommendation sends a test recommendation immediately
 func (s *Scheduler) SendTestRecommendation(userID int64) error {
-	// Get trending movies
-	trending, err := s.moviepilot.GetTrending(MediaTypeMovie, 1)
+	// 改用 TMDB 获取热门电影
+	movies, err := s.fetchTrendingMovies()
 	if err != nil {
 		return err
 	}
 
-	if len(trending.Results) == 0 {
+	if len(movies) == 0 {
 		return nil
 	}
 
 	// Pick top 3
-	movies := trending.Results
 	if len(movies) > 3 {
 		movies = movies[:3]
 	}
