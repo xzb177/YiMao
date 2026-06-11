@@ -673,42 +673,65 @@ func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
 	return items, nil
 }
 
-// getCachedSubscriptions 获取缓存的订阅列表，过期则重新拉取
-func (c *MoviePilotClient) getCachedSubscriptions() []SubscribeItem {
-	c.subsCacheMu.RLock()
-	if c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL {
-		data := c.subsCacheData
-		c.subsCacheMu.RUnlock()
-		return data
+// WarmupSubscriptionCache pre-loads the subscription cache on startup
+// so the first "My Requests" click doesn't block for minutes.
+func (c *MoviePilotClient) WarmupSubscriptionCache() {
+	logger.Info("[MoviePilot] 预热订阅缓存...")
+	if err := c.preWarmSubscriptionCache(); err != nil {
+		logger.Info("[MoviePilot] 订阅缓存预热失败: %v", err)
+		return
 	}
+	c.subsCacheMu.RLock()
+	count := len(c.subsCacheData)
 	c.subsCacheMu.RUnlock()
+	logger.Info("[MoviePilot] 订阅缓存预热完成: %d 条", count)
+}
 
-	// 缓存过期，重新拉取
+// getCachedSubscriptions returns cached subscriptions if available.
+// Returns (data, true) if cache hit, (nil, false) if cache miss (caller should trigger warmup).
+func (c *MoviePilotClient) preWarmSubscriptionCache() error {
 	c.subsCacheMu.Lock()
 	defer c.subsCacheMu.Unlock()
 
-	// 双重检查：可能其他 goroutine 已经更新了缓存
+	// Double-check: another goroutine may have filled it while we waited
 	if c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL {
-		return c.subsCacheData
+		return nil
 	}
 
+	logger.Info("[MoviePilot] preWarmSubscriptionCache: 开始拉取全量订阅...")
 	endpoint := "/api/v1/subscribe/?page=1&count=1000"
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
-		logger.Warn("[MoviePilot] getCachedSubscriptions: 拉取失败: %v，使用旧缓存", err)
-		return c.subsCacheData // 返回旧缓存（可能为空）
+		return fmt.Errorf("拉取订阅列表失败: %w", err)
 	}
 
 	var items []SubscribeItem
 	if err := json.Unmarshal(body, &items); err != nil {
-		logger.Warn("[MoviePilot] getCachedSubscriptions: 解析失败: %v", err)
-		return c.subsCacheData
+		return fmt.Errorf("解析订阅列表失败: %w", err)
 	}
 
 	c.subsCacheData = items
 	c.subsCacheTime = time.Now()
-	logger.Info("[MoviePilot] getCachedSubscriptions: 缓存已更新，%d 条订阅", len(items))
-	return items
+	logger.Info("[MoviePilot] preWarmSubscriptionCache: 完成，%d 条订阅", len(items))
+	return nil
+}
+
+// IsSubscriptionCacheReady returns true if the subscription cache is loaded and fresh.
+func (c *MoviePilotClient) IsSubscriptionCacheReady() bool {
+	c.subsCacheMu.RLock()
+	defer c.subsCacheMu.RUnlock()
+	return c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL
+}
+
+// getCachedSubscriptions returns cached subscriptions if available.
+// Returns (data, true) if cache hit, (nil, false) if cache miss (caller should trigger warmup).
+func (c *MoviePilotClient) getCachedSubscriptions(pageSize int) ([]SubscribeItem, bool) {
+	c.subsCacheMu.RLock()
+	defer c.subsCacheMu.RUnlock()
+	if c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL {
+		return c.subsCacheData, true
+	}
+	return nil, false
 }
 
 // InvalidateSubscriptionsCache 强制刷新订阅缓存（订阅变更时调用）
@@ -763,7 +786,7 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 		userID, user.Username, user.UserNameAlt, effectiveUsername)
 
 	// 使用缓存的订阅列表（5 分钟 TTL）
-	items := c.getCachedSubscriptions()
+	items, _ := c.getCachedSubscriptions(100)
 
 	logger.Info("[MoviePilot] GetUserRequests: fetched %d total subscriptions (cached=%v)", len(items), c.subsCacheData != nil)
 

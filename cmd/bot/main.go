@@ -384,6 +384,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Start image cache cleanup routine (每天清理一次过期缓存)
 	imageCache.StartCleanupRoutine(24 * time.Hour)
 
+	// 预热 MoviePilot 订阅缓存（后台执行，避免首次「我的请求」点击超时）
+	go moviepilotClient.WarmupSubscriptionCache()
+
 	logger.Info("✅ Services initialized")
 
 	return &Dependencies{
