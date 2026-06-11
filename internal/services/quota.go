@@ -86,7 +86,17 @@ func (s *QuotaService) load() error {
 	// Reset daily usage if needed
 	s.resetDailyUsage()
 
-	logger.Info("[QuotaService] Loaded %d user quotas", len(s.quotas))
+	// 全员配额提升到 5
+	for _, q := range s.quotas {
+		if q.MovieLimit != -1 && q.MovieLimit < 5 {
+			q.MovieLimit = 5
+		}
+		if q.TVLimit != -1 && q.TVLimit < 5 {
+			q.TVLimit = 5
+		}
+	}
+
+	logger.Info("[QuotaService] Loaded %d user quotas (all limits raised to 5)", len(s.quotas))
 	return nil
 }
 
@@ -147,9 +157,9 @@ func (s *QuotaService) getOrCreateQuotaUnsafe(telegramID int64) *UserQuota {
 	quota := &UserQuota{
 		TelegramID:    telegramID,
 		MovieUsed:     0,
-		MovieLimit:    2, // Default limit
+		MovieLimit:    5,
 		TVUsed:        0,
-		TVLimit:       2, // Default limit
+		TVLimit:       5,
 		LastResetDate: getCurrentDate(),
 	}
 
@@ -170,9 +180,9 @@ func (s *QuotaService) GetOrCreateQuota(telegramID int64) *UserQuota {
 	quota := &UserQuota{
 		TelegramID:    telegramID,
 		MovieUsed:     0,
-		MovieLimit:    2, // Default limit
+		MovieLimit:    5,
 		TVUsed:        0,
-		TVLimit:       2, // Default limit
+		TVLimit:       5,
 		LastResetDate: getCurrentDate(),
 	}
 
