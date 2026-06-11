@@ -195,6 +195,10 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Set Emby config for checking media availability
 	if cfg.EmbyURL != "" && cfg.EmbyAPIKey != "" {
 		moviepilotClient.SetEmbyConfig(cfg.EmbyURL, cfg.EmbyAPIKey)
+		if cfg.EmbyUserID != "" {
+			moviepilotClient.SetEmbyUserID(cfg.EmbyUserID)
+			logger.Info("    - Emby user ID configured: %s", cfg.EmbyUserID)
+		}
 		logger.Info("    - Emby integration enabled for completion status")
 	}
 	logger.Info("    - SessionManager...")
@@ -292,6 +296,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		chatID,
 		cfg.EmbyURL,
 		cfg.EmbyAPIKey,
+		cfg.EmbyUserID,
 		cfg.EmbySkipTLSVerify,
 		mediaNotificationSvc,
 		cfg.NotificationFormat,

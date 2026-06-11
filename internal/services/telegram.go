@@ -170,6 +170,16 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 	return c.makeSimpleRequest(apiURL, payload)
 }
 
+// SendChatAction sends a chat action (typing, upload_photo, etc.) to show the bot is working
+func (c *TelegramClient) SendChatAction(chatID int64, action string) error {
+	apiURL := fmt.Sprintf("%s/sendChatAction", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id": chatID,
+		"action":  action,
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
 // SendPhoto sends a photo with caption to a chat
 func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	return c.SendPhotoWithParseMode(chatID, photoURL, caption, "HTML", keyboard)
@@ -250,7 +260,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		}
 
 		// 读取图片数据
-		imageData, err = io.ReadAll(resp.Body)
+		imageData, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		if err != nil {
 			logger.Info("[Telegram] [代理上传] 读取图片数据失败: %v", err)
 			return nil, err
@@ -332,7 +342,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 	}
 	defer resp2.Body.Close()
 
-	body, err := io.ReadAll(resp2.Body)
+	body, err := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
 	if err != nil {
 		logger.Info("[Telegram] Failed to read response body: %v", err)
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -475,7 +485,7 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	}
 	defer resp2.Body.Close()
 
-	body, err := io.ReadAll(resp2.Body)
+	body, err := io.ReadAll(io.LimitReader(resp2.Body, 1<<20))
 	if err != nil {
 		logger.Info("[Telegram] Failed to read response body: %v", err)
 		return nil, fmt.Errorf("failed to read response: %w", err)
@@ -589,7 +599,7 @@ func (c *TelegramClient) GetUpdates(offset int, limit int) ([]types.TelegramUpda
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -620,7 +630,7 @@ func (c *TelegramClient) GetWebhookInfo() (map[string]interface{}, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, err
 	}
@@ -659,7 +669,7 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -732,7 +742,7 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -799,7 +809,7 @@ func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode strin
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -1118,7 +1128,7 @@ func (c *TelegramClient) GetChatMemberStatus(chatID int64, userID int64) (string
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %w", err)
 	}

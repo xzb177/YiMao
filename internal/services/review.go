@@ -67,6 +67,7 @@ type ReviewService struct {
 	// notifiedSubs 记录「已通知过的 MP 订阅 ID」，避免重复通知。
 	notifiedSubsFile string
 	notifiedSubs     map[int]bool
+	notifiedMu       sync.RWMutex // protects notifiedSubs map access
 	// userMapping 用于 MP 用户名 → Telegram ID 反查。
 	userMapping *UserMappingService
 
@@ -191,6 +192,8 @@ func (s *ReviewService) loadNotifiedSubs() {
 		logger.Info("[ReviewService] 解析 notified_subs 失败: %v", err)
 		return
 	}
+	s.notifiedMu.Lock()
+	defer s.notifiedMu.Unlock()
 	for _, id := range ids {
 		s.notifiedSubs[id] = true
 	}
@@ -199,10 +202,12 @@ func (s *ReviewService) loadNotifiedSubs() {
 
 // saveNotifiedSubs 持久化已通知的订阅 ID 集合。
 func (s *ReviewService) saveNotifiedSubs() {
+	s.notifiedMu.RLock()
 	ids := make([]int, 0, len(s.notifiedSubs))
 	for id := range s.notifiedSubs {
 		ids = append(ids, id)
 	}
+	s.notifiedMu.RUnlock()
 	data, err := json.MarshalIndent(ids, "", "  ")
 	if err != nil {
 		logger.Info("[ReviewService] 序列化 notified_subs 失败: %v", err)
@@ -236,7 +241,10 @@ func (s *ReviewService) checkAllNewCompletions() {
 		}
 
 		// 已通知过的跳过
-		if s.notifiedSubs[sub.ID] {
+		s.notifiedMu.RLock()
+		alreadyNotified := s.notifiedSubs[sub.ID]
+		s.notifiedMu.RUnlock()
+		if alreadyNotified {
 			continue
 		}
 
@@ -252,7 +260,9 @@ func (s *ReviewService) checkAllNewCompletions() {
 		s.mu.RUnlock()
 		if alreadyTracked {
 			// 标记已通知，避免下次重复检查
+			s.notifiedMu.Lock()
 			s.notifiedSubs[sub.ID] = true
+			s.notifiedMu.Unlock()
 			continue
 		}
 
@@ -261,7 +271,9 @@ func (s *ReviewService) checkAllNewCompletions() {
 		if !found || tgID == 0 {
 			// 找不到对应用户，标记已通知避免下次重复检查
 			logger.Info("[ReviewService] 全量检测：订阅 %d (%s) 用户 %s 未绑定 TG，跳过", sub.ID, sub.Name, sub.Username)
+			s.notifiedMu.Lock()
 			s.notifiedSubs[sub.ID] = true
+			s.notifiedMu.Unlock()
 			continue
 		}
 
@@ -288,7 +300,9 @@ func (s *ReviewService) checkAllNewCompletions() {
 		})
 
 		// 标记已通知
+		s.notifiedMu.Lock()
 		s.notifiedSubs[sub.ID] = true
+		s.notifiedMu.Unlock()
 		newCount++
 	}
 

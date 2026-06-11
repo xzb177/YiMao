@@ -14,6 +14,28 @@ func NewTitleResolver() *TitleResolver {
 	return &TitleResolver{}
 }
 
+// 预编译正则（避免每次调用重新编译）
+var (
+	// 技术标签清理
+	reResolution = regexp.MustCompile(`\.(?:2160p|1080p|720p|480p|4K)\b`)
+	reCodec      = regexp.MustCompile(`\.(?:x265|x264|h264|h265|hevc|avc)\b`)
+	reBitDepth   = regexp.MustCompile(`\.(?:10bit|8bit)\b`)
+	reSource     = regexp.MustCompile(`\.(?:BluRay|WEBDL|WEB-DL|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`)
+	reRemux      = regexp.MustCompile(`\.(?:Remux|REMUX)\b`)
+	rePlatform   = regexp.MustCompile(`\.(?:AMZN|NF|Disney|Hulu|HBO|Max)\b`)
+	reAudio      = regexp.MustCompile(`\.(?:DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC|Opus)\b`)
+	reCodecProf  = regexp.MustCompile(`\.(?:Hi10P|Hi10)\b`)
+	reRelGroup   = regexp.MustCompile(`-[\w\.\-]+$`)
+	reCnGroup    = regexp.MustCompile(`-\s*[^\s]+\s*$`)
+	reBracket    = regexp.MustCompile(`\[.*?\]`)
+	reCnBracket  = regexp.MustCompile(`【.*?】`)
+	reParen      = regexp.MustCompile(`\(.*?\)`)
+	reDot        = regexp.MustCompile(`\.`)
+	reUnderscore = regexp.MustCompile(`_`)
+	reSpaces     = regexp.MustCompile(`\s+`)
+	reYear       = regexp.MustCompile(`\b(19\d{2}|20\d{2})\b`)
+)
+
 // ResolveMovieTitle resolves the best possible display title for a movie
 // Following priority:
 // 1. title field
@@ -67,63 +89,32 @@ func (r *TitleResolver) extractFromFilename(filename string) string {
 		base = base[:idx]
 	}
 
-	// Remove common technical tags/patterns
-	cleaners := []struct {
-		pattern string
-		repl    string
-	}{
-		// Resolution tags (before codec to avoid partial matches)
-		{`\.(?:2160p|1080p|720p|480p|4K)\b`, ""},
-		{`\.(?:x265|x264|h264|h265|hevc|avc)\b`, ""},
-		{`\.(?:10bit|8bit)\b`, ""},
-
-		// Source/quality tags
-		{`\.(?:BluRay|WEBDL|WEB-DL|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`, ""},
-		{`\.(?:Remux|REMUX)\b`, ""},
-		{`\.(?:AMZN|NF|Disney|Hulu|HBO|Max)\b`, ""},
-
-		// Audio tags
-		{`\.(?:DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC|Opus)\b`, ""},
-
-		// Codec profiles
-		{`\.(?:Hi10P|Hi10)\b`, ""},
-
-		// Release group patterns (common patterns at end)
-		{`-[\w\.\-]+$`, ""},
-
-		// Chinese release groups
-		{`-\s*[^\s]+\s*$`, ""},
-
-		// Other common patterns (brackets)
-		{`\[.*?\]`, ""},
-		{`【.*?】`, ""},
-		{`\(.*?\)`, " "},
-
-		// Replace dots with spaces
-		{`\.`, " "},
-
-		// Replace underscores with spaces
-		{`_`, " "},
-
-		// Clean up multiple spaces
-		{`\s+`, " "},
-	}
-
-	cleaned := base
-	for _, c := range cleaners {
-		re := regexp.MustCompile(c.pattern)
-		cleaned = re.ReplaceAllString(cleaned, c.repl)
-	}
+	// Remove common technical tags/patterns（使用预编译正则）
+	cleaned := reResolution.ReplaceAllString(base, "")
+	cleaned = reCodec.ReplaceAllString(cleaned, "")
+	cleaned = reBitDepth.ReplaceAllString(cleaned, "")
+	cleaned = reSource.ReplaceAllString(cleaned, "")
+	cleaned = reRemux.ReplaceAllString(cleaned, "")
+	cleaned = rePlatform.ReplaceAllString(cleaned, "")
+	cleaned = reAudio.ReplaceAllString(cleaned, "")
+	cleaned = reCodecProf.ReplaceAllString(cleaned, "")
+	cleaned = reRelGroup.ReplaceAllString(cleaned, "")
+	cleaned = reCnGroup.ReplaceAllString(cleaned, "")
+	cleaned = reBracket.ReplaceAllString(cleaned, "")
+	cleaned = reCnBracket.ReplaceAllString(cleaned, "")
+	cleaned = reParen.ReplaceAllString(cleaned, " ")
+	cleaned = reDot.ReplaceAllString(cleaned, " ")
+	cleaned = reUnderscore.ReplaceAllString(cleaned, " ")
+	cleaned = reSpaces.ReplaceAllString(cleaned, " ")
 
 	cleaned = strings.TrimSpace(cleaned)
 
 	// Extract year if present (support 1900-2099)
-	yearRe := regexp.MustCompile(`\b(19\d{2}|20\d{2})\b`)
-	yearMatch := yearRe.FindStringSubmatch(cleaned)
+	yearMatch := reYear.FindStringSubmatch(cleaned)
 	year := ""
 	if len(yearMatch) > 1 {
 		year = yearMatch[1]
-		cleaned = yearRe.ReplaceAllString(cleaned, "")
+		cleaned = reYear.ReplaceAllString(cleaned, "")
 		cleaned = strings.TrimSpace(cleaned)
 	}
 

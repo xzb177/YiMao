@@ -135,6 +135,7 @@ type WebhookService struct {
 	chatID               int64
 	embyURL              string
 	embyAPIKey           string
+	embyUserID           string // Emby user ID for API calls
 	embySkipTLSVerify    bool
 	mediaNotificationSvc *MediaNotificationService
 	messageCache         *MessageCache

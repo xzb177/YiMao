@@ -208,8 +208,8 @@ func (a *SkyIslandAdapter) Search(keyword string, page int) ([]TorrentResource, 
 
 // parseRSS parses the RSS feed response
 func (a *SkyIslandAdapter) parseRSS(r io.Reader) ([]TorrentResource, error) {
-	// Read RSS content
-	data, err := io.ReadAll(r)
+	// Read RSS content (限制 5MB，RSS 通常不会太大)
+	data, err := io.ReadAll(io.LimitReader(r, 5<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read response: %w", err)
 	}
@@ -349,7 +349,7 @@ func (a *ZhuQueAdapter) Search(keyword string, page int) ([]TorrentResource, err
 	}
 
 	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
@@ -476,7 +476,7 @@ func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, 
 	}
 
 	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
@@ -607,7 +607,7 @@ func (a *MTeamAdapter) Search(keyword string, page int) ([]TorrentResource, erro
 	}
 
 	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
@@ -734,7 +734,7 @@ func (a *MTeamAdapter) searchRSS(keyword string, page int) ([]TorrentResource, e
 	}
 
 	// Read response body
-	bodyBytes, err := io.ReadAll(resp.Body)
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
 	}

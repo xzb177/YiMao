@@ -22,8 +22,9 @@ type Config struct {
 	DownloadSavePath string // Download save path for subscriptions (optional)
 
 	// Emby (optional)
-	EmbyURL    string
-	EmbyAPIKey string
+	EmbyURL           string
+	EmbyAPIKey        string
+	EmbyUserID        string // Emby user ID for API calls (auto-discovered if empty)
 	// EmbySkipTLSVerify disables TLS certificate verification for Emby requests.
 	// Default false (secure). Only enable for trusted self-signed/origin certs.
 	EmbySkipTLSVerify bool
@@ -116,6 +117,7 @@ func Load() (*Config, error) {
 		DownloadSavePath:  getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
 		EmbyURL:           getEnv("EMBY_URL", ""),
 		EmbyAPIKey:        getEnv("EMBY_API_KEY", ""),
+		EmbyUserID:        getEnv("EMBY_USER_ID", ""),
 		EmbySkipTLSVerify: getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
 		TMDBAPIKey:        getEnv("TMDB_API_KEY", ""),
 		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)

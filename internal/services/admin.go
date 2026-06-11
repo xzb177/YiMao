@@ -127,6 +127,10 @@ func (s *AdminService) loadFromEnv() error {
 		return nil
 	}
 
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	dirty := false
 	for _, idStr := range strings.Split(envVal, ",") {
 		idStr = strings.TrimSpace(idStr)
 		if idStr == "" {
@@ -148,11 +152,12 @@ func (s *AdminService) loadFromEnv() error {
 				Role:   role,
 			}
 			logger.Info("[AdminService] Loaded admin from env: %d (role=%s)", id, role)
+			dirty = true
 		}
 	}
 
-	// Save to file for persistence
-	if len(s.admins) > 0 {
+	// Save to file for persistence (within lock scope)
+	if dirty && len(s.admins) > 0 {
 		s.save()
 	}
 

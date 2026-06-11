@@ -447,7 +447,7 @@ func verifyWebhookAuth(req *http.Request, body []byte, secret string) bool {
 // handleEmbyWebhook handles Emby webhook
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	// Log request for debugging
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
 		logger.Info("[API] Failed to read Emby webhook body: %v", err)
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
@@ -513,7 +513,7 @@ func (r *Router) handleMoviePilotWebhook(w http.ResponseWriter, req *http.Reques
 // handleAutoDetectWebhook auto-detects webhook type
 func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Request) {
 	// Read body first
-	body, err := io.ReadAll(req.Body)
+	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
 		logger.Info("[API] Failed to read request body: %v", err)
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
@@ -568,7 +568,7 @@ func getRequestBody(req *http.Request) ([]byte, error) {
 		return nil, fmt.Errorf("request body is nil")
 	}
 
-	data, err := io.ReadAll(body)
+	data, err := io.ReadAll(io.LimitReader(body, 1<<20))
 	body.Close()
 	return data, err
 }

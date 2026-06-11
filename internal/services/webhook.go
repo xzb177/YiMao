@@ -1,7 +1,9 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -11,7 +13,7 @@ import (
 )
 
 // NewWebhookService creates a new webhook service
-func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey string, embySkipTLSVerify bool, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
+func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, adminService *AdminService, preferences *PreferencesService, chatID int64, embyURL, embyAPIKey, embyUserID string, embySkipTLSVerify bool, mediaNotificationSvc *MediaNotificationService, notificationFormat string, tmdbAPIKey string) *WebhookService {
 	svc := &WebhookService{
 		telegram:             telegram,
 		moviepilot:           moviepilot,
@@ -21,6 +23,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		chatID:               chatID,
 		embyURL:              embyURL,
 		embyAPIKey:           embyAPIKey,
+		embyUserID:           embyUserID,
 		embySkipTLSVerify:    embySkipTLSVerify,
 		mediaNotificationSvc: mediaNotificationSvc,
 		messageCache:         NewMessageCache(5 * time.Minute),
@@ -32,10 +35,62 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		fileInfoCacheTTL:     1 * time.Hour, // 缓存1小时
 	}
 
+	// Auto-discover Emby user ID if not configured
+	if svc.embyUserID == "" && svc.embyURL != "" && svc.embyAPIKey != "" {
+		if uid, err := svc.discoverEmbyUserID(); err == nil {
+			svc.embyUserID = uid
+			logger.Info("[Webhook] Auto-discovered Emby user ID: %s", uid)
+		} else {
+			logger.Info("[Webhook] Warning: Could not auto-discover Emby user ID: %v. Set EMBY_USER_ID env var.", err)
+		}
+	}
+
 	// 启动缓存清理协程
 	go svc.cleanupFileInfoCache()
 
 	return svc
+}
+
+// discoverEmbyUserID fetches the first admin user ID from Emby
+func (s *WebhookService) discoverEmbyUserID() (string, error) {
+	usersURL := s.embyURL + "/Users?IsDisabled=false"
+	req, err := http.NewRequest("GET", usersURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Emby users API returned status %d", resp.StatusCode)
+	}
+
+	var users []struct {
+		ID      string `json:"Id"`
+		Name    string `json:"Name"`
+		IsAdmin bool   `json:"Policy.IsAdministrator"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return "", fmt.Errorf("failed to decode Emby users: %w", err)
+	}
+
+	for _, u := range users {
+		if u.IsAdmin {
+			return u.ID, nil
+		}
+	}
+	if len(users) > 0 {
+		return users[0].ID, nil
+	}
+
+	return "", fmt.Errorf("no users found in Emby")
 }
 
 // cleanupFileInfoCache 定期清理过期的文件信息缓存

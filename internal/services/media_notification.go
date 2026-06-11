@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -800,30 +801,16 @@ func (s *MediaNotificationService) formatItemForSummary(item *MediaItem) string 
 
 // sortSeriesKeys sorts series aggregation keys by their display names
 func sortSeriesKeys(keys []SeriesAggregationKey, aggregations map[SeriesAggregationKey]*AggregatedSeries) {
-	// Simple bubble sort for small slices
-	n := len(keys)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			a := aggregations[keys[j]]
-			b := aggregations[keys[j+1]]
-			if a.SeriesName > b.SeriesName {
-				keys[j], keys[j+1] = keys[j+1], keys[j]
-			}
-		}
-	}
+	sort.Slice(keys, func(i, j int) bool {
+		return aggregations[keys[i]].SeriesName < aggregations[keys[j]].SeriesName
+	})
 }
 
 // sortMovieKeys sorts movie aggregation keys by their display titles
 func sortMovieKeys(keys []MovieAggregationKey, aggregations map[MovieAggregationKey]*AggregatedMovie) {
-	// Simple bubble sort for small slices
-	n := len(keys)
-	for i := 0; i < n-1; i++ {
-		for j := 0; j < n-i-1; j++ {
-			if aggregations[keys[j]].Title > aggregations[keys[j+1]].Title {
-				keys[j], keys[j+1] = keys[j+1], keys[j]
-			}
-		}
-	}
+	sort.Slice(keys, func(i, j int) bool {
+		return aggregations[keys[i]].Title < aggregations[keys[j]].Title
+	})
 }
 
 // detectLibraryCategory detects the category of a library

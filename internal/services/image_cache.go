@@ -165,7 +165,7 @@ func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byt
 		return nil, fmt.Errorf("download failed with status: %d", resp.StatusCode)
 	}
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
 	if err != nil {
 		return nil, err
 	}

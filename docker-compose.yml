@@ -10,7 +10,7 @@ services:
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
 
       # Server Configuration
-      - PORT=${PORT:-8080}
+      - PORT=8080
 
       # Emby Configuration
       - EMBY_URL=${EMBY_URL}
@@ -28,6 +28,9 @@ services:
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL}
 
       # Timezone
       - TZ=Asia/Shanghai

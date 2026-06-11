@@ -142,6 +142,7 @@ type MoviePilotClient struct {
 	downloadSavePath string // Optional: download save path for subscriptions
 	embyURL          string // Optional: Emby URL for checking media availability
 	embyAPIKey       string // Optional: Emby API key for checking media availability
+	embyUserID       string // Optional: Emby user ID for API calls
 	httpClient       *http.Client
 	retryConfig      *RetryConfig
 }
@@ -196,12 +197,21 @@ func (c *MoviePilotClient) SetEmbyConfig(embyURL, embyAPIKey string) {
 	c.embyAPIKey = embyAPIKey
 }
 
+// SetEmbyUserID sets the Emby user ID for API calls.
+// If not set, EmbyMediaExists will use the first available user from the API.
+func (c *MoviePilotClient) SetEmbyUserID(userID string) {
+	c.embyUserID = userID
+}
+
 // MediaType represents media type (movie or tv)
 type MediaType string
 
 const (
 	MediaTypeMovie MediaType = "movie"
 	MediaTypeTV    MediaType = "tv"
+
+	// maxResponseBodySize 防止恶意/异常响应导致 OOM
+	maxResponseBodySize = 10 * 1024 * 1024 // 10MB
 )
 
 // MediaInfo represents media information from MoviePilot
@@ -323,7 +333,7 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -1056,14 +1066,58 @@ func (c *MoviePilotClient) NotifyUser(telegramID int64, requestID int, status st
 	return nil
 }
 
-// Authenticate verifies user credentials and returns the user ID
-// It will try to get the user first, and if not found, will register a new user
+// LoginUser verifies user credentials by calling MoviePilot's login endpoint.
+// Returns a JWT access token on success, or an error if credentials are invalid.
+func (c *MoviePilotClient) LoginUser(username, password string) (string, error) {
+	endpoint := c.baseURL + "/api/v1/login/access-token"
+
+	// MoviePilot expects form-urlencoded data for login
+	formData := url.Values{}
+	formData.Set("username", username)
+	formData.Set("password", password)
+
+	req, err := http.NewRequest("POST", endpoint, strings.NewReader(formData.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create login request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return "", fmt.Errorf("login request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("login failed: status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		AccessToken string `json:"access_token"`
+		TokenType   string `json:"token_type"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to decode login response: %w", err)
+	}
+
+	if result.AccessToken == "" {
+		return "", fmt.Errorf("login failed: no access token returned")
+	}
+
+	return result.AccessToken, nil
+}
+
+// Authenticate verifies user credentials and returns the user ID.
+// It first verifies the password against MoviePilot's login endpoint.
+// If the user doesn't exist, it registers a new user.
 func (c *MoviePilotClient) Authenticate(username, password string) (int64, error) {
 	// First try to get existing user
 	user, err := c.GetUserByUsername(username)
 	if err == nil && user != nil {
-		// User exists, verify password by trying to get user by ID
-		// MoviePilot API doesn't have a direct verify endpoint, so we trust the username
+		// User exists — verify password via MoviePilot login endpoint
+		if _, loginErr := c.LoginUser(username, password); loginErr != nil {
+			return 0, fmt.Errorf("authentication failed: invalid credentials for user %s", username)
+		}
 		return user.ID, nil
 	}
 
@@ -1190,9 +1244,21 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 		includeItemTypes = "Series"
 	}
 
+	// Determine Emby user ID for API calls
+	embyUserID := c.embyUserID
+	if embyUserID == "" {
+		// Fallback: try to get the first admin user from Emby
+		if uid, err := c.getEmbyFirstUserID(embyBaseURL); err == nil {
+			embyUserID = uid
+		} else {
+			logger.Debug("[MoviePilot] EmbyMediaExists: no user ID configured and cannot discover one: %v", err)
+			return false
+		}
+	}
+
 	// Use SearchHints endpoint which is more reliable for finding media
-	searchURL := fmt.Sprintf("%s/Users/eb3f23ce5bf54b42980dc2ddf14d52ea/Items?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
-		embyBaseURL, url.QueryEscape(name), includeItemTypes)
+	searchURL := fmt.Sprintf("%s/Users/%s/Items?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
+		embyBaseURL, embyUserID, url.QueryEscape(name), includeItemTypes)
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
@@ -1212,7 +1278,7 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 		return false
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
 		return false
 	}
@@ -1279,4 +1345,47 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 	}
 
 	return false
+}
+
+// getEmbyFirstUserID fetches the first admin user ID from Emby.
+// Used as a fallback when embyUserID is not configured.
+func (c *MoviePilotClient) getEmbyFirstUserID(embyBaseURL string) (string, error) {
+	usersURL := embyBaseURL + "/Users?IsDisabled=false"
+	req, err := http.NewRequest("GET", usersURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("X-Emby-Token", c.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("Emby users API returned status %d", resp.StatusCode)
+	}
+
+	var users []struct {
+		ID      string `json:"Id"`
+		Name    string `json:"Name"`
+		IsAdmin bool   `json:"Policy.IsAdministrator"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return "", fmt.Errorf("failed to decode Emby users: %w", err)
+	}
+
+	// Prefer admin user, fall back to first user
+	for _, u := range users {
+		if u.IsAdmin {
+			return u.ID, nil
+		}
+	}
+	if len(users) > 0 {
+		return users[0].ID, nil
+	}
+
+	return "", fmt.Errorf("no users found in Emby")
 }

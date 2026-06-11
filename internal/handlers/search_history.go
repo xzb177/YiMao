@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
@@ -300,8 +301,18 @@ func (h *SearchHistoryHandler) handleSearchAction(ctx *callback.Context) (*callb
 	return h.showHistoryMenu(ctx)
 }
 
-// unescapeString 反转义字符串
+// unescapeString 反转义字符串（URL 解码 + HTML 实体解码）
 func unescapeString(s string) string {
-	// Placeholder - implement unescaping if needed
+	s = strings.ReplaceAll(s, "%20", " ")
+	s = strings.ReplaceAll(s, "%26", "&")
+	s = strings.ReplaceAll(s, "%3D", "=")
+	s = strings.ReplaceAll(s, "%3F", "?")
+	s = strings.ReplaceAll(s, "%23", "#")
+	s = strings.ReplaceAll(s, "%25", "%")
+	s = strings.ReplaceAll(s, "+", " ")
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	s = strings.ReplaceAll(s, "&quot;", "\"")
 	return s
 }

@@ -323,7 +323,8 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 func (s *WebhookService) getTMDBBackdrop(tmdbID string, mediaType string) string {
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
-		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key
+		logger.Warn("[TMDB] TMDB_API_KEY 未配置，跳过背景图获取")
+		return ""
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -370,7 +371,8 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string, mediaType string) string
 func (s *WebhookService) getTMDBPoster(tmdbID string) string {
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
-		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key
+		logger.Warn("[TMDB] TMDB_API_KEY 未配置，跳过海报获取")
+		return ""
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -431,7 +433,7 @@ func (s *WebhookService) fetchMediaSourcesFromEmby(itemID string) (fileSize int6
 	logger.Info("[EmbyAPI] Cache miss, fetching from API for %s", itemID)
 
 	// 调用 Emby API 获取完整的 Items 信息
-	url := fmt.Sprintf("%s/Users/%s/Items/%s", s.embyURL, "e56c0bc56c984ba6a95c67222d5c69f1", itemID)
+	url := fmt.Sprintf("%s/Users/%s/Items/%s", s.embyURL, s.embyUserID, itemID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return 0, 0, err
@@ -494,7 +496,7 @@ func (s *WebhookService) GetEmbyMediaInfo(itemID string) (map[string]interface{}
 		return nil, fmt.Errorf("Emby URL or API key not configured")
 	}
 
-	url := fmt.Sprintf("%s/Users/%s/Items/%s", s.embyURL, s.embyAPIKey, itemID)
+	url := fmt.Sprintf("%s/Users/%s/Items/%s", s.embyURL, s.embyUserID, itemID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -549,7 +551,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	// Limit: Get up to 20 results to find the best match
 	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
 		url.QueryEscape(title), includeItemTypes)
-	fullURL := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyAPIKey, searchParams)
+	fullURL := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyUserID, searchParams)
 
 	req, err := http.NewRequest("GET", fullURL, nil)
 	if err != nil {

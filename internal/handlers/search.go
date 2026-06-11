@@ -175,6 +175,9 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return h.showSearchHistory(userID, chatID)
 	}
 
+	// 发送 typing 指示器，让用户知道 Bot 在处理
+	h.telegram.SendChatAction(chatID, "typing")
+
 	// Add to search history - prefer DB version (new), fallback to legacy
 	if h.searchHistoryDB != nil {
 		h.searchHistoryDB.AddSearch(userID, query)

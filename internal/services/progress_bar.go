@@ -227,7 +227,8 @@ func (s *WebhookService) getTMDBSeriesEpisodeStats(tmdbID string, currentSeason 
 
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
-		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key（与 getTMDBBackdrop 一致）
+		logger.Warn("[TMDB] TMDB_API_KEY 未配置，跳过剧集统计")
+		return 0, 0
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -278,7 +279,8 @@ func (s *WebhookService) getTMDBTotalEpisodes(tmdbID string) int {
 
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
-		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key（与 getTMDBBackdrop 一致）
+		logger.Warn("[TMDB] TMDB_API_KEY 未配置，跳过总集数查询")
+		return 0
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -319,7 +321,8 @@ func (s *WebhookService) getTMDBSeasonEpisodes(tmdbID string, season int) int {
 
 	apiKey := s.tmdbAPIKey
 	if apiKey == "" {
-		apiKey = "a62307d3a16cd0a605de3857d9ed614e" // fallback default key（与 getTMDBBackdrop 一致）
+		logger.Warn("[TMDB] TMDB_API_KEY 未配置，跳过季集数查询")
+		return 0
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}

@@ -110,7 +110,7 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -139,7 +139,7 @@ func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -181,7 +181,7 @@ func (c *TMDBClient) SearchMedia(query string, page int) (*TMDBSearchResult, err
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB search error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -431,7 +431,7 @@ func (c *TMDBClient) GetTrendingMovies(timeWindow string) (*TMDBTrendingResult, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB trending error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -464,7 +464,7 @@ func (c *TMDBClient) GetTrendingTV(timeWindow string) (*TMDBTrendingResult, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB trending TV error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -497,7 +497,7 @@ func (c *TMDBClient) GetPopularMovies(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB popular movies error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -525,7 +525,7 @@ func (c *TMDBClient) GetPopularTV(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB popular TV error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -553,7 +553,7 @@ func (c *TMDBClient) GetNowPlayingMovies(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB now playing error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -581,7 +581,7 @@ func (c *TMDBClient) GetTopRatedMovies(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB top rated error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -609,7 +609,7 @@ func (c *TMDBClient) GetTopRatedTV(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB top rated TV error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -637,7 +637,7 @@ func (c *TMDBClient) GetUpcomingMovies(page int) (*TMDBPopularResult, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB upcoming error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
@@ -692,7 +692,7 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
