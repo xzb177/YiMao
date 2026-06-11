@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xzb177/yimao/pkg/logger"
@@ -145,6 +146,12 @@ type MoviePilotClient struct {
 	embyUserID       string // Optional: Emby user ID for API calls
 	httpClient       *http.Client
 	retryConfig      *RetryConfig
+
+	// 订阅列表缓存（避免每次请求都拉全量）
+	subsCacheMu   sync.RWMutex
+	subsCacheData []SubscribeItem
+	subsCacheTime time.Time
+	subsCacheTTL  time.Duration
 }
 
 // NewMoviePilotClient creates a new MoviePilot client with optimized HTTP settings.
@@ -166,6 +173,7 @@ func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotCl
 		baseURL:          baseURL,
 		apiKey:           apiKey,
 		downloadSavePath: downloadSavePath,
+		subsCacheTTL:     5 * time.Minute, // 订阅列表缓存 5 分钟
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -497,6 +505,9 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 		return nil, fmt.Errorf("subscription failed: %s", response.Message)
 	}
 
+	// 新订阅创建成功，刷新缓存
+	c.InvalidateSubscriptionsCache()
+
 	// 立即触发订阅搜索，确保订阅能开始下载
 	subID := response.Data.ID
 	go c.triggerSubscriptionSearch(subID)
@@ -662,6 +673,51 @@ func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
 	return items, nil
 }
 
+// getCachedSubscriptions 获取缓存的订阅列表，过期则重新拉取
+func (c *MoviePilotClient) getCachedSubscriptions() []SubscribeItem {
+	c.subsCacheMu.RLock()
+	if c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL {
+		data := c.subsCacheData
+		c.subsCacheMu.RUnlock()
+		return data
+	}
+	c.subsCacheMu.RUnlock()
+
+	// 缓存过期，重新拉取
+	c.subsCacheMu.Lock()
+	defer c.subsCacheMu.Unlock()
+
+	// 双重检查：可能其他 goroutine 已经更新了缓存
+	if c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL {
+		return c.subsCacheData
+	}
+
+	endpoint := "/api/v1/subscribe/?page=1&count=1000"
+	body, err := c.makeRequest("GET", endpoint, nil)
+	if err != nil {
+		logger.Warn("[MoviePilot] getCachedSubscriptions: 拉取失败: %v，使用旧缓存", err)
+		return c.subsCacheData // 返回旧缓存（可能为空）
+	}
+
+	var items []SubscribeItem
+	if err := json.Unmarshal(body, &items); err != nil {
+		logger.Warn("[MoviePilot] getCachedSubscriptions: 解析失败: %v", err)
+		return c.subsCacheData
+	}
+
+	c.subsCacheData = items
+	c.subsCacheTime = time.Now()
+	logger.Info("[MoviePilot] getCachedSubscriptions: 缓存已更新，%d 条订阅", len(items))
+	return items
+}
+
+// InvalidateSubscriptionsCache 强制刷新订阅缓存（订阅变更时调用）
+func (c *MoviePilotClient) InvalidateSubscriptionsCache() {
+	c.subsCacheMu.Lock()
+	c.subsCacheData = nil
+	c.subsCacheMu.Unlock()
+}
+
 // GetUserRequests retrieves all subscription requests for a user
 func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error) {
 	// First get the user's username from MoviePilot
@@ -706,22 +762,10 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 	logger.Info("[MoviePilot] GetUserRequests: userID=%d, user.Username=%q, user.UserNameAlt=%q, effectiveUsername=%q",
 		userID, user.Username, user.UserNameAlt, effectiveUsername)
 
-	// MoviePilot uses /api/v1/subscribe/ endpoint
-	// Fetch all subscriptions without username filter (the API may not support it properly)
-	endpoint := "/api/v1/subscribe/?page=1&count=1000"
+	// 使用缓存的订阅列表（5 分钟 TTL）
+	items := c.getCachedSubscriptions()
 
-	body, err := c.makeRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	// MoviePilot returns an array directly
-	var items []SubscribeItem
-	if err := json.Unmarshal(body, &items); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	logger.Info("[MoviePilot] GetUserRequests: fetched %d total subscriptions from API", len(items))
+	logger.Info("[MoviePilot] GetUserRequests: fetched %d total subscriptions (cached=%v)", len(items), c.subsCacheData != nil)
 
 	// Client-side filtering with multiple matching strategies
 	var filtered []SubscribeItem
