@@ -866,23 +866,16 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 			}
 			// Otherwise keep R (searching/recycled) or S (searching)
 		} else {
-			// For movies (total_episode is 0/null): check Emby by name
+			// For movies (total_episode is 0/null): use MP state directly.
+			// 跳过 Emby 逐条检查（58 条 × HTTP = 超时），仅用订阅状态。
 			if item.Type == "电影" || item.Type == "movie" {
-				if c.EmbyMediaExists(item.Name, item.Year, MediaTypeMovie) {
-					item.State = StateCompleted
-					completedCount++
-				} else {
-					// Movie not in Emby - check if it's actively being searched
-					// Parse the subscription date to check age
+				// MP state S/P/R = 搜索中/排队中, D = 下载中, F = 失败, X = 取消
+				// 超过 30 天仍为 S/P/R → 标记为失败
+				if item.State == StateSearching || item.State == StatePending || item.State == StateRecycled {
 					if item.Date != "" {
-						// Try to parse the date
 						subDate, err := time.Parse("2006-01-02 15:04:05", item.Date)
-						if err == nil {
-							daysSinceSub := int(time.Since(subDate).Hours() / 24)
-							if daysSinceSub > 30 {
-								// Subscription older than 30 days and not in Emby - likely failed
-								item.State = StateFailed
-							}
+						if err == nil && int(time.Since(subDate).Hours()/24) > 30 {
+							item.State = StateFailed
 						}
 					}
 				}
