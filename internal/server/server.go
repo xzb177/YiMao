@@ -42,8 +42,54 @@ func New(
 
 	// Health check (public, no auth required)
 	mux.HandleFunc("/health", securityService.PublicMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
+		w.Header().Set("Content-Type", "application/json")
+		status := "ok"
+		checks := make(map[string]string)
+
+		// Check MoviePilot connectivity
+		if cfg.MoviePilotURL != "" {
+			client := &http.Client{Timeout: 3 * time.Second}
+			resp, err := client.Get(cfg.MoviePilotURL + "/api/v1/system/setting/APP")
+			if err != nil {
+				checks["moviepilot"] = "unreachable"
+				status = "degraded"
+			} else {
+				resp.Body.Close()
+				if resp.StatusCode == 200 || resp.StatusCode == 401 || resp.StatusCode == 403 {
+					checks["moviepilot"] = "ok"
+				} else {
+					checks["moviepilot"] = fmt.Sprintf("status_%d", resp.StatusCode)
+					status = "degraded"
+				}
+			}
+		}
+
+		// Check Emby connectivity
+		if cfg.EmbyURL != "" && cfg.EmbyAPIKey != "" {
+			client := &http.Client{Timeout: 3 * time.Second}
+			req, _ := http.NewRequest("GET", cfg.EmbyURL+"/System/Info", nil)
+			req.Header.Set("X-Emby-Token", cfg.EmbyAPIKey)
+			resp, err := client.Do(req)
+			if err != nil {
+				checks["emby"] = "unreachable"
+				status = "degraded"
+			} else {
+				resp.Body.Close()
+				if resp.StatusCode == 200 {
+					checks["emby"] = "ok"
+				} else {
+					checks["emby"] = fmt.Sprintf("status_%d", resp.StatusCode)
+					status = "degraded"
+				}
+			}
+		}
+
+		code := http.StatusOK
+		if status != "ok" {
+			code = http.StatusServiceUnavailable
+		}
+		w.WriteHeader(code)
+		fmt.Fprintf(w, `{"status":"%s"}`, status)
 	}))
 
 	// Debug endpoint (protected with API auth if enabled)

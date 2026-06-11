@@ -167,7 +167,7 @@ func (s *WebhookService) sendCarpoolDirectPMs(userIDs []int64, title string) {
 	}
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("🎬 你拼车想看的《%s》到货啦，去看看吧～", title))
-	// direct link：当前仅在已配置 Emby 地址时附上站点入口（无可靠的 per-item 深链，保守处理）。
+	// direct link：当前仅在已配置 Emby 地址时附上站点入口
 	if link := s.carpoolDirectLink(); link != "" {
 		sb.WriteString("\n👉 " + link)
 	}
@@ -182,7 +182,6 @@ func (s *WebhookService) sendCarpoolDirectPMs(userIDs []int64, title string) {
 
 // carpoolDirectLink 返回兜底私信里的「去观看」链接。
 // 保守处理：仅返回已配置的 Emby 站点入口（去掉末尾斜杠）；未配置则返回空串。
-// TODO（需 runtime 验证）：接入 per-item Emby 深链（需 item ID 透传到此处），当前只给站点入口。
 func (s *WebhookService) carpoolDirectLink() string {
 	url := strings.TrimRight(strings.TrimSpace(s.embyURL), "/")
 	return url

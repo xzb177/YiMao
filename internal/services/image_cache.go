@@ -19,10 +19,13 @@ import (
 type ImageCache struct {
 	cacheDir   string
 	maxAge     time.Duration // 缓存过期时间
+	maxSize    int64         // 最大缓存大小（字节），默认 500MB
 	httpClient *http.Client
 	mu         sync.RWMutex
 	enabled    bool
 }
+
+const defaultMaxCacheSize = 500 * 1024 * 1024 // 500MB
 
 // NewImageCache 创建图片缓存服务
 func NewImageCache(dataDir string, maxAge time.Duration) *ImageCache {
@@ -30,6 +33,7 @@ func NewImageCache(dataDir string, maxAge time.Duration) *ImageCache {
 	cache := &ImageCache{
 		cacheDir:   cacheDir,
 		maxAge:     maxAge,
+		maxSize:    defaultMaxCacheSize,
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 		enabled:    true,
 	}
@@ -201,7 +205,7 @@ func (c *ImageCache) getCachePath(imageURL string) string {
 	return filepath.Join(c.cacheDir, hashStr+ext)
 }
 
-// Cleanup 清理过期的缓存文件
+// Cleanup 清理过期的缓存文件，并在超过大小限制时删除最旧的文件
 func (c *ImageCache) Cleanup() {
 	if !c.enabled {
 		return
@@ -209,13 +213,22 @@ func (c *ImageCache) Cleanup() {
 
 	logger.Info("[ImageCache] Starting cleanup...")
 
+	type fileInfo struct {
+		path    string
+		size    int64
+		modTime time.Time
+	}
+
 	files, err := os.ReadDir(c.cacheDir)
 	if err != nil {
-		logger.Info("[ImageCache] Error reading cache dir: %v", err)
+		logger.Warn("[ImageCache] Error reading cache dir: %v", err)
 		return
 	}
 
+	var allFiles []fileInfo
+	var totalSize int64
 	cleaned := 0
+
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -232,10 +245,35 @@ func (c *ImageCache) Cleanup() {
 			if err := os.Remove(path); err == nil {
 				cleaned++
 			}
+			continue
+		}
+
+		allFiles = append(allFiles, fileInfo{path: path, size: info.Size(), modTime: info.ModTime()})
+		totalSize += info.Size()
+	}
+
+	// 超过大小限制时，按时间从旧到新删除
+	if totalSize > c.maxSize && len(allFiles) > 1 {
+		// 按修改时间排序（旧的在前）
+		for i := 0; i < len(allFiles)-1; i++ {
+			for j := i + 1; j < len(allFiles); j++ {
+				if allFiles[i].modTime.After(allFiles[j].modTime) {
+					allFiles[i], allFiles[j] = allFiles[j], allFiles[i]
+				}
+			}
+		}
+		for _, fi := range allFiles {
+			if totalSize <= c.maxSize {
+				break
+			}
+			if err := os.Remove(fi.path); err == nil {
+				totalSize -= fi.size
+				cleaned++
+			}
 		}
 	}
 
-	logger.Info("[ImageCache] Cleanup complete: removed %d expired files", cleaned)
+	logger.Info("[ImageCache] Cleanup complete: removed %d files, remaining size: %.1fMB", cleaned, float64(totalSize)/(1024*1024))
 }
 
 // GetStats 获取缓存统计信息

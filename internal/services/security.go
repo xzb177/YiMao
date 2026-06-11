@@ -120,32 +120,30 @@ func (s *SecurityService) EnableAPIAuth(enabled bool) {
 
 // getClientIP extracts the real client IP from request
 func (s *SecurityService) getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (for proxies/load balancers)
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		// Get the first IP (original client)
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			ip := strings.TrimSpace(ips[0])
-			// Validate it's not from a trusted proxy
-			if !s.isTrustedProxy(ip) {
-				return ip
+	// Only trust proxy headers when request comes from a trusted proxy
+	remoteIP := r.RemoteAddr
+	if idx := strings.LastIndex(remoteIP, ":"); idx != -1 {
+		remoteIP = remoteIP[:idx]
+	}
+
+	if s.isTrustedProxy(remoteIP) {
+		// Request is from a trusted proxy, honor X-Forwarded-For / X-Real-IP
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ips := strings.Split(xff, ",")
+			if len(ips) > 0 {
+				ip := strings.TrimSpace(ips[0])
+				if ip != "" {
+					return ip
+				}
 			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
 		}
 	}
 
-	// Check X-Real-IP header
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
-	}
-
-	// Fall back to RemoteAddr
-	ip := r.RemoteAddr
-	if idx := strings.LastIndex(ip, ":"); idx != -1 {
-		ip = ip[:idx]
-	}
-	return ip
+	// Direct connection or untrusted proxy — use RemoteAddr
+	return remoteIP
 }
 
 // isTrustedProxy checks if an IP is a trusted proxy
@@ -316,11 +314,8 @@ func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		// Check API key authentication
+		// Check API key authentication (only from header, not query string for security)
 		apiKey := r.Header.Get("X-API-Key")
-		if apiKey == "" {
-			apiKey = r.URL.Query().Get("api_key")
-		}
 
 		if !s.validateAPIKey(apiKey) {
 			logger.Info("[Security] Invalid API key from %s", ip)

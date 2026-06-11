@@ -258,7 +258,7 @@ func (h *WishHandler) tryOpenDMChannel(userID int64) {
 func (h *WishHandler) listMyWishes(chatID int64, userID int64) {
 	items, err := h.wish.ListByUser(userID)
 	if err != nil {
-		logger.Info("[wish] 查询用户许愿失败 user=%d: %v", userID, err)
+		logger.Warn("[wish] 查询用户许愿失败 user=%d: %v", userID, err)
 		h.telegram.SendMessage(chatID, "❌ 查询失败，请稍后再试", "", nil)
 		return
 	}
@@ -266,9 +266,29 @@ func (h *WishHandler) listMyWishes(chatID int64, userID int64) {
 		h.telegram.SendMessage(chatID, "🌟 你的许愿池还是空的\n\n用 /wish 片名 加入无源想看的片，出源自动通知你～", "", nil)
 		return
 	}
+
+	// 分页显示，每页 10 条
+	const pageSize = 10
+	totalPages := (len(items) + pageSize - 1) / pageSize
+	h.showWishPage(chatID, userID, items, 0, totalPages, pageSize)
+}
+
+// showWishPage 显示许愿池的某一页
+func (h *WishHandler) showWishPage(chatID int64, userID int64, items []*services.WishItem, page int, totalPages int, pageSize int) {
+	start := page * pageSize
+	end := start + pageSize
+	if end > len(items) {
+		end = len(items)
+	}
+
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🌟 我的许愿池（%d 部）\n\n", len(items)))
-	for _, it := range items {
+	b.WriteString(fmt.Sprintf("🌟 我的许愿池（%d 部）\n", len(items)))
+	if totalPages > 1 {
+		b.WriteString(fmt.Sprintf("📄 第 %d/%d 页\n", page+1, totalPages))
+	}
+	b.WriteString("\n")
+
+	for _, it := range items[start:end] {
 		icon := "🎬"
 		if it.MediaType == "tv" {
 			icon = "📺"
@@ -278,6 +298,10 @@ func (h *WishHandler) listMyWishes(chatID int64, userID int64) {
 			b.WriteString(fmt.Sprintf(" (%d)", it.Year))
 		}
 		b.WriteString("  " + wishStateText(it.State) + "\n")
+	}
+
+	if totalPages > 1 {
+		b.WriteString(fmt.Sprintf("\n💡 用 /wish %d 跳转页码", page+2))
 	}
 	b.WriteString("\n出源后会私信你「🎬 立即求片」按钮。")
 	h.telegram.SendMessage(chatID, b.String(), "", nil)
