@@ -20,28 +20,15 @@ import (
 // sanitizeUTF8 ensures the string contains only valid UTF-8 characters
 // Invalid UTF-8 sequences are replaced with the replacement character
 func sanitizeUTF8(s string) string {
-	valid := true
-	for i, r := range s {
-		if r == utf8.RuneError {
-			// Check if it's a real error or just the character
-			if !utf8.ValidRune(r) {
-				valid = false
-				break
-			}
-		}
-		// Also check for null bytes which Telegram doesn't like
-		if r == 0 {
-			s = s[:i] + s[i+1:]
-		}
-	}
-	if valid && utf8.ValidString(s) {
+	// Fast path: check if string is already valid with no null bytes
+	if utf8.ValidString(s) && !strings.ContainsRune(s, 0) {
 		return s
 	}
-	// If invalid, rebuild with only valid runes
+	// Rebuild with only valid runes, skipping RuneError and null bytes
 	var result strings.Builder
 	result.Grow(len(s))
 	for _, r := range s {
-		if r == utf8.RuneError || r == 0 {
+		if r == 0 || r == utf8.RuneError {
 			continue
 		}
 		result.WriteRune(r)
@@ -651,6 +638,43 @@ func (c *TelegramClient) GetWebhookInfo() (map[string]interface{}, error) {
 	return result.Result, nil
 }
 
+// doWithRetry 执行 HTTP 请求，遇到 429 限流时自动重试（最多 3 次）
+func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) {
+	const maxRetries = 3
+	// 保存原始 body 用于重试
+	var bodyBytes []byte
+	if req.Body != nil {
+		bodyBytes, _ = io.ReadAll(req.Body)
+		req.Body.Close()
+	}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		// 每次重试重新设置 body
+		if bodyBytes != nil {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != 429 {
+			return resp, nil
+		}
+		// 429 Too Many Requests — 读取 Retry-After 并等待
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
+		resp.Body.Close()
+		retryAfter := 1 // 默认 1 秒
+		if ra := resp.Header.Get("Retry-After"); ra != "" {
+			fmt.Sscanf(ra, "%d", &retryAfter)
+		}
+		if retryAfter > 30 {
+			retryAfter = 30 // 最多等 30 秒
+		}
+		logger.Warn("[Telegram] 429 限流，%d 秒后重试 (attempt %d/%d): %s", retryAfter, attempt+1, maxRetries, string(respBody))
+		time.Sleep(time.Duration(retryAfter) * time.Second)
+	}
+	return nil, fmt.Errorf("telegram API rate limited after %d retries", maxRetries)
+}
+
 // makeRequest makes a generic API request
 func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface{}) (*types.TelegramMessage, error) {
 	jsonData, err := json.Marshal(payload)
@@ -662,7 +686,13 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 	method := extractMethod(apiURL)
 	logger.Info("[Telegram] API: %s", method)
 
-	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		logger.Info("[Telegram] 请求失败: %s", err)
 		return nil, fmt.Errorf("request failed: %w", err)
@@ -735,7 +765,13 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 	method := extractMethod(apiURL)
 	logger.Info("[Telegram] API: %s", method)
 
-	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		logger.Info("[Telegram] 请求失败: %s", err)
 		return fmt.Errorf("request failed: %w", err)

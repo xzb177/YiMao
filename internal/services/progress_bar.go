@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/xzb177/yimao/pkg/logger"
 )
@@ -231,17 +230,17 @@ func (s *WebhookService) getTMDBSeriesEpisodeStats(tmdbID string, currentSeason 
 		return 0, 0
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	url := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN", tmdbID, apiKey)
 
 	resp, err := client.Get(url)
 	if err != nil {
-		logger.Info("[TMDB] 获取全剧集数失败 ID=%s: %v", tmdbID, err)
+		logger.Warn("[TMDB] 获取全剧集数失败 ID=%s: %v", tmdbID, err)
 		return 0, 0
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		logger.Info("[TMDB] 获取全剧集数返回状态 %d ID=%s", resp.StatusCode, tmdbID)
+		logger.Warn("[TMDB] 获取全剧集数返回状态 %d ID=%s", resp.StatusCode, tmdbID)
 		return 0, 0
 	}
 
@@ -253,7 +252,7 @@ func (s *WebhookService) getTMDBSeriesEpisodeStats(tmdbID string, currentSeason 
 		} `json:"seasons"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logger.Info("[TMDB] 解析全剧集数失败 ID=%s: %v", tmdbID, err)
+		logger.Warn("[TMDB] 解析全剧集数失败 ID=%s: %v", tmdbID, err)
 		return 0, 0
 	}
 
@@ -283,18 +282,18 @@ func (s *WebhookService) getTMDBTotalEpisodes(tmdbID string) int {
 		return 0
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	url := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s?api_key=%s&language=zh-CN", tmdbID, apiKey)
 
 	resp, err := client.Get(url)
 	if err != nil {
-		logger.Info("[TMDB] 获取总集数失败 ID=%s: %v", tmdbID, err)
+		logger.Warn("[TMDB] 获取总集数失败 ID=%s: %v", tmdbID, err)
 		return 0
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Info("[TMDB] 获取总集数返回状态 %d ID=%s", resp.StatusCode, tmdbID)
+		logger.Warn("[TMDB] 获取总集数返回状态 %d ID=%s", resp.StatusCode, tmdbID)
 		return 0
 	}
 
@@ -302,7 +301,7 @@ func (s *WebhookService) getTMDBTotalEpisodes(tmdbID string) int {
 		NumberOfEpisodes int `json:"number_of_episodes"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logger.Info("[TMDB] 解析总集数失败 ID=%s: %v", tmdbID, err)
+		logger.Warn("[TMDB] 解析总集数失败 ID=%s: %v", tmdbID, err)
 		return 0
 	}
 
@@ -325,18 +324,18 @@ func (s *WebhookService) getTMDBSeasonEpisodes(tmdbID string, season int) int {
 		return 0
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	url := fmt.Sprintf("https://api.themoviedb.org/3/tv/%s/season/%d?api_key=%s&language=zh-CN", tmdbID, season, apiKey)
 
 	resp, err := client.Get(url)
 	if err != nil {
-		logger.Info("[TMDB] 获取季集数失败 ID=%s S%d: %v", tmdbID, season, err)
+		logger.Warn("[TMDB] 获取季集数失败 ID=%s S%d: %v", tmdbID, season, err)
 		return 0
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		logger.Info("[TMDB] 获取季集数返回状态 %d ID=%s S%d", resp.StatusCode, tmdbID, season)
+		logger.Warn("[TMDB] 获取季集数返回状态 %d ID=%s S%d", resp.StatusCode, tmdbID, season)
 		return 0
 	}
 
@@ -347,7 +346,7 @@ func (s *WebhookService) getTMDBSeasonEpisodes(tmdbID string, season int) int {
 		} `json:"episodes"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logger.Info("[TMDB] 解析季集数失败 ID=%s S%d: %v", tmdbID, season, err)
+		logger.Warn("[TMDB] 解析季集数失败 ID=%s S%d: %v", tmdbID, season, err)
 		return 0
 	}
 

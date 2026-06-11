@@ -29,6 +29,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		messageCache:         NewMessageCache(5 * time.Minute),
 		notificationFormat:   notificationFormat,
 		tmdbAPIKey:           tmdbAPIKey,
+		tmdbClient:           &http.Client{Timeout: 10 * time.Second},
 		epAggregation:        make(map[string]*EpisodeAggregation),
 		aggregationDelay:     60 * time.Second, // 默认60秒聚合延迟
 		fileInfoCache:        make(map[string]*cachedFileInfo),
@@ -46,7 +47,14 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 	}
 
 	// 启动缓存清理协程
-	go svc.cleanupFileInfoCache()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[Webhook] cleanupFileInfoCache panic: %v", r)
+			}
+		}()
+		svc.cleanupFileInfoCache()
+	}()
 
 	return svc
 }
@@ -61,8 +69,7 @@ func (s *WebhookService) discoverEmbyUserID() (string, error) {
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := s.tmdbClient.Do(req)
 	if err != nil {
 		return "", err
 	}

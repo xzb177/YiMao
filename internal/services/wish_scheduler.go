@@ -98,7 +98,14 @@ func (s *WishScheduler) SetRequestButtonBuilder(f func(item *WishItem) (string, 
 func (s *WishScheduler) Start() {
 	// 启动 catch-up：若上次过期扫描距今已超周期（含停机错过的情况），立即补跑一次。
 	s.maybeRunExpirySweep(time.Now())
-	go s.run()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[WishScheduler] run panic: %v", r)
+			}
+		}()
+		s.run()
+	}()
 	logger.Info("[wish] DailyRescan task 已启动（interval=%dh expire=%dd minSeeders=%d lockTTL=%dmin）",
 		s.intervalHours, s.expireDays, s.minSeeders, s.lockTTLMin)
 }

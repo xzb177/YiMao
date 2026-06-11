@@ -106,6 +106,16 @@ func HandleCommand(
 		}
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
+	case "/unlink":
+		if userMapping == nil {
+			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
+			return
+		}
+		if err := userMapping.RemoveMapping(msg.From.ID); err != nil {
+			telegram.SendMessage(msg.Chat.ID, "❌ 解绑失败："+err.Error(), "", nil)
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "✅ 已解绑 MoviePilot 账号", "", nil)
+		}
 	case "/quota":
 		// 群组隐私保护：群内不暴露配额
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {

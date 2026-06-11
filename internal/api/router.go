@@ -391,7 +391,7 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if !verifyWebhookAuth(req, body, secret) {
-			logger.Info("[API] Rejected webhook: invalid signature/token from %s", req.RemoteAddr)
+			logger.Warn("[API] Rejected webhook: invalid signature/token from %s", req.RemoteAddr)
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -449,7 +449,7 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	// Log request for debugging
 	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
-		logger.Info("[API] Failed to read Emby webhook body: %v", err)
+		logger.Error("[API] Failed to read Emby webhook body: %v", err)
 		http.Error(w, "Failed to read request", http.StatusBadRequest)
 		return
 	}
@@ -515,7 +515,7 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 	// Read body first
 	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
 	if err != nil {
-		logger.Info("[API] Failed to read request body: %v", err)
+		logger.Error("[API] Failed to read request body: %v", err)
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}

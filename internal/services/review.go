@@ -108,9 +108,23 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 	service.dailySummaryMin = 0
 
 	// Start cleanup routine for old reviews
-	go service.cleanupRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[ReviewService] cleanupRoutine panic: %v", r)
+			}
+		}()
+		service.cleanupRoutine()
+	}()
 	// 启动每日汇总定时任务
-	go service.dailySummaryRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[ReviewService] dailySummaryRoutine panic: %v", r)
+			}
+		}()
+		service.dailySummaryRoutine()
+	}()
 
 	return service
 }

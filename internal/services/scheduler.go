@@ -86,7 +86,14 @@ func (s *Scheduler) dailyTime() (int, int) {
 
 // Start starts the scheduler
 func (s *Scheduler) Start() {
-	go s.run()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[Scheduler] run panic: %v", r)
+			}
+		}()
+		s.run()
+	}()
 	h, m := s.dailyTime()
 	logger.Info("[Scheduler] Started (daily recommendation at %02d:%02d)", h, m)
 }

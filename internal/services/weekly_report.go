@@ -94,10 +94,24 @@ func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quot
 	service.load()
 
 	// Start weekly report routine (every Monday 9 AM)
-	go service.weeklyRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[WeeklyReport] weeklyRoutine panic: %v", r)
+			}
+		}()
+		service.weeklyRoutine()
+	}()
 
 	// Start reminder check routine (every hour)
-	go service.reminderRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[WeeklyReport] reminderRoutine panic: %v", r)
+			}
+		}()
+		service.reminderRoutine()
+	}()
 
 	return service
 }

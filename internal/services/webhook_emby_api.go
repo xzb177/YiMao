@@ -98,7 +98,7 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -327,7 +327,7 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string, mediaType string) string
 		return ""
 	}
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 
 	// 【关键】使用 /images 端点，根据 mediaType 动态拼接路径
 	// 【关键】添加 include_image_language=zh,null 优先中文图片
@@ -375,7 +375,7 @@ func (s *WebhookService) getTMDBPoster(tmdbID string) string {
 		return ""
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := s.tmdbClient
 
 	// 添加中文语言参数，优先获取中文海报
 	// language=zh-CN: 返回中文内容
@@ -441,7 +441,7 @@ func (s *WebhookService) fetchMediaSourcesFromEmby(itemID string) (fileSize int6
 
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, 0, err
@@ -506,7 +506,7 @@ func (s *WebhookService) GetEmbyMediaInfo(itemID string) (map[string]interface{}
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := s.tmdbClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

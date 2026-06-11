@@ -302,7 +302,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	logger.Info("[RequestHandler] Creating review request...")
 	// Create review request
-	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
+	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
 
 	review := &services.ReviewRequest{
 		RequestID:    reviewID,
@@ -613,7 +613,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	}
 
 	// Create review request
-	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().Unix())
+	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
 
 	review := &services.ReviewRequest{
 		RequestID:    reviewID,

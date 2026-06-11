@@ -111,10 +111,24 @@ func NewMediaNotificationService(dataDir string, telegram *TelegramClient, admin
 	logger.Info("[MediaNotification] Service initialized")
 
 	// Start processing items
-	go service.processItems()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[MediaNotification] processItems panic: %v", r)
+			}
+		}()
+		service.processItems()
+	}()
 
 	// Start daily summary scheduler
-	go service.scheduleDailySummaries()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[MediaNotification] scheduleDailySummaries panic: %v", r)
+			}
+		}()
+		service.scheduleDailySummaries()
+	}()
 
 	return service
 }

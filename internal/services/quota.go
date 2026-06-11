@@ -46,7 +46,14 @@ func NewQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService
 	service.load()
 
 	// Start daily sync routine
-	go service.syncRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[QuotaService] syncRoutine panic: %v", r)
+			}
+		}()
+		service.syncRoutine()
+	}()
 
 	return service
 }

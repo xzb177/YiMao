@@ -69,7 +69,14 @@ func NewMessageAggregator(telegram *TelegramClient, config AggregatorConfig) *Me
 		telegram: telegram,
 		stopChan: make(chan struct{}),
 	}
-	go ma.flushLoop()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[MessageAggregator] flushLoop panic: %v", r)
+			}
+		}()
+		ma.flushLoop()
+	}()
 	return ma
 }
 

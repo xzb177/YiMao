@@ -83,7 +83,14 @@ func NewIssueService(dataDir string) *IssueService {
 	service.load()
 
 	// Start cleanup routine
-	go service.cleanupRoutine()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[IssueService] cleanupRoutine panic: %v", r)
+			}
+		}()
+		service.cleanupRoutine()
+	}()
 
 	return service
 }

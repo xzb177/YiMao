@@ -31,7 +31,14 @@ func NewMessageCache(ttl time.Duration) *MessageCache {
 		cleanupInt: ttl * 2,
 		stopChan:   make(chan struct{}),
 	}
-	go mc.cleanupLoop()
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[MessageCache] cleanupLoop panic: %v", r)
+			}
+		}()
+		mc.cleanupLoop()
+	}()
 	return mc
 }
 
