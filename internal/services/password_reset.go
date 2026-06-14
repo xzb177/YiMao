@@ -2,23 +2,17 @@ package services
 
 import (
 	"crypto/rand"
-	"database/sql"
 	"fmt"
-	"io"
 	"math/big"
-	"os"
+	"os/exec"
 	"strings"
-
-	"golang.org/x/crypto/bcrypt"
-
-	_ "modernc.org/sqlite"
 
 	"github.com/xzb177/yimao/pkg/logger"
 )
 
 const (
 	randomPasswordLen = 10
-	randomCharset     = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789" // no confusing chars (0/O/l/1/I)
+	randomCharset     = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
 )
 
 // GenerateRandomPassword generates a cryptographically secure random password.
@@ -34,93 +28,47 @@ func GenerateRandomPassword(length int) (string, error) {
 	return sb.String(), nil
 }
 
-// ResetUserPassword resets a MoviePilot user's password by directly updating the SQLite database.
-// Returns the new random password on success.
-// Strategy: copy DB → modify copy → replace original (avoids WAL lock conflict with MoviePilot).
+// ResetUserPassword resets a MoviePilot user's password via docker exec.
+// This uses MoviePilot's own Python/SQLite engine, avoiding WAL corruption.
 func (c *MoviePilotClient) ResetUserPassword(dbPath, username string) (string, error) {
-	if dbPath == "" {
-		return "", fmt.Errorf("MoviePilot 数据库路径未配置 (MOVIEPILOT_DB_PATH)")
-	}
-
-	// Generate random password
 	newPassword, err := GenerateRandomPassword(randomPasswordLen)
 	if err != nil {
 		return "", fmt.Errorf("生成随机密码失败: %w", err)
 	}
 
-	// Hash with bcrypt (same as MoviePilot uses: $2b$12$...)
-	hash, err := bcrypt.GenerateFromPassword([]byte(newPassword), 12)
+	containerName := "moviepilot-v2"
+	
+	// Use docker exec to update password via MoviePilot's own Python
+	script := fmt.Sprintf(`
+import sqlite3, bcrypt
+conn = sqlite3.connect('/config/user.db')
+c = conn.cursor()
+c.execute('SELECT id FROM user WHERE name=?', ('%s',))
+row = c.fetchone()
+if not row:
+    print('USER_NOT_FOUND')
+    exit(1)
+hashed = bcrypt.hashpw(b'%s', bcrypt.gensalt()).decode()
+c.execute('UPDATE user SET hashed_password=? WHERE name=?', (hashed, '%s'))
+conn.commit()
+print('OK')
+conn.close()
+`, username, newPassword, username)
+
+	cmd := exec.Command("docker", "exec", containerName, "python3", "-c", script)
+	output, err := cmd.CombinedOutput()
+	result := strings.TrimSpace(string(output))
+
 	if err != nil {
-		return "", fmt.Errorf("密码哈希失败: %w", err)
+		return "", fmt.Errorf("docker exec 失败: %s (%w)", result, err)
 	}
-
-	// Step 1: Copy DB to temp location to avoid WAL lock conflict
-	tmpPath := dbPath + ".tmp"
-	srcFile, err := os.Open(dbPath)
-	if err != nil {
-		return "", fmt.Errorf("打开数据库失败: %w", err)
-	}
-
-	dstFile, err := os.Create(tmpPath)
-	if err != nil {
-		srcFile.Close()
-		return "", fmt.Errorf("创建临时文件失败: %w", err)
-	}
-
-	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		srcFile.Close()
-		dstFile.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("复制数据库失败: %w", err)
-	}
-	srcFile.Close()
-	dstFile.Close()
-
-	// Step 2: Open the copy and update password
-	db, err := sql.Open("sqlite", tmpPath)
-	if err != nil {
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("打开临时数据库失败: %w", err)
-	}
-
-	var userID int64
-	err = db.QueryRow("SELECT id FROM user WHERE name = ?", username).Scan(&userID)
-	if err == sql.ErrNoRows {
-		db.Close()
-		os.Remove(tmpPath)
+	if result == "USER_NOT_FOUND" {
 		return "", fmt.Errorf("用户 %s 不存在于 MoviePilot", username)
 	}
-	if err != nil {
-		db.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("查询用户失败: %w", err)
+	if result != "OK" {
+		return "", fmt.Errorf("密码重置失败: %s", result)
 	}
 
-	result, err := db.Exec("UPDATE user SET hashed_password = ? WHERE id = ?", string(hash), userID)
-	if err != nil {
-		db.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("更新密码失败: %w", err)
-	}
-
-	rows, _ := result.RowsAffected()
-	if rows == 0 {
-		db.Close()
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("密码更新未生效")
-	}
-
-	// Checkpoint WAL into main DB before closing
-	db.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
-	db.Close()
-
-	// Step 3: Replace original with modified copy
-	if err := os.Rename(tmpPath, dbPath); err != nil {
-		// Try copy instead of rename
-		os.Remove(tmpPath)
-		return "", fmt.Errorf("替换数据库失败: %w", err)
-	}
-
-	logger.Info("[PasswordReset] User %s (ID:%d) password reset successfully", username, userID)
+	logger.Info("[ResetUserPassword] 密码重置成功: %s", username)
 	return newPassword, nil
 }
