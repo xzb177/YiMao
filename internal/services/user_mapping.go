@@ -233,6 +233,18 @@ func (s *UserMappingService) GetTelegramUsername(telegramID int64) string {
 	return s.usernames[fmt.Sprintf("%d", telegramID)]
 }
 
+// GetMoviePilotUsername gets the MoviePilot username for a Telegram user
+func (s *UserMappingService) GetMoviePilotUsername(telegramID int64) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	name, ok := s.usernames[fmt.Sprintf("%d", telegramID)]
+	if !ok || name == "" {
+		return "", fmt.Errorf("用户未绑定 MoviePilot 账号")
+	}
+	return name, nil
+}
+
 // SetTelegramUsername sets the Telegram username for a user
 func (s *UserMappingService) SetTelegramUsername(telegramID int64, username string) {
 	s.mu.Lock()

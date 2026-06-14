@@ -1168,16 +1168,12 @@ func (c *MoviePilotClient) LoginUser(username, password string) (string, error) 
 }
 
 // Authenticate verifies user credentials and returns the user ID.
-// It first verifies the password against MoviePilot's login endpoint.
-// If the user doesn't exist, it registers a new user.
+// If the user doesn't exist, it registers a new user (no password verification for existing users).
 func (c *MoviePilotClient) Authenticate(username, password string) (int64, error) {
 	// First try to get existing user
 	user, err := c.GetUserByUsername(username)
 	if err == nil && user != nil {
-		// User exists — verify password via MoviePilot login endpoint
-		if _, loginErr := c.LoginUser(username, password); loginErr != nil {
-			return 0, fmt.Errorf("authentication failed: invalid credentials for user %s", username)
-		}
+		// User exists — bind directly, no password check
 		return user.ID, nil
 	}
 
@@ -1187,6 +1183,30 @@ func (c *MoviePilotClient) Authenticate(username, password string) (int64, error
 		return 0, fmt.Errorf("registration failed: %w", err)
 	}
 
+	return newUser.ID, nil
+}
+
+// EnsureUser creates a MoviePilot user if not exists, returns the user ID.
+// Used for auto-binding: no password verification, auto-registers with random password.
+func (c *MoviePilotClient) EnsureUser(username string) (int64, error) {
+	// Try existing user first
+	user, err := c.GetUserByUsername(username)
+	if err == nil && user != nil {
+		return user.ID, nil
+	}
+
+	// User doesn't exist, auto-register with random password
+	randomPW, err := GenerateRandomPassword(16)
+	if err != nil {
+		return 0, fmt.Errorf("生成随机密码失败: %w", err)
+	}
+
+	newUser, err := c.RegisterUser(username, randomPW, username+"@auto.local")
+	if err != nil {
+		return 0, fmt.Errorf("自动注册失败: %w", err)
+	}
+
+	logger.Info("[EnsureUser] Auto-created MoviePilot user: %s (ID:%d)", username, newUser.ID)
 	return newUser.ID, nil
 }
 

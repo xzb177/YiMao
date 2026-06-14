@@ -321,7 +321,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Initialize Scheduler for daily recommendations
 	logger.Info("  [10/11] Creating scheduler...")
-	scheduler := services.NewScheduler(notificationService, moviepilotClient, tmdbClient, adminService, userMappingService)
+	scheduler := services.NewScheduler(notificationService, moviepilotClient, tmdbClient, adminService, userMappingService, telegramClient, chatID)
 	scheduler.SetDailyTime(9, 0) // 9 AM daily
 	scheduler.Start()
 	logger.Info("  [11/11] Scheduler started")
@@ -435,7 +435,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		searchHandler.SetSearchHistoryDB(deps.SearchHistoryDB)
 	}
 	myRequestsHandler := handlers.NewMyRequestsHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot)
-	linkHandler := handlers.NewLinkHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
+	linkHandler := handlers.NewLinkHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService)
@@ -561,6 +561,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionCancel, cancelHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
+	registry.RegisterFunc("resetpw", linkHandler.HandleResetPW)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
 	logger.Info("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)

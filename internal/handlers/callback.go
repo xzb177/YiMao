@@ -288,6 +288,20 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 }
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
+	// Auto-bind: if user not linked, create MoviePilot account and bind automatically
+	if h.userMapping != nil && h.moviepilot != nil {
+		if _, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); !exists {
+			autoUsername := fmt.Sprintf("tg_%d", ctx.UserID)
+			mpID, err := h.moviepilot.EnsureUser(autoUsername)
+			if err == nil && mpID > 0 {
+				_ = h.userMapping.AddMapping(ctx.UserID, mpID, autoUsername)
+				logger.Info("[AutoBind] User %d auto-bound as %s (MP ID:%d)", ctx.UserID, autoUsername, mpID)
+			} else {
+				logger.Info("[AutoBind] Failed for user %d: %v", ctx.UserID, err)
+			}
+		}
+	}
+
 	// 使用 UI 包构建主菜单消息（波普艺术风格）
 	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
@@ -635,6 +649,7 @@ func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response
 	kb.AddButton("🔔 通知设置", "notify_settings")
 	kb.AddButton("🔗 绑定账号", "start_link")
 	kb.NewRow()
+	kb.AddButton("🔑 重置密码", "resetpw")
 	kb.AddButton("🐞 我的反馈", "my_feedback")
 	kb.AddButton("📊 观影周报", "weekly_report")
 	kb.NewRow()
@@ -669,10 +684,10 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 		msg.Bold("🔗 怎么绑定").Newline()
 		msg.Newline()
 		msg.Text("1. 点「绑定账号」").Newline()
-		msg.Text("2. 输入你的 MoviePilot 用户名和密码").Newline()
-		msg.Text("3. 绑定成功后可以查看请求进度").Newline()
+		msg.Text("2. 输入你的 MoviePilot 用户名").Newline()
+		msg.Text("3. 首次使用会自动创建账号").Newline()
 		msg.Newline()
-		msg.Italic("不绑定也能搜片和求片 👌")
+		msg.Italic("不需要密码，也不需要提前注册 👌")
 
 	case "failed":
 		msg.Bold("❌ 请求失败").Newline()

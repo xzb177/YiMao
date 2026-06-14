@@ -71,12 +71,12 @@ func (h *LinkHandler) getLinkInstructions() string {
 • 查看下载进度
 
 📝 怎么绑定：
-/link 用户名 密码
+/link 用户名
 
 📌 示例：
-/link admin password123
+/link cabbeenpoom
 
-不绑定也能搜片和求片，但体验不完整 👇`
+💡 不需要密码，首次会自动创建账号`
 }
 
 // HandleWithCredentials handles linking with username and password
@@ -145,4 +145,47 @@ func (h *LinkHandler) IsLinked(telegramID int64) bool {
 // GetLinkedUser returns the linked MoviePilot user ID
 func (h *LinkHandler) GetLinkedUser(telegramID int64) (int64, bool) {
 	return h.userMapping.GetMoviePilotUserID(telegramID)
+}
+
+// HandleResetPW handles the resetpw callback (from keyboard button)
+func (h *LinkHandler) HandleResetPW(ctx *callback.Context) (*callback.Response, error) {
+	// Check if DB path is configured
+	if h.cfg.MoviePilotDBPath == "" {
+		return &callback.Response{
+			Text: "❌ 密码重置功能未配置，请联系管理员",
+			Edit: true,
+		}, nil
+	}
+
+	// Get linked MoviePilot username
+	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
+	if err != nil || mpUsername == "" {
+		return &callback.Response{
+			Text: "🔗 未绑定账号\n\n请先绑定，或使用命令：\n/resetpw 用户名",
+			Edit: true,
+		}, nil
+	}
+
+	// Reset password
+	newPassword, err := h.moviepilot.ResetUserPassword(h.cfg.MoviePilotDBPath, mpUsername)
+	if err != nil {
+		logger.Info("[ResetPW Callback] Failed for %s: %v", mpUsername, err)
+		return &callback.Response{
+			Text: "❌ 密码重置失败：" + err.Error(),
+			Edit: true,
+		}, nil
+	}
+
+	text := fmt.Sprintf("🔑 密码重置成功！\n\n"+
+		"👤 用户名：<code>%s</code>\n"+
+		"🔐 新密码：<code>%s</code>\n\n"+
+		"请用新密码绑定：\n<code>/link %s %s</code>\n\n"+
+		"⚠️ 请妥善保管",
+		mpUsername, newPassword, mpUsername, newPassword)
+
+	return &callback.Response{
+		Text:      text,
+		Edit:      true,
+		ParseMode: "HTML",
+	}, nil
 }

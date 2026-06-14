@@ -116,9 +116,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		msg.Text("求片功能需要绑定账号后才能使用哦").Newline()
 		msg.Newline()
 		msg.Text("📝 绑定方法：").Newline()
-		msg.Code("/link 账号 密码").Newline()
+		msg.Code("/link 用户名").Newline()
 		msg.Newline()
-		msg.Italic("💡 新用户首次使用会自动创建账号").Newline()
+		msg.Italic("💡 不需要密码，首次会自动创建账号").Newline()
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔗 立即绑定", "link")

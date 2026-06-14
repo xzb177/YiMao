@@ -123,6 +123,7 @@ func SettingsPageWithNotify() *callback.Response {
 	kb.AddButton("🔔 通知设置", "notify_settings")
 	kb.AddButton("🔗 绑定账号", "start_link")
 	kb.NewRow()
+	kb.AddButton("🔑 重置密码", "resetpw")
 	kb.AddButton("🐞 我的反馈", "my_feedback")
 	kb.AddButton("📊 观影周报", "weekly_report")
 	kb.NewRow()

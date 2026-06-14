@@ -19,6 +19,7 @@ type Config struct {
 	// MoviePilot
 	MoviePilotURL    string
 	MoviePilotAPIKey string
+	MoviePilotDBPath string // Path to MoviePilot's user.db for password reset
 	DownloadSavePath string // Download save path for subscriptions (optional)
 
 	// Emby (optional)
@@ -114,6 +115,7 @@ func Load() (*Config, error) {
 		TelegramChatID:    getEnv("TELEGRAM_CHAT_ID", ""),
 		MoviePilotURL:     getEnv("MOVIEPILOT_URL", ""),
 		MoviePilotAPIKey:  getEnv("MOVIEPILOT_API_KEY", ""),
+		MoviePilotDBPath:  getEnv("MOVIEPILOT_DB_PATH", ""),
 		DownloadSavePath:  getEnv("DOWNLOAD_SAVE_PATH", ""), // Optional download save path
 		EmbyURL:           getEnv("EMBY_URL", ""),
 		EmbyAPIKey:        getEnv("EMBY_API_KEY", ""),

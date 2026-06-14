@@ -84,6 +84,7 @@ var validActions = map[Action]bool{
 	"ai_chat":           true, // AI chat recommendation
 	"notify_settings":   true, // 通知设置页
 	"notify_toggle":     true, // 通知开关切换
+	"resetpw":           true, // 重置密码
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,

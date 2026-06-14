@@ -106,6 +106,8 @@ func HandleCommand(
 		}
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
+	case "/resetpw":
+		HandleResetPasswordCommand(telegram, msg, cfg, userMapping)
 	case "/unlink":
 		if userMapping == nil {
 			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
@@ -209,7 +211,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	// Extract username and password
 	if len(parts) <= startIndex {
 		logger.Info("[LinkCommand] No credentials provided, showing help")
-		text := "🔗 绑定 MoviePilot 账号\n\n请使用以下格式绑定：\n\n/link 用户名 密码\n\n或直接输入：\n用户名 密码\n\n示例：\n/link 2879681674 mypassword\n或：\n2879681674 mypassword"
+		text := "🔗 绑定 MoviePilot 账号\n\n/link 用户名\n\n示例：/link cabbeenpoom\n\n💡 首次使用会自动创建账号，不需要密码"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
@@ -219,7 +221,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if len(parts) > startIndex+1 {
 		password = strings.Join(parts[startIndex+1:], " ")
 	}
-	// 不记录密码和敏感信息，只记录操作类型
+	_ = password // password no longer required for binding
 	logger.Info("[LinkCommand] Processing link request for user")
 
 	// Validate and sanitize inputs
@@ -231,24 +233,14 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		return
 	}
 
-	sanitizedPassword, err := validation.SanitizePassword(password)
-	if err != nil {
-		logger.Info("[LinkCommand] Invalid password: %v", err)
-		text := "❌ 密码格式无效"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
-		return
-	}
+	logger.Info("[LinkCommand] Sanitized inputs: %s", sanitizedUsername)
 
-	logger.Info("[LinkCommand] Sanitized inputs: %s / ***", sanitizedUsername)
-
-	// Verify credentials with MoviePilot
+	// Find user in MoviePilot (no password verification)
 	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
-	logger.Info("[LinkCommand] Calling Authenticate with MoviePilot URL: %s", cfg.MoviePilotURL)
-	userID, err := mpClient.Authenticate(sanitizedUsername, sanitizedPassword)
+	userID, err := mpClient.EnsureUser(sanitizedUsername)
 	if err != nil {
-		logger.Info("[LinkCommand] Authentication failed for %s: %v", sanitizedUsername, err)
-		recordLinkFailure(msg.From.ID)
-		text := "❌ 绑定失败：用户名或密码错误"
+		logger.Info("[LinkCommand] EnsureUser failed for %s: %v", sanitizedUsername, err)
+		text := "❌ 绑定失败：" + err.Error()
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
@@ -277,6 +269,91 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	text := "✅ 绑定成功！现在可以求片了～"
 	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
 		logger.Info("[LinkCommand] Failed to send success message: %v", err)
+	}
+}
+
+// HandleResetPasswordCommand handles /resetpw command
+// Resets the MoviePilot user's password to a random one and sends it to the user.
+func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping *services.UserMappingService) {
+	logger.Info("[ResetPW] Processing /resetpw from user %d", msg.From.ID)
+
+	// Rate limit check (reuse link rate limiter)
+	if blocked, remaining := checkLinkRateLimit(msg.From.ID); blocked {
+		minutes := int(remaining.Minutes()) + 1
+		telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("⏱️ 操作过于频繁，请 %d 分钟后再试", minutes), "", nil)
+		return
+	}
+
+	// Determine the MoviePilot username
+	var mpUsername string
+
+	parts := strings.Fields(msg.Text)
+	if len(parts) > 1 {
+		// User provided a username: /resetpw username
+		sanitized, err := validation.SanitizeUsername(parts[1])
+		if err != nil {
+			telegram.SendMessage(msg.Chat.ID, "❌ 用户名格式无效", "", nil)
+			return
+		}
+		mpUsername = sanitized
+	} else {
+		// No username provided — try to get from linked account
+		if userMapping == nil {
+			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
+			return
+		}
+		mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID)
+		if !exists || mpID == 0 {
+			text := "🔗 请先绑定账号，或指定用户名：\n\n/resetpw 用户名\n\n示例：/resetpw cabbeenpoom"
+			telegram.SendMessage(msg.Chat.ID, text, "", nil)
+			return
+		}
+		// Get username from mapping
+		name, err := userMapping.GetMoviePilotUsername(msg.From.ID)
+		if err != nil || name == "" {
+			telegram.SendMessage(msg.Chat.ID, "❌ 无法获取绑定的用户名，请用：/resetpw 用户名", "", nil)
+			return
+		}
+		mpUsername = name
+	}
+
+	// Check if DB path is configured
+	if cfg.MoviePilotDBPath == "" {
+		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置功能未配置，请联系管理员", "", nil)
+		return
+	}
+
+	// Reset password
+	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
+	newPassword, err := mpClient.ResetUserPassword(cfg.MoviePilotDBPath, mpUsername)
+	if err != nil {
+		logger.Info("[ResetPW] Failed to reset password for %s: %v", mpUsername, err)
+		recordLinkFailure(msg.From.ID)
+		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败："+err.Error(), "", nil)
+		return
+	}
+
+	resetLinkAttempts(msg.From.ID)
+
+	// Send new password to user (private message for security)
+	text := fmt.Sprintf("🔑 密码重置成功！\n\n"+
+		"👤 用户名：<code>%s</code>\n"+
+		"🔐 新密码：<code>%s</code>\n\n"+
+		"请用新密码绑定：\n<code>/link %s %s</code>\n\n"+
+		"⚠️ 请妥善保管，此消息不会重复发送",
+		mpUsername, newPassword, mpUsername, newPassword)
+
+	// Try private chat first, fall back to current chat
+	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+		// Security: send password in private chat, not group
+		privMsg, err := telegram.SendMessage(msg.From.ID, text, "HTML", nil)
+		if err != nil || privMsg == nil {
+			telegram.SendMessage(msg.Chat.ID, "🔒 请先私聊发送任意消息，然后再次执行 /resetpw", "", nil)
+			return
+		}
+		telegram.SendMessage(msg.Chat.ID, "✅ 密码已重置，请查看私聊消息", "", nil)
+	} else {
+		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
 	}
 }
 
@@ -312,10 +389,13 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Bold("📊 配额").Newline()
 	msg.Text("电影扣 1 配额，剧集扣 3（保护服务器资源），次日 0 点刷新").Newline()
 	msg.Newline()
+	msg.Bold("🔑 账号").Newline()
+	msg.Text("首次使用自动绑定，无需注册。/link 换绑，/resetpw 重置密码").Newline()
+	msg.Newline()
 	msg.Bold("⌨️ 命令速查").Newline()
 	msg.Text("/start 主菜单  /search 搜片  /ai 今晚看什么").Newline()
 	msg.Text("/wish 许愿  /requests 求片进度  /quota 配额").Newline()
-	msg.Text("/link 绑定  /help 帮助").Newline()
+	msg.Text("/link 绑定  /resetpw 重置密码  /help 帮助").Newline()
 	msg.Newline()
 	msg.Italic("💬 想被通知出源？记得先和我私聊过一句哦，不然我发不出私信～").Newline()
 

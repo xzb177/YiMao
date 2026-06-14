@@ -1,11 +1,17 @@
 #!/bin/sh
 set -e
-
 # PUID/PGID 动态适配：根据环境变量创建运行用户，解决宿主机权限错配
 PUID=${PUID:-1000}
 PGID=${PGID:-1000}
 
 echo "[Entrypoint] PUID=$PUID PGID=$PGID"
+
+# UID 0 = root, no need to create user
+if [ "$PUID" = "0" ]; then
+    chown -R root:root /app/data 2>/dev/null || true
+    echo "[Entrypoint] Running as root"
+    exec "$@"
+fi
 
 # 如果 PGID 组不存在则创建
 if ! getent group yimao >/dev/null 2>&1; then

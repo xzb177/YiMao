@@ -421,7 +421,14 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 
 	switch cmd {
 	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai":
-		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
+		sent, _ := telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
+		// 3 秒自毁：不污染群聊记录
+		if sent != nil {
+			go func(chatID int64, msgID int64) {
+				time.Sleep(3 * time.Second)
+				_ = telegram.DeleteMessage(chatID, msgID)
+			}(msg.Chat.ID, sent.MessageID)
+		}
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)

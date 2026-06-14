@@ -16,6 +16,8 @@ type Scheduler struct {
 	tmdb         *TMDBClient // 每日推荐数据源：改用 TMDB 热门接口
 	adminService *AdminService
 	userMapping  *UserMappingService
+	telegram     *TelegramClient // 群组推送用
+	chatID       int64           // 群组 chat ID（>0 时推送到群）
 	stopCh       chan struct{}
 	stopOnce     sync.Once
 
@@ -35,6 +37,8 @@ func NewScheduler(
 	tmdb *TMDBClient,
 	adminService *AdminService,
 	userMapping *UserMappingService,
+	telegram *TelegramClient,
+	chatID int64,
 ) *Scheduler {
 	return &Scheduler{
 		notification: notification,
@@ -42,6 +46,8 @@ func NewScheduler(
 		tmdb:         tmdb,
 		adminService: adminService,
 		userMapping:  userMapping,
+		telegram:     telegram,
+		chatID:       chatID,
 		stopCh:       make(chan struct{}),
 		dailyHour:    9, // Default 9 AM
 		dailyMinute:  0, // Default 0 minutes
@@ -207,11 +213,20 @@ func (s *Scheduler) sendDailyRecommendations() {
 		}
 	}
 
-	// Send notifications
+	// Send notifications to individual users
 	if err := s.notification.SendDailyRecommendation(userIDs, items); err != nil {
 		logger.Info("[Scheduler] Failed to send daily recommendations: %v", err)
 	} else {
 		logger.Info("[Scheduler] Sent daily recommendations to %d users", len(userIDs))
+	}
+
+	// 推送到群组
+	if s.chatID != 0 && s.telegram != nil {
+		if err := s.sendGroupRecommendation(items); err != nil {
+			logger.Info("[Scheduler] Failed to send group recommendation: %v", err)
+		} else {
+			logger.Info("[Scheduler] Sent daily recommendation to group %d", s.chatID)
+		}
 	}
 }
 
@@ -274,4 +289,25 @@ func (s *Scheduler) SendTestRecommendation(userID int64) error {
 	}
 
 	return s.notification.SendDailyRecommendation([]int64{userID}, items)
+}
+
+// sendGroupRecommendation sends daily recommendation to the group chat
+func (s *Scheduler) sendGroupRecommendation(movies []TrendingResultItem) error {
+	msg := NewMessageBuilder()
+	msg.Bold("🎬 每日推荐").Newline()
+	msg.Newline()
+
+	for i, movie := range movies {
+		year := ""
+		if movie.Year > 0 {
+			year = fmt.Sprintf(" (%d)", movie.Year)
+		}
+		msg.Textf("%d. %s%s", i+1, movie.Title, year).Newline()
+	}
+
+	msg.Newline()
+	msg.Italic("💬 私聊机器人可搜索和求片")
+
+	_, err := s.telegram.SendMessage(s.chatID, msg.Build(), "HTML", nil)
+	return err
 }
