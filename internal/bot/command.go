@@ -25,7 +25,7 @@ func HandleCommand(
 	adminService *services.AdminService,
 	bindingRequest *services.BindingRequestService,
 	quotaService *services.QuotaService,
-	userMapping *services.UserMappingService,
+	userMapping services.UserMappingStore,
 	sessMgr *session.Manager,
 	wishHandler *handlers.WishHandler,
 	myRequestsHandler *handlers.MyRequestsHandler,
@@ -181,7 +181,7 @@ func resetLinkAttempts(userID int64) {
 
 // HandleLinkCommand handles /link command with optional username and password
 // Also supports direct credential input: "username password" (without /link prefix)
-func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping *services.UserMappingService) {
+func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping services.UserMappingStore) {
 	logger.Info("[LinkCommand] Processing /link command from user %d", msg.From.ID)
 
 	// 防暴力破解：检查是否被锁定
@@ -274,7 +274,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 // HandleResetPasswordCommand handles /resetpw command
 // Resets the MoviePilot user's password to a random one and sends it to the user.
-func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping *services.UserMappingService) {
+func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
 	logger.Info("[ResetPW] Processing /resetpw from user %d", msg.From.ID)
 
 	// Rate limit check (reuse link rate limiter)

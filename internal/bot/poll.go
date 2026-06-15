@@ -21,7 +21,7 @@ type Dependencies struct {
 	Telegram        *services.TelegramClient
 	MoviePilot      *services.MoviePilotClient
 	SessionMgr      *session.Manager
-	UserMapping     *services.UserMappingService
+	UserMapping     services.UserMappingStore
 	BindingRequest  *services.BindingRequestService
 	AdminService    *services.AdminService
 	AdminHandler    *handlers.AdminHandler
@@ -41,7 +41,7 @@ type PollDeps struct {
 	Telegram        *services.TelegramClient
 	MoviePilot      *services.MoviePilotClient
 	SessionMgr      *session.Manager
-	UserMapping     *services.UserMappingService
+	UserMapping     services.UserMappingStore
 	BindingRequest  *services.BindingRequestService
 	AdminService    *services.AdminService
 	AdminHandler    *handlers.AdminHandler // For admin management flows

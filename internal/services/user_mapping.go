@@ -455,7 +455,7 @@ func (s *BindingRequestService) UpdateRequestStatus(requestID, status string) er
 }
 
 // ApproveRequest approves a binding request
-func (s *BindingRequestService) ApproveRequest(requestID string, userMappingService *UserMappingService) error {
+func (s *BindingRequestService) ApproveRequest(requestID string, userMappingService UserMappingStore) error {
 	s.mu.RLock()
 	req, exists := s.requests[requestID]
 	s.mu.RUnlock()

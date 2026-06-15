@@ -61,7 +61,7 @@ type WeeklyReportService struct {
 	searchHistory *SearchHistoryDB
 	quotaService  *QuotaService
 	reviewService *ReviewService
-	userMapping   *UserMappingService
+	userMapping   UserMappingStore
 	telegram      *TelegramClient
 	tmdbClient    *TMDBClient
 
@@ -74,7 +74,7 @@ type WeeklyReportService struct {
 }
 
 // NewWeeklyReportService creates a new weekly report service
-func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quota *QuotaService, review *ReviewService, userMapping *UserMappingService, telegram *TelegramClient, tmdb *TMDBClient) *WeeklyReportService {
+func NewWeeklyReportService(dataDir string, searchHistory *SearchHistoryDB, quota *QuotaService, review *ReviewService, userMapping UserMappingStore, telegram *TelegramClient, tmdb *TMDBClient) *WeeklyReportService {
 	dataFile := fmt.Sprintf("%s/weekly_reports.json", dataDir)
 
 	service := &WeeklyReportService{

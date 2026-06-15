@@ -15,7 +15,7 @@ type Scheduler struct {
 	moviepilot   *MoviePilotClient
 	tmdb         *TMDBClient // 每日推荐数据源：改用 TMDB 热门接口
 	adminService *AdminService
-	userMapping  *UserMappingService
+	userMapping  UserMappingStore
 	telegram     *TelegramClient // 群组推送用
 	chatID       int64           // 群组 chat ID（>0 时推送到群）
 	stopCh       chan struct{}
@@ -36,7 +36,7 @@ func NewScheduler(
 	moviepilot *MoviePilotClient,
 	tmdb *TMDBClient,
 	adminService *AdminService,
-	userMapping *UserMappingService,
+	userMapping UserMappingStore,
 	telegram *TelegramClient,
 	chatID int64,
 ) *Scheduler {

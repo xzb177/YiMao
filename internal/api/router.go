@@ -26,7 +26,7 @@ type Router struct {
 	telegram       *services.TelegramClient
 	adminService   *services.AdminService
 	quotaService   *services.QuotaService
-	userMapping    *services.UserMappingService
+	userMapping    services.UserMappingStore
 	preferences    *services.PreferencesService
 	issueService   *services.IssueService
 	sessMgr        *session.Manager
@@ -41,7 +41,7 @@ func NewRouter(
 	_ interface{}, // jellyseerr - deprecated, kept for compatibility
 	adminService *services.AdminService,
 	quotaService *services.QuotaService,
-	userMapping *services.UserMappingService,
+	userMapping services.UserMappingStore,
 	preferences *services.PreferencesService,
 	issueService *services.IssueService,
 	sessMgr *session.Manager,

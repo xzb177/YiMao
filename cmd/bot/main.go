@@ -155,7 +155,7 @@ type Dependencies struct {
 	Telegram          *services.TelegramClient
 	MoviePilot        *services.MoviePilotClient
 	SessionMgr        *session.Manager
-	UserMapping       *services.UserMappingService
+	UserMapping       services.UserMappingStore
 	BindingRequest    *services.BindingRequestService
 	Preferences       *services.PreferencesService
 	IssueService      *services.IssueService
@@ -203,8 +203,13 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	}
 	logger.Info("    - SessionManager...")
 	sessMgr := session.NewManager(time.Duration(cfg.MaxSessionAge)*time.Hour, cfg.MaxSessions)
-	logger.Info("    - UserMappingService...")
-	userMappingService := services.NewUserMappingService(cfg.DataDir)
+	logger.Info("    - UserMappingDB (SQLite)...")
+	userMappingDB, err := services.NewUserMappingDB(cfg.DataDir)
+	if err != nil {
+		log.Fatalf("Failed to initialize UserMappingDB: %v", err)
+	}
+	defer userMappingDB.Close()
+	userMappingService := userMappingDB
 	logger.Info("    - BindingRequestService...")
 	bindingRequestService := services.NewBindingRequestService(cfg.DataDir)
 	logger.Info("    - PreferencesService...")

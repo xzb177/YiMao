@@ -13,7 +13,7 @@ import (
 type NotificationService struct {
 	telegram    *TelegramClient
 	moviepilot  *MoviePilotClient
-	userMapping *UserMappingService
+	userMapping UserMappingStore
 	notifyFile  string
 	knownUsers  map[int64]int64 // telegramID -> moviepilotID
 	review      *ReviewService  // optional: resolve MoviePilot subscription/request ID back to Telegram user
@@ -24,7 +24,7 @@ type NotificationService struct {
 }
 
 // NewNotificationService creates a new notification service
-func NewNotificationService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping *UserMappingService, review *ReviewService, dataDir string) *NotificationService {
+func NewNotificationService(telegram *TelegramClient, moviepilot *MoviePilotClient, userMapping UserMappingStore, review *ReviewService, dataDir string) *NotificationService {
 	notifyFile := dataDir + "/notifications.json"
 
 	return &NotificationService{

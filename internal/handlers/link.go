@@ -16,7 +16,7 @@ type LinkHandler struct {
 	sessMgr               *session.Manager
 	telegram              *services.TelegramClient
 	moviepilot            *services.MoviePilotClient
-	userMapping           *services.UserMappingService
+	userMapping           services.UserMappingStore
 	bindingRequestService *services.BindingRequestService
 }
 
@@ -25,7 +25,7 @@ func NewLinkHandler(
 	sessMgr *session.Manager,
 	telegram *services.TelegramClient,
 	moviepilot *services.MoviePilotClient,
-	userMapping *services.UserMappingService,
+	userMapping services.UserMappingStore,
 	bindingRequestService *services.BindingRequestService,
 ) *LinkHandler {
 	return &LinkHandler{

@@ -21,7 +21,7 @@ type RequestHandler struct {
 	tmdbClient     *services.TMDBClient
 	adminService   *services.AdminService
 	webhookService *services.WebhookService
-	userMapping    *services.UserMappingService
+	userMapping    services.UserMappingStore
 	quotaService   *services.QuotaService
 	reviewService  *services.ReviewService
 	enableReview   bool // Enable review system
@@ -34,7 +34,7 @@ func NewRequestHandler(
 	tmdbClient *services.TMDBClient,
 	adminService *services.AdminService,
 	webhookService *services.WebhookService,
-	userMapping *services.UserMappingService,
+	userMapping services.UserMappingStore,
 	quotaService *services.QuotaService,
 	reviewService *services.ReviewService,
 ) *RequestHandler {

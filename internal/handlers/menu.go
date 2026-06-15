@@ -17,7 +17,7 @@ type MyRequestsHandler struct {
 	sessMgr     *session.Manager
 	telegram    *services.TelegramClient
 	moviepilot  *services.MoviePilotClient
-	userMapping *services.UserMappingService
+	userMapping services.UserMappingStore
 	reviewSvc   *services.ReviewService
 	quotaSvc    *services.QuotaService
 	adminSvc    *services.AdminService
@@ -48,7 +48,7 @@ func NewMyRequestsHandler(
 }
 
 // SetUserMapping sets the user mapping service
-func (h *MyRequestsHandler) SetUserMapping(um *services.UserMappingService) {
+func (h *MyRequestsHandler) SetUserMapping(um services.UserMappingStore) {
 	h.userMapping = um
 }
 

@@ -220,7 +220,7 @@ type StartHandler struct {
 	telegram        *services.TelegramClient
 	moviepilot      *services.MoviePilotClient
 	adminService    *services.AdminService
-	userMapping     *services.UserMappingService
+	userMapping     services.UserMappingStore
 	weeklyReportSvc *services.WeeklyReportService
 }
 
@@ -244,7 +244,7 @@ func (h *StartHandler) SetAdminService(adminSvc *services.AdminService) {
 }
 
 // SetUserMapping sets the user mapping service (设置页显示绑定状态用)
-func (h *StartHandler) SetUserMapping(um *services.UserMappingService) {
+func (h *StartHandler) SetUserMapping(um services.UserMappingStore) {
 	h.userMapping = um
 }
 

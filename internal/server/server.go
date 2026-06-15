@@ -19,7 +19,7 @@ type Dependencies struct {
 	Telegram          *services.TelegramClient
 	MoviePilot        *services.MoviePilotClient
 	SessionMgr        *session.Manager
-	UserMapping       *services.UserMappingService
+	UserMapping       services.UserMappingStore
 	Preferences       *services.PreferencesService
 	IssueService      *services.IssueService
 	AdminService      *services.AdminService

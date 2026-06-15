@@ -69,7 +69,7 @@ type ReviewService struct {
 	notifiedSubs     map[int]bool
 	notifiedMu       sync.RWMutex // protects notifiedSubs map access
 	// userMapping 用于 MP 用户名 → Telegram ID 反查。
-	userMapping *UserMappingService
+	userMapping UserMappingStore
 
 	// ── 每日汇总 ──
 	dailyMu          sync.Mutex
@@ -130,7 +130,7 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 }
 
 // SetUserMapping 注入用户映射服务（用于 MP 用户名 → Telegram ID 反查）。
-func (s *ReviewService) SetUserMapping(um *UserMappingService) {
+func (s *ReviewService) SetUserMapping(um UserMappingStore) {
 	s.userMapping = um
 }
 

@@ -130,7 +130,7 @@ type MoviePilotWebhookPayload struct {
 type WebhookService struct {
 	telegram             *TelegramClient
 	moviepilot           *MoviePilotClient
-	userMapping          *UserMappingService
+	userMapping          UserMappingStore
 	adminService         *AdminService
 	preferences          *PreferencesService
 	chatID               int64
