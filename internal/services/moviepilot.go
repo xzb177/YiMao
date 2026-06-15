@@ -648,12 +648,20 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 		return nil, fmt.Errorf("registration failed")
 	}
 
-	// Check if user ID is valid
-	if response.Data.ID == 0 {
-		return nil, fmt.Errorf("registration failed: invalid user ID returned")
+	// MoviePilot API doesn't return user ID on creation,
+	// so we query the user list to find the newly created user
+	users, err := c.GetAllUsers()
+	if err != nil {
+		return nil, fmt.Errorf("user created but failed to query ID: %w", err)
 	}
 
-	return &response.Data, nil
+	for _, u := range users {
+		if u.Username == username {
+			return &u, nil
+		}
+	}
+
+	return nil, fmt.Errorf("user created but not found in user list")
 }
 
 // GetAllSubscriptions retrieves all subscriptions from MoviePilot
