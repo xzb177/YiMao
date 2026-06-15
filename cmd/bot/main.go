@@ -145,6 +145,12 @@ func main() {
 			logger.Info("[wish] 关闭数据库出错: %v", err)
 		}
 	}
+	// 关闭 UserMappingDB
+	if umdb, ok := depsWithHandlers.UserMapping.(*services.UserMappingDB); ok {
+		if err := umdb.Close(); err != nil {
+			logger.Info("[UserMappingDB] 关闭数据库出错: %v", err)
+		}
+	}
 
 	logger.Info("✅ All services stopped")
 }
@@ -208,7 +214,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	if err != nil {
 		log.Fatalf("Failed to initialize UserMappingDB: %v", err)
 	}
-	defer userMappingDB.Close()
+	// NOTE: 不要在这里 defer Close()，DB 需要保持打开到程序结束
 	userMappingService := userMappingDB
 	logger.Info("    - BindingRequestService...")
 	bindingRequestService := services.NewBindingRequestService(cfg.DataDir)
