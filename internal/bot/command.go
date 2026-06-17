@@ -9,6 +9,7 @@ import (
 	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/internal/ui"
@@ -359,10 +360,16 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	menuText := ui.BuildMenuWith(ui.StyleCard, "云海影视", "你的私人选片师")
-	// AI 按钮只在 AI 功能开启时显示
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, ai.GetManager().IsEnabled(), true)
-	telegram.SendMessage(chatID, menuText, "", keyboard)
+	// 使用 Rich Message 发送欢迎页（Bot API 10.1）
+	hasAI := ai.GetManager().IsEnabled()
+	richMsg := richmessage.BuildWelcomeMessage("", hasAI)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, hasAI, true)
+
+	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {
+		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)
+		menuText := ui.BuildMenuWith(ui.StyleCard, "云海影视", "你的私人选片师")
+		telegram.SendMessage(chatID, menuText, "", keyboard)
+	}
 }
 
 // SendHelpMessage sends the help message

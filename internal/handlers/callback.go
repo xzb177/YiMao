@@ -9,6 +9,7 @@ import (
 	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/internal/ui"
@@ -302,14 +303,29 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		}
 	}
 
-	// 使用 UI 包构建主菜单消息（波普艺术风格）
-	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
-
-	// 添加用户观影人格显示（如果有的话）
+	// 使用 Rich Message 构建欢迎页（Bot API 10.1）
 	isPrivateChat := ctx.ChatType == "private"
+	hasAI := isPrivateChat && ai.GetManager().IsEnabled()
+
+	// 清除 AI 聊天模式
 	if isPrivateChat {
-		// Clear AI chat mode when returning to main menu
 		h.disableAIChatMode(ctx)
+	}
+
+	// 获取用户名（用于个性化标题）
+	userName := ""
+	if isPrivateChat {
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		if name, ok := sess.GetString("name"); ok && name != "" {
+			userName = name
+		}
+	}
+
+	richMsg := richmessage.BuildWelcomeMessage(userName, hasAI)
+
+	// 添加观影人格（如果有）
+	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
+	if isPrivateChat {
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
 		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
 			moodMap := map[string]string{
@@ -334,9 +350,10 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, isPrivateChat && ai.GetManager().IsEnabled(), true)
 
 	return &callback.Response{
-		Text:     baseMsg,
-		Edit:     true,
-		Keyboard: convertKeyboard(keyboard),
+		Text:        baseMsg,
+		RichMessage: richMsg.Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(keyboard),
 	}, nil
 }
 
@@ -798,6 +815,7 @@ type DetailHandler struct {
 	telegram   *services.TelegramClient
 	moviepilot *services.MoviePilotClient
 	tmdb       *services.TMDBClient
+	richMsg    *services.RichMessageService
 }
 
 func NewDetailHandler(
@@ -806,11 +824,13 @@ func NewDetailHandler(
 	moviepilot *services.MoviePilotClient,
 	tmdb *services.TMDBClient,
 ) *DetailHandler {
+	richMsg := services.NewRichMessageService(telegram)
 	return &DetailHandler{
 		sessMgr:    sessMgr,
 		telegram:   telegram,
 		moviepilot: moviepilot,
 		tmdb:       tmdb,
+		richMsg:    richMsg,
 	}
 }
 
@@ -866,7 +886,12 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		tmdbMedia, err := h.tmdb.GetMediaByType(tmdbID, mediaType)
 		if err == nil && tmdbMedia != nil {
 			logger.Info("[DetailHandler] Got media info from TMDB: %s", tmdbMedia.GetTitle())
-			return h.buildDetailFromTMDB(tmdbMedia, sess), nil
+			resp := h.buildDetailFromTMDB(tmdbMedia, sess)
+			if resp != nil {
+				return resp, nil
+			}
+			// Rich Message was sent directly, return empty response
+			return &callback.Response{}, nil
 		}
 		logger.Info("[DetailHandler] TMDB API failed: %v", err)
 	}
@@ -937,6 +962,40 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false, posterURL)
 	}
 
+	// Build keyboard
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
+	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
+	kb.NewRow()
+	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回", "back")
+
+	keyboard := convertKeyboard(kb.Build())
+
+	// Try Rich Message first
+	genresList := strings.Split(media.GetGenres(), ", ")
+	info := richmessage.MediaInfo{
+		Title:     media.GetTitle(),
+		Year:      media.GetYear(),
+		Rating:    media.VoteAverage,
+		Genres:    genresList,
+		Overview:  media.Overview,
+		TMDBID:    media.ID,
+		MediaType: media.MediaType,
+	}
+
+	msg := richmessage.BuildMediaInfoCard(info)
+	if msg.Markdown != "" {
+		logger.Info("[DetailHandler] Building Rich Message for: %s", media.GetTitle())
+		return &callback.Response{
+			RichMessage: msg.Markdown,
+			Edit:        true,
+			Keyboard:    keyboard,
+		}
+	}
+
 	safeTitle := html.EscapeString(media.GetTitle())
 	safeOrgTitle := html.EscapeString(media.OriginalTitle)
 
@@ -989,20 +1048,10 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
-	// 4. Keyboard
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
-	kb.AddButton("🙋 我也想看 +1", fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
-
 	return &callback.Response{
 		Text:      sb.String(),
 		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		Keyboard:  keyboard,
 		ParseMode: "HTML",
 	}
 }

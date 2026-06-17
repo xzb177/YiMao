@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sync"
@@ -293,11 +294,18 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 		count = 5
 	}
 
+	// Build Rich Message
+	rmMovies := make([]richmessage.RecommendMovie, 0, count)
+	for _, m := range movies[:count] {
+		rmMovies = append(rmMovies, richmessage.RecommendMovie{Title: m.Title, Year: m.Year})
+	}
+	richMsg := richmessage.BuildDailyRecommendCard(rmMovies)
+
+	// Build plain text fallback
 	msg := NewMessageBuilder()
 	msg.Bold("🎬 每日推荐").Newline()
 	msg.Italic("💡 今日精选推荐").Newline()
 	msg.Newline()
-
 	for i, movie := range movies[:count] {
 		year := ""
 		if movie.Year > 0 {
@@ -305,9 +313,9 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 		}
 		msg.Textf("%d. %s%s", i+1, movie.Title, year).Newline()
 	}
-
 	msg.Newline()
 	msg.Italic("💬 输入 /start 查看更多功能")
+	plainText := msg.Build()
 
 	// Send to all users
 	for _, telegramID := range telegramIDs {
@@ -315,8 +323,12 @@ func (s *NotificationService) SendDailyRecommendation(telegramIDs []int64, movie
 		if s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyRecommend) {
 			continue
 		}
-		if _, err := s.telegram.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
-			logger.Info("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err)
+		// Try Rich Message, fall back to plain text
+		if _, err := s.telegram.SendRichMessage(telegramID, richMsg.Markdown, nil); err != nil {
+			logger.Info("[Notification] Rich Message failed for %d: %v, falling back to plain text", telegramID, err)
+			if _, err2 := s.telegram.SendMessage(telegramID, plainText, "HTML", nil); err2 != nil {
+				logger.Info("[Notification] Failed to send daily recommendation to %d: %v", telegramID, err2)
+			}
 		}
 	}
 

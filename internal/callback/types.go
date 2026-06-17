@@ -236,6 +236,7 @@ type Response struct {
 	PhotoCaption  string // Caption for the photo
 	DeleteMessage bool   // If true, delete the current message before sending new one
 	ParseMode     string // Parse mode for formatting (HTML, Markdown, or empty for none)
+	RichMessage   string // Rich Message markdown content (Bot API 10.1)
 }
 
 // Keyboard represents an inline keyboard

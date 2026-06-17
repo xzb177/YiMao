@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"sort"
@@ -346,18 +347,39 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 
 // sendInstantNotification sends an instant notification for a single item
 func (s *MediaNotificationService) sendInstantNotification(adminID int64, item *MediaItem, format NotificationFormat) {
-	var message string
+	// Build Rich Message data
+	rmData := richmessage.InstantNotifyData{
+		Title:        item.Title,
+		Year:         item.Year,
+		SeriesName:   item.SeriesName,
+		SeasonNum:    item.SeasonNumber,
+		EpisodeStart: item.EpisodeStart,
+		EpisodeEnd:   item.EpisodeEnd,
+		EpisodeCount: item.EpisodeCount,
+		MediaType:    string(item.MediaType),
+		Quality:      item.Quality,
+		Rating:       item.Rating,
+		Category:     s.getDetailedCategory(item),
+		FileSize:     s.formatFileSizeDecimal(item.FileSize),
+		FileCount:    item.FileCount,
+		Time:         item.AddedAt.Format("15:04"),
+		ImageURL:     item.ImageURL,
+	}
+	richMsg := richmessage.BuildInstantNotifyCard(rmData)
 
-	// Choose format based on settings
+	// Plain text fallback
+	var plainText string
 	if format == FormatDetailed {
-		message = s.formatDetailedMessage(item)
+		plainText = s.formatDetailedMessage(item)
 	} else {
-		message = s.formatSimpleMessage(item)
+		plainText = s.formatSimpleMessage(item)
 	}
 
-	// Send message (image URL embedded in text for auto-render)
-	// Use empty parseMode for auto-detection (avoids Markdown parsing errors)
-	s.telegram.SendMessage(adminID, message, "", nil)
+	// Try Rich Message, fall back to plain text
+	if _, err := s.telegram.SendRichMessage(adminID, richMsg.Markdown, nil); err != nil {
+		logger.Info("[MediaNotification] Rich Message failed for instant notify: %v, falling back", err)
+		s.telegram.SendMessage(adminID, plainText, "", nil)
+	}
 }
 
 // formatSimpleMessage formats a simple instant notification message
@@ -635,24 +657,76 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 // sendDailySummary sends a daily summary notification
 // 同时发送到群组和管理员私聊
 func (s *MediaNotificationService) sendDailySummary(adminID int64, items []*MediaItem) {
-	message := s.formatDailySummary(time.Now(), items)
+	now := time.Now()
+	dateStr := now.Format("2006年1月2日")
 
-	// 1. 发送到群组（如果有配置且启用了汇总）
+	// Aggregate items for Rich Message
+	movies := make([]*AggregatedMovie, 0)
+	seriesMap := make(map[SeriesAggregationKey]*AggregatedSeries)
+
+	for _, item := range items {
+		if item.SeriesName != "" {
+			key := SeriesAggregationKey{SeriesName: item.SeriesName, SeasonNumber: item.SeasonNumber}
+			if existing, exists := seriesMap[key]; exists {
+				if item.EpisodeStart > 0 {
+					existing.Episodes = append(existing.Episodes, item.EpisodeStart)
+				}
+				if item.EpisodeEnd > 0 {
+					for ep := item.EpisodeStart; ep <= item.EpisodeEnd; ep++ {
+						existing.Episodes = append(existing.Episodes, ep)
+					}
+				}
+				existing.Count = len(uniqueSortedInts(existing.Episodes))
+				if len(existing.Episodes) > 0 {
+					existing.MinEpisode = existing.Episodes[0]
+					existing.MaxEpisode = existing.Episodes[len(existing.Episodes)-1]
+				}
+			} else {
+				seriesMap[key] = NewAggregatedSeries([]*MediaItem{item})
+			}
+		} else {
+			displayTitle := s.titleResolver.ResolveMovieTitle(item, item.FileName)
+			movies = append(movies, &AggregatedMovie{Title: displayTitle, Year: item.Year, LibraryName: item.LibraryName, Count: 1})
+		}
+	}
+
+	// Build Rich Message data
+	rmMovies := make([]richmessage.DailySummaryMovie, 0, len(movies))
+	for _, m := range movies {
+		rmMovies = append(rmMovies, richmessage.DailySummaryMovie{Title: m.Title, Year: m.Year})
+	}
+
+	rmSeries := make([]richmessage.DailySummarySeries, 0, len(seriesMap))
+	for _, agg := range seriesMap {
+		rmSeries = append(rmSeries, richmessage.DailySummarySeries{Title: agg.FormatForSummary()})
+	}
+
+	totalCount := len(rmMovies) + len(rmSeries)
+	richMsg := richmessage.BuildDailySummaryCard(dateStr, rmMovies, rmSeries, totalCount)
+	plainText := s.formatDailySummary(now, items)
+
+	// sendTo is a helper that tries Rich Message first, falls back to plain text
+	sendTo := func(chatID int64, label string) {
+		if _, err := s.telegram.SendRichMessage(chatID, richMsg.Markdown, nil); err != nil {
+			logger.Info("[MediaNotification] Rich Message failed for %s %d: %v, falling back to plain text", label, chatID, err)
+			if _, err2 := s.telegram.SendMessage(chatID, plainText, "", nil); err2 != nil {
+				logger.Info("[MediaNotification] Failed to send daily summary to %s %d: %v", label, chatID, err2)
+			}
+		} else {
+			logger.Info("[MediaNotification] 已发送每日汇总到 %s %d (Rich Message)", label, chatID)
+		}
+	}
+
+	// 1. 发送到群组
 	if s.groupChatID != 0 && s.groupChatID < -100 {
 		settings := s.GetSettings(adminID)
 		if settings.DailySummaryEnabled {
-			if _, err := s.telegram.SendMessage(s.groupChatID, message, "", nil); err != nil {
-				logger.Info("[MediaNotification] Failed to send daily summary to group %d: %v", s.groupChatID, err)
-			} else {
-				logger.Info("[MediaNotification] 已发送每日汇总到群组 %d", s.groupChatID)
-			}
+			sendTo(s.groupChatID, "群组")
 		}
 	}
 
 	// 2. 发送到管理员私聊
-	if _, err := s.telegram.SendMessage(adminID, message, "", nil); err != nil {
-		logger.Info("[MediaNotification] Failed to send daily summary to admin %d: %v", adminID, err)
-	}
+	sendTo(adminID, "管理员")
 }
 
 // formatDailySummary formats a daily summary message

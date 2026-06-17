@@ -125,38 +125,49 @@ func HandleWebhookCallback(
 	if resp != nil {
 		keyboard := ConvertKeyboard(resp.Keyboard)
 
-		// Use HTML as default parse mode if not specified
-		parseMode := resp.ParseMode
-		if parseMode == "" {
-			parseMode = "HTML"
-		}
+		// Rich Message 优先（Bot API 10.1）
+		if resp.RichMessage != "" {
+			logger.Info("[Webhook] Sending Rich Message to chat %d, len=%d", ctx.ChatID, len(resp.RichMessage))
+			if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {
+				logger.Info("[Webhook] Rich Message failed: %v, falling back to plain text", sendErr)
+				if resp.Text != "" {
+					telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
+				}
+			}
+		} else {
+			// Use HTML as default parse mode if not specified
+			parseMode := resp.ParseMode
+			if parseMode == "" {
+				parseMode = "HTML"
+			}
 
-		// Check if we need to send a photo
-		if resp.Photo != "" {
-			// Delete the original message first
-			telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
-			// Send photo with caption and keyboard
-			// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
-			caption := resp.PhotoCaption
-			if caption == "" {
-				caption = resp.Text
-			}
-			logger.Info("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
-			if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
-				logger.Info("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
-				// Fallback to URL method if proxy upload fails
-				telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
-			}
-		} else if resp.Text != "" {
-			if resp.Edit {
-				// Edit existing message
-				telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard)
-			} else {
-				// Send new message
-				telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
+			// Check if we need to send a photo
+			if resp.Photo != "" {
+				// Delete the original message first
+				telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
+				// Send photo with caption and keyboard
+				// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
+				caption := resp.PhotoCaption
+				if caption == "" {
+					caption = resp.Text
+				}
+				logger.Info("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
+				if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
+					logger.Info("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
+					// Fallback to URL method if proxy upload fails
+					telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
+				}
+			} else if resp.Text != "" {
+				if resp.Edit {
+					// Edit existing message
+					telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard)
+				} else {
+					// Send new message
+					telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
+				}
 			}
 		}
-	}
+		}
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK")

@@ -17,14 +17,14 @@ func NewTitleResolver() *TitleResolver {
 // 预编译正则（避免每次调用重新编译）
 var (
 	// 技术标签清理
-	reResolution = regexp.MustCompile(`\.(?:2160p|1080p|720p|480p|4K)\b`)
-	reCodec      = regexp.MustCompile(`\.(?:x265|x264|h264|h265|hevc|avc)\b`)
-	reBitDepth   = regexp.MustCompile(`\.(?:10bit|8bit)\b`)
-	reSource     = regexp.MustCompile(`\.(?:BluRay|WEBDL|WEB-DL|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`)
-	reRemux      = regexp.MustCompile(`\.(?:Remux|REMUX)\b`)
-	rePlatform   = regexp.MustCompile(`\.(?:AMZN|NF|Disney|Hulu|HBO|Max)\b`)
-	reAudio      = regexp.MustCompile(`\.(?:DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC|Opus)\b`)
-	reCodecProf  = regexp.MustCompile(`\.(?:Hi10P|Hi10)\b`)
+	reResolution = regexp.MustCompile(`[\.\s](?:2160p|1080p|720p|480p|4K)\b`)
+	reCodec      = regexp.MustCompile(`[\.\s](?:x265|x264|h264|h265|hevc|avc)\b`)
+	reBitDepth   = regexp.MustCompile(`[\.\s](?:10bit|8bit)\b`)
+	reSource     = regexp.MustCompile(`[\.\s](?:BluRay|WEBDL|WEB-DL|WEBRip|DVDRip|DVDR|HDTV|PDTV|SDR)\b`)
+	reRemux      = regexp.MustCompile(`[\.\s](?:Remux|REMUX)\b`)
+	rePlatform   = regexp.MustCompile(`[\.\s](?:AMZN|NF|Disney|Hulu|HBO|Max)\b`)
+	reAudio      = regexp.MustCompile(`[\.\s](?:DTS[-\.]?HD|DTS|DDP|Atmos|TrueHD|AAC|MP3|FLAC|Opus)\b`)
+	reCodecProf  = regexp.MustCompile(`[\.\s](?:Hi10P|Hi10)\b`)
 	reRelGroup   = regexp.MustCompile(`-[\w\.\-]+$`)
 	reCnGroup    = regexp.MustCompile(`-\s*[^\s]+\s*$`)
 	reBracket    = regexp.MustCompile(`\[.*?\]`)
@@ -34,6 +34,10 @@ var (
 	reUnderscore = regexp.MustCompile(`_`)
 	reSpaces     = regexp.MustCompile(`\s+`)
 	reYear       = regexp.MustCompile(`\b(19\d{2}|20\d{2})\b`)
+	// 空格分隔的技术参数清理（用于 Emby 标题）
+	reQualityTag = regexp.MustCompile(`\s+(?:1080p|2160p|720p|480p|4K)\s+WEB(?:-DL)?(?:\s|$)`)
+	reSourceTag  = regexp.MustCompile(`\s+(?:BluRay|WEB-DL|WEBDL|WEBRip|DVDRip|HDTV|REMUX)(?:\s|$)`)
+	reDashTech   = regexp.MustCompile(`\s*-\s*(?:1080p|2160p|720p|480p|4K)\s+\w+.*$`)
 )
 
 // ResolveMovieTitle resolves the best possible display title for a movie
@@ -46,8 +50,12 @@ var (
 // 6. Filename extraction
 // 7. Final fallback
 func (r *TitleResolver) ResolveMovieTitle(item *MediaItem, filename string) string {
-	// Priority 1: Title field
+	// Priority 1: Title field (with technical tag cleanup)
 	if item.Title != "" && item.Title != "[未命名电影]" {
+		cleaned := r.cleanEmbyTitle(item.Title)
+		if cleaned != "" {
+			return cleaned
+		}
 		return item.Title
 	}
 
@@ -127,6 +135,42 @@ func (r *TitleResolver) extractFromFilename(filename string) string {
 	}
 
 	return ""
+}
+
+// cleanEmbyTitle cleans technical tags from Emby-sourced titles
+// Handles space-separated formats like "照片中的女孩 - 1080p WEB (2022)"
+func (r *TitleResolver) cleanEmbyTitle(title string) string {
+	cleaned := title
+
+	// Remove " - 1080p WEB" style suffixes
+	cleaned = reDashTech.ReplaceAllString(cleaned, "")
+	// Remove quality tags like "1080p WEB-DL"
+	cleaned = reQualityTag.ReplaceAllString(cleaned, " ")
+	// Remove source tags like "BluRay", "WEB-DL"
+	cleaned = reSourceTag.ReplaceAllString(cleaned, " ")
+	// Clean up brackets and parentheses with technical info
+	cleaned = reBracket.ReplaceAllString(cleaned, "")
+	cleaned = reCnBracket.ReplaceAllString(cleaned, "")
+
+	// Extract year if present
+	yearMatch := reYear.FindStringSubmatch(cleaned)
+	year := ""
+	if len(yearMatch) > 1 {
+		year = yearMatch[1]
+		cleaned = reYear.ReplaceAllString(cleaned, "")
+	}
+
+	cleaned = reSpaces.ReplaceAllString(cleaned, " ")
+	cleaned = strings.TrimSpace(cleaned)
+
+	if cleaned == "" {
+		return ""
+	}
+
+	if year != "" {
+		return r.formatTitleWithYear(cleaned, year)
+	}
+	return cleaned
 }
 
 // formatTitleWithYear formats a title with year

@@ -92,6 +92,26 @@ func (c *TelegramClient) SendMessage(chatID int64, text string, parseMode string
 	return c.makeRequest(apiURL, payload)
 }
 
+// SendRichMessage sends a rich message via Telegram Bot API 10.1
+func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	apiURL := fmt.Sprintf("%s/sendRichMessage", c.baseURL)
+
+	richMessage := map[string]interface{}{
+		"markdown": markdown,
+	}
+
+	payload := map[string]interface{}{
+		"chat_id":      chatID,
+		"rich_message": richMessage,
+	}
+
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+
+	return c.makeRequest(apiURL, payload)
+}
+
 // EditMessage edits an existing message
 func (c *TelegramClient) EditMessage(chatID int64, messageID int64, text string, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/editMessageText", c.baseURL)

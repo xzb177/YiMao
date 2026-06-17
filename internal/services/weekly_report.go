@@ -3,6 +3,7 @@ package services
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/pkg/logger"
 	"html"
 	"os"
@@ -435,10 +436,53 @@ func (s *WeeklyReportService) SendReport(userID int64, userName string) error {
 		return nil
 	}
 
-	msg := s.FormatReport(report)
-	_, err = s.telegram.SendMessage(userID, msg, "", nil)
-	if err != nil {
-		return err
+	// Build Rich Message
+	movieQuota := "∞"
+	tvQuota := "∞"
+	if s.quotaService != nil {
+		quotaInfo := s.quotaService.GetQuotaInfo(report.UserID)
+		if quotaInfo != nil {
+			movieRemain := quotaInfo.MovieLimit - quotaInfo.MovieUsed
+			tvRemain := quotaInfo.TVLimit - quotaInfo.TVUsed
+			if quotaInfo.MovieLimit == -1 {
+				movieRemain = -1
+			}
+			if quotaInfo.TVLimit == -1 {
+				tvRemain = -1
+			}
+			if movieRemain >= 0 {
+				movieQuota = fmt.Sprintf("%d", movieRemain)
+			}
+			if tvRemain >= 0 {
+				tvQuota = fmt.Sprintf("%d", tvRemain)
+			}
+		}
+	}
+
+	rmData := richmessage.WeeklyReportData{
+		UserName:        report.UserName,
+		WeekStart:       report.WeekStart.Format("01.02"),
+		WeekEnd:         report.WeekEnd.Format("01.02"),
+		SearchCount:     report.SearchCount,
+		RequestCount:    report.RequestCount,
+		ApprovedCount:   report.ApprovedCount,
+		MovieQuota:      movieQuota,
+		TVQuota:         tvQuota,
+		BehaviorTags:    report.BehaviorTags,
+		TopSearches:     report.TopSearches,
+		GenrePrefs:      report.GenrePrefs,
+		Recommendations: report.Recommendations,
+	}
+	richMsg := richmessage.BuildWeeklyReportCard(rmData)
+	plainText := s.FormatReport(report)
+
+	// Try Rich Message, fall back to plain text
+	if _, err := s.telegram.SendRichMessage(userID, richMsg.Markdown, nil); err != nil {
+		logger.Info("[WeeklyReport] Rich Message failed for user %d: %v, falling back to plain text", userID, err)
+		_, err = s.telegram.SendMessage(userID, plainText, "", nil)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Mark as sent

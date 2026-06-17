@@ -817,6 +817,20 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, telegram *services.TelegramClient) {
 	keyboard := ConvertKeyboard(resp.Keyboard)
 
+	// Rich Message 优先（Bot API 10.1）
+	if resp.RichMessage != "" {
+		logger.Info("[Callback] Sending Rich Message to chat %d, len=%d", ctx.ChatID, len(resp.RichMessage))
+		if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {
+			logger.Info("[Callback] Rich Message failed: %v, falling back to plain text", sendErr)
+			// 回退到普通消息
+			if resp.Text != "" {
+				telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
+			}
+		} else {
+			return
+		}
+	}
+
 	// Use HTML as default parse mode if not specified
 	parseMode := resp.ParseMode
 	if parseMode == "" {

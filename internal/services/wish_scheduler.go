@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 )
@@ -331,6 +332,17 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 		return
 	}
 
+	// Build Rich Message
+	rmData := richmessage.WishFoundData{
+		Title:       item.Title,
+		Year:        item.Year,
+		MediaType:   item.MediaType,
+		Season:      item.Season,
+		FoundDetail: item.FoundDetail,
+	}
+	richMsg := richmessage.BuildWishFoundCard(rmData)
+
+	// Build plain text fallback
 	var b strings.Builder
 	b.WriteString("🎉 你许愿的影片出源啦！\n\n")
 	b.WriteString(fmt.Sprintf("🎬 %s", item.Title))
@@ -345,6 +357,7 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 		b.WriteString("\n📦 " + item.FoundDetail + "\n")
 	}
 	b.WriteString("\n点下面按钮即可发起求片（需要你确认）。")
+	plainText := b.String()
 
 	var keyboard *types.TelegramInlineKeyboard
 	if s.buildRequestButton != nil {
@@ -358,18 +371,22 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 		}
 	}
 
-	if _, err := s.telegram.SendMessage(item.UserID, b.String(), "", keyboard); err != nil {
-		// 坑A：按错误类型分流，避免网络抖动误判为退群而永久丢愿。
-		if isUnreachableErr(err) {
-			logger.Info("[wish] id=%d 发送出源喜报被拒（用户不可达）→ ORPHANED: %v", item.ID, err)
-			if merr := s.wish.MarkOrphaned(item.ID); merr != nil {
-				logger.Info("[wish] id=%d 置 ORPHANED 失败: %v", item.ID, merr)
+	// Try Rich Message, fall back to plain text
+	if _, err := s.telegram.SendRichMessage(item.UserID, richMsg.Markdown, keyboard); err != nil {
+		logger.Info("[wish] Rich Message failed for user %d: %v, falling back to plain text", item.UserID, err)
+		if _, err := s.telegram.SendMessage(item.UserID, plainText, "", keyboard); err != nil {
+			// 坑A：按错误类型分流，避免网络抖动误判为退群而永久丢愿。
+			if isUnreachableErr(err) {
+				logger.Info("[wish] id=%d 发送出源喜报被拒（用户不可达）→ ORPHANED: %v", item.ID, err)
+				if merr := s.wish.MarkOrphaned(item.ID); merr != nil {
+					logger.Info("[wish] id=%d 置 ORPHANED 失败: %v", item.ID, merr)
+				}
+			} else {
+				// 网络/超时/5xx 等临时错误：保持 FOUND，下次重试，不标终态。
+				logger.Info("[wish] id=%d 发送出源喜报临时失败，保留 FOUND 待重试: %v", item.ID, err)
 			}
-		} else {
-			// 网络/超时/5xx 等临时错误：保持 FOUND，下次重试，不标终态。
-			logger.Info("[wish] id=%d 发送出源喜报临时失败，保留 FOUND 待重试: %v", item.ID, err)
+			return
 		}
-		return
 	}
 
 	// 通知发出成功 → FOUND→NOTIFIED（写 notified_at 启动 TTL）。
