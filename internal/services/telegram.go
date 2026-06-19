@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -92,8 +93,18 @@ func (c *TelegramClient) SendMessage(chatID int64, text string, parseMode string
 	return c.makeRequest(apiURL, payload)
 }
 
+// richMessageEnabled returns whether Telegram Rich Message should be used.
+// Default is enabled; set ENABLE_RICH_MESSAGE=false to force plain-message fallback.
+func richMessageEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_RICH_MESSAGE")))
+	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
+}
+
 // SendRichMessage sends a rich message via Telegram Bot API 10.1
 func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	if !richMessageEnabled() {
+		return nil, fmt.Errorf("rich message disabled by ENABLE_RICH_MESSAGE")
+	}
 	apiURL := fmt.Sprintf("%s/sendRichMessage", c.baseURL)
 
 	richMessage := map[string]interface{}{

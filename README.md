@@ -142,7 +142,11 @@ docker compose up -d
 docker compose logs -f
 ```
 
-`docker-compose.yml` 默认使用 `network_mode: host`，数据持久化到 `./data`。如果启用 `/resetpw`，还会挂载 `/var/run/docker.sock` 以便对 MoviePilot 容器执行 `docker exec`；不用密码重置功能可删除该挂载并留空 `MOVIEPILOT_DB_PATH`。
+`docker-compose.yml` 默认使用 `network_mode: host`，数据持久化到 `./data`。出于安全考虑，默认不挂载 Docker socket，`/resetpw` 默认关闭；如需启用密码重置，请额外叠加 `docker-compose.resetpw.yml`：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.resetpw.yml up -d
+```
 
 ### 方式二：本地构建运行
 
@@ -178,8 +182,8 @@ export $(grep -v '^#' .env | xargs)
 | `MOVIEPILOT_URL` | ✅ | `http://localhost:4500` | MoviePilot 地址 |
 | `MOVIEPILOT_API_KEY` | ✅ | — | MoviePilot API Key（候选资源列表依赖此项） |
 | `DOWNLOAD_SAVE_PATH` | | 空 | 自定义下载目录，多实例共用一个 MoviePilot 时区分用 |
-| `MOVIEPILOT_CONTAINER` | 条件 | `moviepilot-v2` | `/resetpw` 使用，MoviePilot 容器名 |
-| `MOVIEPILOT_DB_PATH` | 条件 | 空 | `/resetpw` 使用，MoviePilot 容器内 user.db 路径，如 `/config/user.db` |
+| `MOVIEPILOT_CONTAINER` | 条件 | `moviepilot-v2` | `/resetpw` 使用，MoviePilot 容器名；需叠加 `docker-compose.resetpw.yml` |
+| `MOVIEPILOT_DB_PATH` | 条件 | 空 | `/resetpw` 使用，MoviePilot 容器内 user.db 路径，如 `/config/user.db`；留空则关闭密码重置 |
 
 ### Emby / Jellyfin（可选但推荐）
 
@@ -242,6 +246,7 @@ export $(grep -v '^#' .env | xargs)
 | `LOG_LEVEL` | | `info` | 日志级别：`debug` / `info` / `warn` / `error` |
 | `LOG_PREFIX` | | `YiMao` | 日志前缀 |
 | `LOG_COLOR` | | `false` | 彩色日志输出 |
+| `ENABLE_RICH_MESSAGE` | | `true` | Telegram Rich Message 开关；设为 `false` 强制使用普通消息 fallback |
 | `PUID` / `PGID` | | `0` / `0` | 容器内运行用户 UID/GID（与 `data` 目录权限匹配） |
 
 ---
@@ -257,6 +262,8 @@ export $(grep -v '^#' .env | xargs)
 
 ### 数据持久化
 运行数据（配额、管理员、偏好、反馈、许愿池 SQLite 等）保存在 `DATA_DIR`（容器内默认 `/app/data`，已挂载到 `./data`）。升级前请备份该目录。
+
+用户绑定迁移会强制保证一个 MoviePilot 账号只绑定一个 Telegram 用户；如果检测到历史重复绑定，YiMao 会停止启动并在 `DATA_DIR` 生成 `user_mapping_conflicts_*.json`，请管理员处理冲突后再重启，避免静默丢失映射。
 
 ### 更新
 更新前务必阅读 **[docs/UPDATE.md](docs/UPDATE.md)**，按指引迁移数据后再拉取新镜像 / 重新构建。

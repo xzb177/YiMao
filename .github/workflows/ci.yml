@@ -34,13 +34,20 @@ jobs:
             fi
           fi
 
+      - name: Secret scan
+        run: |
+          if grep -RInE 'TELEGRAM_BOT_TOKEN=[0-9]+:|ghp_[A-Za-z0-9]{20,}' . --exclude-dir=.git --exclude='*.patch'; then
+            echo "Potential secret committed"
+            exit 1
+          fi
+
       - name: Go vet
         run: go vet ./...
 
       - name: Lint
         uses: golangci/golangci-lint-action@v6
         with:
-          version: latest
+          version: v1.64.8
           args: --timeout=5m
 
       - name: Callback completeness check

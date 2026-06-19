@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -31,6 +32,14 @@ type UserMapping struct {
 	LastActive       time.Time    `json:"last_active"`
 }
 
+// UserMappingConflict describes a duplicate MoviePilot account mapping that
+// needs administrator review before unique constraints can be safely enforced.
+type UserMappingConflict struct {
+	Kind     string        `json:"kind"`
+	Value    string        `json:"value"`
+	Mappings []UserMapping `json:"mappings"`
+}
+
 // UserMappingDB handles user mappings between Telegram and MoviePilot using SQLite
 type UserMappingDB struct {
 	db   *sql.DB
@@ -54,7 +63,7 @@ func NewUserMappingDB(dataDir string) (*UserMappingDB, error) {
 	}
 
 	// Create table and enforce one Telegram user per MoviePilot account.
-	if err := createTable(db); err != nil {
+	if err := createTable(db, dataDir); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("创建表失败: %w", err)
 	}
@@ -64,16 +73,18 @@ func NewUserMappingDB(dataDir string) (*UserMappingDB, error) {
 		path: dbPath,
 	}
 
-	// Migrate from JSON if exists
+	// Migrate from JSON if exists. Migration conflicts are fatal: continuing with
+	// an empty or partially migrated mapping table would silently lose ownership.
 	if err := svc.migrateFromJSON(dataDir); err != nil {
-		logger.Info("[UserMappingDB] JSON 迁移警告: %v", err)
+		db.Close()
+		return nil, fmt.Errorf("JSON 迁移失败: %w", err)
 	}
 
 	return svc, nil
 }
 
 // createTable creates the user_mappings table
-func createTable(db *sql.DB) error {
+func createTable(db *sql.DB, dataDir string) error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS user_mappings (
 		telegram_id       INTEGER PRIMARY KEY,
@@ -93,38 +104,124 @@ func createTable(db *sql.DB) error {
 	if _, err := db.Exec(schema); err != nil {
 		return err
 	}
-	if err := deduplicateUserMappings(db); err != nil {
+
+	conflicts, err := detectSQLiteUserMappingConflicts(db)
+	if err != nil {
 		return err
 	}
+	if len(conflicts) > 0 {
+		reportPath, reportErr := writeUserMappingConflictReport(dataDir, "sqlite", conflicts)
+		if reportErr != nil {
+			return fmt.Errorf("检测到重复绑定且冲突报告写入失败: %w", reportErr)
+		}
+		return fmt.Errorf("检测到重复 MoviePilot 绑定，已生成冲突报告: %s", reportPath)
+	}
+
 	uniqueSchema := `
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mp_user_id ON user_mappings(mp_user_id);
 	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mp_username ON user_mappings(mp_username);
 	`
-	_, err := db.Exec(uniqueSchema)
+	_, err = db.Exec(uniqueSchema)
 	return err
 }
 
-func deduplicateUserMappings(db *sql.DB) error {
-	queries := []string{
-		`DELETE FROM user_mappings WHERE rowid IN (
-			SELECT rowid FROM (
-				SELECT rowid, ROW_NUMBER() OVER (PARTITION BY mp_user_id ORDER BY last_active DESC, bound_at DESC, rowid DESC) AS rn
-				FROM user_mappings
-			) WHERE rn > 1
-		);`,
-		`DELETE FROM user_mappings WHERE rowid IN (
-			SELECT rowid FROM (
-				SELECT rowid, ROW_NUMBER() OVER (PARTITION BY mp_username ORDER BY last_active DESC, bound_at DESC, rowid DESC) AS rn
-				FROM user_mappings
-			) WHERE rn > 1
-		);`,
+func detectSQLiteUserMappingConflicts(db *sql.DB) ([]UserMappingConflict, error) {
+	rows, err := db.Query(`
+		SELECT telegram_id, mp_user_id, mp_username, telegram_username,
+		       notify_subscribe, notify_download, notify_transfer, notify_review,
+		       bound_at, last_active
+		FROM user_mappings
+	`)
+	if err != nil {
+		return nil, err
 	}
-	for _, q := range queries {
-		if _, err := db.Exec(q); err != nil {
-			return err
+	defer rows.Close()
+
+	var mappings []UserMapping
+	for rows.Next() {
+		m, err := scanUserMappingRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		mappings = append(mappings, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return detectUserMappingConflicts(mappings), nil
+}
+
+func scanUserMappingRow(rows *sql.Rows) (UserMapping, error) {
+	var m UserMapping
+	var prefs NotifyPrefs
+	var boundAt, lastActive string
+	if err := rows.Scan(
+		&m.TelegramID, &m.MPUserID, &m.MPUsername, &m.TelegramUsername,
+		&prefs.OnSubscribe, &prefs.OnDownload, &prefs.OnTransfer, &prefs.OnReview,
+		&boundAt, &lastActive,
+	); err != nil {
+		return m, err
+	}
+	m.NotifyPrefs = &prefs
+	m.BoundAt, _ = time.Parse(time.RFC3339, boundAt)
+	m.LastActive, _ = time.Parse(time.RFC3339, lastActive)
+	return m, nil
+}
+
+func detectUserMappingConflicts(mappings []UserMapping) []UserMappingConflict {
+	byID := make(map[int64][]UserMapping)
+	byName := make(map[string][]UserMapping)
+	for _, m := range mappings {
+		if m.MPUserID != 0 {
+			byID[m.MPUserID] = append(byID[m.MPUserID], m)
+		}
+		if m.MPUsername != "" {
+			byName[m.MPUsername] = append(byName[m.MPUsername], m)
 		}
 	}
-	return nil
+	var conflicts []UserMappingConflict
+	for id, group := range byID {
+		if len(group) > 1 {
+			conflicts = append(conflicts, UserMappingConflict{Kind: "mp_user_id", Value: fmt.Sprintf("%d", id), Mappings: group})
+		}
+	}
+	for name, group := range byName {
+		if len(group) > 1 {
+			conflicts = append(conflicts, UserMappingConflict{Kind: "mp_username", Value: name, Mappings: group})
+		}
+	}
+	return conflicts
+}
+
+func mustParseRFC3339(value string) time.Time {
+	t, _ := time.Parse(time.RFC3339, value)
+	return t
+}
+
+func writeUserMappingConflictReport(dataDir, source string, conflicts []UserMappingConflict) (string, error) {
+	report := struct {
+		GeneratedAt string                `json:"generated_at"`
+		Source      string                `json:"source"`
+		Note        string                `json:"note"`
+		Conflicts   []UserMappingConflict `json:"conflicts"`
+	}{
+		GeneratedAt: time.Now().Format(time.RFC3339),
+		Source:      source,
+		Note:        "Duplicate MoviePilot mappings detected. Resolve manually before restarting YiMao; no mappings were silently deleted.",
+		Conflicts:   conflicts,
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dataDir, fmt.Sprintf("user_mapping_conflicts_%s.json", time.Now().Format("20060102_150405")))
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 // migrateFromJSON migrates data from legacy JSON file
@@ -163,25 +260,9 @@ func (s *UserMappingDB) migrateFromJSON(dataDir string) error {
 		return nil
 	}
 
-	// Insert records
+	// Normalize JSON records first and detect duplicate MP ownership before any insert.
 	now := time.Now().Format(time.RFC3339)
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-
-	stmt, err := tx.Prepare(`
-		INSERT OR IGNORE INTO user_mappings
-		(telegram_id, mp_user_id, mp_username, telegram_username, bound_at, last_active)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`)
-	if err != nil {
-		tx.Rollback()
-		return err
-	}
-	defer stmt.Close()
-
-	migrated := 0
+	pendingMappings := make([]UserMapping, 0, len(fileData.UserMappings))
 	for tgIDStr, mpID := range fileData.UserMappings {
 		var tgID int64
 		if _, err := fmt.Sscanf(tgIDStr, "%d", &tgID); err != nil || tgID <= 0 {
@@ -192,10 +273,44 @@ func (s *UserMappingDB) migrateFromJSON(dataDir string) error {
 		if mpUsername == "" {
 			mpUsername = fmt.Sprintf("user_%d", mpID)
 		}
+		pendingMappings = append(pendingMappings, UserMapping{
+			TelegramID:       tgID,
+			MPUserID:         mpID,
+			MPUsername:       mpUsername,
+			TelegramUsername: "",
+			BoundAt:          mustParseRFC3339(now),
+			LastActive:       mustParseRFC3339(now),
+		})
+	}
+	if conflicts := detectUserMappingConflicts(pendingMappings); len(conflicts) > 0 {
+		reportPath, reportErr := writeUserMappingConflictReport(dataDir, "json", conflicts)
+		if reportErr != nil {
+			return fmt.Errorf("JSON 映射存在重复绑定且冲突报告写入失败: %w", reportErr)
+		}
+		return fmt.Errorf("JSON 映射存在重复 MoviePilot 绑定，已生成冲突报告: %s", reportPath)
+	}
 
-		if _, err := stmt.Exec(tgID, mpID, mpUsername, "", now, now); err != nil {
-			logger.Info("[UserMappingDB] 迁移记录失败 tg=%d: %v", tgID, err)
-			continue
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+
+	stmt, err := tx.Prepare(`
+		INSERT INTO user_mappings
+		(telegram_id, mp_user_id, mp_username, telegram_username, bound_at, last_active)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`)
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+
+	migrated := 0
+	for _, m := range pendingMappings {
+		if _, err := stmt.Exec(m.TelegramID, m.MPUserID, m.MPUsername, m.TelegramUsername, now, now); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("迁移记录失败 tg=%d: %w", m.TelegramID, err)
 		}
 		migrated++
 	}

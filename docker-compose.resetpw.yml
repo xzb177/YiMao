@@ -1,0 +1,10 @@
+# Optional override for enabling /resetpw.
+# WARNING: mounting docker.sock grants this container control over the Docker host.
+# Use only on trusted hosts, and only if you need MoviePilot password reset.
+services:
+  yimao:
+    environment:
+      - MOVIEPILOT_DB_PATH=${MOVIEPILOT_DB_PATH:-/config/user.db}
+      - MOVIEPILOT_CONTAINER=${MOVIEPILOT_CONTAINER:-moviepilot-v2}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock

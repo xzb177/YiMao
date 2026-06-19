@@ -289,30 +289,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 }
 
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
-	// Auto-bind: only create a fresh MoviePilot account. Never bind to an existing
-	// MoviePilot username without proof of ownership, otherwise a pre-created
-	// tg_<id> account could be hijacked into this Telegram user.
-	if h.userMapping != nil && h.moviepilot != nil {
-		if _, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); !exists {
-			autoUsername := fmt.Sprintf("tg_%d", ctx.UserID)
-			if existing, err := h.moviepilot.GetUserByUsername(autoUsername); err == nil && existing != nil {
-				logger.Info("[AutoBind] Skip auto-bind for user %d: MoviePilot username %s already exists", ctx.UserID, autoUsername)
-			} else {
-				randomPW, err := services.GenerateRandomPassword(16)
-				if err == nil {
-					user, err := h.moviepilot.RegisterUser(autoUsername, randomPW, autoUsername+"@auto.local")
-					if err == nil && user != nil && user.ID > 0 {
-						_ = h.userMapping.AddMapping(ctx.UserID, user.ID, autoUsername)
-						logger.Info("[AutoBind] User %d auto-bound as %s (MP ID:%d)", ctx.UserID, autoUsername, user.ID)
-					} else {
-						logger.Info("[AutoBind] Failed for user %d: %v", ctx.UserID, err)
-					}
-				} else {
-					logger.Info("[AutoBind] Failed to generate password for user %d: %v", ctx.UserID, err)
-				}
-			}
-		}
-	}
+	// /start must be side-effect free. Account creation/binding is handled by the
+	// explicit /link flow so users know their credentials and ownership is clear.
 
 	// 使用 Rich Message 构建欢迎页（Bot API 10.1）
 	isPrivateChat := ctx.ChatType == "private"
