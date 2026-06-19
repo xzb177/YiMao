@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -51,17 +52,7 @@ func HandleCommand(
 		isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
 	case "/status":
-		isAdminStatus := adminService != nil && adminService.IsAdmin(msg.From.ID)
-		var sb strings.Builder
-		sb.WriteString("🤖 <b>云海影视 Bot</b>\n\n")
-		sb.WriteString(fmt.Sprintf("📊 版本: <code>%s</code>\n", "v1.0"))
-		sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
-		sb.WriteString(fmt.Sprintf("👤 当前用户: <code>%d</code>\n", msg.From.ID))
-		sb.WriteString(fmt.Sprintf("💬 聊天类型: <code>%s</code>\n", msg.Chat.Type))
-		if isAdminStatus {
-			sb.WriteString("\n🛡️ 身份: <b>管理员</b>")
-		}
-		telegram.SendMessage(msg.Chat.ID, sb.String(), "HTML", nil)
+		telegram.SendMessage(msg.Chat.ID, BuildStatusMessage(msg, cfg, adminService, userMapping), "HTML", nil)
 	case "/help":
 		SendHelpMessage(telegram, msg.Chat.ID)
 	case "/id":
@@ -422,7 +413,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Text("电影扣 1 配额，剧集扣 3（保护服务器资源），次日 0 点刷新").Newline()
 	msg.Newline()
 	msg.Bold("🔑 账号").Newline()
-	msg.Text("首次使用自动绑定，无需注册。/link 换绑，/resetpw 重置密码").Newline()
+	msg.Text("用 /link 创建或绑定 MoviePilot 账号；/resetpw 重置自己的密码").Newline()
 	msg.Newline()
 	msg.Bold("⌨️ 命令速查").Newline()
 	msg.Text("/start 主菜单  /search 搜片  /ai 今晚看什么").Newline()
@@ -448,4 +439,51 @@ func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMe
 	quotaText := quotaService.GetQuotaText(userID)
 	logger.Info("[QuotaCommand] Sending quota text to user %d", userID)
 	telegram.SendMessage(msg.Chat.ID, quotaText, "", nil)
+}
+
+// BuildStatusMessage builds a lightweight diagnostics panel for /status.
+func BuildStatusMessage(msg *types.TelegramMessage, cfg *config.Config, adminService *services.AdminService, userMapping services.UserMappingStore) string {
+	isAdmin := adminService != nil && msg != nil && adminService.IsAdmin(msg.From.ID)
+	var sb strings.Builder
+	sb.WriteString("🤖 <b>云海影视 Bot</b>\n\n")
+	sb.WriteString("📊 版本: <code>v1.0</code>\n")
+	sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
+	if msg != nil {
+		sb.WriteString(fmt.Sprintf("👤 当前用户: <code>%d</code>\n", msg.From.ID))
+		sb.WriteString(fmt.Sprintf("💬 聊天类型: <code>%s</code>\n", msg.Chat.Type))
+	}
+	if isAdmin {
+		sb.WriteString("🛡️ 身份: <b>管理员</b>\n")
+	}
+
+	if !isAdmin {
+		return sb.String()
+	}
+
+	sb.WriteString("\n<b>部署诊断</b>\n")
+	sb.WriteString(statusLine("MoviePilot URL", cfg != nil && cfg.MoviePilotURL != ""))
+	sb.WriteString(statusLine("MoviePilot API Key", cfg != nil && cfg.MoviePilotAPIKey != ""))
+	sb.WriteString(statusLine("Emby/Jellyfin", cfg != nil && cfg.EmbyURL != "" && cfg.EmbyAPIKey != ""))
+	sb.WriteString(statusLine("AI 开关", os.Getenv("AI_ENABLED") == "true" || os.Getenv("ENABLE_AI") == "true"))
+	sb.WriteString(statusLine("OpenAI 兼容配置", os.Getenv("OPENAI_API_KEY") != "" && os.Getenv("OPENAI_BASE_URL") != ""))
+	sb.WriteString(statusLine("Rich Message", richMessageStatusEnabled()))
+	sb.WriteString(statusLine("Webhook Secret", cfg != nil && cfg.WebhookSecret != ""))
+	sb.WriteString(statusLine("密码重置配置", cfg != nil && cfg.MoviePilotDBPath != "" && os.Getenv("MOVIEPILOT_CONTAINER") != ""))
+	sb.WriteString(statusLine("用户映射存储", userMapping != nil))
+	return sb.String()
+}
+
+func statusLine(name string, ok bool) string {
+	icon := "⚠️"
+	value := "未配置"
+	if ok {
+		icon = "✅"
+		value = "已配置"
+	}
+	return fmt.Sprintf("%s %s：<code>%s</code>\n", icon, name, value)
+}
+
+func richMessageStatusEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_RICH_MESSAGE")))
+	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
 }

@@ -99,7 +99,7 @@ YiMao（云海影视助手）是一个 Telegram Bot，把"找片—求片—等�
 「设置 → 通知设置」可单独开关：入库通知 / 每日推荐 / 周报 / 公告。每日 `DAILY_SUMMARY_HOUR`（默认 21:00）推送当天的入库汇总。
 
 ### 🤖 /status
-查看 Bot 运行状态：版本、服务端时间、当前用户 ID、聊天类型、是否管理员。
+查看 Bot 运行状态：版本、服务端时间、当前用户 ID、聊天类型、是否管理员。管理员会额外看到部署诊断：MoviePilot、Emby、AI、Rich Message、Webhook Secret、密码重置和用户映射存储配置状态。
 
 ---
 

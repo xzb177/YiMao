@@ -123,63 +123,7 @@ func HandleWebhookCallback(
 
 	// Send or edit message
 	if resp != nil {
-		keyboard := ConvertKeyboard(resp.Keyboard)
-
-		// Rich Message 优先（Bot API 10.1）。sendRichMessage 只能发送新消息，不能编辑旧消息；
-		// 因此 Edit/DeleteMessage 语义下先删除旧消息，避免按钮点击后刷屏堆叠。
-		if resp.RichMessage != "" {
-			logger.Info("[Webhook] Sending Rich Message to chat %d, len=%d", ctx.ChatID, len(resp.RichMessage))
-			deletedOriginal := false
-			if resp.Edit || resp.DeleteMessage {
-				if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
-					logger.Info("[Webhook] DeleteMessage before Rich Message error: %v", delErr)
-				} else {
-					deletedOriginal = true
-				}
-			}
-			if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {
-				logger.Info("[Webhook] Rich Message failed: %v, falling back to plain text", sendErr)
-				if resp.Text != "" {
-					if resp.Edit && !deletedOriginal {
-						telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "HTML", keyboard)
-					} else {
-						telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
-					}
-				}
-			}
-		} else {
-			// Use HTML as default parse mode if not specified
-			parseMode := resp.ParseMode
-			if parseMode == "" {
-				parseMode = "HTML"
-			}
-
-			// Check if we need to send a photo
-			if resp.Photo != "" {
-				// Delete the original message first
-				telegram.DeleteMessage(ctx.ChatID, ctx.MessageID)
-				// Send photo with caption and keyboard
-				// Use SendPhotoWithAuth for reliable delivery (downloads and uploads the image)
-				caption := resp.PhotoCaption
-				if caption == "" {
-					caption = resp.Text
-				}
-				logger.Info("[Webhook] Sending photo via proxy upload: %s", resp.Photo)
-				if _, sendErr := telegram.SendPhotoWithAuth(ctx.ChatID, resp.Photo, caption, nil, keyboard); sendErr != nil {
-					logger.Info("[Webhook] SendPhotoWithAuth error: %v, trying URL method", sendErr)
-					// Fallback to URL method if proxy upload fails
-					telegram.SendPhoto(ctx.ChatID, resp.Photo, caption, keyboard)
-				}
-			} else if resp.Text != "" {
-				if resp.Edit {
-					// Edit existing message
-					telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard)
-				} else {
-					// Send new message
-					telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
-				}
-			}
-		}
+		RenderCallbackResponse("[Webhook]", ctx, resp, telegram)
 	}
 
 	w.WriteHeader(http.StatusOK)
