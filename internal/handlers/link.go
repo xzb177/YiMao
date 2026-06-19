@@ -183,6 +183,13 @@ func (h *LinkHandler) HandleResetPW(ctx *callback.Context) (*callback.Response, 
 		"⚠️ 请妥善保管",
 		mpUsername, newPassword, mpUsername, newPassword)
 
+	if ctx.ChatType == "group" || ctx.ChatType == "supergroup" {
+		if _, err := h.telegram.SendMessage(ctx.UserID, text, "HTML", nil); err != nil {
+			return &callback.Response{Text: "🔒 密码已重置，但私聊发送失败。请先私聊机器人发送任意消息。", Edit: true}, nil
+		}
+		return &callback.Response{Text: "✅ 密码已重置，请查看私聊消息", Edit: true}, nil
+	}
+
 	return &callback.Response{
 		Text:      text,
 		Edit:      true,

@@ -22,13 +22,13 @@ type NotifyPrefs struct {
 
 // UserMapping represents a Telegram ↔ MoviePilot user mapping
 type UserMapping struct {
-	TelegramID      int64       `json:"telegram_id"`
-	MPUserID        int64       `json:"mp_user_id"`
-	MPUsername      string      `json:"mp_username"`
-	TelegramUsername string     `json:"telegram_username,omitempty"`
-	NotifyPrefs     *NotifyPrefs `json:"notify_prefs,omitempty"`
-	BoundAt         time.Time   `json:"bound_at"`
-	LastActive      time.Time   `json:"last_active"`
+	TelegramID       int64        `json:"telegram_id"`
+	MPUserID         int64        `json:"mp_user_id"`
+	MPUsername       string       `json:"mp_username"`
+	TelegramUsername string       `json:"telegram_username,omitempty"`
+	NotifyPrefs      *NotifyPrefs `json:"notify_prefs,omitempty"`
+	BoundAt          time.Time    `json:"bound_at"`
+	LastActive       time.Time    `json:"last_active"`
 }
 
 // UserMappingDB handles user mappings between Telegram and MoviePilot using SQLite
@@ -53,7 +53,7 @@ func NewUserMappingDB(dataDir string) (*UserMappingDB, error) {
 		return nil, fmt.Errorf("设置 WAL 模式失败: %w", err)
 	}
 
-	// Create table
+	// Create table and enforce one Telegram user per MoviePilot account.
 	if err := createTable(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("创建表失败: %w", err)
@@ -90,8 +90,41 @@ func createTable(db *sql.DB) error {
 	CREATE INDEX IF NOT EXISTS idx_mp_user_id ON user_mappings(mp_user_id);
 	CREATE INDEX IF NOT EXISTS idx_mp_username ON user_mappings(mp_username);
 	`
-	_, err := db.Exec(schema)
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
+	if err := deduplicateUserMappings(db); err != nil {
+		return err
+	}
+	uniqueSchema := `
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mp_user_id ON user_mappings(mp_user_id);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_mp_username ON user_mappings(mp_username);
+	`
+	_, err := db.Exec(uniqueSchema)
 	return err
+}
+
+func deduplicateUserMappings(db *sql.DB) error {
+	queries := []string{
+		`DELETE FROM user_mappings WHERE rowid IN (
+			SELECT rowid FROM (
+				SELECT rowid, ROW_NUMBER() OVER (PARTITION BY mp_user_id ORDER BY last_active DESC, bound_at DESC, rowid DESC) AS rn
+				FROM user_mappings
+			) WHERE rn > 1
+		);`,
+		`DELETE FROM user_mappings WHERE rowid IN (
+			SELECT rowid FROM (
+				SELECT rowid, ROW_NUMBER() OVER (PARTITION BY mp_username ORDER BY last_active DESC, bound_at DESC, rowid DESC) AS rn
+				FROM user_mappings
+			) WHERE rn > 1
+		);`,
+	}
+	for _, q := range queries {
+		if _, err := db.Exec(q); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // migrateFromJSON migrates data from legacy JSON file
@@ -138,7 +171,7 @@ func (s *UserMappingDB) migrateFromJSON(dataDir string) error {
 	}
 
 	stmt, err := tx.Prepare(`
-		INSERT OR IGNORE INTO user_mappings 
+		INSERT OR IGNORE INTO user_mappings
 		(telegram_id, mp_user_id, mp_username, telegram_username, bound_at, last_active)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`)
@@ -151,7 +184,10 @@ func (s *UserMappingDB) migrateFromJSON(dataDir string) error {
 	migrated := 0
 	for tgIDStr, mpID := range fileData.UserMappings {
 		var tgID int64
-		fmt.Sscanf(tgIDStr, "%d", &tgID)
+		if _, err := fmt.Sscanf(tgIDStr, "%d", &tgID); err != nil || tgID <= 0 {
+			logger.Info("[UserMappingDB] 跳过非法 Telegram ID: %s", tgIDStr)
+			continue
+		}
 		mpUsername := fileData.Usernames[tgIDStr]
 		if mpUsername == "" {
 			mpUsername = fmt.Sprintf("user_%d", mpID)
@@ -253,11 +289,22 @@ func (s *UserMappingDB) AddMapping(telegramID int64, mpUserID int64, mpUsername 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if owner, exists := s.getTelegramIDByMoviePilotIDLocked(mpUserID); exists && owner != telegramID {
+		return fmt.Errorf("MoviePilot 用户 ID %d 已绑定其他 Telegram 用户", mpUserID)
+	}
+	if owner, exists := s.getTelegramIDByMoviePilotUsernameLocked(mpUsername); exists && owner != telegramID {
+		return fmt.Errorf("MoviePilot 用户名 %s 已绑定其他 Telegram 用户", mpUsername)
+	}
+
 	now := time.Now().Format(time.RFC3339)
 	_, err := s.db.Exec(`
-		INSERT OR REPLACE INTO user_mappings 
+		INSERT INTO user_mappings
 		(telegram_id, mp_user_id, mp_username, bound_at, last_active)
 		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT(telegram_id) DO UPDATE SET
+			mp_user_id = excluded.mp_user_id,
+			mp_username = excluded.mp_username,
+			last_active = excluded.last_active
 	`, telegramID, mpUserID, mpUsername, now, now)
 
 	if err != nil {
@@ -294,7 +341,10 @@ func (s *UserMappingDB) RemoveMapping(telegramID int64) error {
 func (s *UserMappingDB) GetTelegramIDByMoviePilotUsername(username string) (int64, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.getTelegramIDByMoviePilotUsernameLocked(username)
+}
 
+func (s *UserMappingDB) getTelegramIDByMoviePilotUsernameLocked(username string) (int64, bool) {
 	var telegramID int64
 	err := s.db.QueryRow(
 		"SELECT telegram_id FROM user_mappings WHERE mp_username = ?",
@@ -331,7 +381,7 @@ func (s *UserMappingDB) SetNotifyPrefs(telegramID int64, prefs *NotifyPrefs) err
 	defer s.mu.Unlock()
 
 	_, err := s.db.Exec(`
-		UPDATE user_mappings 
+		UPDATE user_mappings
 		SET notify_subscribe = ?, notify_download = ?, notify_transfer = ?, notify_review = ?
 		WHERE telegram_id = ?
 	`, prefs.OnSubscribe, prefs.OnDownload, prefs.OnTransfer, prefs.OnReview, telegramID)
@@ -409,11 +459,14 @@ func (s *UserMappingDB) GetTelegramIDByJellyseerrID(jellyseerrID int64) (int64, 
 	// In the new schema, mp_user_id = jellyseerr ID (same MoviePilot user)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+	return s.getTelegramIDByMoviePilotIDLocked(jellyseerrID)
+}
 
+func (s *UserMappingDB) getTelegramIDByMoviePilotIDLocked(mpUserID int64) (int64, bool) {
 	var telegramID int64
 	err := s.db.QueryRow(
 		"SELECT telegram_id FROM user_mappings WHERE mp_user_id = ?",
-		jellyseerrID,
+		mpUserID,
 	).Scan(&telegramID)
 
 	if err != nil {

@@ -27,7 +27,7 @@
 **文件**: `.env`
 **暴露内容**:
 ```
-TELEGRAM_BOT_TOKEN=8419558809:AAH7oe0_PWRWbhpos3zUvZOp5cbVk-SG59Q
+TELEGRAM_BOT_TOKEN=<redacted-example-token>
 JELLYSEERR_API_KEY=...
 ZHIPU_API_KEY=...
 ```

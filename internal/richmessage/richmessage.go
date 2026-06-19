@@ -25,6 +25,44 @@ func NewBuilder() *Builder {
 	return &Builder{}
 }
 
+func escapeMarkdownInline(text string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\",
+		"*", "\\*",
+		"_", "\\_",
+		"[", "\\[",
+		"]", "\\]",
+		"(", "\\(",
+		")", "\\)",
+		"~", "\\~",
+		"`", "\\`",
+		"#", "\\#",
+		"+", "\\+",
+		"-", "\\-",
+		"=", "\\=",
+		"|", "\\|",
+		"{", "\\{",
+		"}", "\\}",
+		".", "\\.",
+		"!", "\\!",
+	)
+	return replacer.Replace(text)
+}
+
+func escapeTableCell(text string) string {
+	text = strings.ReplaceAll(text, "\r", " ")
+	text = strings.ReplaceAll(text, "\n", " ")
+	return escapeMarkdownInline(text)
+}
+
+func escapeTableCells(values []string) []string {
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = escapeTableCell(v)
+	}
+	return out
+}
+
 // Heading adds a heading (level 1-6)
 func (b *Builder) Heading(text string, level int) *Builder {
 	// Validate level
@@ -34,17 +72,17 @@ func (b *Builder) Heading(text string, level int) *Builder {
 	if level > 6 {
 		level = 6
 	}
-	
+
 	b.content.WriteString(strings.Repeat("#", level))
 	b.content.WriteString(" ")
-	b.content.WriteString(text)
+	b.content.WriteString(escapeMarkdownInline(text))
 	b.content.WriteString("\n\n")
 	return b
 }
 
 // Paragraph adds a paragraph
 func (b *Builder) Paragraph(text string) *Builder {
-	b.content.WriteString(text)
+	b.content.WriteString(escapeMarkdownInline(text))
 	b.content.WriteString("\n\n")
 	return b
 }
@@ -52,7 +90,7 @@ func (b *Builder) Paragraph(text string) *Builder {
 // BoldParagraph adds a bold paragraph
 func (b *Builder) BoldParagraph(text string) *Builder {
 	b.content.WriteString("**")
-	b.content.WriteString(text)
+	b.content.WriteString(escapeMarkdownInline(text))
 	b.content.WriteString("**\n\n")
 	return b
 }
@@ -60,7 +98,7 @@ func (b *Builder) BoldParagraph(text string) *Builder {
 // Italic adds an italic paragraph
 func (b *Builder) Italic(text string) *Builder {
 	b.content.WriteString("*")
-	b.content.WriteString(text)
+	b.content.WriteString(escapeMarkdownInline(text))
 	b.content.WriteString("*\n\n")
 	return b
 }
@@ -71,26 +109,26 @@ func (b *Builder) Table(headers []string, rows [][]string) *Builder {
 	if len(headers) == 0 {
 		return b
 	}
-	
+
 	// Header row
 	b.content.WriteString("| ")
-	b.content.WriteString(strings.Join(headers, " | "))
+	b.content.WriteString(strings.Join(escapeTableCells(headers), " | "))
 	b.content.WriteString(" |\n")
-	
+
 	// Separator row
 	b.content.WriteString("|")
 	for range headers {
 		b.content.WriteString("------|")
 	}
 	b.content.WriteString("\n")
-	
+
 	// Data rows
 	for _, row := range rows {
 		b.content.WriteString("| ")
-		b.content.WriteString(strings.Join(row, " | "))
+		b.content.WriteString(strings.Join(escapeTableCells(row), " | "))
 		b.content.WriteString(" |\n")
 	}
-	
+
 	b.content.WriteString("\n")
 	return b
 }
@@ -103,11 +141,11 @@ func (b *Builder) Details(summary string, content string, isOpen bool) *Builder 
 	} else {
 		b.content.WriteString("<details><summary>")
 	}
-	
+
 	// HTML escape summary to prevent XSS
 	b.content.WriteString(html.EscapeString(summary))
 	b.content.WriteString("</summary>\n\n")
-	
+
 	// HTML escape content to prevent XSS
 	b.content.WriteString(html.EscapeString(content))
 	b.content.WriteString("\n\n</details>\n\n")
@@ -152,45 +190,45 @@ func SendRichMessage(botToken string, chatID int64, msg RichMessage) error {
 	if msg.Markdown == "" {
 		return fmt.Errorf("rich message markdown is empty")
 	}
-	
+
 	url := fmt.Sprintf("https://api.telegram.org/bot%s/sendRichMessage", botToken)
-	
+
 	payload := map[string]interface{}{
 		"chat_id":      chatID,
 		"rich_message": msg,
 	}
-	
+
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return fmt.Errorf("marshal error: %w", err)
 	}
-	
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(url, "application/json", strings.NewReader(string(data)))
 	if err != nil {
 		return fmt.Errorf("request error: %w", err)
 	}
 	defer resp.Body.Close()
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("read response error: %w", err)
 	}
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
-	
+
 	// Parse response to check success
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
 		return fmt.Errorf("parse response error: %w", err)
 	}
-	
+
 	if ok, okExists := result["ok"].(bool); !okExists || !ok {
 		description, _ := result["description"].(string)
 		return fmt.Errorf("API returned error: %s", description)
 	}
-	
+
 	return nil
 }

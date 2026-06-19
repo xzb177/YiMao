@@ -266,6 +266,18 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 	s.mu.Lock()
 
 	telegramKey := fmt.Sprintf("%d", telegramID)
+	if owner, exists := s.reverseMap[jellyseerrID]; exists && owner != telegramKey {
+		s.mu.Unlock()
+		return fmt.Errorf("MoviePilot 用户 ID %d 已绑定其他 Telegram 用户", jellyseerrID)
+	}
+	if jellyseerrUsername != "" {
+		for existingTelegram, existingUsername := range s.usernames {
+			if existingUsername == jellyseerrUsername && existingTelegram != telegramKey {
+				s.mu.Unlock()
+				return fmt.Errorf("MoviePilot 用户名 %s 已绑定其他 Telegram 用户", jellyseerrUsername)
+			}
+		}
+	}
 	s.mappings[telegramKey] = jellyseerrID
 
 	// Update reverse mapping
@@ -290,7 +302,6 @@ func (s *UserMappingService) AddMapping(telegramID int64, jellyseerrID int64, je
 // RemoveMapping removes a user mapping
 func (s *UserMappingService) RemoveMapping(telegramID int64) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	telegramKey := fmt.Sprintf("%d", telegramID)
 	moviePilotID, exists := s.mappings[telegramKey]

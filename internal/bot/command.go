@@ -108,7 +108,7 @@ func HandleCommand(
 	case "/link":
 		HandleLinkCommand(telegram, msg, bindingRequest, cfg, userMapping)
 	case "/resetpw":
-		HandleResetPasswordCommand(telegram, msg, cfg, userMapping)
+		HandleResetPasswordCommand(telegram, msg, cfg, userMapping, adminService)
 	case "/unlink":
 		if userMapping == nil {
 			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
@@ -180,12 +180,16 @@ func resetLinkAttempts(userID int64) {
 	delete(linkBlocked, userID)
 }
 
-// HandleLinkCommand handles /link command with optional username and password
-// Also supports direct credential input: "username password" (without /link prefix)
+// HandleLinkCommand handles /link command with optional username and password.
+// New MoviePilot users can be auto-created; existing MoviePilot users must verify password.
 func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping services.UserMappingStore) {
 	logger.Info("[LinkCommand] Processing /link command from user %d", msg.From.ID)
 
-	// 防暴力破解：检查是否被锁定
+	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护账号安全，请私聊机器人绑定 MoviePilot 账号", "", nil)
+		return
+	}
+
 	if blocked, remaining := checkLinkRateLimit(msg.From.ID); blocked {
 		minutes := int(remaining.Minutes()) + 1
 		telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("⏱️ 绑定尝试次数过多，请 %d 分钟后再试", minutes), "", nil)
@@ -193,26 +197,26 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	parts := strings.Fields(msg.Text)
-	logger.Info("[LinkCommand] Parsed parts: %v (len=%d)", parts, len(parts))
+	logger.Info("[LinkCommand] Parsed parts: len=%d", len(parts))
 
-	// Check if user is already linked
-	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
-		logger.Info("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
-		text := "✅ 账号已绑定\n\n如需更换账号，请先联系管理员解绑"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+	if userMapping == nil {
+		telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
 		return
 	}
 
-	// Determine if this is a /link command or direct credentials
-	startIndex := 0
-	if len(parts) > 0 && strings.HasPrefix(parts[0], "/link") {
-		startIndex = 1 // Skip "/link" prefix
+	if mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID); exists {
+		logger.Info("[LinkCommand] User %d already linked to MoviePilot ID %d", msg.From.ID, mpID)
+		telegram.SendMessage(msg.Chat.ID, "✅ 账号已绑定\n\n如需更换账号，请先联系管理员解绑", "", nil)
+		return
 	}
 
-	// Extract username and password
+	startIndex := 0
+	if len(parts) > 0 && strings.HasPrefix(parts[0], "/link") {
+		startIndex = 1
+	}
+
 	if len(parts) <= startIndex {
-		logger.Info("[LinkCommand] No credentials provided, showing help")
-		text := "🔗 绑定 MoviePilot 账号\n\n/link 用户名\n\n示例：/link cabbeenpoom\n\n💡 首次使用会自动创建账号，不需要密码"
+		text := "🔗 绑定 MoviePilot 账号\n\n新用户：\n/link 用户名\n\n已有 MoviePilot 用户：\n/link 用户名 密码\n\n💡 新用户会自动创建账号；已有用户必须校验密码，防止被冒用绑定。"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 		return
 	}
@@ -222,75 +226,104 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	if len(parts) > startIndex+1 {
 		password = strings.Join(parts[startIndex+1:], " ")
 	}
-	_ = password // password no longer required for binding
-	logger.Info("[LinkCommand] Processing link request for user")
 
-	// Validate and sanitize inputs
 	sanitizedUsername, err := validation.SanitizeUsername(username)
 	if err != nil {
 		logger.Info("[LinkCommand] Invalid username: %v", err)
-		text := "❌ 用户名格式无效"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		recordLinkFailure(msg.From.ID)
+		telegram.SendMessage(msg.Chat.ID, "❌ 用户名格式无效", "", nil)
 		return
 	}
 
-	logger.Info("[LinkCommand] Sanitized inputs: %s", sanitizedUsername)
-
-	// Find user in MoviePilot (no password verification)
 	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
-	userID, err := mpClient.EnsureUser(sanitizedUsername)
-	if err != nil {
-		logger.Info("[LinkCommand] EnsureUser failed for %s: %v", sanitizedUsername, err)
-		text := "❌ 绑定失败：" + err.Error()
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
-		return
+	var userID int64
+	autoCreated := false
+	createdPassword := ""
+
+	user, err := mpClient.GetUserByUsername(sanitizedUsername)
+	if err == nil && user != nil {
+		if strings.TrimSpace(password) == "" {
+			recordLinkFailure(msg.From.ID)
+			telegram.SendMessage(msg.Chat.ID, "🔐 该 MoviePilot 用户已存在。为了防止冒用绑定，请使用：\n\n/link 用户名 密码", "", nil)
+			return
+		}
+		if _, err := mpClient.LoginUser(sanitizedUsername, password); err != nil {
+			logger.Info("[LinkCommand] Password verification failed for %s: %v", sanitizedUsername, err)
+			recordLinkFailure(msg.From.ID)
+			telegram.SendMessage(msg.Chat.ID, "❌ 账号或密码验证失败", "", nil)
+			return
+		}
+		userID = user.ID
+	} else {
+		createdPassword = strings.TrimSpace(password)
+		if createdPassword == "" {
+			createdPassword, err = services.GenerateRandomPassword(16)
+			if err != nil {
+				telegram.SendMessage(msg.Chat.ID, "❌ 生成初始密码失败，请稍后重试", "", nil)
+				return
+			}
+		}
+		newUser, err := mpClient.RegisterUser(sanitizedUsername, createdPassword, sanitizedUsername+"@auto.local")
+		if err != nil {
+			logger.Info("[LinkCommand] RegisterUser failed for %s: %v", sanitizedUsername, err)
+			recordLinkFailure(msg.From.ID)
+			telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败："+err.Error(), "", nil)
+			return
+		}
+		userID = newUser.ID
+		autoCreated = true
 	}
 
-	// Check if userID is valid (not 0)
 	if userID == 0 {
-		logger.Info("[LinkCommand] Authentication returned invalid userID 0 for %s", sanitizedUsername)
-		text := "❌ 绑定失败：无法获取用户ID，请稍后重试"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败：无法获取用户ID，请稍后重试", "", nil)
 		return
 	}
 
-	logger.Info("[LinkCommand] Authentication successful, userID=%d", userID)
+	if owner, exists := userMapping.GetTelegramIDByJellyseerrID(userID); exists && owner != msg.From.ID {
+		logger.Info("[LinkCommand] MoviePilot user ID %d already linked to Telegram %d", userID, owner)
+		telegram.SendMessage(msg.Chat.ID, "❌ 该 MoviePilot 账号已绑定其他 Telegram 用户，请联系管理员处理", "", nil)
+		return
+	}
+	if owner, exists := userMapping.GetTelegramIDByMoviePilotUsername(sanitizedUsername); exists && owner != msg.From.ID {
+		logger.Info("[LinkCommand] MoviePilot username %s already linked to Telegram %d", sanitizedUsername, owner)
+		telegram.SendMessage(msg.Chat.ID, "❌ 该 MoviePilot 账号已绑定其他 Telegram 用户，请联系管理员处理", "", nil)
+		return
+	}
 
-	// Save mapping using the provided userMapping service
-	logger.Info("[LinkCommand] Calling AddMapping...")
 	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
 		logger.Info("[LinkCommand] Failed to save mapping: %v", err)
-		text := "❌ 绑定失败：无法保存映射"
-		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败："+err.Error(), "", nil)
 		return
 	}
 
-	logger.Info("[LinkCommand] AddMapping completed, sending success message")
 	resetLinkAttempts(msg.From.ID)
-	text := "✅ 绑定成功！现在可以求片了～"
-	if _, err := telegram.SendMessage(msg.Chat.ID, text, "", nil); err != nil {
-		logger.Info("[LinkCommand] Failed to send success message: %v", err)
+	if autoCreated {
+		text := fmt.Sprintf("✅ 绑定成功，已为你自动创建 MoviePilot 账号！\n\n👤 用户名：<code>%s</code>\n🔐 初始密码：<code>%s</code>\n\n⚠️ 请妥善保存，建议登录后自行修改密码。", sanitizedUsername, createdPassword)
+		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
+		return
 	}
+	telegram.SendMessage(msg.Chat.ID, "✅ 绑定成功！现在可以求片了～", "", nil)
 }
 
 // HandleResetPasswordCommand handles /resetpw command
 // Resets the MoviePilot user's password to a random one and sends it to the user.
-func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
+func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore, adminService *services.AdminService) {
 	logger.Info("[ResetPW] Processing /resetpw from user %d", msg.From.ID)
+	isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
 
-	// Rate limit check (reuse link rate limiter)
 	if blocked, remaining := checkLinkRateLimit(msg.From.ID); blocked {
 		minutes := int(remaining.Minutes()) + 1
 		telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("⏱️ 操作过于频繁，请 %d 分钟后再试", minutes), "", nil)
 		return
 	}
 
-	// Determine the MoviePilot username
 	var mpUsername string
-
 	parts := strings.Fields(msg.Text)
 	if len(parts) > 1 {
-		// User provided a username: /resetpw username
+		if !isAdmin {
+			telegram.SendMessage(msg.Chat.ID, "🔒 普通用户只能重置自己已绑定的 MoviePilot 账号。请使用 /resetpw", "", nil)
+			return
+		}
 		sanitized, err := validation.SanitizeUsername(parts[1])
 		if err != nil {
 			telegram.SendMessage(msg.Chat.ID, "❌ 用户名格式无效", "", nil)
@@ -298,45 +331,39 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 		}
 		mpUsername = sanitized
 	} else {
-		// No username provided — try to get from linked account
 		if userMapping == nil {
 			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
 			return
 		}
 		mpID, exists := userMapping.GetMoviePilotUserID(msg.From.ID)
 		if !exists || mpID == 0 {
-			text := "🔗 请先绑定账号，或指定用户名：\n\n/resetpw 用户名\n\n示例：/resetpw cabbeenpoom"
-			telegram.SendMessage(msg.Chat.ID, text, "", nil)
+			telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号，然后使用 /resetpw 重置自己的密码", "", nil)
 			return
 		}
-		// Get username from mapping
 		name, err := userMapping.GetMoviePilotUsername(msg.From.ID)
 		if err != nil || name == "" {
-			telegram.SendMessage(msg.Chat.ID, "❌ 无法获取绑定的用户名，请用：/resetpw 用户名", "", nil)
+			telegram.SendMessage(msg.Chat.ID, "❌ 无法获取绑定的用户名，请联系管理员", "", nil)
 			return
 		}
 		mpUsername = name
 	}
 
-	// Check if DB path is configured
 	if cfg.MoviePilotDBPath == "" {
-		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置功能未配置，请联系管理员", "", nil)
+		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置功能未配置，请联系管理员设置 MOVIEPILOT_DB_PATH", "", nil)
 		return
 	}
 
-	// Reset password
 	mpClient := services.NewMoviePilotClient(cfg.MoviePilotURL, cfg.MoviePilotAPIKey, cfg.DownloadSavePath)
 	newPassword, err := mpClient.ResetUserPassword(cfg.MoviePilotDBPath, mpUsername)
 	if err != nil {
-		logger.Info("[ResetPW] Failed to reset password for %s: %v", mpUsername, err)
+		logger.Info("[ResetPW] Failed to reset password for %s by tg=%d admin=%v: %v", mpUsername, msg.From.ID, isAdmin, err)
 		recordLinkFailure(msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败："+err.Error(), "", nil)
 		return
 	}
-
+	logger.Info("[ResetPW] Password reset completed for %s by tg=%d admin=%v", mpUsername, msg.From.ID, isAdmin)
 	resetLinkAttempts(msg.From.ID)
 
-	// Send new password to user (private message for security)
 	text := fmt.Sprintf("🔑 密码重置成功！\n\n"+
 		"👤 用户名：<code>%s</code>\n"+
 		"🔐 新密码：<code>%s</code>\n\n"+
@@ -344,12 +371,10 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 		"⚠️ 请妥善保管，此消息不会重复发送",
 		mpUsername, newPassword, mpUsername, newPassword)
 
-	// Try private chat first, fall back to current chat
 	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
-		// Security: send password in private chat, not group
 		privMsg, err := telegram.SendMessage(msg.From.ID, text, "HTML", nil)
 		if err != nil || privMsg == nil {
-			telegram.SendMessage(msg.Chat.ID, "🔒 请先私聊发送任意消息，然后再次执行 /resetpw", "", nil)
+			telegram.SendMessage(msg.Chat.ID, "🔒 密码已重置，但私聊发送失败。请先私聊机器人发送任意消息。", "", nil)
 			return
 		}
 		telegram.SendMessage(msg.Chat.ID, "✅ 密码已重置，请查看私聊消息", "", nil)

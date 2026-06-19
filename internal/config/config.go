@@ -23,9 +23,9 @@ type Config struct {
 	DownloadSavePath string // Download save path for subscriptions (optional)
 
 	// Emby (optional)
-	EmbyURL           string
-	EmbyAPIKey        string
-	EmbyUserID        string // Emby user ID for API calls (auto-discovered if empty)
+	EmbyURL    string
+	EmbyAPIKey string
+	EmbyUserID string // Emby user ID for API calls (auto-discovered if empty)
 	// EmbySkipTLSVerify disables TLS certificate verification for Emby requests.
 	// Default false (secure). Only enable for trusted self-signed/origin certs.
 	EmbySkipTLSVerify bool
@@ -133,7 +133,7 @@ func Load() (*Config, error) {
 		DataDir:               getEnv("DATA_DIR", "/app/data"),
 		MaxSessionAge:         getEnvInt("MAX_SESSION_AGE", 24),
 		MaxSessions:           getEnvInt("MAX_SESSIONS", 1000),
-		EnableAI:              getEnvBool("ENABLE_AI", true),
+		EnableAI:              getEnvBoolFirst(false, "AI_ENABLED", "ENABLE_AI"),
 		EnableTrending:        getEnvBool("ENABLE_TRENDING", true),
 		EnableHotTV:           getEnvBool("ENABLE_HOT_TV", true),
 		EnableNewMovies:       getEnvBool("ENABLE_NEW_MOVIES", true),
@@ -444,6 +444,15 @@ func getEnvInt(key string, defaultValue int) int {
 func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		return value == "true" || value == "1" || value == "yes"
+	}
+	return defaultValue
+}
+
+func getEnvBoolFirst(defaultValue bool, keys ...string) bool {
+	for _, key := range keys {
+		if value := os.Getenv(key); value != "" {
+			return value == "true" || value == "1" || value == "yes"
+		}
 	}
 	return defaultValue
 }

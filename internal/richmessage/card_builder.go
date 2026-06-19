@@ -20,14 +20,14 @@ type MediaInfo struct {
 // BuildMediaInfoCard builds a rich media info card
 func BuildMediaInfoCard(info MediaInfo) RichMessage {
 	builder := NewBuilder()
-	
+
 	// Heading (handle empty title)
 	title := info.Title
 	if title == "" {
 		title = "未知影视"
 	}
 	builder.Heading(fmt.Sprintf("📺 《%s》", title), 2)
-	
+
 	// Info table
 	headers := []string{"项目", "详情"}
 	rows := [][]string{
@@ -36,12 +36,12 @@ func BuildMediaInfoCard(info MediaInfo) RichMessage {
 		{"类型", strings.Join(info.Genres, "/")},
 	}
 	builder.Table(headers, rows)
-	
+
 	// Overview in collapsible section (closed by default)
 	if info.Overview != "" {
 		builder.Details("📝 剧情简介（点击展开）", info.Overview, false)
 	}
-	
+
 	return builder.Build()
 }
 
@@ -101,17 +101,17 @@ type DailySummarySeries struct {
 
 // WeeklyReportData holds data for the weekly report card
 type WeeklyReportData struct {
-	UserName      string
-	WeekStart     string
-	WeekEnd       string
-	SearchCount   int
-	RequestCount  int
-	ApprovedCount int
-	MovieQuota    string // "∞" or number
-	TVQuota       string // "∞" or number
-	BehaviorTags  []string
-	TopSearches   []string
-	GenrePrefs    map[string]int
+	UserName        string
+	WeekStart       string
+	WeekEnd         string
+	SearchCount     int
+	RequestCount    int
+	ApprovedCount   int
+	MovieQuota      string // "∞" or number
+	TVQuota         string // "∞" or number
+	BehaviorTags    []string
+	TopSearches     []string
+	GenrePrefs      map[string]int
 	Recommendations []string
 }
 
@@ -132,10 +132,10 @@ type WishFoundData struct {
 
 // InstantNotifyData holds data for an instant notification card
 type InstantNotifyData struct {
-	Title       string
-	Year        int
-	SeriesName  string
-	SeasonNum   int
+	Title        string
+	Year         int
+	SeriesName   string
+	SeasonNum    int
 	EpisodeStart int
 	EpisodeEnd   int
 	EpisodeCount int
@@ -368,10 +368,10 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 // BuildSubscriptionDashboard builds a subscription dashboard
 func BuildSubscriptionDashboard(subs []SubscriptionStatus, todayAdded, weekDownload int) RichMessage {
 	builder := NewBuilder()
-	
+
 	// Heading
 	builder.Heading("📋 我的订阅状态", 2)
-	
+
 	// Handle empty subs
 	if len(subs) == 0 {
 		builder.Paragraph("暂无订阅")
@@ -379,19 +379,19 @@ func BuildSubscriptionDashboard(subs []SubscriptionStatus, todayAdded, weekDownl
 		// Subscription table
 		headers := []string{"影视", "状态", "进度"}
 		rows := make([][]string, len(subs))
-		
+
 		for i, sub := range subs {
 			// Build progress bar
 			progressBar := buildProgressBar(sub.Progress)
 			rows[i] = []string{sub.Name, sub.Status, progressBar}
 		}
-		
+
 		builder.Table(headers, rows)
 	}
-	
+
 	// Summary
 	builder.Paragraph(fmt.Sprintf("📊 今日新增：%d 部 | 本周下载：%d 部", todayAdded, weekDownload))
-	
+
 	return builder.Build()
 }
 
@@ -403,10 +403,10 @@ func buildProgressBar(progress int) string {
 	if progress > 100 {
 		progress = 100
 	}
-	
+
 	filled := progress / 10
 	empty := 10 - filled
-	
+
 	bar := strings.Repeat("█", filled) + strings.Repeat("░", empty)
 	return fmt.Sprintf("%s %d%%", bar, progress)
 }

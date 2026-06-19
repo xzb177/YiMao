@@ -49,7 +49,7 @@ func GetManager() *Manager {
 
 	// 支持手动声明 AI 可用（适用于 Mimo 等非 Zhipu/Claude 提供商）
 	// 设 AI_ENABLED=true 让 AI 按钮显示，同时走 NewAgent 完整初始化。
-	if os.Getenv("AI_ENABLED") == "true" {
+	if os.Getenv("AI_ENABLED") == "true" || os.Getenv("ENABLE_AI") == "true" {
 		agent := NewAgent("")
 		mgr := &Manager{
 			agent:   agent,

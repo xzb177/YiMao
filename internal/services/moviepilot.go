@@ -1175,32 +1175,38 @@ func (c *MoviePilotClient) LoginUser(username, password string) (string, error) 
 	return result.AccessToken, nil
 }
 
-// Authenticate verifies user credentials and returns the user ID.
-// If the user doesn't exist, it registers a new user (no password verification for existing users).
+// Authenticate verifies MoviePilot credentials and returns the user ID.
+// Existing users must pass MoviePilot login verification; new users are registered
+// with the provided password. Prefer explicit call sites over this legacy helper.
 func (c *MoviePilotClient) Authenticate(username, password string) (int64, error) {
-	// First try to get existing user
 	user, err := c.GetUserByUsername(username)
 	if err == nil && user != nil {
-		// User exists — bind directly, no password check
+		if strings.TrimSpace(password) == "" {
+			return 0, fmt.Errorf("password required for existing user")
+		}
+		if _, err := c.LoginUser(username, password); err != nil {
+			return 0, fmt.Errorf("invalid credentials: %w", err)
+		}
 		return user.ID, nil
 	}
 
-	// User doesn't exist, register new user
+	if strings.TrimSpace(password) == "" {
+		return 0, fmt.Errorf("password required for new user")
+	}
 	newUser, err := c.RegisterUser(username, password, "")
 	if err != nil {
 		return 0, fmt.Errorf("registration failed: %w", err)
 	}
-
 	return newUser.ID, nil
 }
 
-// EnsureUser creates a MoviePilot user if not exists, returns the user ID.
-// Used for auto-binding: no password verification, auto-registers with random password.
+// EnsureUser creates a MoviePilot user if it does not already exist, returns the user ID.
+// Deprecated: existing users require explicit ownership proof; use RegisterUser for
+// auto-created accounts and LoginUser for existing-account binding.
 func (c *MoviePilotClient) EnsureUser(username string) (int64, error) {
-	// Try existing user first
-	user, err := c.GetUserByUsername(username)
-	if err == nil && user != nil {
-		return user.ID, nil
+	// Never silently bind an existing MoviePilot user.
+	if user, err := c.GetUserByUsername(username); err == nil && user != nil {
+		return 0, fmt.Errorf("user %s already exists; password verification is required", username)
 	}
 
 	// User doesn't exist, auto-register with random password

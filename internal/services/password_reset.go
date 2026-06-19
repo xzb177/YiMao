@@ -2,8 +2,10 @@ package services
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -28,32 +30,56 @@ func GenerateRandomPassword(length int) (string, error) {
 	return sb.String(), nil
 }
 
+func pythonStringLiteral(v string) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
 // ResetUserPassword resets a MoviePilot user's password via docker exec.
-// This uses MoviePilot's own Python/SQLite engine, avoiding WAL corruption.
+// dbPath is the path inside the MoviePilot container (for example /config/user.db).
+// The target container can be configured with MOVIEPILOT_CONTAINER.
 func (c *MoviePilotClient) ResetUserPassword(dbPath, username string) (string, error) {
 	newPassword, err := GenerateRandomPassword(randomPasswordLen)
 	if err != nil {
 		return "", fmt.Errorf("生成随机密码失败: %w", err)
 	}
 
-	containerName := "moviepilot-v2"
-	
-	// Use docker exec to update password via MoviePilot's own Python
+	containerName := strings.TrimSpace(os.Getenv("MOVIEPILOT_CONTAINER"))
+	if containerName == "" {
+		containerName = "moviepilot-v2"
+	}
+	dbPath = strings.TrimSpace(dbPath)
+	if dbPath == "" {
+		dbPath = strings.TrimSpace(os.Getenv("MOVIEPILOT_DB_PATH"))
+	}
+	if dbPath == "" {
+		return "", fmt.Errorf("MoviePilot 用户数据库路径未配置，请设置 MOVIEPILOT_DB_PATH（容器内路径，如 /config/user.db）")
+	}
+	if _, err := exec.LookPath("docker"); err != nil {
+		return "", fmt.Errorf("docker CLI 不可用，无法执行密码重置；Docker 部署请安装 docker-cli 并挂载 /var/run/docker.sock")
+	}
+
 	script := fmt.Sprintf(`
 import sqlite3, bcrypt
-conn = sqlite3.connect('/config/user.db')
+
+db_path = %s
+username = %s
+new_password = %s
+
+conn = sqlite3.connect(db_path)
 c = conn.cursor()
-c.execute('SELECT id FROM user WHERE name=?', ('%s',))
+c.execute('SELECT id FROM user WHERE name=?', (username,))
 row = c.fetchone()
 if not row:
     print('USER_NOT_FOUND')
+    conn.close()
     exit(1)
-hashed = bcrypt.hashpw(b'%s', bcrypt.gensalt()).decode()
-c.execute('UPDATE user SET hashed_password=? WHERE name=?', (hashed, '%s'))
+hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode()
+c.execute('UPDATE user SET hashed_password=? WHERE name=?', (hashed, username))
 conn.commit()
-print('OK')
 conn.close()
-`, username, newPassword, username)
+print('OK')
+`, pythonStringLiteral(dbPath), pythonStringLiteral(username), pythonStringLiteral(newPassword))
 
 	cmd := exec.Command("docker", "exec", containerName, "python3", "-c", script)
 	output, err := cmd.CombinedOutput()

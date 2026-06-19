@@ -28,7 +28,7 @@ jobs:
           if [ -n "$files" ]; then
             unformatted=$(gofmt -l $files)
             if [ -n "$unformatted" ]; then
-              echo "Unformatted files:" 
+              echo "Unformatted files:"
               echo "$unformatted"
               exit 1
             fi

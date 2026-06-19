@@ -125,13 +125,26 @@ func HandleWebhookCallback(
 	if resp != nil {
 		keyboard := ConvertKeyboard(resp.Keyboard)
 
-		// Rich Message 优先（Bot API 10.1）
+		// Rich Message 优先（Bot API 10.1）。sendRichMessage 只能发送新消息，不能编辑旧消息；
+		// 因此 Edit/DeleteMessage 语义下先删除旧消息，避免按钮点击后刷屏堆叠。
 		if resp.RichMessage != "" {
 			logger.Info("[Webhook] Sending Rich Message to chat %d, len=%d", ctx.ChatID, len(resp.RichMessage))
+			deletedOriginal := false
+			if resp.Edit || resp.DeleteMessage {
+				if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
+					logger.Info("[Webhook] DeleteMessage before Rich Message error: %v", delErr)
+				} else {
+					deletedOriginal = true
+				}
+			}
 			if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {
 				logger.Info("[Webhook] Rich Message failed: %v, falling back to plain text", sendErr)
 				if resp.Text != "" {
-					telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
+					if resp.Edit && !deletedOriginal {
+						telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "HTML", keyboard)
+					} else {
+						telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
+					}
 				}
 			}
 		} else {
@@ -167,7 +180,7 @@ func HandleWebhookCallback(
 				}
 			}
 		}
-		}
+	}
 
 	w.WriteHeader(http.StatusOK)
 	fmt.Fprint(w, "OK")

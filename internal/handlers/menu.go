@@ -261,28 +261,28 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	}
 
 	// Fetch user requests — if subscription cache is not ready, return loading message
-		if !h.moviepilot.IsSubscriptionCacheReady() {
-			// Trigger background warmup (first call after startup)
-			go h.moviepilot.WarmupSubscriptionCache()
-			msg := services.NewMessageBuilder()
-			msg.Bold("📋 我的请求").Newline()
-			msg.Newline()
-			msg.Text("⏳ 数据加载中，请稍候再试（首次加载约需 2-3 分钟）").Newline()
-			msg.Newline()
-			msg.Italic("💡 后续访问会很快")
-			kb := services.NewKeyboardBuilder()
-			kb.AddButton("🔄 刷新", "requests")
-			kb.AddButton("⬅️ 返回", "start")
-			return &callback.Response{
-				Text:     msg.Build(),
-				Edit:     true,
-				Keyboard: convertKeyboard(kb.Build()),
-			}, nil
-		}
-		requests, err := h.moviepilot.GetUserRequests(moviepilotID)
-		if err != nil {
-			return nil, errors.MoviePilotErr("failed to get requests", err)
-		}
+	if !h.moviepilot.IsSubscriptionCacheReady() {
+		// Trigger background warmup (first call after startup)
+		go h.moviepilot.WarmupSubscriptionCache()
+		msg := services.NewMessageBuilder()
+		msg.Bold("📋 我的请求").Newline()
+		msg.Newline()
+		msg.Text("⏳ 数据加载中，请稍候再试（首次加载约需 2-3 分钟）").Newline()
+		msg.Newline()
+		msg.Italic("💡 后续访问会很快")
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🔄 刷新", "requests")
+		kb.AddButton("⬅️ 返回", "start")
+		return &callback.Response{
+			Text:     msg.Build(),
+			Edit:     true,
+			Keyboard: convertKeyboard(kb.Build()),
+		}, nil
+	}
+	requests, err := h.moviepilot.GetUserRequests(moviepilotID)
+	if err != nil {
+		return nil, errors.MoviePilotErr("failed to get requests", err)
+	}
 
 	// 聚合：把 ReviewService 里「还没成为 MP 订阅」的审核单合并进来。
 	// 主从规则：MP（执行层）离最终结果近，凡是已有 MP 订阅的请求以 MP 为准；

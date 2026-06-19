@@ -114,8 +114,10 @@ YiMao（云海影视助手）是一个 Telegram Bot，把"找片—求片—等�
 | `/requests` | 我的请求聚合视图（私聊） | 所有人 |
 | `/watchlist` | 我的片单（同 `/requests`，私聊） | 所有人 |
 | `/quota` | 查看今日配额（私聊） | 所有人 |
-| `/link 用户名` | 绑定 MoviePilot 账号（自动创建） | 所有人 |
-| `/resetpw 用户名` | 重置 MoviePilot 密码 | 所有人 |
+| `/link 用户名` | 新用户自动创建并绑定 MoviePilot 账号 | 所有人 |
+| `/link 用户名 密码` | 绑定已有 MoviePilot 账号（需密码验证） | 所有人 |
+| `/resetpw` | 重置自己已绑定的 MoviePilot 密码 | 所有人 |
+| `/resetpw 用户名` | 重置指定 MoviePilot 用户密码 | 管理员 |
 | `/status` | 查看 Bot 运行状态 | 所有人 |
 | `/id` | 查看当前聊天 / 用户 ID | 所有人 |
 | `/help` | 功能与命令帮助 | 所有人 |
@@ -140,7 +142,7 @@ docker compose up -d
 docker compose logs -f
 ```
 
-`docker-compose.yml` 默认使用 `network_mode: host`，数据持久化到 `./data`。
+`docker-compose.yml` 默认使用 `network_mode: host`，数据持久化到 `./data`。如果启用 `/resetpw`，还会挂载 `/var/run/docker.sock` 以便对 MoviePilot 容器执行 `docker exec`；不用密码重置功能可删除该挂载并留空 `MOVIEPILOT_DB_PATH`。
 
 ### 方式二：本地构建运行
 
@@ -176,6 +178,8 @@ export $(grep -v '^#' .env | xargs)
 | `MOVIEPILOT_URL` | ✅ | `http://localhost:4500` | MoviePilot 地址 |
 | `MOVIEPILOT_API_KEY` | ✅ | — | MoviePilot API Key（候选资源列表依赖此项） |
 | `DOWNLOAD_SAVE_PATH` | | 空 | 自定义下载目录，多实例共用一个 MoviePilot 时区分用 |
+| `MOVIEPILOT_CONTAINER` | 条件 | `moviepilot-v2` | `/resetpw` 使用，MoviePilot 容器名 |
+| `MOVIEPILOT_DB_PATH` | 条件 | 空 | `/resetpw` 使用，MoviePilot 容器内 user.db 路径，如 `/config/user.db` |
 
 ### Emby / Jellyfin（可选但推荐）
 
@@ -214,7 +218,10 @@ export $(grep -v '^#' .env | xargs)
 
 | 变量 | 必填 | 默认 | 说明 |
 | --- | :---: | --- | --- |
-| `AI_ENABLED` | | `false` | 设为 `true` 显示 AI 推荐按钮（适用于 Mimo 等非 Zhipu/Claude 提供商） |
+| `AI_ENABLED` | | `false` | 设为 `true` 显示 AI 推荐按钮；兼容旧变量 `ENABLE_AI` |
+| `OPENAI_BASE_URL` | | 空 | OpenAI 兼容接口地址（Mimo / OneAPI / NewAPI 等） |
+| `OPENAI_API_KEY` | | 空 | OpenAI 兼容接口 Key |
+| `OPENAI_MODEL` | | 空 | OpenAI 兼容模型名 |
 | `ZHIPU_API_KEY` | | 空 | 智谱 AI API Key |
 | `CLAUDE_API_KEY` / `ANTHROPIC_API_KEY` | | 空 | Anthropic/Claude API Key（二选一） |
 | `TMDB_API_KEY` | | 内置默认 | TMDB API Key |

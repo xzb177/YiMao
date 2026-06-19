@@ -817,18 +817,31 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 func handleCallbackResponse(ctx *callback.Context, resp *callback.Response, telegram *services.TelegramClient) {
 	keyboard := ConvertKeyboard(resp.Keyboard)
 
-	// Rich Message 优先（Bot API 10.1）
+	// Rich Message 优先（Bot API 10.1）。sendRichMessage 只能发送新消息，不能编辑旧消息；
+	// 因此 Edit/DeleteMessage 语义下先删除旧消息，避免按钮点击后刷屏堆叠。
 	if resp.RichMessage != "" {
 		logger.Info("[Callback] Sending Rich Message to chat %d, len=%d", ctx.ChatID, len(resp.RichMessage))
+		deletedOriginal := false
+		if resp.Edit || resp.DeleteMessage {
+			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
+				logger.Info("[Callback] DeleteMessage before Rich Message error: %v", delErr)
+			} else {
+				deletedOriginal = true
+			}
+		}
 		if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {
 			logger.Info("[Callback] Rich Message failed: %v, falling back to plain text", sendErr)
-			// 回退到普通消息
 			if resp.Text != "" {
-				telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard)
+				if resp.Edit && !deletedOriginal {
+					if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, "HTML", keyboard); editErr != nil {
+						logger.Info("[Callback] Rich fallback EditMessage error: %v", editErr)
+					}
+				} else if _, msgErr := telegram.SendMessage(ctx.ChatID, resp.Text, "HTML", keyboard); msgErr != nil {
+					logger.Info("[Callback] Rich fallback SendMessage error: %v", msgErr)
+				}
 			}
-		} else {
-			return
 		}
+		return
 	}
 
 	// Use HTML as default parse mode if not specified

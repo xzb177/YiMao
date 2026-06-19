@@ -19,12 +19,15 @@ services:
       # MoviePilot Configuration
       - MOVIEPILOT_URL=${MOVIEPILOT_URL}
       - MOVIEPILOT_API_KEY=${MOVIEPILOT_API_KEY}
+      - MOVIEPILOT_DB_PATH=${MOVIEPILOT_DB_PATH:-/config/user.db}
+      - MOVIEPILOT_CONTAINER=${MOVIEPILOT_CONTAINER:-moviepilot-v2}
 
       # TMDB Configuration (Optional - will use default if not provided)
       - TMDB_API_KEY=${TMDB_API_KEY}
 
       # AI Configuration (Optional)
       - AI_ENABLED=${AI_ENABLED:-false}   # 设为 true 可显示 AI 推荐按钮（适用于 Mimo 等非 Zhipu/Claude 提供商）
+      - ENABLE_AI=${AI_ENABLED:-false}      # 兼容旧配置名
       - ZHIPU_API_KEY=${ZHIPU_API_KEY}
       - CLAUDE_API_KEY=${CLAUDE_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
@@ -41,6 +44,8 @@ services:
     # Volume for persistent data (preferences, quotas, cache, etc.)
     volumes:
       - ./data:/app/data
+      # /resetpw 需要通过 docker exec 操作 MoviePilot 容器；不用此功能可删除下一行。
+      - /var/run/docker.sock:/var/run/docker.sock
 
     # Logging configuration
     logging:

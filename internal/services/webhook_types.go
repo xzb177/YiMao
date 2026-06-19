@@ -140,8 +140,8 @@ type WebhookService struct {
 	embySkipTLSVerify    bool
 	mediaNotificationSvc *MediaNotificationService
 	messageCache         *MessageCache
-	notificationFormat   string // "simple" or "detailed"
-	tmdbAPIKey           string // TMDB API key for fetching images
+	notificationFormat   string       // "simple" or "detailed"
+	tmdbAPIKey           string       // TMDB API key for fetching images
 	tmdbClient           *http.Client // 共享 TMDB HTTP 客户端
 	// Episode aggregation - 每个剧集独立的防抖动机制
 	epAggregation    map[string]*EpisodeAggregation // key: seriesName_season

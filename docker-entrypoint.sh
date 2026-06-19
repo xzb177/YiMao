@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 # PUID/PGID 动态适配：根据环境变量创建运行用户，解决宿主机权限错配
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
+PUID=${PUID:-0}
+PGID=${PGID:-0}
 
 echo "[Entrypoint] PUID=$PUID PGID=$PGID"
 

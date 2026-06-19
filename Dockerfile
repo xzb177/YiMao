@@ -19,7 +19,7 @@ RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 # Final stage
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata shadow su-exec
+RUN apk add --no-cache ca-certificates tzdata shadow su-exec docker-cli
 
 WORKDIR /app
 

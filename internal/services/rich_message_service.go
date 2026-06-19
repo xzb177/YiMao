@@ -21,7 +21,7 @@ func NewRichMessageService(telegram *TelegramClient) *RichMessageService {
 // SendMediaInfoCard sends a media info card using Rich Message
 func (s *RichMessageService) SendMediaInfoCard(chatID int64, info richmessage.MediaInfo, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	msg := richmessage.BuildMediaInfoCard(info)
-	
+
 	logger.Info("[RichMessage] Sending media info card: %s", info.Title)
 	return s.telegram.SendRichMessage(chatID, msg.Markdown, keyboard)
 }
@@ -29,7 +29,7 @@ func (s *RichMessageService) SendMediaInfoCard(chatID int64, info richmessage.Me
 // SendSubscriptionDashboard sends a subscription dashboard using Rich Message
 func (s *RichMessageService) SendSubscriptionDashboard(chatID int64, subs []richmessage.SubscriptionStatus, todayAdded, weekDownload int, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	msg := richmessage.BuildSubscriptionDashboard(subs, todayAdded, weekDownload)
-	
+
 	logger.Info("[RichMessage] Sending subscription dashboard")
 	return s.telegram.SendRichMessage(chatID, msg.Markdown, keyboard)
 }
@@ -37,7 +37,7 @@ func (s *RichMessageService) SendSubscriptionDashboard(chatID int64, subs []rich
 // SendCustomRichMessage sends a custom rich message
 func (s *RichMessageService) SendCustomRichMessage(chatID int64, builder *richmessage.Builder, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	msg := builder.Build()
-	
+
 	logger.Info("[RichMessage] Sending custom rich message")
 	return s.telegram.SendRichMessage(chatID, msg.Markdown, keyboard)
 }
