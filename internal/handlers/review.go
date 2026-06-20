@@ -230,26 +230,34 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		logger.Info("[ReviewHandler] Failed to update subscription info: %v", err)
 	}
 
-	// Notify user about approval
-	approveMsg := services.NewMessageBuilder()
-	approveMsg.Bold("✅ 求片已通过").Newline()
-	approveMsg.Newline()
-	approveMsg.Textf("📺 《%s》", review.MediaTitle).Newline()
-	if review.MediaYear > 0 {
-		approveMsg.Textf("(%d)", review.MediaYear).Newline()
+	mediaIcon := "🎬"
+	if review.MediaType == services.MediaTypeTV {
+		mediaIcon = "📺"
 	}
-	approveMsg.Newline()
-	approveMsg.Text("📥 已提交下载，完成后会通知你").Newline()
-	approveMsg.Italic("去「求片进度」随时看状态")
-	approveKb := services.NewKeyboardBuilder()
-	approveKb.AddButton("📋 求片进度", "my_requests")
-	h.telegram.SendMessage(review.TelegramID, approveMsg.Build(), "HTML", approveKb.Build())
+	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, review.MediaTitle)
+	if review.MediaYear > 0 {
+		titleText += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+
+	// Notify user about approval. 如果审批人就是求片人，避免同一聊天重复出现两条通过通知。
+	if ctx.UserID != review.TelegramID {
+		approveMsg := services.NewMessageBuilder()
+		approveMsg.Bold("✅ 已进入下载队列").Newline()
+		approveMsg.Newline()
+		approveMsg.Text(titleText).Newline()
+		approveMsg.Newline()
+		approveMsg.Text("审核已通过，已提交 MoviePilot 下载").Newline()
+		approveMsg.Italic("入库后会自动提醒，也可随时查看进度")
+		approveKb := services.NewKeyboardBuilder()
+		approveKb.AddButton("📋 求片进度", "my_requests")
+		h.telegram.SendMessage(review.TelegramID, approveMsg.Build(), "HTML", approveKb.Build())
+	}
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 审核已通过 · 已提交下载\n\n📺 %s\n\n用户已收到通过通知，后续完成会自动提醒。", review.MediaTitle),
+		Text:        fmt.Sprintf("✅ 已进入下载队列\n\n%s\n\n审核已通过，已提交 MoviePilot 下载。\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),
 		CallbackMsg: "已批准",
 		ShowAlert:   true,
 		Edit:        true,
