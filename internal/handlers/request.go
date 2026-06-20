@@ -353,7 +353,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "收到！求片已排上队 ✨\n\n审核通过后会自动下载，去「求片进度」随时看动态",
+		Text:        "✅ 已提交求片\n\n审核通过后会自动下载，入库时也会通知你",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
@@ -374,18 +374,24 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		mediaTypeLabel = "剧集"
 	}
 
-	// Build message with poster if available
-	message := fmt.Sprintf("🎬 新求片审核\n\n📺 %s", review.MediaTitle)
-	if review.MediaYear > 0 {
-		message += fmt.Sprintf(" (%d)", review.MediaYear)
+	mediaIcon := "🎬"
+	if review.MediaType == services.MediaTypeTV {
+		mediaIcon = "📺"
 	}
-	message += fmt.Sprintf("\n🏷️ %s", mediaTypeLabel)
+
+	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, review.MediaTitle)
+	if review.MediaYear > 0 {
+		titleText += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+
+	// Build message with clean structure
+	message := fmt.Sprintf("🆕 求片待审核\n\n%s\n🏷️ %s", titleText, mediaTypeLabel)
 
 	// Add season info for TV shows
 	if review.MediaType == services.MediaTypeTV && review.Season > 0 {
-		message += fmt.Sprintf("\n📺 第%d季", review.Season)
+		message += fmt.Sprintf(" · 第%d季", review.Season)
 	} else if review.MediaType == services.MediaTypeTV {
-		message += "\n📺 全季订阅"
+		message += " · 全季"
 	}
 
 	if review.Overview != "" && len(review.Overview) > 0 {
@@ -661,7 +667,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	go h.notifyAdminsForReview(review)
 
 	return &callback.Response{
-		Text:        "收到！求片已排上队 ✨\n\n审核通过后会自动下载，去「求片进度」随时看动态",
+		Text:        "✅ 已提交求片\n\n审核通过后会自动下载，入库时也会通知你",
 		CallbackMsg: "请求已提交",
 		ShowAlert:   true,
 	}, nil
