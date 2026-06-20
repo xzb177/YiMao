@@ -130,7 +130,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			// Get the current review state
 			logger.Info("[ReviewHandler] 请求已被其他管理员批准: %s", requestID)
 			return &callback.Response{
-				Text:        "✅ 此请求已被其他管理员批准",
+				Text:        "✅ 审核已处理\n\n这条求片已由其他管理员通过，无需重复操作。",
 				CallbackMsg: "已被批准",
 				ShowAlert:   true,
 				Edit:        true,
@@ -208,7 +208,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		h.telegram.SendMessage(review.TelegramID,
 			fmt.Sprintf("✅ 《%s》已通过审核\n\n⚠️ 正在同步到下载器，稍等一下就好\n去「求片进度」查看状态", review.MediaTitle), "", nil)
 		return &callback.Response{
-			Text:        "⚠️ 已批准，但提交 MoviePilot 失败（已进入重试兜底，可在管理面板手动重试）",
+			Text:        fmt.Sprintf("⚠️ 审核已通过 · 同步待重试\n\n📺 %s\n\n已记录为 stuck，请到待办中心查看自动重试结果。", review.MediaTitle),
 			CallbackMsg: "已批准·待重试",
 			ShowAlert:   true,
 			Edit:        true,
@@ -249,7 +249,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 已批准并提交\n\n📺 %s", review.MediaTitle),
+		Text:        fmt.Sprintf("✅ 审核已通过 · 已提交下载\n\n📺 %s\n\n用户已收到通过通知，后续完成会自动提醒。", review.MediaTitle),
 		CallbackMsg: "已批准",
 		ShowAlert:   true,
 		Edit:        true,
