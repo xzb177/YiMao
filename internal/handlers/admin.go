@@ -7,6 +7,7 @@ import (
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
@@ -110,6 +111,12 @@ func (h *AdminHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 	case "admin_remove_confirm":
 		return h.handleAdminRemoveConfirm(ctx)
 	// Admin feedback panel callbacks
+	case "admin_dashboard":
+		return h.handleAdminDashboard(ctx)
+	case "admin_todo":
+		return h.handleAdminTodo(ctx)
+	case "admin_request_stats":
+		return h.handleAdminRequestStats(ctx)
 	case "admin_feedback":
 		return h.handleFeedbackPanel(ctx)
 	case "admin_feedback_stats":
@@ -566,46 +573,64 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	// Check if user is root admin for special menu
 	isRoot := h.adminService.IsRootAdmin(ctx.UserID)
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("🔧 管理员菜单").Newline()
-	msg.Newline()
-	msg.Text("请选择操作：").Newline()
+	feedbackTotal := 0
+	feedbackOpen := 0
+	if h.issueService != nil {
+		stats := h.issueService.GetStats()
+		feedbackTotal = stats.Total
+		feedbackOpen = stats.Open
+	}
+
+	notifText := "未启用"
+	dailyText := "未启用"
+	dailyTime := "--:--"
+	if h.mediaNotificationSvc != nil {
+		logger.Info("[AdminHandler] Getting settings for user %d", ctx.UserID)
+		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
+		logger.Info("[AdminHandler] Got settings: daily=%v", settings.DailySummaryEnabled)
+		notifText = "已开启"
+		dailyText = h.getBoolText(settings.DailySummaryEnabled)
+		dailyTime = settings.DailyTime
+	}
+
+	adminCount := h.adminService.GetAdminCount()
+	roleText := "普通管理员"
+	if isRoot {
+		roleText = "超级管理员"
+	}
+
+	builder := richmessage.NewBuilder()
+	builder.Heading("🔧 管理中心", 3)
+	builder.BoldParagraph(roleText)
+	builder.Table(
+		[]string{"模块", "状态"},
+		[][]string{
+			{"📈 数据", "查看用户、求片、反馈概览"},
+			{"💬 反馈", fmt.Sprintf("总计 %d · 待处理 %d", feedbackTotal, feedbackOpen)},
+			{"🔔 通知", fmt.Sprintf("群组 %s · 汇总 %s · %s", notifText, dailyText, dailyTime)},
+			{"🛡️ 管理", fmt.Sprintf("%d 位管理员", adminCount)},
+		},
+	)
+	builder.Italic("选择下方按钮进入对应管理功能")
 
 	kb := services.NewKeyboardBuilder()
 
+	// Data overview dashboard
+	kb.AddButton("📈 数据概览", "admin_dashboard")
+	kb.AddButton("✅ 待办中心", "admin_todo")
+	kb.NewRow()
+	kb.AddButton("📊 求片统计", "admin_request_stats")
+	kb.NewRow()
+
 	// Feedback management panel
 	if h.issueService != nil {
-		stats := h.issueService.GetStats()
-		kb.AddButton("📊 反馈管理", "admin_feedback")
+		kb.AddButton("💬 反馈管理", "admin_feedback")
 		kb.NewRow()
-
-		msg.Bold("📊 反馈管理").Newline()
-		msg.Textf("   总反馈: %d | 待处理: %d", stats.Total, stats.Open).Newline()
-		msg.Newline()
 	}
 
 	// Media notification settings
 	logger.Info("[AdminHandler] mediaNotificationSvc is nil: %v", h.mediaNotificationSvc == nil)
 	if h.mediaNotificationSvc != nil {
-		logger.Info("[AdminHandler] Getting settings for user %d", ctx.UserID)
-		settings := h.mediaNotificationSvc.GetSettings(ctx.UserID)
-		logger.Info("[AdminHandler] Got settings: daily=%v", settings.DailySummaryEnabled)
-
-		// 群组通知状态（全局开启）
-		msg.Bold("✅ 媒体库通知").Newline()
-
-		// 群组通知
-		msg.Textf("   📺 群组通知: %s", "已开启").Newline()
-
-		// 每日汇总状态
-		dailyIcon := "📅"
-		if !settings.DailySummaryEnabled {
-			dailyIcon = "📅"
-		}
-		msg.Textf("   %s 每日汇总: %s", dailyIcon, h.getBoolText(settings.DailySummaryEnabled)).Newline()
-		msg.Textf("   ⏰ 汇总时间: %s", settings.DailyTime).Newline()
-		msg.Newline()
-
 		kb.AddButton("🔔 通知设置", "admin_notif_settings")
 		kb.NewRow()
 		logger.Info("[AdminHandler] Added notification settings button")
@@ -613,15 +638,6 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 
 	// Admin management - only for root admin
 	if isRoot {
-		adminCount := h.adminService.GetAdminCount()
-		roleText := "普通管理员"
-		if isRoot {
-			roleText = "👑 超级管理员"
-		}
-		msg.Bold(fmt.Sprintf("🛡️ 管理员管理 (%s)", roleText)).Newline()
-		msg.Textf("   当前共有 %d 位管理员", adminCount).Newline()
-		msg.Newline()
-
 		kb.AddButton("🛡️ 管理员设置", "admin_mgmt")
 		kb.NewRow()
 	}
@@ -629,16 +645,116 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	// Return button
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
-	resultText := msg.Build()
-	logger.Info("[AdminHandler] Returning admin menu with %d chars text, isRoot=%v", len(resultText), isRoot)
+	richMsg := builder.Build()
+	logger.Info("[AdminHandler] Returning admin menu with %d chars rich text, isRoot=%v", len(richMsg.Markdown), isRoot)
 
 	return &callback.Response{
-		Text:      resultText,
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: richMsg.Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
+
+func (h *AdminHandler) handleAdminTodo(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "你不是管理员", ShowAlert: true}, nil
+	}
+	data := richmessage.AdminTodoData{}
+	if h.reviewService != nil {
+		data.PendingRequests = len(h.reviewService.GetPendingRequests())
+		data.StuckRequests = len(h.reviewService.GetStuckRequests())
+		stats := h.reviewService.GetRequestStats()
+		data.FailedRequests = stats.Failed + stats.Cancelled
+	}
+	if h.issueService != nil {
+		fb := h.issueService.GetStats()
+		data.OpenFeedback = fb.Open
+		data.ProcessingFB = fb.Processing
+	}
+	richMsg := richmessage.BuildAdminTodoCard(data)
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📝 待审核", "admin_pending")
+	kb.AddButton("💬 反馈", "admin_feedback")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理中心", "admin_menu")
+	return &callback.Response{RichMessage: richMsg.Markdown, Edit: true, Keyboard: convertKeyboard(kb.Build())}, nil
+}
+
+func (h *AdminHandler) handleAdminRequestStats(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "你不是管理员", ShowAlert: true}, nil
+	}
+	stats := services.RequestStats{}
+	if h.reviewService != nil {
+		stats = h.reviewService.GetRequestStats()
+	}
+	richMsg := richmessage.BuildRequestStatsCard(richmessage.RequestStatsCardData{
+		Total:            stats.Total,
+		UniqueUsers:      stats.UniqueUsers,
+		Approved:         stats.Approved,
+		Rejected:         stats.Rejected,
+		Cancelled:        stats.Cancelled,
+		Completed:        stats.Completed,
+		Failed:           stats.Failed,
+		AverageDoneHours: stats.AverageDoneHours,
+	})
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔄 刷新", "admin_request_stats")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理中心", "admin_menu")
+	return &callback.Response{RichMessage: richMsg.Markdown, Edit: true, Keyboard: convertKeyboard(kb.Build())}, nil
+}
+
+// handleAdminDashboard shows data overview dashboard
+func (h *AdminHandler) handleAdminDashboard(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{
+			CallbackMsg: "你不是管理员",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// Collect data
+	data := richmessage.DashboardData{
+		AdminCount: h.adminService.GetAdminCount(),
+	}
+
+	if h.quotaService != nil {
+		data.UserCount = h.quotaService.GetUserCount()
+	}
+
+	if h.reviewService != nil {
+		stats := h.reviewService.GetStats()
+		data.RequestCount = stats["total"]
+		data.PendingCount = stats["pending"]
+		data.ApprovedCount = stats["approved"]
+		data.RejectedCount = stats["rejected"]
+		data.ReqUserCount = h.reviewService.GetRequestUserCount()
+	}
+
+	if h.issueService != nil {
+		fb := h.issueService.GetStats()
+		data.FBTotal = fb.Total
+		data.FBOpen = fb.Open
+		data.FBProcessing = fb.Processing
+		data.FBFixed = fb.Fixed
+		data.FBClosed = fb.Closed
+	}
+
+	richMsg := richmessage.BuildDashboardCard(data)
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔄 刷新", "admin_dashboard")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+
+	return &callback.Response{
+		RichMessage: richMsg.Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
+	}, nil
+}
+
 
 // handleNotifSettings handles notification settings callback
 // 两个开关：单集开关（群组）、汇总开关（群组+私聊）
@@ -1082,12 +1198,12 @@ func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Res
 	msg := services.NewMessageBuilder()
 	msg.Bold("➕ 添加管理员").Newline()
 	msg.Newline()
-	msg.Text("请通过以下任一方式添加新管理员：").Newline()
+	msg.Text("请输入新管理员的 Telegram ID：").Newline()
 	msg.Newline()
-	msg.Text("1️⃣ 直接输入新管理员的 Telegram 数字 ID").Newline()
-	msg.Text("2️⃣ 将他的一条消息转发给我").Newline()
+	msg.Text("• 直接发送数字 ID").Newline()
+	msg.Text("• 转发 TA 的一条消息给我").Newline()
 	msg.Newline()
-	msg.Italic("💡 转发消息时，我会自动提取发送者的 ID").Newline()
+	msg.Italic("💡 发送 /cancel 返回上级菜单").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 取消", "admin_mgmt")

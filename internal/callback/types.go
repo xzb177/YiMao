@@ -127,6 +127,9 @@ var validActions = map[Action]bool{
 	"admin_add_start":         true,
 	"admin_remove_list":       true,
 	"admin_remove_confirm":    true,
+	"admin_dashboard":         true, // 数据概览面板
+	"admin_todo":              true, // 管理员待办中心
+	"admin_request_stats":     true, // 求片统计面板
 	"admin_notif_custom_time": true, // 自定义每日汇总时间输入
 
 	// Search History actions

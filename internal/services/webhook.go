@@ -413,6 +413,9 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 			carpoolTitle = enhancedPayload.Title
 		}
 		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType, carpoolTitle)
+
+		// 入库后私聊通知求片用户：查找匹配的审核请求，通知求片人
+		s.notifyRequesterOnLibraryAdd(carpoolTMDBID, carpoolType, carpoolTitle)
 	}
 
 	return nil

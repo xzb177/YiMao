@@ -7,6 +7,7 @@ import (
 	"github.com/xzb177/yimao/pkg/logger"
 	"math/big"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -38,6 +39,7 @@ type ReviewRequest struct {
 	SubscriptionID    int       `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
 	SubscriptionState string    `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
 	LastResubscribeAt time.Time `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
+	LibraryNotifiedAt *time.Time `json:"library_notified_at,omitempty"` // Emby 入库后已私聊通知时间，防重复通知
 
 	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
 	// 当 Status=="approved" 但提交 MP 失败时，进入 stuck 兜底（而不是凭空消失），
@@ -567,6 +569,28 @@ func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID 
 // 这样请求不会凭空消失：管理员面板可见、可手动重试，用户在「我的请求」也能看到。
 const MaxApproveRetry = 3
 
+func isNonRetryableApproveError(errMsg string) bool {
+	errMsg = strings.TrimSpace(errMsg)
+	if errMsg == "" {
+		return false
+	}
+	patterns := []string{
+		"未获取到第 1 季的总集数",
+		"未获取到第1季的总集数",
+		"未获取到季的总集数",
+		"tmdb id invalid",
+		"invalid tmdb",
+		"media not found",
+	}
+	lower := strings.ToLower(errMsg)
+	for _, pattern := range patterns {
+		if strings.Contains(lower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -579,16 +603,39 @@ func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
 	review.RetryCount++
 	review.LastError = errMsg
 	review.Stuck = true
+	if isNonRetryableApproveError(errMsg) && review.RetryCount < MaxApproveRetry {
+		review.RetryCount = MaxApproveRetry
+	}
 
 	logger.Info("[ReviewService] 请求提交 MP 失败进入 stuck 兜底: %s, 第 %d 次, err=%s",
 		requestID, review.RetryCount, errMsg)
 
-	// B4: 告警 — stuck 时通知管理员
-	if s.Alert != nil {
+	// B4: 告警 — 首次或最终失败时通知管理员，避免每 5 分钟重复刷屏
+	if s.Alert != nil && (review.RetryCount == 1 || review.RetryCount >= MaxApproveRetry) {
 		go s.Alert(requestID, review.MediaTitle, review.RetryCount, errMsg)
 	}
 
 	return s.saveLocked()
+}
+
+// MarkLibraryNotifiedOnce 标记 Emby 入库私聊已发送，返回 true 表示本次应发送。
+func (s *ReviewService) MarkLibraryNotifiedOnce(requestID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists || review == nil {
+		return false
+	}
+	if review.LibraryNotifiedAt != nil {
+		return false
+	}
+	now := time.Now()
+	review.LibraryNotifiedAt = &now
+	if err := s.saveLocked(); err != nil {
+		logger.Info("[ReviewService] 保存入库通知标记失败: %v", err)
+	}
+	return true
 }
 
 // ClearStuck 在提交 MoviePilot 成功后清除兜底状态。
@@ -809,7 +856,76 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 			s.updateAllSubscriptionStatus()
 			// 全量检测：MP 中所有新完成的订阅（不仅是 YiMao 发起的）
 			s.checkAllNewCompletions()
+			// 自动重试 stuck 请求
+			s.retryStuckRequests()
 		}()
+	}
+}
+
+// retryStuckRequests 自动重试 stuck 的请求（审核通过但提交 MP 失败）。
+// 每 5 分钟由 refreshSubscriptionStatus 调用，最多重试 MaxApproveRetry 次。
+func (s *ReviewService) retryStuckRequests() {
+	if s.moviepilot == nil {
+		return
+	}
+
+	stuck := s.GetStuckRequests()
+	if len(stuck) == 0 {
+		return
+	}
+
+	for _, rv := range stuck {
+		if rv.RetryCount >= MaxApproveRetry {
+			continue
+		}
+		if isNonRetryableApproveError(rv.LastError) {
+			logger.Info("[ReviewService] 跳过不可重试 stuck 请求: %s, err=%s", rv.RequestID, rv.LastError)
+			_ = s.MarkStuck(rv.RequestID, rv.LastError)
+			continue
+		}
+
+		logger.Info("[ReviewService] 自动重试 stuck 请求: %s, 第 %d 次, 片名: %s",
+			rv.RequestID, rv.RetryCount+1, rv.MediaTitle)
+
+		mpMediaType := MediaTypeMovie
+		if rv.MediaType == MediaTypeTV {
+			mpMediaType = MediaTypeTV
+		}
+
+		season := rv.Season
+		if season == 0 && rv.MediaType == MediaTypeTV {
+			season = 1
+		}
+
+		req, err := s.moviepilot.RequestMedia(
+			rv.MediaTitle,
+			rv.MediaYear,
+			rv.TmdbID,
+			mpMediaType,
+			season,
+		)
+		if err != nil {
+			logger.Info("[ReviewService] 自动重试失败: %s, err: %v", rv.RequestID, err)
+			if merr := s.MarkStuck(rv.RequestID, err.Error()); merr != nil {
+				logger.Info("[ReviewService] 自动重试失败后 MarkStuck 失败: %v", merr)
+			}
+			continue
+		}
+
+		// 成功：清除 stuck 状态 + 更新订阅信息
+		if cerr := s.ClearStuck(rv.RequestID); cerr != nil {
+			logger.Info("[ReviewService] ClearStuck 失败: %v", cerr)
+		}
+		if uerr := s.UpdateSubscriptionInfo(rv.RequestID, req.ID, "N"); uerr != nil {
+			logger.Info("[ReviewService] UpdateSubscriptionInfo 失败: %v", uerr)
+		}
+
+		logger.Info("[ReviewService] 自动重试成功: %s, 新订阅 ID: %d", rv.RequestID, req.ID)
+
+		// 通知用户
+		if s.Alert != nil {
+			go s.Alert(rv.RequestID, rv.MediaTitle, rv.RetryCount, "自动重试成功")
+		}
 	}
 }
 
@@ -1084,4 +1200,117 @@ func (s *ReviewService) sendDailySummary() {
 	}
 
 	logger.Info("[ReviewService] 每日汇总已发送：通知 %d 位用户，共 %d 部", len(userMap), len(completions))
+}
+
+// RequestStats summarizes review request health.
+type RequestStats struct {
+	Total              int
+	Pending            int
+	Approved           int
+	Rejected           int
+	Cancelled          int
+	Completed          int
+	Failed             int
+	Stuck              int
+	UniqueUsers        int
+	AverageDoneHours   int
+}
+
+// GetRequestStats returns high-level request funnel stats.
+func (s *ReviewService) GetRequestStats() RequestStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	stats := RequestStats{}
+	seenUsers := make(map[int64]bool)
+	totalDoneHours := 0
+	doneCount := 0
+
+	for _, review := range s.reviews {
+		if review == nil {
+			continue
+		}
+		stats.Total++
+		seenUsers[review.TelegramID] = true
+		switch review.Status {
+		case "pending":
+			stats.Pending++
+		case "approved":
+			stats.Approved++
+		case "rejected":
+			stats.Rejected++
+		case "cancelled":
+			stats.Cancelled++
+		}
+		if review.Stuck {
+			stats.Stuck++
+		}
+		switch review.SubscriptionState {
+		case StateCompleted:
+			stats.Completed++
+			if !review.CreatedAt.IsZero() && !review.ReviewedAt.IsZero() {
+				hours := int(review.ReviewedAt.Sub(review.CreatedAt).Hours())
+				if hours >= 0 {
+					totalDoneHours += hours
+					doneCount++
+				}
+			}
+		case StateFailed, StateCancelled:
+			stats.Failed++
+		}
+	}
+	stats.UniqueUsers = len(seenUsers)
+	if doneCount > 0 {
+		stats.AverageDoneHours = totalDoneHours / doneCount
+	}
+	return stats
+}
+
+// FindActiveSimilarRequest finds any active request for the same media across all users.
+func (s *ReviewService) FindActiveSimilarRequest(tmdbID int, mediaType MediaType, season int) (*ReviewRequest, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var first *ReviewRequest
+	seenUsers := make(map[int64]bool)
+	for _, review := range s.reviews {
+		if review == nil || review.TmdbID != tmdbID || review.MediaType != mediaType {
+			continue
+		}
+		if mediaType == MediaTypeTV && review.Season != season {
+			continue
+		}
+		if review.Status != "pending" && review.Status != "approved" {
+			continue
+		}
+		if first == nil || review.CreatedAt.Before(first.CreatedAt) {
+			first = review
+		}
+		if review.TelegramID != 0 {
+			seenUsers[review.TelegramID] = true
+		}
+	}
+	return first, len(seenUsers)
+}
+
+// GetRequestUserCount returns the number of unique users who made requests
+func (s *ReviewService) GetRequestUserCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	seen := make(map[int64]bool)
+	for _, r := range s.reviews {
+		seen[r.TelegramID] = true
+	}
+	return len(seen)
+}
+
+// GetAllRequests returns all review requests
+func (s *ReviewService) GetAllRequests() []*ReviewRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	result := make([]*ReviewRequest, 0, len(s.reviews))
+	for _, r := range s.reviews {
+		result = append(result, r)
+	}
+	return result
 }

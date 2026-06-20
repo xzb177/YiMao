@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/errors"
@@ -229,7 +230,8 @@ func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback
 	if totalPages == 0 {
 		totalPages = 1
 	}
-	return h.buildRequestsMessage(requests, 1, totalPages, totalRequests)
+	msg, _, kb := h.buildRequestsMessage(requests, 1, totalPages, totalRequests)
+	return msg, kb
 }
 
 // handleRequestsWithPage builds the paginated requests list
@@ -326,17 +328,18 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	}
 
 	// Build response message with new format
-	msg, keyboard := h.buildRequestsMessage(requests, page, totalPages, totalRequests)
+	msg, richMsg, keyboard := h.buildRequestsMessage(requests, page, totalPages, totalRequests)
 
 	return &callback.Response{
-		Text:     msg,
-		Edit:     true,
-		Keyboard: keyboard,
+		Text:        msg,
+		RichMessage: richMsg,
+		Edit:        true,
+		Keyboard:    keyboard,
 	}, nil
 }
 
 // buildRequestsMessage builds the paginated message with inline keyboard
-func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeItem, page, totalPages, totalRequests int) (string, *callback.Keyboard) {
+func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeItem, page, totalPages, totalRequests int) (string, string, *callback.Keyboard) {
 	msg := services.NewMessageBuilder()
 
 	if totalRequests == 0 {
@@ -352,7 +355,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 				{{Text: "返回", CallbackData: "start"}},
 			},
 		}
-		return msg.Build(), kb
+		return msg.Build(), "", kb
 	}
 
 	// Header
@@ -428,8 +431,35 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 
 	// Build keyboard
 	kb := h.buildRequestsKeyboard(requests, page, totalPages, startIdx, endIdx)
+	richMsg := h.buildRequestsRichMessage(requests, page, totalPages, totalRequests, startIdx, endIdx)
 
-	return msg.Build(), kb
+	return msg.Build(), richMsg, kb
+}
+
+func (h *MyRequestsHandler) buildRequestsRichMessage(requests []services.SubscribeItem, page, totalPages, totalRequests, startIdx, endIdx int) string {
+	items := make([]richmessage.RequestCardItem, 0, endIdx-startIdx)
+	for i := startIdx; i < endIdx; i++ {
+		req := requests[i]
+		items = append(items, richmessage.RequestCardItem{
+			Index:  i + 1,
+			Title:  trimDisplayTitle(req.Name, 28),
+			State:  req.State,
+			Type:   req.Type,
+			Year:   req.Year,
+			Season: req.Season,
+			Date:   req.Date,
+		})
+	}
+	card := richmessage.BuildRequestProgressCard(richmessage.RequestCardData{
+		Total:      totalRequests,
+		Page:       page,
+		TotalPages: totalPages,
+		Running:    countStates(requests, []string{stateReviewing, stateStuck, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading, "WISH"}),
+		Done:       countStates(requests, []string{services.StateCompleted}),
+		Problem:    countStates(requests, []string{services.StateFailed, services.StateCancelled}),
+		Items:      items,
+	})
+	return card.Markdown
 }
 
 // buildRequestLine builds a single-line request entry

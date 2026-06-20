@@ -213,3 +213,74 @@ func escapeCarpoolMentionText(s string) string {
 	)
 	return r.Replace(s)
 }
+
+// notifyRequesterOnLibraryAdd 入库后私聊通知求片用户。
+// 查找匹配 TMDB ID + mediaType 的审核请求，向求片人发送「已入库」私信。
+func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType string, title string) {
+	if s.review == nil || tmdbIDStr == "" {
+		return
+	}
+
+	tmdbID := 0
+	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
+	if tmdbID == 0 {
+		return
+	}
+
+	// 查找所有匹配的已批准审核请求
+	s.review.mu.RLock()
+	var matched []*ReviewRequest
+	for _, rv := range s.review.reviews {
+		if rv == nil {
+			continue
+		}
+		if rv.Status != "approved" {
+			continue
+		}
+		if rv.TmdbID != tmdbID {
+			continue
+		}
+		// 匹配 mediaType
+		rvType := string(rv.MediaType)
+		if rvType == "" {
+			rvType = "movie"
+		}
+		if rvType != mediaType {
+			continue
+		}
+		matched = append(matched, rv)
+	}
+	s.review.mu.RUnlock()
+
+	if len(matched) == 0 {
+		return
+	}
+
+	titleText := strings.TrimSpace(title)
+	if titleText == "" {
+		titleText = "你求的片"
+	}
+
+	// 去重：同一用户只通知一次
+	notified := make(map[int64]bool)
+	for _, rv := range matched {
+		if notified[rv.TelegramID] {
+			continue
+		}
+		if !s.review.MarkLibraryNotifiedOnce(rv.RequestID) {
+			continue
+		}
+		notified[rv.TelegramID] = true
+
+		mediaEmoji := "🎬"
+		if mediaType == "tv" {
+			mediaEmoji = "📺"
+		}
+		msg := fmt.Sprintf("🎉 你求的%s《%s》已入库！\n\n快去 Emby 看吧～", mediaEmoji, titleText)
+		if _, err := s.telegram.SendMessage(rv.TelegramID, msg, "", nil); err != nil {
+			logger.Info("[入库通知] 私聊求片用户失败 user=%d: %v", rv.TelegramID, err)
+		} else {
+			logger.Info("[入库通知] 已通知求片用户 %d: %s", rv.TelegramID, titleText)
+		}
+	}
+}

@@ -24,6 +24,7 @@ type RequestHandler struct {
 	userMapping    services.UserMappingStore
 	quotaService   *services.QuotaService
 	reviewService  *services.ReviewService
+	carpoolService *services.CarpoolService
 	enableReview   bool // Enable review system
 }
 
@@ -50,6 +51,10 @@ func NewRequestHandler(
 		reviewService:  reviewService,
 		enableReview:   true, // Enable review system by default
 	}
+}
+
+func (h *RequestHandler) SetCarpoolService(carpool *services.CarpoolService) {
+	h.carpoolService = carpool
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -273,6 +278,19 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		return &callback.Response{
 			Text:        fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“我的请求”查看进度。", existingReview.MediaTitle, statusText),
 			CallbackMsg: "请勿重复提交",
+			ShowAlert:   true,
+		}, nil
+	}
+	if existingReview, people := h.reviewService.FindActiveSimilarRequest(tmdbID, reqMediaType, season); existingReview != nil {
+		if h.carpoolService != nil {
+			people = h.carpoolService.Add(tmdbID, mediaType, ctx.UserID)
+		}
+		if people < 1 {
+			people = 1
+		}
+		return &callback.Response{
+			Text:        fmt.Sprintf("🙋 已加入拼车\n\n《%s》已有用户提交求片，当前共 %d 人想看。\n审核和下载进度会跟随原请求推进，不重复扣配额。", existingReview.MediaTitle, people),
+			CallbackMsg: "已加入拼车",
 			ShowAlert:   true,
 		}, nil
 	}

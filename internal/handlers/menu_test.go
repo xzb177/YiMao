@@ -184,7 +184,7 @@ func TestHandleCancelReview_NilReviewSvc(t *testing.T) {
 
 func TestBuildRequestsMessage_Empty(t *testing.T) {
 	h := &MyRequestsHandler{}
-	msg, kb := h.buildRequestsMessage(nil, 1, 1, 0)
+	msg, _, kb := h.buildRequestsMessage(nil, 1, 1, 0)
 
 	if msg == "" {
 		t.Fatal("expected non-empty message")
@@ -205,7 +205,7 @@ func TestBuildRequestsMessage_GroupsByStatus(t *testing.T) {
 		{ID: 2, Name: "已完成", State: "C", Type: "movie"},
 		{ID: 3, Name: "异常", State: "F", Type: "movie"},
 	}
-	msg, _ := h.buildRequestsMessage(items, 1, 1, 3)
+	msg, _, _ := h.buildRequestsMessage(items, 1, 1, 3)
 
 	// 应该包含三个分组
 	if !containsStr(msg, "进行中") {

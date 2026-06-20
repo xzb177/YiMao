@@ -231,9 +231,19 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	// Notify user about approval
-	h.telegram.SendMessage(review.TelegramID,
-		fmt.Sprintf("✅ 《%s》已通过审核！\n\n📥 已提交下载，完成后会通知你\n去「求片进度」随时看状态",
-			review.MediaTitle), "", nil)
+	approveMsg := services.NewMessageBuilder()
+	approveMsg.Bold("✅ 求片已通过").Newline()
+	approveMsg.Newline()
+	approveMsg.Textf("📺 《%s》", review.MediaTitle).Newline()
+	if review.MediaYear > 0 {
+		approveMsg.Textf("(%d)", review.MediaYear).Newline()
+	}
+	approveMsg.Newline()
+	approveMsg.Text("📥 已提交下载，完成后会通知你").Newline()
+	approveMsg.Italic("去「求片进度」随时看状态")
+	approveKb := services.NewKeyboardBuilder()
+	approveKb.AddButton("📋 求片进度", "my_requests")
+	h.telegram.SendMessage(review.TelegramID, approveMsg.Build(), "HTML", approveKb.Build())
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
@@ -327,9 +337,16 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	}
 
 	// Notify user about rejection
-	h.telegram.SendMessage(review.TelegramID,
-		fmt.Sprintf("❌ 《%s》未通过审核\n\n💡 已自动退还配额，换个片名再试？",
-			review.MediaTitle), "", nil)
+	rejectMsg := services.NewMessageBuilder()
+	rejectMsg.Bold("❌ 求片未通过").Newline()
+	rejectMsg.Newline()
+	rejectMsg.Textf("📺 《%s》", review.MediaTitle).Newline()
+	rejectMsg.Newline()
+	rejectMsg.Text("💡 已自动退还配额").Newline()
+	rejectMsg.Italic("换个片名再试试？")
+	rejectKb := services.NewKeyboardBuilder()
+	rejectKb.AddButton("🔍 重新搜索", "start")
+	h.telegram.SendMessage(review.TelegramID, rejectMsg.Build(), "HTML", rejectKb.Build())
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))

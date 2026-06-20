@@ -627,3 +627,21 @@ func (s *QuotaService) SetFollowupDisabled(telegramID int64, disabled bool) erro
 	}
 	return nil
 }
+
+// GetUserCount returns the total number of registered users
+func (s *QuotaService) GetUserCount() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.quotas)
+}
+
+// GetAllUserIDs returns all registered user IDs
+func (s *QuotaService) GetAllUserIDs() []int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := make([]int64, 0, len(s.quotas))
+	for id := range s.quotas {
+		ids = append(ids, id)
+	}
+	return ids
+}

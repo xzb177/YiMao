@@ -252,20 +252,34 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			return
 		}
 
-		typeLabel := "🎬"
+		mediaEmoji := "🎬"
 		if mediaType == "tv" {
-			typeLabel = "📺"
+			mediaEmoji = "📺"
 		}
 		yearStr := ""
 		if year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", year)
 		}
-		text := fmt.Sprintf("%s 《%s》%s 到货了！🍿\n\n快去 Emby 开刷吧～", typeLabel, title, yearStr)
-		telegramClient.SendMessage(telegramID, text, "", nil)
+
+		msg := services.NewMessageBuilder()
+		msg.Bold("🎉 求片已完成！").Newline()
+		msg.Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Newline()
+		msg.Text("🍿 快去 Emby 观看吧～")
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📋 我的求片", "my_requests")
+		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
 	}
 	// B4: stuck 告警 — 审核通过但 MP 提交失败时通知管理员
 	reviewService.Alert = func(requestID, title string, retryCount int, lastError string) {
+		if lastError == "自动重试成功" {
+			// 自动重试成功：用户会通过 OnSubscriptionComplete 收到通知，这里仅记日志
+			logger.Info("[Alert] 求片自动重试成功: %s, 请求 %s, 第 %d 次", title, requestID, retryCount)
+			return
+		}
 		alertService.Warn("review_stuck",
 			fmt.Sprintf("求片提交失败: %s", title),
 			fmt.Sprintf("请求 %s，已重试 %d 次\n最后错误: %s\n请检查 MoviePilot 状态", requestID, retryCount, lastError),
@@ -317,6 +331,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// #3 拼车 +1：把拼车服务注入 webhook，用于入库时 @ 拼车用户（setter 注入，不改构造函数签名）
 	webhookService.SetCarpoolService(carpoolService)
+	webhookService.SetReviewService(reviewService)
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
@@ -438,9 +453,11 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Create handlers
 	startHandler := handlers.NewStartHandler(nil, deps.SessionMgr, deps.Telegram, deps.MoviePilot)
 	detailHandler := handlers.NewDetailHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
+	detailHandler.SetCarpool(deps.CarpoolService)
 	backHandler := handlers.NewBackHandler(deps.SessionMgr)
 	cancelHandler := handlers.NewCancelHandler()
 	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
+	requestHandler.SetCarpoolService(deps.CarpoolService)
 	searchHandler := handlers.NewSearchHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
 	if deps.SearchHistoryDB != nil {
 		searchHandler.SetSearchHistoryDB(deps.SearchHistoryDB)
@@ -604,6 +621,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("admin_add_start", adminHandler.Handle)
 	registry.RegisterFunc("admin_remove_list", adminHandler.Handle)
 	registry.RegisterFunc("admin_remove_confirm", adminHandler.Handle)
+	registry.RegisterFunc("admin_dashboard", adminHandler.Handle)
+	registry.RegisterFunc("admin_todo", adminHandler.Handle)
+	registry.RegisterFunc("admin_request_stats", adminHandler.Handle)
 
 	// Review system callbacks
 	registry.RegisterFunc("review_approve", reviewHandler.Handle)
@@ -663,6 +683,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("admin_feedback_reply", adminHandler.Handle)
 	registry.RegisterFunc("admin_feedback_priority", adminHandler.Handle)
 	registry.RegisterFunc("admin_feedback_template", adminHandler.Handle)
+	registry.RegisterFunc("admin_feedback_priority_menu", adminHandler.Handle)
 
 	// User Feedback interaction callbacks
 	registry.RegisterFunc("feedback_follow_up", feedbackHandler.Handle)
