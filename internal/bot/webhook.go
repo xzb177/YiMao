@@ -272,15 +272,6 @@ func HandleWebhookMessage(
 
 	// Handle commands —— 已在前面统一处理(含 pending 逃逸)，此处无需再判命令。
 
-	// Check if user is in explicit AI chat mode.
-	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
-		logger.Info("[Webhook] User %d is in AI chat mode, handling with AI", msg.From.ID)
-		handleAIChatMessage(msg.From.ID, msg.Chat.ID, msg.Text, deps.Telegram, deps.SessionMgr)
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "OK")
-		return
-	}
-
 	// Handle search queries (non-command text)
 	// 只有在非反馈状态下才执行搜索
 	if len(msg.Text) > 1 {

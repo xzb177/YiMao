@@ -5,7 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
@@ -311,13 +310,6 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Private chat: command handling —— 已在前面统一处理(含 pending 逃逸)，此处无需再判命令。
 
-	// Check if user is in explicit AI chat mode.
-	if isAIChatMode(deps.SessionMgr, msg.From.ID, msg.Chat.ID) {
-		logger.Info("[Poll] User %d is in AI chat mode, handling with AI", msg.From.ID)
-		handleAIChatMessage(msg.From.ID, msg.Chat.ID, sanitizedText, deps.Telegram, deps.SessionMgr)
-		return
-	}
-
 	// Check if user is not linked and input looks like credentials (userID + password)
 	// Format: "number password" or "username password"
 	if deps.UserMapping != nil {
@@ -476,27 +468,6 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, use
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), kb.Build())
-}
-
-func isAIChatMode(sessMgr *session.Manager, userID, chatID int64) bool {
-	if sessMgr == nil {
-		return false
-	}
-	for _, id := range []int64{userID, chatID} {
-		if id == 0 {
-			continue
-		}
-		sess := sessMgr.GetOrCreate(id)
-		if sess == nil || !sessMgr.IsValid(id) {
-			continue
-		}
-		if aiChatMode, exists := sess.Get("ai_chat_mode"); exists {
-			if enabled, ok := aiChatMode.(bool); ok && enabled {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func clearAIChatMode(sessMgr *session.Manager, userID, chatID int64) {
@@ -842,51 +813,4 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	return result
 }
 
-func isTonightRecommendationPhrase(text string) bool {
-	text = strings.TrimSpace(text)
-	return text == "今晚看什么" || text == "今晚看什么？" || text == "今晚看什么?"
-}
-
-func normalizeAIRecommendationPrompt(text string) string {
-	text = strings.TrimSpace(text)
-	if text == "" || isTonightRecommendationPhrase(text) {
-		return "今晚想随便看点适合放松的影视，帮我推荐几部"
-	}
-	return text
-}
-
 // handleAIChatMessage handles messages in AI chat mode
-func handleAIChatMessage(userID, chatID int64, text string, telegram *services.TelegramClient, sessMgr *session.Manager) {
-	// Check if AI is enabled
-	if !ai.GetManager().IsEnabled() {
-		telegram.SendMessage(chatID, "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一", "", nil)
-		return
-	}
-
-	// Get AI recommendations based on user input
-	prompt := normalizeAIRecommendationPrompt(text)
-	response, err := ai.GetAIRecommendations(prompt, 5)
-	if err != nil {
-		logger.Info("[AIChat] Failed to get AI recommendations: %v", err)
-		telegram.SendMessage(chatID, fmt.Sprintf("😓 AI 推荐暂时不可用: %v\n\n💡 请稍后再试或使用普通搜索", err), "", nil)
-		return
-	}
-
-	// Build response message
-	msg := services.NewMessageBuilder()
-	msg.Text(response).Newline()
-	msg.Newline()
-	msg.Italic("💡 推荐结束啦，继续发片名将直接搜索影片")
-
-	// Build keyboard
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 继续推荐", "start_ai")
-	kb.AddButton("🔍 搜影片", "search")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
-
-	telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
-
-	// AI 单次交互后自动退出，下一条文本回归搜索
-	clearAIChatMode(sessMgr, userID, chatID)
-}

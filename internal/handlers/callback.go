@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -260,20 +259,6 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleStart(ctx)
 	case callback.ActionSearch:
 		return h.HandleSearch(ctx)
-	case callback.ActionAI:
-		return h.HandleAI(ctx)
-	case callback.ActionMood:
-		return h.HandleMood(ctx)
-	case callback.ActionMoodPick:
-		return h.HandleMoodPick(ctx)
-	case "ai_chat":
-		return h.HandleAIChat(ctx)
-	case callback.ActionQuickPick:
-		return h.HandleQuickPick(ctx)
-	case callback.ActionHot:
-		return h.HandleHot(ctx)
-	case callback.ActionNew:
-		return h.HandleNew(ctx)
 	case callback.ActionSettings:
 		return h.HandleSettings(ctx)
 	case callback.ActionHelpTopic:
@@ -293,7 +278,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 	// 使用 Rich Message 构建欢迎页（Bot API 10.1）
 	isPrivateChat := ctx.ChatType == "private"
-	hasAI := isPrivateChat && ai.GetManager().IsEnabled()
+	hasAI := false
 
 	// 清除 AI 聊天模式
 	if isPrivateChat {
@@ -335,7 +320,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		isAdmin = h.adminService.IsAdmin(ctx.UserID)
 	}
 
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true, isPrivateChat && ai.GetManager().IsEnabled(), true)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 
 	return &callback.Response{
 		Text:        baseMsg,
@@ -362,274 +347,6 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 		Text:     msg.Build(),
 		Edit:     true,
 		Keyboard: &callback.Keyboard{},
-	}, nil
-}
-
-func (h *StartHandler) disableAIChatMode(ctx *callback.Context) {
-	if h == nil || h.sessMgr == nil || ctx == nil {
-		return
-	}
-	h.sessMgr.GetOrCreate(ctx.UserID).Delete("ai_chat_mode")
-	if ctx.ChatID != 0 && ctx.ChatID != ctx.UserID {
-		h.sessMgr.GetOrCreate(ctx.ChatID).Delete("ai_chat_mode")
-	}
-}
-
-func (h *StartHandler) enableAIChatMode(ctx *callback.Context) {
-	if h == nil || h.sessMgr == nil || ctx == nil {
-		return
-	}
-	h.sessMgr.GetOrCreate(ctx.UserID).Set("ai_chat_mode", true)
-	if ctx.ChatID != 0 && ctx.ChatID != ctx.UserID {
-		h.sessMgr.GetOrCreate(ctx.ChatID).Set("ai_chat_mode", true)
-	}
-}
-
-func (h *StartHandler) HandleAI(ctx *callback.Context) (*callback.Response, error) {
-	// Recommendation is only available in private chats
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ 推荐功能仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Check if AI is enabled
-	if !ai.GetManager().IsEnabled() {
-		return &callback.Response{
-			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一",
-			CallbackMsg: "AI 未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// 直接进入 AI 聊天模式
-	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 今晚看什么").Newline()
-	msg.Newline()
-	msg.Text("告诉我你的口味，帮你挑一部").Newline()
-	msg.Newline()
-	msg.Text("试试这样：").Newline()
-	msg.Text("• 想看一部烧脑悬疑").Newline()
-	msg.Text("• 推荐治愈系的").Newline()
-	msg.Text("• 最近有什么好看的科幻").Newline()
-	msg.Newline()
-	msg.Italic("💡 发完会自动回到搜索模式")
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回主菜单", "start")
-
-	// Set session mode to AI chat
-	h.enableAIChatMode(ctx)
-	logger.Info("[HandleAI] Enabled AI chat mode for user %d", ctx.UserID)
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-// HandleMood provides mood-based recommendation entry
-func (h *StartHandler) HandleMood(ctx *callback.Context) (*callback.Response, error) {
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ 推荐功能仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("😊 按心情选片").Newline()
-	msg.Newline()
-	msg.Text("你现在什么状态？").Newline()
-	msg.Newline()
-	msg.Italic("👇 选一个心情")
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("😌 解压轻松", "moodpick:type:hot:mood:relax")
-	kb.AddButton("🤯 烧脑刺激", "moodpick:type:toprated:mood:mindblow")
-	kb.NewRow()
-	kb.AddButton("😭 情绪共鸣", "moodpick:type:trending:mood:emotional")
-	kb.AddButton("🧘 治愈慢节奏", "moodpick:type:new:mood:healing")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start_ai")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-// HandleAIChat provides AI-powered chat recommendation entry
-func (h *StartHandler) HandleAIChat(ctx *callback.Context) (*callback.Response, error) {
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Check if AI is enabled
-	if !ai.GetManager().IsEnabled() {
-		return &callback.Response{
-			Text:        "🤖 AI 功能暂未启用\n\n💡 请联系管理员配置 AI_ENABLED=true，并设置 ZHIPU_API_KEY / CLAUDE_API_KEY / ANTHROPIC_API_KEY 之一",
-			CallbackMsg: "AI 未启用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("🎬 今晚看什么").Newline()
-	msg.Newline()
-	msg.Text("告诉我你的口味，帮你挑一部").Newline()
-	msg.Newline()
-	msg.Text("试试这样：").Newline()
-	msg.Text("• 想看一部烧脑悬疑").Newline()
-	msg.Text("• 推荐治愈系的").Newline()
-	msg.Text("• 最近有什么好看的科幻").Newline()
-	msg.Newline()
-	msg.Italic("💡 发完会自动回到搜索模式")
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 热门", "search:type:trending")
-	kb.AddButton("⭐ 高分", "search:type:toprated")
-	kb.NewRow()
-	kb.AddButton("😊 按心情", "start_mood")
-	kb.AddButton("⬅️ 返回", "start_ai")
-
-	// Set session mode to AI chat
-	h.enableAIChatMode(ctx)
-	logger.Info("[HandleAIChat] Enabled AI chat mode for user %d", ctx.UserID)
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-func (h *StartHandler) HandleMoodPick(ctx *callback.Context) (*callback.Response, error) {
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ 情绪选片仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	typeName := ctx.Callback.Params["type"]
-	mood := ctx.Callback.Params["mood"]
-	if typeName == "" {
-		typeName = "random"
-	}
-	if mood == "" {
-		mood = "random"
-	}
-
-	// 记录用户最近一次情绪偏好，用于后续个性化
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	sess.Set("pref_mood_last", mood)
-	sess.Set("pref_mood_last_type", typeName)
-
-	moodLabel := map[string]string{
-		"relax":     "解压轻松",
-		"mindblow":  "烧脑刺激",
-		"emotional": "情绪共鸣",
-		"healing":   "治愈慢节奏",
-		"random":    "随机盲选",
-	}[mood]
-	if moodLabel == "" {
-		moodLabel = "随机盲选"
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("💫 情绪画像已记录").Newline()
-	msg.Newline()
-	msg.Textf("当前偏好：%s", moodLabel).Newline()
-	msg.Italic("接下来会优先给你相近风格内容").Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即看推荐", fmt.Sprintf("search:type:%s:mood:%s", typeName, mood))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
-
-	return &callback.Response{
-		Text:        msg.Build(),
-		Edit:        true,
-		Keyboard:    convertKeyboard(kb.Build()),
-		CallbackMsg: "已记住你的口味",
-	}, nil
-}
-
-func (h *StartHandler) HandleQuickPick(ctx *callback.Context) (*callback.Response, error) {
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ 不纠结仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-	// Note: If mood preference is not set, prefMood will be empty and defaults will be used
-	prefMood, _ := sess.GetString("pref_mood_last")
-
-	// 默认心情映射
-	steadyMood := "mindblow" // 稳妥高口碑 → 烧脑刺激（高评分）
-	stimMood := "excited"    // 刺激高热度 → 兴奋（热门）
-	nicheMood := "random"    // 冷门盲盒 → 随机
-
-	// 根据用户心情偏好调整
-	if prefMood == "relax" || prefMood == "healing" {
-		steadyMood = "healing" // 治愈类用户 → 治愈推荐
-		stimMood = "relax"     // 放松推荐
-		nicheMood = "cozy"     // 温馨推荐
-	} else if prefMood == "mindblow" || prefMood == "excited" {
-		steadyMood = "mindblow" // 保持
-		stimMood = "excited"
-		nicheMood = "random"
-	}
-
-	msg := services.NewMessageBuilder()
-	msg.Bold("🎯 不纠结 · 三选一").Newline()
-	msg.Newline()
-	msg.Text("给你三条完全不同的路：").Newline()
-	msg.Text("A 稳妥高口碑  B 刺激高热度  C 冷门盲盒").Newline()
-	msg.Italic("选一个直接开刷，不浪费时间").Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🅰️ 稳妥", fmt.Sprintf("search:type:toprated:mood:%s", steadyMood))
-	kb.AddButton("🅱️ 刺激", fmt.Sprintf("search:type:trending:mood:%s", stimMood))
-	kb.NewRow()
-	kb.AddButton("🅲 冷门盲盒", fmt.Sprintf("search:type:random:mood:%s", nicheMood))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
-}
-
-func (h *StartHandler) HandleHot(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "📺 加载中...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
-	}, nil
-}
-
-func (h *StartHandler) HandleNew(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text:        "🆕 加载中...",
-		CallbackMsg: "加载中",
-		ShowAlert:   true,
 	}, nil
 }
 
@@ -1466,7 +1183,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return &callback.Response{
 			Text:     baseMsg,
 			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true, isPrivateChat && ai.GetManager().IsEnabled(), true)),
+			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
 		}, nil
 	}
 
@@ -1593,7 +1310,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return &callback.Response{
 			Text:      baseMsg,
 			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true, isPrivateChat && ai.GetManager().IsEnabled(), true)),
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
 			ParseMode: "HTML",
 		}, nil
 	}
@@ -1615,7 +1332,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		return &callback.Response{
 			Text:      baseMsg,
 			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true, isPrivateChat && ai.GetManager().IsEnabled(), true)),
+			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
 			ParseMode: "HTML",
 		}, nil
 	}

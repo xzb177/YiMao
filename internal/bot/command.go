@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xzb177/yimao/ai"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -416,9 +415,8 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
 	// 使用 Rich Message 发送欢迎页（Bot API 10.1）
-	hasAI := ai.GetManager().IsEnabled()
-	richMsg := richmessage.BuildWelcomeMessage("", hasAI)
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true, hasAI, true)
+	richMsg := richmessage.BuildWelcomeMessage("")
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 
 	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {
 		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)

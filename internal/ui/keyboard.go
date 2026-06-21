@@ -131,7 +131,7 @@ func (b *KeyboardBuilder) BuildNoResultsKeyboard() *types.TelegramInlineKeyboard
 				{Text: "🌟 加入许愿池", CallbackData: "wish_add"},
 			},
 			{
-				{Text: "🔥 热门搜索", CallbackData: "start_ai"},
+
 				{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 			},
 		},

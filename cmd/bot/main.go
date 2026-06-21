@@ -564,22 +564,14 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
-	registry.RegisterFunc(callback.ActionAI, startHandler.Handle)
-	registry.RegisterFunc(callback.ActionMood, startHandler.Handle)
-	registry.RegisterFunc(callback.ActionMoodPick, startHandler.Handle)
-	registry.RegisterFunc(callback.ActionQuickPick, startHandler.Handle)
-	registry.RegisterFunc(callback.ActionHot, startHandler.Handle)
-	registry.RegisterFunc(callback.ActionNew, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSettings, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
-	registry.RegisterFunc("start_ai", startHandler.Handle)
 	if wishHandler != nil {
 		registry.RegisterFunc("wish", wishHandler.HandleEntry)
 		registry.RegisterFunc("wish_cancel", wishHandler.HandleCancel)
 	}
 	registry.RegisterFunc("myreq_cancel", myRequestsHandler.HandleCancelReview) // 用户撤回 pending 求片申请
-	registry.RegisterFunc("ai_chat", startHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetail, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionDetailSeasons, detailHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequest, requestHandler.Handle)

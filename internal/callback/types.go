@@ -54,14 +54,9 @@ const (
 // validActions is the whitelist of allowed callback actions
 var validActions = map[Action]bool{
 	// Standard actions
-	ActionStart:         true,
-	ActionSearch:        true,
-	ActionAI:            true,
-	ActionMood:          true,
-	ActionMoodPick:      true,
-	ActionQuickPick:     true,
-	ActionHot:           true,
-	ActionNew:           true,
+	ActionStart:  true,
+	ActionSearch: true,
+
 	ActionDetail:        true,
 	ActionDetailSeasons: true,
 	ActionRequest:       true,
@@ -77,14 +72,14 @@ var validActions = map[Action]bool{
 	ActionFeedback:      true,
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page
-	"start_ai":          true, // AI recommendations page (renamed from start_mood)
+	"start_ai":          true, // Reserved
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
 	"wish_cancel":       true, // 许愿撤回
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
-	"ai_chat":           true, // AI chat recommendation
-	"notify_settings":   true, // 通知设置页
-	"notify_toggle":     true, // 通知开关切换
-	"resetpw":           true, // 重置密码
+
+	"notify_settings": true, // 通知设置页
+	"notify_toggle":   true, // 通知开关切换
+	"resetpw":         true, // 重置密码
 
 	// My Requests pagination actions
 	ActionMyReqsPage: true,
