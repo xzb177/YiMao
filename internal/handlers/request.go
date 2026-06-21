@@ -323,6 +323,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
 
+	quotaMediaType := mediaType // Save for rollback
+	_ = quotaMediaType
+
 	review := &services.ReviewRequest{
 		RequestID:    reviewID,
 		TelegramID:   ctx.UserID,
@@ -343,6 +346,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	if err := h.reviewService.CreateRequest(review); err != nil {
 		logger.Info("[求片] 创建请求失败: %v", err)
+		h.quotaService.RestoreQuota(ctx.UserID, quotaMediaType)
 		return &callback.Response{
 			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
@@ -353,10 +357,23 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	// Notify admins about the review request
 	go h.notifyAdminsForReview(review)
 
+	// 发送求片回执消息
+	receiptMsg := fmt.Sprintf(
+		"✅ 求片已提交\n\n🎬 《%s}", review.MediaTitle)
+	if review.MediaYear > 0 {
+		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+	receiptMsg += fmt.Sprintf(
+		"\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你")
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📋 查看进度", "requests")
+	kb.AddButton("⬅️ 继续搜片", "start")
+	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", convertKeyboard(kb.Build()))
+
 	return &callback.Response{
-		Text:        "✅ 已提交求片\n\n审核通过后会自动下载，入库时也会通知你",
+		Text:        "✅ 求片已提交",
 		CallbackMsg: "请求已提交",
-		ShowAlert:   true,
+		ShowAlert:   false,
 	}, nil
 }
 
@@ -420,7 +437,24 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 			},
 		}
 		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
-			logger.Info("[审核] 通知管理员失败 %d: %v", adminID, err)
+			logger.Info("[审核] Rich Message 通知管理员 %d 失败，回退到普通消息: %v", adminID, err)
+			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s}", review.MediaTitle)
+			if review.MediaYear > 0 {
+				plainText += fmt.Sprintf(" (%d)", review.MediaYear)
+			}
+			plainText += fmt.Sprintf("\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
+			if review.MediaType == services.MediaTypeTV {
+				plainText += "\n📺 剧集"
+			} else {
+				plainText += "\n🎬 电影"
+			}
+			if review.Season > 0 {
+				plainText += fmt.Sprintf(" · 第%d季", review.Season)
+			}
+			plainText += "\n查看详情后决定批准或拒绝。"
+			if _, msgErr := h.telegram.SendMessage(adminID, plainText, "", keyboard); msgErr != nil {
+				logger.Info("[审核] 普通消息通知管理员 %d 也失败: %v", adminID, msgErr)
+			}
 		}
 	}
 }
@@ -461,7 +495,11 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 			},
 		}
 		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
-			logger.Info("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
+			logger.Info("[RequestHandler] Rich Message 通知管理员 %d 失败: %v", adminID, err)
+			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s}", title)
+			if _, msgErr := h.telegram.SendMessage(adminID, plainText, "", keyboard); msgErr != nil {
+				logger.Info("[RequestHandler] 普通消息通知管理员 %d 也失败: %v", adminID, msgErr)
+			}
 		}
 	}
 }
@@ -651,6 +689,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	}
 
 	if err := h.reviewService.CreateRequest(review); err != nil {
+		h.quotaService.RestoreQuota(ctx.UserID, mediaType)
 		return &callback.Response{
 			Text:        "❌ 提交失败",
 			CallbackMsg: "失败",
@@ -660,10 +699,25 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	go h.notifyAdminsForReview(review)
 
+	// 发送求片回执消息
+	receiptMsg := fmt.Sprintf(
+		"✅ 求片已提交\n\n🎬 《%s}", review.MediaTitle)
+	if review.MediaYear > 0 {
+		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+	if review.MediaType == services.MediaTypeTV {
+		receiptMsg += "\n📺 剧集"
+	}
+	receiptMsg += "\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你"
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📋 查看进度", "requests")
+	kb.AddButton("⬅️ 继续搜片", "start")
+	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", convertKeyboard(kb.Build()))
+
 	return &callback.Response{
-		Text:        "✅ 已提交求片\n\n审核通过后会自动下载，入库时也会通知你",
+		Text:        "✅ 求片已提交",
 		CallbackMsg: "请求已提交",
-		ShowAlert:   true,
+		ShowAlert:   false,
 	}, nil
 }
 
