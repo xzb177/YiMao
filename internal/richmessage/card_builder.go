@@ -7,39 +7,84 @@ import (
 
 // MediaInfo represents media information
 type MediaInfo struct {
-	Title     string   `json:"title"`
-	Year      int      `json:"year"`
-	Rating    float64  `json:"rating"`
-	Genres    []string `json:"genres"`
-	Overview  string   `json:"overview"`
-	PosterURL string   `json:"poster_url"`
-	TMDBID    int      `json:"tmdb_id"`
-	MediaType string   `json:"media_type"`
+	Title         string   `json:"title"`
+	Year          int      `json:"year"`
+	Rating        float64  `json:"rating"`
+	Genres        []string `json:"genres"`
+	Overview      string   `json:"overview"`
+	PosterURL     string   `json:"poster_url"`
+	TMDBID        int      `json:"tmdb_id"`
+	MediaType     string   `json:"media_type"`
+	OriginalTitle string   `json:"original_title,omitempty"`
+	Runtime       int      `json:"runtime,omitempty"`       // minutes
+	VoteCount     int      `json:"vote_count,omitempty"`
+	SeasonCount   int      `json:"season_count,omitempty"`
+	EpisodeCount  int      `json:"episode_count,omitempty"`
 }
 
 // BuildMediaInfoCard builds a rich media info card
 func BuildMediaInfoCard(info MediaInfo) RichMessage {
 	builder := NewBuilder()
 
-	// Heading (handle empty title)
+	// Heading
 	title := info.Title
 	if title == "" {
 		title = "未知影视"
 	}
-	builder.Heading(fmt.Sprintf("📺 《%s》", title), 2)
+	typeIcon := "🎬"
+	if info.MediaType == "tv" {
+		typeIcon = "📺"
+	}
+	heading := fmt.Sprintf("%s 《%s》", typeIcon, title)
+	if info.Year > 0 {
+		heading += fmt.Sprintf(" (%d)", info.Year)
+	}
+	builder.Heading(heading, 2)
+
+	// Original title if different
+	if info.OriginalTitle != "" && info.OriginalTitle != title {
+		builder.Italic(info.OriginalTitle)
+	}
 
 	// Info table
-	headers := []string{"项目", "详情"}
-	rows := [][]string{
-		{"评分", fmt.Sprintf("⭐ %.1f", info.Rating)},
-		{"年份", fmt.Sprintf("%d", info.Year)},
-		{"类型", strings.Join(info.Genres, "/")},
+	rows := [][]string{}
+	if info.Rating > 0 {
+		ratingText := fmt.Sprintf("⭐ %.1f", info.Rating)
+		if info.VoteCount > 0 {
+			ratingText += fmt.Sprintf(" (%d票)", info.VoteCount)
+		}
+		rows = append(rows, []string{"评分", ratingText})
 	}
-	builder.Table(headers, rows)
+	if len(info.Genres) > 0 {
+		rows = append(rows, []string{"类型", strings.Join(info.Genres, "/")})
+	}
+	if info.Runtime > 0 {
+		hours := info.Runtime / 60
+		mins := info.Runtime % 60
+		if hours > 0 {
+			rows = append(rows, []string{"时长", fmt.Sprintf("%d小时%d分", hours, mins)})
+		} else {
+			rows = append(rows, []string{"时长", fmt.Sprintf("%d分钟", mins)})
+		}
+	}
+	if info.MediaType == "tv" && info.SeasonCount > 0 {
+		epText := fmt.Sprintf("共 %d 季", info.SeasonCount)
+		if info.EpisodeCount > 0 {
+			epText += fmt.Sprintf(" · %d 集", info.EpisodeCount)
+		}
+		rows = append(rows, []string{"季集", epText})
+	}
+	if len(rows) > 0 {
+		builder.Table([]string{"项目", "详情"}, rows)
+	}
 
-	// Overview in collapsible section (closed by default)
+	// Overview
 	if info.Overview != "" {
-		builder.Details("📝 剧情简介（点击展开）", info.Overview, false)
+		overview := info.Overview
+		if len([]rune(overview)) > 300 {
+			overview = string([]rune(overview)[:300]) + "..."
+		}
+		builder.Details("📖 剧情简介（点击展开）", overview, false)
 	}
 
 	return builder.Build()

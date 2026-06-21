@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"html"
 	"strconv"
 	"strings"
 
@@ -841,6 +840,28 @@ func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 	return "🙋 我也想看 +1"
 }
 
+// buildRichDetailResponse builds a Rich Message detail page response.
+// If posterURL is non-empty, sends as photo with caption; otherwise as text.
+func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyboard *types.TelegramInlineKeyboard, posterURL string, edit bool) *callback.Response {
+	msg := richmessage.BuildMediaInfoCard(info)
+	if msg.Markdown != "" {
+		if posterURL != "" {
+			return &callback.Response{
+				Photo:        posterURL,
+				PhotoCaption: msg.Markdown,
+				Edit:         false,
+				Keyboard:     convertKeyboard(keyboard),
+			}
+		}
+		return &callback.Response{
+			RichMessage: msg.Markdown,
+			Edit:        edit,
+			Keyboard:    convertKeyboard(keyboard),
+		}
+	}
+	return nil
+}
+
 func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	// Check if this is a detail_seasons action
 	if ctx.Callback.Action == callback.ActionDetailSeasons {
@@ -919,44 +940,25 @@ func isAIRecommendationQuery(query string) bool {
 }
 
 func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
-	safeTitle := html.EscapeString(item.Title)
-	safeOverview := html.EscapeString(item.Overview)
-	var sb strings.Builder
-
-	typeIcon := "🎬"
-	if item.MediaType == "tv" {
-		typeIcon = "📺"
-	}
-	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
-	if item.Year > 0 {
-		header += fmt.Sprintf(" (%d)", item.Year)
-	}
-	sb.WriteString(header + "\n\n")
-
-	if item.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("╭── 🍿 <b>影片信息</b> ────────────────╮\n"))
-		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", item.Rating))
-		sb.WriteString("╰──────────────────────────────────────╯\n\n")
-	}
-
-	if safeOverview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		if len([]rune(safeOverview)) > 200 {
-			safeOverview = string([]rune(safeOverview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", safeOverview))
+	info := richmessage.MediaInfo{
+		Title:     item.Title,
+		Year:      item.Year,
+		Rating:    item.Rating,
+		Overview:  item.Overview,
+		TMDBID:    item.TmdbID,
+		MediaType: item.MediaType,
 	}
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
 	kb.AddButton("⬅️ 返回", "back")
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+		return resp
 	}
+
+	// Fallback (should not happen)
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
@@ -979,88 +981,26 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "back")
 
-	keyboard := convertKeyboard(kb.Build())
-
-	// Try Rich Message first
 	genresList := strings.Split(media.GetGenres(), ", ")
 	info := richmessage.MediaInfo{
-		Title:     media.GetTitle(),
-		Year:      media.GetYear(),
-		Rating:    media.VoteAverage,
-		Genres:    genresList,
-		Overview:  media.Overview,
-		TMDBID:    media.ID,
-		MediaType: media.MediaType,
+		Title:         media.GetTitle(),
+		Year:          media.GetYear(),
+		Rating:        media.VoteAverage,
+		Genres:        genresList,
+		Overview:      media.Overview,
+		TMDBID:        media.ID,
+		MediaType:     media.MediaType,
+		OriginalTitle: media.OriginalTitle,
+		Runtime:       media.GetRuntime(),
+		VoteCount:     media.VoteCount,
 	}
 
-	msg := richmessage.BuildMediaInfoCard(info)
-	if msg.Markdown != "" {
-		logger.Info("[DetailHandler] Building Rich Message for: %s", media.GetTitle())
-		return &callback.Response{
-			RichMessage: msg.Markdown,
-			Edit:        true,
-			Keyboard:    keyboard,
-		}
+	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+		return resp
 	}
 
-	safeTitle := html.EscapeString(media.GetTitle())
-	safeOrgTitle := html.EscapeString(media.OriginalTitle)
-
-	var sb strings.Builder
-
-	// 1. Header
-	year := media.GetYear()
-	header := fmt.Sprintf("🎬 <b>%s</b>", safeTitle)
-	if year > 0 {
-		header += fmt.Sprintf(" (%d)", year)
-	}
-	sb.WriteString(header + "\n")
-	if safeOrgTitle != "" && safeOrgTitle != safeTitle {
-		sb.WriteString(fmt.Sprintf("<i>%s</i>\n", safeOrgTitle))
-	}
-	sb.WriteString("\n")
-
-	// 2. Spec dashboard
-	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
-	if media.VoteAverage > 0 {
-		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10", media.VoteAverage))
-		if media.VoteCount > 0 {
-			sb.WriteString(fmt.Sprintf(" (%d票)", media.VoteCount))
-		}
-		sb.WriteString("\n")
-	}
-	genres := media.GetGenres()
-	if genres != "" {
-		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(genres)))
-	}
-	runtime := media.GetRuntime()
-	if runtime > 0 {
-		hours := runtime / 60
-		mins := runtime % 60
-		if hours > 0 {
-			sb.WriteString(fmt.Sprintf("│  ⏱️ 时长: <code>%d小时%d分</code>\n", hours, mins))
-		} else {
-			sb.WriteString(fmt.Sprintf("│  ⏱️ 时长: <code>%d分钟</code>\n", runtime))
-		}
-	}
-	sb.WriteString("╰──────────────────────────────────────╯\n\n")
-
-	// 3. Overview
-	if media.Overview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		overview := html.EscapeString(media.Overview)
-		if len([]rune(overview)) > 200 {
-			overview = string([]rune(overview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
-	}
-
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  keyboard,
-		ParseMode: "HTML",
-	}
+	// Fallback
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
@@ -1079,59 +1019,34 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 	}
 	cacheMediaInfo(sess, tmdbID, title, year)
 
-	safeTitle := html.EscapeString(title)
-	var sb strings.Builder
+	// Build genre list
+	genreNames := make([]string, 0)
+	for _, g := range tvDetails.Genres {
+		genreNames = append(genreNames, g.Name)
+	}
 
-	// 1. Header
-	header := fmt.Sprintf("📺 <b>%s</b>", safeTitle)
-	if year > 0 {
-		header += fmt.Sprintf(" (%d)", year)
-	}
-	sb.WriteString(header + "\n\n")
-
-	// 2. Spec dashboard
-	sb.WriteString("╭── 🍿 <b>剧集信息</b> ────────────────╮\n")
-	if tvDetails.VoteAverage > 0 {
-		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10", tvDetails.VoteAverage))
-		if tvDetails.VoteCount > 0 {
-			sb.WriteString(fmt.Sprintf(" (%d票)", tvDetails.VoteCount))
-		}
-		sb.WriteString("\n")
-	}
-	if len(tvDetails.Genres) > 0 {
-		genreNames := make([]string, 0)
-		for _, g := range tvDetails.Genres {
-			genreNames = append(genreNames, g.Name)
-		}
-		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(genreNames, "/"))))
-	}
+	// Count regular seasons
 	regularSeasonCount := 0
 	for _, s := range tvDetails.Seasons {
 		if s.SeasonNumber > 0 {
 			regularSeasonCount++
 		}
 	}
-	if regularSeasonCount > 0 {
-		sb.WriteString(fmt.Sprintf("│  📺 共 <b>%d 季</b> · %d 集\n", regularSeasonCount, tvDetails.NumberOfEpisodes))
-	}
-	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// 3. Overview
-	if tvDetails.Overview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		overview := html.EscapeString(tvDetails.Overview)
-		if len([]rune(overview)) > 200 {
-			overview = string([]rune(overview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
-	}
-
-	// 4. Warning if MP doesn't have this
-	if mpNotAvailable {
-		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n\n")
+	info := richmessage.MediaInfo{
+		Title:        title,
+		Year:         year,
+		Rating:       tvDetails.VoteAverage,
+		Genres:       genreNames,
+		Overview:     tvDetails.Overview,
+		TMDBID:       tmdbID,
+		MediaType:    "tv",
+		VoteCount:    tvDetails.VoteCount,
+		SeasonCount:  regularSeasonCount,
+		EpisodeCount: tvDetails.NumberOfEpisodes,
 	}
 
-	// 5. Season grid (buttons)
+	// Season grid (buttons)
 	kb := services.NewKeyboardBuilder()
 	requestButtonText := "✅ 订阅全季"
 	if mpNotAvailable {
@@ -1166,33 +1081,20 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		}
 	}
 
-	if posterURL != "" {
-		return &callback.Response{
-			Photo:        posterURL,
-			PhotoCaption: sb.String(),
-			Edit:         false,
-			Keyboard:     convertKeyboard(kb.Build()),
-			ParseMode:    "HTML",
-		}
+	if resp := h.buildRichDetailResponse(info, kb.Build(), posterURL, true); resp != nil {
+		return resp
 	}
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
-	}
+	// Fallback
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
 func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
-	safeTitle := html.EscapeString(title)
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📺 <b>%s</b>\n\n", safeTitle))
-	if mpNotAvailable {
-		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n")
-	} else {
-		sb.WriteString("暂无法获取季数信息，请尝试直接订阅全季\n")
+	info := richmessage.MediaInfo{
+		Title:     title,
+		MediaType: "tv",
+		TMDBID:    tmdbID,
 	}
 
 	kb := services.NewKeyboardBuilder()
@@ -1205,56 +1107,29 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "back")
 
-	if posterURL != "" {
-		return &callback.Response{
-			Photo:        posterURL,
-			PhotoCaption: sb.String(),
-			Edit:         false,
-			Keyboard:     convertKeyboard(kb.Build()),
-			ParseMode:    "HTML",
-		}
+	if resp := h.buildRichDetailResponse(info, kb.Build(), posterURL, true); resp != nil {
+		return resp
 	}
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
-	}
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *session.Session) *callback.Response {
 	cacheMediaInfo(sess, media.ID, media.Title, media.Year.Int())
 
 	isTV := media.Type == services.MediaTypeTV
-	safeTitle := html.EscapeString(media.Title)
-	var sb strings.Builder
-
-	typeIcon := "🎬"
+	mediaTypeStr := "movie"
 	if isTV {
-		typeIcon = "📺"
+		mediaTypeStr = "tv"
 	}
-	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
-	if media.Year > 0 {
-		header += fmt.Sprintf(" (%d)", media.Year.Int())
-	}
-	sb.WriteString(header + "\n\n")
 
-	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
-	if media.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", media.Rating))
-	}
-	if len(media.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(media.Genres, "/"))))
-	}
-	sb.WriteString("╰──────────────────────────────────────╯\n\n")
-
-	if media.Overview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		overview := html.EscapeString(media.Overview)
-		if len([]rune(overview)) > 200 {
-			overview = string([]rune(overview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
+	info := richmessage.MediaInfo{
+		Title:     media.Title,
+		Year:      media.Year.Int(),
+		Rating:    media.Rating,
+		Genres:    media.Genres,
+		Overview:  media.Overview,
+		TMDBID:    media.ID,
+		MediaType: mediaTypeStr,
 	}
 
 	kb := services.NewKeyboardBuilder()
@@ -1265,12 +1140,10 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 	}
 	kb.AddButton("⬅️ 返回", "back")
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+		return resp
 	}
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // buildDetailFromSearch builds detail page from search result item
@@ -1327,53 +1200,34 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	cacheMediaInfo(sess, info.ID, info.Title, info.Year.Int())
 
 	isTV := info.Type == services.MediaTypeTV
-	safeTitle := html.EscapeString(info.Title)
-	var sb strings.Builder
-
-	typeIcon := "🎬"
+	mediaTypeStr := "movie"
 	if isTV {
-		typeIcon = "📺"
+		mediaTypeStr = "tv"
 	}
-	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
-	if info.Year > 0 {
-		header += fmt.Sprintf(" (%d)", info.Year.Int())
-	}
-	sb.WriteString(header + "\n\n")
 
-	// Spec dashboard
-	sb.WriteString("╭── 🍿 <b>影片信息</b> ────────────────╮\n")
-	if info.Rating > 0 {
-		sb.WriteString(fmt.Sprintf("│  ⭐️ 评分: <b>%.1f</b>/10\n", info.Rating))
+	rmInfo := richmessage.MediaInfo{
+		Title:     info.Title,
+		Year:      info.Year.Int(),
+		Rating:    info.Rating,
+		Genres:    info.Genres,
+		Overview:  info.Overview,
+		TMDBID:    info.ID,
+		MediaType: mediaTypeStr,
 	}
-	if len(info.Genres) > 0 {
-		sb.WriteString(fmt.Sprintf("│  🏷️ 类型: <code>%s</code>\n", html.EscapeString(strings.Join(info.Genres, "/"))))
-	}
-	sb.WriteString("╰──────────────────────────────────────╯\n\n")
 
-	// TV seasons
+	// Try to get TV season info
 	if isTV && h.tmdb != nil && info.ID > 0 {
 		tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
-		if err == nil && len(tmdbDetails.Seasons) > 0 {
+		if err == nil {
 			regularSeasonCount := 0
 			for _, s := range tmdbDetails.Seasons {
 				if s.SeasonNumber > 0 {
 					regularSeasonCount++
 				}
 			}
-			if regularSeasonCount > 0 {
-				sb.WriteString(fmt.Sprintf("📺 共 <b>%d 季</b> · %d 集\n\n", regularSeasonCount, tmdbDetails.NumberOfEpisodes))
-			}
+			rmInfo.SeasonCount = regularSeasonCount
+			rmInfo.EpisodeCount = tmdbDetails.NumberOfEpisodes
 		}
-	}
-
-	// Overview
-	if info.Overview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		overview := html.EscapeString(info.Overview)
-		if len([]rune(overview)) > 200 {
-			overview = string([]rune(overview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
 	}
 
 	// Keyboard
@@ -1412,75 +1266,50 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": string(info.Type)}))
 	kb.AddButton("⬅️ 返回", "back")
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+	if resp := h.buildRichDetailResponse(rmInfo, kb.Build(), "", true); resp != nil {
+		return resp
 	}
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // buildBasicDetailFromSearch builds basic detail page when MoviePilot API fails
 func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, mediaType string, query string, mpNotAvailable bool) *callback.Response {
-	safeTitle := html.EscapeString(item.Title)
-	var sb strings.Builder
-
-	typeIcon := "🎬"
-	if mediaType == "tv" || item.Type == "tv" {
-		typeIcon = "📺"
-	}
-	header := fmt.Sprintf("%s <b>%s</b>", typeIcon, safeTitle)
-	if item.Year > 0 {
-		header += fmt.Sprintf(" (%d)", item.Year)
-	}
-	sb.WriteString(header + "\n\n")
-
-	if item.Overview != "" {
-		sb.WriteString("📖 <b>剧情简介</b>\n")
-		overview := html.EscapeString(item.Overview)
-		if len([]rune(overview)) > 200 {
-			overview = string([]rune(overview)[:200]) + "..."
-		}
-		sb.WriteString(fmt.Sprintf("<blockquote>%s</blockquote>\n\n", overview))
-	}
-
-	if mpNotAvailable {
-		sb.WriteString("⚠️ <b>资源库暂无</b>，求片后将尝试自动搜索\n\n")
-	}
-
 	tmdbID, _ := strconv.Atoi(item.ID)
+
+	info := richmessage.MediaInfo{
+		Title:     item.Title,
+		Year:      item.Year,
+		Overview:  item.Overview,
+		TMDBID:    tmdbID,
+		MediaType: mediaType,
+	}
+
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("⬅️ 返回", "back")
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+		return resp
 	}
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // buildSimpleDetail builds a simple detail page when API fails
 func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *session.Session) *callback.Response {
-	var sb strings.Builder
-	header := "🎬"
-	if mediaType == "tv" {
-		header = "📺"
+	info := richmessage.MediaInfo{
+		Title:     "影片详情",
+		TMDBID:    tmdbID,
+		MediaType: mediaType,
 	}
-	sb.WriteString(fmt.Sprintf("%s <b>影片详情</b>\n\n", header))
-	sb.WriteString("暂无法获取详细信息，请尝试直接求片\n")
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
 	kb.AddButton("⬅️ 返回", "back")
 
-	return &callback.Response{
-		Text:      sb.String(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+		return resp
 	}
+	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 // HandleSeasons handles the detail_seasons action - shows all seasons for a TV show
