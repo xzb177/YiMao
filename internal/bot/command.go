@@ -418,7 +418,7 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 	// 使用 Rich Message 发送欢迎页（Bot API 10.1）
 	hasAI := ai.GetManager().IsEnabled()
 	richMsg := richmessage.BuildWelcomeMessage("", hasAI)
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, hasAI, true)
+	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true, hasAI, true)
 
 	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {
 		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)
