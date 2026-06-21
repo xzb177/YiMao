@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
@@ -163,8 +164,12 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		}
 		existingMedia, embyErr := h.webhookService.SearchEmbyMedia(review.MediaTitle, review.MediaYear, embyType)
 		if embyErr == nil && existingMedia != nil {
-			h.telegram.SendMessage(review.TelegramID,
-				fmt.Sprintf("⚠️ 求片已自动拦截：媒体库已存在\n\n📺 %s", existingMedia.Title), "", nil)
+			blockedCard := richmessage.BuildReviewBlockedCard(
+				existingMedia.Title,
+				"⚠️ 媒体库已存在该影片",
+				"",
+			)
+			h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
 			return &callback.Response{
 				Text:        fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》", review.MediaTitle),
 				CallbackMsg: "媒体已存在",
@@ -177,8 +182,12 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// 2) MoviePilot duplicate subscription check
 	if sub, found, mpErr := h.moviepilot.FindExistingSubscription(review.TmdbID, mpMediaType, season); mpErr == nil && found {
 		stateText := services.GetStateText(sub.State)
-		h.telegram.SendMessage(review.TelegramID,
-			fmt.Sprintf("⚠️ 求片已自动拦截：MoviePilot 已有订阅\n\n📺 %s\n状态：%s", sub.Name, stateText), "", nil)
+		blockedCard := richmessage.BuildReviewBlockedCard(
+			sub.Name,
+			"⚠️ MoviePilot 已有相同订阅",
+			fmt.Sprintf("订阅 #%d · 状态：%s", sub.ID, stateText),
+		)
+		h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
 		// Sync review with existing subscription info when possible
 		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
@@ -205,8 +214,12 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			logger.Info("[ReviewHandler] MarkStuck 失败: %v", merrr)
 		}
 		// Notify user about approval but submission failed
-		h.telegram.SendMessage(review.TelegramID,
-			fmt.Sprintf("✅ 《%s》已通过审核\n\n⚠️ 正在同步到下载器，稍等一下就好\n去「求片进度」查看状态", review.MediaTitle), "", nil)
+		mediaIcon := "🎬"
+		if review.MediaType == services.MediaTypeTV {
+			mediaIcon = "📺"
+		}
+		stuckCard := richmessage.BuildReviewStuckCard(review.MediaTitle, review.MediaYear, mediaIcon)
+		h.telegram.SendRichMessage(review.TelegramID, stuckCard.Markdown, nil)
 		return &callback.Response{
 			Text:        fmt.Sprintf("⚠️ 审核已通过 · 同步待重试\n\n📺 %s\n\n已记录为 stuck，请到待办中心查看自动重试结果。", review.MediaTitle),
 			CallbackMsg: "已批准·待重试",
@@ -241,16 +254,10 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	// Notify user about approval. 如果审批人就是求片人，避免同一聊天重复出现两条通过通知。
 	if ctx.UserID != review.TelegramID {
-		approveMsg := services.NewMessageBuilder()
-		approveMsg.Bold("✅ 已进入下载队列").Newline()
-		approveMsg.Newline()
-		approveMsg.Text(titleText).Newline()
-		approveMsg.Newline()
-		approveMsg.Text("审核已通过，已提交 MoviePilot 下载").Newline()
-		approveMsg.Italic("入库后会自动提醒，也可随时查看进度")
+		approveCard := richmessage.BuildReviewApprovedCard(review.MediaTitle, review.MediaYear, mediaIcon)
 		approveKb := services.NewKeyboardBuilder()
 		approveKb.AddButton("📋 求片进度", "my_requests")
-		h.telegram.SendMessage(review.TelegramID, approveMsg.Build(), "HTML", approveKb.Build())
+		h.telegram.SendRichMessage(review.TelegramID, approveCard.Markdown, approveKb.Build())
 	}
 
 	// 通知其他管理员：此请求已被处理
@@ -345,16 +352,14 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	}
 
 	// Notify user about rejection
-	rejectMsg := services.NewMessageBuilder()
-	rejectMsg.Bold("❌ 求片未通过").Newline()
-	rejectMsg.Newline()
-	rejectMsg.Textf("📺 《%s》", review.MediaTitle).Newline()
-	rejectMsg.Newline()
-	rejectMsg.Text("💡 已自动退还配额").Newline()
-	rejectMsg.Italic("换个片名再试试？")
+	rejectMediaIcon := "🎬"
+	if review.MediaType == services.MediaTypeTV {
+		rejectMediaIcon = "📺"
+	}
+	rejectCard := richmessage.BuildReviewRejectedCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
 	rejectKb := services.NewKeyboardBuilder()
 	rejectKb.AddButton("🔍 重新搜索", "start")
-	h.telegram.SendMessage(review.TelegramID, rejectMsg.Build(), "HTML", rejectKb.Build())
+	h.telegram.SendRichMessage(review.TelegramID, rejectCard.Markdown, rejectKb.Build())
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))
@@ -430,43 +435,29 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 
 	if len(reviews) == 0 {
 		return &callback.Response{
-			Text: "📋 我的求片\n\n暂无求片记录\n\n使用 🔍 搜索功能来请求影片",
-			Edit: true,
+			RichMessage: "📋 我的求片\n\n暂无求片记录\n\n使用 🔍 搜索功能来请求影片",
+			Edit:        true,
 		}, nil
 	}
 
-	// Build message
-	text := fmt.Sprintf("📋 我的求片 (%d 条)\n\n", len(reviews))
-
+	items := make([]richmessage.MyReviewItem, 0, len(reviews))
 	for _, review := range reviews {
-		statusIcon := "⏳"
-		statusText := "待审核"
-		switch review.Status {
-		case "approved":
-			statusIcon = "✅"
-			statusText = "已批准"
-			// Show subscription status if available
-			if review.SubscriptionID > 0 {
-				subState := review.SubscriptionState
-				if subState == "" {
-					subState = "N" // Default to new if not set
-				}
-				subStatusText := services.GetSubscriptionStateText(subState)
-				statusText = fmt.Sprintf("%s\n   订阅: %s", subStatusText, statusText)
-			}
-		case "rejected":
-			statusIcon = "❌"
-			statusText = "已拒绝"
+		subState := ""
+		if review.SubscriptionID > 0 && review.SubscriptionState != "" {
+			subState = services.GetSubscriptionStateText(review.SubscriptionState)
 		}
-
-		text += fmt.Sprintf("%s %s (%d)\n   状态: %s\n   时间: %s\n\n",
-			statusIcon, review.MediaTitle, review.MediaYear, statusText,
-			review.CreatedAt.Format("01-02 15:04"))
+		items = append(items, richmessage.MyReviewItem{
+			Title:    review.MediaTitle,
+			Year:     review.MediaYear,
+			Status:   review.Status,
+			SubState: subState,
+			Time:     review.CreatedAt.Format("01-02 15:04"),
+		})
 	}
-
+	card := richmessage.BuildMyReviewsCard(items)
 	return &callback.Response{
-		Text: text,
-		Edit: true,
+		RichMessage: card.Markdown,
+		Edit:        true,
 	}, nil
 }
 
@@ -484,22 +475,25 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 
 	if len(pending) == 0 {
 		return &callback.Response{
-			Text: "📋 待审核求片\n\n暂无待审核请求 ✨",
-			Edit: true,
+			RichMessage: "📋 待审核求片\n\n暂无待审核请求 ✨",
+			Edit:        true,
 		}, nil
 	}
 
-	text := fmt.Sprintf("📋 待审核求片 (%d 条)\n\n", len(pending))
-
+	items := make([]richmessage.PendingReviewItem, 0, len(pending))
 	for i, review := range pending {
-		text += fmt.Sprintf("%d. %s (%d)\n   用户: %s\n   时间: %s\n\n",
-			i+1, review.MediaTitle, review.MediaYear, review.TelegramName,
-			review.CreatedAt.Format("01-02 15:04"))
+		items = append(items, richmessage.PendingReviewItem{
+			Index: i + 1,
+			Title: review.MediaTitle,
+			Year:  review.MediaYear,
+			User:  review.TelegramName,
+			Time:  review.CreatedAt.Format("01-02 15:04"),
+		})
 	}
-
+	card := richmessage.BuildPendingReviewsCard(items)
 	return &callback.Response{
-		Text: text,
-		Edit: true,
+		RichMessage: card.Markdown,
+		Edit:        true,
 	}, nil
 }
 

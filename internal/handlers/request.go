@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/errors"
@@ -379,49 +380,36 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		mediaIcon = "📺"
 	}
 
-	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, review.MediaTitle)
-	if review.MediaYear > 0 {
-		titleText += fmt.Sprintf(" (%d)", review.MediaYear)
-	}
-
-	// Build message with clean structure
-	message := fmt.Sprintf("🆕 求片待审核\n\n%s\n🏷️ %s", titleText, mediaTypeLabel)
-
-	// Add season info for TV shows
+	seasonText := ""
 	if review.MediaType == services.MediaTypeTV && review.Season > 0 {
-		message += fmt.Sprintf(" · 第%d季", review.Season)
+		seasonText = fmt.Sprintf("第%d季", review.Season)
 	} else if review.MediaType == services.MediaTypeTV {
-		message += " · 全季"
+		seasonText = "全季"
 	}
 
-	if review.Overview != "" && len(review.Overview) > 0 {
-		// Truncate overview to 100 chars
-		overview := review.Overview
-		if len(overview) > 100 {
-			overview = overview[:97] + "..."
-		}
-		message += fmt.Sprintf("\n\n📝 %s", overview)
+	var embyHours, embyMins int
+	if review.EmbyExists && review.EmbyInfo != nil && review.EmbyInfo.RunTime > 0 {
+		minutes := int(review.EmbyInfo.RunTime / 600000000)
+		embyHours = minutes / 60
+		embyMins = minutes % 60
 	}
 
-	// Add Emby exists warning
-	if review.EmbyExists && review.EmbyInfo != nil {
-		message += fmt.Sprintf("\n\n⚠️ 媒体库中已存在")
-		if review.EmbyInfo.RunTime > 0 {
-			minutes := review.EmbyInfo.RunTime / 600000000
-			hours := minutes / 60
-			mins := minutes % 60
-			if hours > 0 {
-				message += fmt.Sprintf("\n⏱️ 时长: %d小时%d分", hours, mins)
-			} else {
-				message += fmt.Sprintf("\n⏱️ 时长: %d分钟", mins)
-			}
-		}
-	}
-
-	message += fmt.Sprintf("\n\n👤 %s (ID: %d)", review.TelegramName, review.TelegramID)
+	notifyCard := richmessage.BuildReviewNotifyCard(richmessage.ReviewNotifyData{
+		Title:      review.MediaTitle,
+		Year:       review.MediaYear,
+		MediaType:  mediaTypeLabel,
+		MediaIcon:  mediaIcon,
+		Season:     review.Season,
+		SeasonText: seasonText,
+		Overview:   review.Overview,
+		UserName:   review.TelegramName,
+		UserID:     review.TelegramID,
+		EmbyExists: review.EmbyExists,
+		EmbyHours:  embyHours,
+		EmbyMins:   embyMins,
+	})
 
 	// Add action buttons with approve token
-	// Use token as key to keep CallbackData under 64 bytes: "rv_a:TOKEN" or "rv_r:TOKEN"
 	for _, adminID := range adminIDs {
 		keyboard := &types.TelegramInlineKeyboard{
 			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
@@ -431,7 +419,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 				},
 			},
 		}
-		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
+		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
 			logger.Info("[审核] 通知管理员失败 %d: %v", adminID, err)
 		}
 	}
@@ -445,8 +433,10 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 	}
 
 	mediaTypeLabel := "电影"
+	mediaIcon := "🎬"
 	if mediaType == "tv" {
 		mediaTypeLabel = "剧集"
+		mediaIcon = "📺"
 	}
 
 	title := fmt.Sprintf("媒体 #%d", req.MediaID)
@@ -454,7 +444,11 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 		title = req.Media.Title
 	}
 
-	message := fmt.Sprintf("🎬 新求片请求\n\n%s\n%s\n\n请求ID: %d", title, mediaTypeLabel, req.ID)
+	notifyCard := richmessage.BuildReviewNotifyCard(richmessage.ReviewNotifyData{
+		Title:     title,
+		MediaType: mediaTypeLabel,
+		MediaIcon: mediaIcon,
+	})
 
 	// Add action buttons
 	for _, adminID := range adminIDs {
@@ -466,7 +460,7 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 				},
 			},
 		}
-		if _, err := h.telegram.SendMessage(adminID, message, "", keyboard); err != nil {
+		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
 			logger.Info("[RequestHandler] Failed to notify admin %d: %v", adminID, err)
 		}
 	}
