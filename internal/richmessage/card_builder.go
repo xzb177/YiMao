@@ -115,7 +115,6 @@ func BuildWelcomeMessage(userName string, hasAI bool) RichMessage {
 	headers := []string{"功能", "说明"}
 	rows := [][]string{
 		{"🔍 搜片名", "直接发片名，中英文都行"},
-		{"🎭 心情推荐", "告诉我你想看什么类型的"},
 		{"📊 我的求片", "查看请求和订阅进度"},
 		{"🎲 随机盲盒", "不知道看什么？试试运气"},
 		{"🔥 热门趋势", "本周大家都在看什么"},

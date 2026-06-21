@@ -421,8 +421,6 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 
 	kb.AddButton("🔄 换一批", fmt.Sprintf("search:type:%s", recType))
 	kb.AddButton("⬅️ 返回主菜单", "start")
-	kb.NewRow()
-	kb.AddButton("🤖 其他推荐", "ai")
 
 	isReturningFromDetail := cb != nil && cb.Action == "search" && cb.Params["type"] != ""
 
@@ -434,82 +432,6 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 			Keyboard:      convertKeyboard(kb.Build()),
 		}
 	}
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}
-}
-
-func (h *SearchHandler) buildMoodRecommendationResponse(results []services.SearchResult, recType, mood, moodLabel string, userID int64) *callback.Response {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🤖 AI 心情推荐").Newline()
-	msg.Newline()
-	msg.Italic(moodLabel).Newline()
-	msg.Text("根据你的心情智能推荐").Newline()
-	msg.Newline()
-
-	displayCount := len(results)
-	if displayCount > 6 {
-		displayCount = 6
-	}
-
-	// Store recommendation results in session for detail view
-	sess := h.sessMgr.GetOrCreate(userID)
-	searchItems := make([]session.SearchItem, 0, displayCount)
-	for _, item := range results[:displayCount] {
-		mediaType := "movie"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaType = "tv"
-		}
-		searchItems = append(searchItems, session.SearchItem{
-			ID:       fmt.Sprintf("%d", item.ID),
-			Title:    item.Title,
-			Year:     item.Year.Int(),
-			Type:     mediaType,
-			Rating:   item.Rating,
-			Poster:   item.Poster,
-			Overview: item.Overview,
-		})
-	}
-	sess.SetSearchResults(searchItems, 1, fmt.Sprintf("mood_%s", mood))
-	logger.Info("[SearchHandler] Stored %d mood recommendation results in session for user %d", len(searchItems), userID)
-
-	kb := services.NewKeyboardBuilder()
-	for i, item := range results[:displayCount] {
-		year := ""
-		if item.Year > 0 {
-			year = fmt.Sprintf(" (%d)", item.Year)
-		}
-
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
-		}
-
-		mediaType := "🎬"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaType = "📺"
-		}
-
-		msg.Textf("%d. %s%s%s%s", i+1, item.Title, year, mediaType, rating).Newline()
-
-		mediaTypeForCallback := "movie"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaTypeForCallback = "tv"
-		}
-		kb.AddButton(fmt.Sprintf("%d", i+1), fmt.Sprintf("detail:id:%d:type:%s", item.ID, mediaTypeForCallback))
-
-		if (i+1)%3 == 0 || i == displayCount-1 {
-			kb.NewRow()
-		}
-	}
-
-	kb.AddButton("🔄 换一批", fmt.Sprintf("search:type:%s:mood:%s", recType, mood))
-	kb.AddButton("💫 换个心情", "mood")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

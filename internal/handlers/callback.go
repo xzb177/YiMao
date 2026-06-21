@@ -291,23 +291,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 	richMsg := richmessage.BuildWelcomeMessage(userName, hasAI)
 
-	// 添加观影人格（如果有）
 	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
-	if isPrivateChat {
-		sess := h.sessMgr.GetOrCreate(ctx.UserID)
-		if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
-			moodMap := map[string]string{
-				"relax":     "解压轻松",
-				"mindblow":  "烧脑刺激",
-				"emotional": "情绪共鸣",
-				"healing":   "治愈慢节奏",
-				"random":    "随机盲选",
-			}
-			if label, exists := moodMap[moodVal]; exists {
-				baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
-			}
-		}
-	}
 
 	// Check if user is admin to add admin menu button
 	isAdmin := false
@@ -1153,23 +1137,6 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		// No history, show start menu using UI package
 		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
-		// 添加用户观影人格显示（如果有的话）
-		isPrivateChat := ctx.ChatType == "private"
-		if isPrivateChat {
-			if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
-				moodMap := map[string]string{
-					"relax":     "解压轻松",
-					"mindblow":  "烧脑刺激",
-					"emotional": "情绪共鸣",
-					"healing":   "治愈慢节奏",
-					"random":    "随机盲选",
-				}
-				if label, exists := moodMap[moodVal]; exists {
-					baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
-				}
-			}
-		}
-
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 
 		return &callback.Response{
@@ -1279,23 +1246,6 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 		// Show start menu using UI package for any other source
 		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
-
-		// 添加用户观影人格显示（如果有的话）
-		isPrivateChat := ctx.ChatType == "private"
-		if isPrivateChat {
-			if moodVal, ok := sess.GetString("pref_mood_last"); ok && moodVal != "" {
-				moodMap := map[string]string{
-					"relax":     "解压轻松",
-					"mindblow":  "烧脑刺激",
-					"emotional": "情绪共鸣",
-					"healing":   "治愈慢节奏",
-					"random":    "随机盲选",
-				}
-				if label, exists := moodMap[moodVal]; exists {
-					baseMsg += fmt.Sprintf("\n🧠 观影人格：%s", label)
-				}
-			}
-		}
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 
@@ -1482,12 +1432,6 @@ func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType 
 		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
 	}
 	keyboardRows = append(keyboardRows, navRow)
-
-	// Add other recommendations row
-	otherRow := []types.TelegramInlineKeyboardButton{
-		{Text: "🤖 其他推荐", CallbackData: "ai"},
-	}
-	keyboardRows = append(keyboardRows, otherRow)
 
 	keyboard := &types.TelegramInlineKeyboard{
 		InlineKeyboard: keyboardRows,
