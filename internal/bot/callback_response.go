@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"fmt"
+
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
@@ -27,6 +29,16 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 				logger.Info("%s DeleteMessage before Rich Message error: %v", logPrefix, delErr)
 			} else {
 				deletedOriginal = true
+			}
+		}
+		// If Photo is set, send photo first with short caption, then Rich Message
+		if resp.Photo != "" {
+			caption := resp.PhotoCaption
+			if caption == "" {
+				caption = fmt.Sprintf("🎬 《%s》", resp.Text) // fallback
+			}
+			if _, sendErr := telegram.SendPhotoWithParseMode(ctx.ChatID, resp.Photo, caption, "", nil); sendErr != nil {
+				logger.Info("%s SendPhoto before Rich Message error: %v", logPrefix, sendErr)
 			}
 		}
 		if _, sendErr := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard); sendErr != nil {

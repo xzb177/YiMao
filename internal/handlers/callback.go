@@ -841,14 +841,15 @@ func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 }
 
 // buildRichDetailResponse builds a Rich Message detail page response.
-// If posterURL is non-empty, sends as photo with caption; otherwise as text.
+// If posterURL is non-empty, sends photo + Rich Message (dispatcher handles both).
 func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyboard *types.TelegramInlineKeyboard, posterURL string, edit bool) *callback.Response {
 	msg := richmessage.BuildMediaInfoCard(info)
 	if msg.Markdown != "" {
 		if posterURL != "" {
 			return &callback.Response{
 				Photo:        posterURL,
-				PhotoCaption: msg.Markdown,
+				PhotoCaption: fmt.Sprintf("🎬 《%s》", info.Title),
+				RichMessage:  msg.Markdown,
 				Edit:         false,
 				Keyboard:     convertKeyboard(keyboard),
 			}
