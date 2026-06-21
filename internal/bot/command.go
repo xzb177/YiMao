@@ -46,11 +46,6 @@ func HandleCommand(
 
 	rawCommand := parts[0]
 	command := strings.SplitN(rawCommand, "@", 2)[0]
-	inlineArgs := ""
-	if strings.HasPrefix(command, "/ai") && command != "/ai" {
-		inlineArgs = strings.TrimPrefix(command, "/ai")
-		command = "/ai"
-	}
 	logger.Info("[Command] Parsed command: %s", command)
 
 	switch command {
@@ -68,15 +63,7 @@ func HandleCommand(
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/ai":
-		args := strings.TrimSpace(strings.TrimPrefix(msg.Text, rawCommand))
-		if inlineArgs != "" {
-			args = strings.TrimSpace(inlineArgs + " " + args)
-		}
-		if args == "" {
-			telegram.SendMessage(msg.Chat.ID, "🎬 今晚看什么\n\n直接把你的口味/心情告诉我，比如：\n• 想看一部烧脑悬疑\n• 推荐治愈系的\n• 适合今晚轻松看的电影", "", nil)
-			return
-		}
-		handleAIChatMessage(msg.From.ID, msg.Chat.ID, args, telegram, sessMgr)
+		telegram.SendMessage(msg.Chat.ID, "🎬 AI 推荐功能已下线\n\n请使用主菜单的推荐功能", "", nil)
 	case "/requests":
 		// 群组隐私保护：群内不发长卡片，引导去私聊
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
@@ -415,7 +402,7 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
 	// 使用 Rich Message 发送欢迎页（Bot API 10.1）
-	richMsg := richmessage.BuildWelcomeMessage("")
+	richMsg := richmessage.BuildWelcomeMessage("", false)
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 
 	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {

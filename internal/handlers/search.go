@@ -23,7 +23,6 @@ type SearchHandler struct {
 	searchHistory   *services.SearchHistoryService
 	searchHistoryDB *services.SearchHistoryDB
 	recommender     *searchsvc.Recommender
-	aiRecommender   *searchsvc.AIRecommender
 }
 
 func NewSearchHandler(
@@ -36,7 +35,6 @@ func NewSearchHandler(
 	searchSvc.SetTMDBClient(tmdb)
 	fallbackSvc := services.NewSearchFallbackService(moviepilot)
 	recommender := searchsvc.NewRecommender(tmdb, moviepilot)
-	aiRecommender := searchsvc.NewAIRecommender(tmdb, moviepilot, recommender)
 
 	return &SearchHandler{
 		fallbackService: fallbackSvc,
@@ -46,7 +44,6 @@ func NewSearchHandler(
 		tmdb:            tmdb,
 		searchService:   searchSvc,
 		recommender:     recommender,
-		aiRecommender:   aiRecommender,
 	}
 }
 
@@ -327,62 +324,10 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 }
 
 func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType, mood string) (*callback.Response, error) {
-	logger.Info("[SearchHandler] Mood recommendation: type=%s, mood=%s", recType, mood)
+	logger.Info("[SearchHandler] Mood recommendation (fallback to trending): type=%s, mood=%s", recType, mood)
 
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			Text:        "⚠️ AI 推荐功能仅在私聊中可用",
-			CallbackMsg: "请私聊使用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	msg := services.NewMessageBuilder()
-
-	moodKeyword := searchsvc.MapMoodKeyword(mood)
-	results, err := h.aiRecommender.GetMoodRecommendations(moodKeyword, 6)
-	if err != nil {
-		logger.Info("[SearchHandler] AI recommendation failed: %v", err)
-		msg.Bold("🤖 AI 心情推荐").Newline()
-		msg.Newline()
-		msg.Text("😓 AI 推荐服务暂时不可用").Newline()
-		msg.Newline()
-		msg.Textf("💡 已为你切换到普通推荐").Newline()
-
-		// Fallback to regular trending
-		return h.handleTrending(ctx, recType)
-	}
-
-	msg.Bold("🤖 AI 心情推荐").Newline()
-	msg.Newline()
-
-	moodLabel := searchsvc.GetMoodLabel(moodKeyword)
-	msg.Italic(moodLabel).Newline()
-	msg.Text("根据你的心情智能推荐").Newline()
-	msg.Newline()
-
-	if len(results) == 0 {
-		msg.Italic("💫 暂时没有找到相关内容").Newline()
-		msg.Newline()
-		msg.Text("试试其他心情，或许有惊喜哦")
-
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("😌 解压轻松", "search:type:hot:mood:relax")
-		kb.AddButton("🤯 烧脑刺激", "search:type:toprated:mood:mindblow")
-		kb.NewRow()
-		kb.AddButton("😭 情绪共鸣", "search:type:trending:mood:emotional")
-		kb.AddButton("🧘 治愈慢节奏", "search:type:new:mood:healing")
-		kb.NewRow()
-		kb.AddButton("⬅️ 返回主菜单", "start")
-
-		return &callback.Response{
-			Text:     msg.Build(),
-			Edit:     true,
-			Keyboard: convertKeyboard(kb.Build()),
-		}, nil
-	}
-
-	return h.buildMoodRecommendationResponse(results, recType, mood, moodLabel, ctx.UserID), nil
+	// AI module removed, fallback to regular trending
+	return h.handleTrending(ctx, recType)
 }
 
 func (h *SearchHandler) buildRecommendationResponse(results []services.SearchResult, recType string, cb *callback.Callback, userID int64) *callback.Response {

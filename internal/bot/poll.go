@@ -430,31 +430,12 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 }
 
-// sendRecommendationMenu sends the recommendation menu and enters one-shot AI chat mode.
+// sendRecommendationMenu sends the recommendation menu.
 func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, userID int64, sessMgr *session.Manager) {
 	msg := services.NewMessageBuilder()
 	msg.Bold("🎬 今晚看什么").Newline()
 	msg.Newline()
-	if ai.GetManager().IsEnabled() {
-		if sessMgr != nil {
-			sessMgr.GetOrCreate(userID).Set("ai_chat_mode", true)
-			if chatID != 0 && chatID != userID {
-				sessMgr.GetOrCreate(chatID).Set("ai_chat_mode", true)
-			}
-		}
-		msg.Text("直接告诉我你的口味/心情，我帮你挑一部。").Newline()
-		msg.Newline()
-		msg.Text("比如：").Newline()
-		msg.Text("• 想看一部轻松治愈的").Newline()
-		msg.Text("• 来点烧脑悬疑，不要太长").Newline()
-		msg.Text("• 适合今晚和朋友一起看的电影").Newline()
-		msg.Newline()
-		msg.Italic("💡 下一条文字会走 AI 推荐；想搜片请点“搜影片”或返回主菜单")
-	} else {
-		msg.Text("AI 推荐暂未启用，但你可以先用下面的精选入口。").Newline()
-		msg.Newline()
-		msg.Italic("💡 管理员配置 AI 后，这里会支持直接发口味描述")
-	}
+	msg.Text("选一个感兴趣的分类：").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔥 本周热门", "search:type:trending")
@@ -468,17 +449,6 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, use
 	kb.AddButton("⬅️ 返回主菜单", "start")
 
 	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), kb.Build())
-}
-
-func clearAIChatMode(sessMgr *session.Manager, userID, chatID int64) {
-	if sessMgr == nil {
-		return
-	}
-	for _, id := range []int64{userID, chatID} {
-		if id != 0 {
-			sessMgr.GetOrCreate(id).Delete("ai_chat_mode")
-		}
-	}
 }
 
 // HandlePollSearchQuery handles search queries (for polling)
@@ -812,5 +782,3 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 
 	return result
 }
-
-// handleAIChatMessage handles messages in AI chat mode

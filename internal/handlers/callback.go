@@ -280,11 +280,6 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	isPrivateChat := ctx.ChatType == "private"
 	hasAI := false
 
-	// 清除 AI 聊天模式
-	if isPrivateChat {
-		h.disableAIChatMode(ctx)
-	}
-
 	// 获取用户名（用于个性化标题）
 	userName := ""
 	if isPrivateChat {
@@ -331,9 +326,6 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 }
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
-	// Clear AI chat mode when entering search mode
-	h.disableAIChatMode(ctx)
-
 	msg := services.NewMessageBuilder()
 	msg.Bold("🔍 搜影片").Newline()
 	msg.Newline()
@@ -1327,7 +1319,6 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-		isPrivateChat := ctx.ChatType == "private"
 
 		return &callback.Response{
 			Text:      baseMsg,
