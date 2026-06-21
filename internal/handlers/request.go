@@ -368,7 +368,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📋 查看进度", "requests")
 	kb.AddButton("⬅️ 继续搜片", "start")
-	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", convertKeyboard(kb.Build()))
+	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", kb.Build())
 
 	return &callback.Response{
 		Text:        "✅ 求片已提交",
@@ -712,7 +712,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📋 查看进度", "requests")
 	kb.AddButton("⬅️ 继续搜片", "start")
-	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", convertKeyboard(kb.Build()))
+	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", kb.Build())
 
 	return &callback.Response{
 		Text:        "✅ 求片已提交",
