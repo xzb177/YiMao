@@ -402,7 +402,7 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
 	// 使用 Rich Message 发送欢迎页（Bot API 10.1）
-	richMsg := richmessage.BuildWelcomeMessage("", false)
+	richMsg := richmessage.BuildWelcomeMessage("")
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 
 	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {

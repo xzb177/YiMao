@@ -98,7 +98,7 @@ type SubscriptionStatus struct {
 }
 
 // BuildWelcomeMessage builds the Rich Message welcome page for /start
-func BuildWelcomeMessage(userName string, hasAI bool) RichMessage {
+func BuildWelcomeMessage(userName string) RichMessage {
 	builder := NewBuilder()
 
 	// Heading with optional user name
@@ -111,23 +111,14 @@ func BuildWelcomeMessage(userName string, hasAI bool) RichMessage {
 	builder.BoldParagraph("你的私人选片师 · 随时为你找片")
 	builder.Divider()
 
-	// Features table
-	headers := []string{"功能", "说明"}
-	rows := [][]string{
-		{"🔍 搜片名", "直接发片名，中英文都行"},
-		{"📊 我的求片", "查看请求和订阅进度"},
-		{"🎲 随机盲盒", "不知道看什么？试试运气"},
-		{"🔥 热门趋势", "本周大家都在看什么"},
-	}
-	if hasAI {
-		rows = append(rows, []string{"🤖 AI 聊天", "用自然语言描述你的口味"})
-	}
-	builder.Table(headers, rows)
+	// Quick guide
+	guide := "• 🔍 直接发片名搜索，中英文都行\n• ✨ 许愿池求片，有源第一时间通知\n• 📊 我的请求里查看求片进度"
+	builder.Paragraph(guide)
 	builder.Divider()
 
-	// Quick tips (collapsible)
-	tips := "• 直接发送片名即可搜索\n• 支持中英文、电影、剧集\n• 点击结果可查看详情和求片\n• 去许愿池许愿，有源第一时间通知\n• 我的请求里查看所有求片进度"
-	builder.Details("💡 快速上手", tips, false)
+	// Tips (collapsible)
+	tips := "• 支持电影、剧集、综艺、纪录片\n• 点击搜索结果可查看详情和求片\n• 管理员审批后自动开始下载\n• 下载完成会私聊通知你"
+	builder.Details("💡 使用技巧", tips, false)
 
 	return builder.Build()
 }

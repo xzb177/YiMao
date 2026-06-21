@@ -278,7 +278,6 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 	// 使用 Rich Message 构建欢迎页（Bot API 10.1）
 	isPrivateChat := ctx.ChatType == "private"
-	hasAI := false
 
 	// 获取用户名（用于个性化标题）
 	userName := ""
@@ -289,7 +288,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		}
 	}
 
-	richMsg := richmessage.BuildWelcomeMessage(userName, hasAI)
+	richMsg := richmessage.BuildWelcomeMessage(userName)
 
 	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
 
