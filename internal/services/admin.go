@@ -244,8 +244,10 @@ func (s *AdminService) AddAdminWithRole(userID int64, name string, role AdminRol
 			Name:   name,
 			Role:   role,
 		}
-		// If this is the first admin, make them root
-		if len(s.admins) == 1 {
+		// Only auto-promote to root when it's the very first admin in the entire
+		// system AND the caller did not explicitly request a specific role.
+		// This ensures ADMIN_USER_IDS / existing file admins keep root control.
+		if role == AdminRoleNormal && len(s.admins) == 1 && s.rootUserID == 0 {
 			s.admins[userID].Role = AdminRoleRoot
 			s.rootUserID = userID
 		}

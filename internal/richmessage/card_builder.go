@@ -16,7 +16,7 @@ type MediaInfo struct {
 	TMDBID        int      `json:"tmdb_id"`
 	MediaType     string   `json:"media_type"`
 	OriginalTitle string   `json:"original_title,omitempty"`
-	Runtime       int      `json:"runtime,omitempty"`       // minutes
+	Runtime       int      `json:"runtime,omitempty"` // minutes
 	VoteCount     int      `json:"vote_count,omitempty"`
 	SeasonCount   int      `json:"season_count,omitempty"`
 	EpisodeCount  int      `json:"episode_count,omitempty"`
@@ -499,7 +499,6 @@ func BuildDashboardCard(data DashboardData) RichMessage {
 	return builder.Build()
 }
 
-
 // RequestCardItem is a compact row for the user request progress card.
 type RequestCardItem struct {
 	Index  int
@@ -780,11 +779,11 @@ func BuildReviewBlockedCard(title string, reason string, detail string) RichMess
 
 // PendingReviewItem is a single row in the pending reviews list.
 type PendingReviewItem struct {
-	Index   int
-	Title   string
-	Year    int
-	User    string
-	Time    string
+	Index int
+	Title string
+	Year  int
+	User  string
+	Time  string
 }
 
 // BuildPendingReviewsCard builds admin pending reviews list card.

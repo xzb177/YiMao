@@ -33,6 +33,13 @@ func HandleCommand(
 	myRequestsHandler *handlers.MyRequestsHandler,
 ) {
 	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
+
+	// 全局限流：超过每分钟 60 条命令则忽略
+	if checkCommandRateLimit(msg.From.ID) {
+		logger.Warn("[Command] Rate limit exceeded for user %d, dropping command: %s", msg.From.ID, msg.Text)
+		return
+	}
+
 	parts := strings.Fields(msg.Text)
 	if len(parts) == 0 {
 		return
@@ -138,6 +145,38 @@ const (
 	maxLinkAttempts = 5                // 最多 5 次失败
 	linkBlockTime   = 15 * time.Minute // 锁定 15 分钟
 )
+
+// Genral command rate limiter: per-user command throttle to prevent abuse.
+var (
+	cmdTimestamps   = make(map[int64][]time.Time)
+	cmdTimestampsMu sync.Mutex
+)
+
+const (
+	maxCommandsPerMinute = 60 // max commands per rolling window
+	cmdWindowDuration    = 60 * time.Second
+)
+
+func checkCommandRateLimit(userID int64) bool {
+	cmdTimestampsMu.Lock()
+	defer cmdTimestampsMu.Unlock()
+	now := time.Now()
+	windowStart := now.Add(-cmdWindowDuration)
+	// Clean old entries
+	recent := cmdTimestamps[userID][:0]
+	for _, t := range cmdTimestamps[userID] {
+		if t.After(windowStart) {
+			recent = append(recent, t)
+		}
+	}
+	if len(recent) >= maxCommandsPerMinute {
+		cmdTimestamps[userID] = recent
+		return true
+	}
+	recent = append(recent, now)
+	cmdTimestamps[userID] = recent
+	return false
+}
 
 func checkLinkRateLimit(userID int64) (blocked bool, remaining time.Duration) {
 	linkAttemptsMu.Lock()

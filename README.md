@@ -241,6 +241,7 @@ export $(grep -v '^#' .env | xargs)
 | 变量 | 必填 | 默认 | 说明 |
 | --- | :---: | --- | --- |
 | `WEBHOOK_SECRET` | | 空 | 设置后入站 Webhook 须携带有效签名（`X-Webhook-Signature: sha256=<hex>`） |
+| `ENABLE_API_AUTH` | | `true` | HTTP API 接口鉴权开关；关闭后管理接口可无 Key 访问 |
 | `WEBHOOK_URL` | | 空 | 设置后 Bot 使用 Webhook 模式接收 Telegram 更新（否则轮询） |
 | `UI_STYLE` | | `card` | 菜单风格：`neon` / `film` / `pop` / `card` / `cinema` |
 | `LOG_LEVEL` | | `info` | 日志级别：`debug` / `info` / `warn` / `error` |

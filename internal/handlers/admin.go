@@ -755,7 +755,6 @@ func (h *AdminHandler) handleAdminDashboard(ctx *callback.Context) (*callback.Re
 	}, nil
 }
 
-
 // handleNotifSettings handles notification settings callback
 // 两个开关：单集开关（群组）、汇总开关（群组+私聊）
 func (h *AdminHandler) handleNotifSettings(ctx *callback.Context) (*callback.Response, error) {

@@ -36,9 +36,9 @@ type ReviewRequest struct {
 	ApproveToken    string            `json:"approve_token,omitempty"` // One-time token for approve action
 
 	// MoviePilot subscription info
-	SubscriptionID    int       `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
-	SubscriptionState string    `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
-	LastResubscribeAt time.Time `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
+	SubscriptionID    int        `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
+	SubscriptionState string     `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
+	LastResubscribeAt time.Time  `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
 	LibraryNotifiedAt *time.Time `json:"library_notified_at,omitempty"` // Emby 入库后已私聊通知时间，防重复通知
 
 	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
@@ -1204,16 +1204,16 @@ func (s *ReviewService) sendDailySummary() {
 
 // RequestStats summarizes review request health.
 type RequestStats struct {
-	Total              int
-	Pending            int
-	Approved           int
-	Rejected           int
-	Cancelled          int
-	Completed          int
-	Failed             int
-	Stuck              int
-	UniqueUsers        int
-	AverageDoneHours   int
+	Total            int
+	Pending          int
+	Approved         int
+	Rejected         int
+	Cancelled        int
+	Completed        int
+	Failed           int
+	Stuck            int
+	UniqueUsers      int
+	AverageDoneHours int
 }
 
 // GetRequestStats returns high-level request funnel stats.

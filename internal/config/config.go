@@ -139,7 +139,7 @@ func Load() (*Config, error) {
 		EnableNewMovies:       getEnvBool("ENABLE_NEW_MOVIES", true),
 		EnableRandom:          getEnvBool("ENABLE_RANDOM", true),
 		Admins:                make(map[int64]string),
-		EnableAPIAuth:         getEnvBool("ENABLE_API_AUTH", false),
+		EnableAPIAuth:         getEnvBool("ENABLE_API_AUTH", true),
 		APIKeys:               make(map[string]string),
 		EnableRateLimit:       getEnvBool("ENABLE_RATE_LIMIT", true),
 		EnableIPBlocking:      getEnvBool("ENABLE_IP_BLOCKING", true),
