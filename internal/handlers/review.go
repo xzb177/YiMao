@@ -20,6 +20,7 @@ type ReviewHandler struct {
 	reviewService  *services.ReviewService
 	quotaService   *services.QuotaService
 	webhookService *services.WebhookService
+	groupChatID    int64 // 群组 ChatID，审批通过时发送群通知；0=不发
 	// OnCarpoolNotify 拼车用户通知回调（拒绝/撤回时触发）。
 	// 参数：tmdbID, mediaType, title, reason
 	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
@@ -33,6 +34,7 @@ func NewReviewHandler(
 	reviewService *services.ReviewService,
 	quotaService *services.QuotaService,
 	webhookService *services.WebhookService,
+	groupChatID int64,
 ) *ReviewHandler {
 	return &ReviewHandler{
 		sessMgr:        sessMgr,
@@ -42,6 +44,7 @@ func NewReviewHandler(
 		reviewService:  reviewService,
 		quotaService:   quotaService,
 		webhookService: webhookService,
+		groupChatID:    groupChatID,
 	}
 }
 
@@ -262,6 +265,28 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
+
+	// 通知群组：求片已批准
+	if h.groupChatID != 0 {
+		seasonText := ""
+		if review.MediaType == services.MediaTypeTV && review.Season > 0 {
+			seasonText = fmt.Sprintf("第 %d 季", review.Season)
+		}
+		mediaTypeText := "电影"
+		if review.MediaType == services.MediaTypeTV {
+			mediaTypeText = "剧集"
+		}
+		groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
+			Title:      review.MediaTitle,
+			Year:       review.MediaYear,
+			MediaType:  mediaTypeText,
+			MediaIcon:  mediaIcon,
+			SeasonText: seasonText,
+			Requester:  review.TelegramName,
+			TMDBID:     review.TmdbID,
+		})
+		go h.telegram.SendRichMessage(h.groupChatID, groupCard.Markdown, nil)
+	}
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 已进入下载队列\n\n%s\n\n审核已通过，已提交 MoviePilot 下载。\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),

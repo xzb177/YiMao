@@ -705,6 +705,47 @@ type ReviewResultData struct {
 	SubID     int    // subscription ID (for approved)
 }
 
+// GroupApprovedData holds data for group chat approval notification.
+type GroupApprovedData struct {
+	Title       string
+	Year        int
+	MediaType   string // "电影" or "剧集"
+	MediaIcon   string // "🎬" or "📺"
+	SeasonText  string // "全季", "第X季", or ""
+	Requester   string // requester display name
+	TMDBID      int
+	ApprovedBy  string // admin display name (optional)
+}
+
+// BuildGroupApprovedCard builds group notification when a request is approved.
+func BuildGroupApprovedCard(data GroupApprovedData) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("🎉 求片已批准", 3)
+
+	titleText := fmt.Sprintf("%s 《%s》", data.MediaIcon, data.Title)
+	if data.Year > 0 {
+		titleText += fmt.Sprintf(" (%d)", data.Year)
+	}
+	builder.BoldParagraph(titleText)
+
+	rows := [][]string{
+		{"📋 类型", data.MediaType},
+		{"👤 求片人", data.Requester},
+	}
+	if data.SeasonText != "" {
+		rows = append(rows, []string{"📺 季", data.SeasonText})
+	}
+	if data.ApprovedBy != "" {
+		rows = append(rows, []string{"✅ 审批", data.ApprovedBy})
+	}
+	builder.Table([]string{"信息", "详情"}, rows)
+
+	builder.Divider()
+	builder.Italic("📥 已提交下载队列，入库后自动通知")
+
+	return builder.Build()
+}
+
 // BuildReviewApprovedCard builds user notification for approved request.
 func BuildReviewApprovedCard(title string, year int, mediaIcon string) RichMessage {
 	builder := NewBuilder()

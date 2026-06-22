@@ -445,6 +445,14 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry := callback.NewRegistry()
 
+	// Parse group chat ID for notifications
+	groupChatID := int64(0)
+	if deps.Cfg.TelegramChatID != "" {
+		if id, err := strconv.ParseInt(deps.Cfg.TelegramChatID, 10, 64); err == nil {
+			groupChatID = id
+		}
+	}
+
 	// Apply middleware
 	registry.Use(middleware.Recovery)
 	registry.Use(middleware.Logger)
@@ -466,7 +474,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	linkHandler := handlers.NewLinkHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
-	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService)
+	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService, groupChatID)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
 
 	// 拼车取消/拒绝通知
