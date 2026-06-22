@@ -221,6 +221,7 @@ type StartHandler struct {
 	adminService    *services.AdminService
 	userMapping     services.UserMappingStore
 	weeklyReportSvc *services.WeeklyReportService
+	portraitSvc     *services.PortraitService
 }
 
 func NewStartHandler(
@@ -251,6 +252,11 @@ func (h *StartHandler) SetWeeklyReportService(svc *services.WeeklyReportService)
 	h.weeklyReportSvc = svc
 }
 
+// SetPortraitService sets the portrait service (灵魂画像)
+func (h *StartHandler) SetPortraitService(svc *services.PortraitService) {
+	h.portraitSvc = svc
+}
+
 func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	action := ctx.Callback.Action
 
@@ -267,6 +273,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 		return h.HandleWeeklyReport(ctx)
 	case "weekly_report_send":
 		return h.HandleWeeklyReportSend(ctx)
+	case "portrait":
+		return h.HandlePortrait(ctx)
 	default:
 		return nil, errors.CallbackInvalid(fmt.Sprintf("unknown start action: %s", action))
 	}
@@ -486,6 +494,91 @@ func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.
 	return &callback.Response{
 		CallbackMsg: "📬 报告已推送到您的私聊！",
 		ShowAlert:   true,
+	}, nil
+}
+
+// HandlePortrait handles the portrait (灵魂画像) callback from the start menu.
+func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response, error) {
+	if h.portraitSvc == nil || h.userMapping == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	// 群组隐私保护
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			CallbackMsg: "🔒 灵魂画像是你的私人观影密码，请私聊机器人查看 🧠",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 查找 MoviePilot 用户名
+	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
+	if err != nil || mpUsername == "" {
+		return &callback.Response{
+			Text:        "🔗 请先绑定账号（/link），才能生成灵魂画像",
+			CallbackMsg: "请先绑定账号",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 查找 Emby 用户
+	embyUserID, err := h.portraitSvc.FindEmbyUserByName(mpUsername)
+	if err != nil {
+		return &callback.Response{
+			Text:        "❌ 未找到你的 Emby 观影记录\n\n需要你的 Emby 用户名与 MoviePilot 用户名一致",
+			CallbackMsg: "未找到观影记录",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 生成画像
+	result, err := h.portraitSvc.GeneratePortrait(embyUserID, mpUsername)
+	if err != nil {
+		return &callback.Response{
+			Text:        "❌ 画像生成失败：" + err.Error(),
+			CallbackMsg: "生成失败",
+			ShowAlert:   true,
+		}, nil
+	}
+
+	// 转换为卡片数据
+	cardData := richmessage.PortraitCardData{
+		UserName:   result.UserName,
+		TotalItems: result.TotalItems,
+		TopGenres:  strings.Join(result.TopGenres, " · "),
+		AvgRating:  result.AvgRating,
+		TasteLevel: result.TasteLevel,
+		TasteDesc:  result.TasteDesc,
+		RhythmType: result.RhythmType,
+		RhythmDesc: result.RhythmDesc,
+		Surprises:  result.Surprises,
+		BlindSpots: result.BlindSpots,
+	}
+	for _, bar := range result.GenreBar {
+		cardData.GenreBar = append(cardData.GenreBar, richmessage.GenreBarData{
+			Genre: bar.Genre,
+			Pct:   fmt.Sprintf("%.1f", bar.Pct),
+			Bar:   bar.Bar,
+		})
+	}
+	for _, pt := range result.PsychTraits {
+		cardData.PsychTraits = append(cardData.PsychTraits, richmessage.PsychTraitData{
+			Genre: pt.Genre,
+			Trait: pt.Trait,
+			Desc:  pt.Desc,
+		})
+	}
+
+	// 构建卡片 + 按钮
+	card := richmessage.BuildPortraitCard(cardData)
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔄 重新生成", "portrait")
+	kb.AddButton("⬅️ 返回主菜单", "start")
+
+	return &callback.Response{
+		RichMessage: card.Markdown,
+		Edit:        false, // 发新消息，不替换主菜单
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 

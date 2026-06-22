@@ -555,6 +555,11 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	startHandler.SetAdminService(deps.AdminService)
 	startHandler.SetUserMapping(deps.UserMapping)
 	startHandler.SetWeeklyReportService(deps.WeeklyReportSvc)
+
+	// 灵魂画像服务
+	if deps.Cfg.EmbyURL != "" && deps.Cfg.EmbyAPIKey != "" {
+		startHandler.SetPortraitService(services.NewPortraitService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey))
+	}
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)

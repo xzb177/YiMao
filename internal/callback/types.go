@@ -171,6 +171,9 @@ var validActions = map[Action]bool{
 	"weekly_report":      true, // Show weekly report
 	"weekly_report_send": true, // Send weekly report
 
+	// Portrait actions
+	"portrait": true, // 灵魂画像
+
 	// Resource candidate actions
 	ActionResourceList: true,
 	ActionResourcePick: true,
