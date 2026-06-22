@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"sync"
@@ -682,7 +683,7 @@ func (s *NarratorService) SearchMovie(query string) (string, int, []string, floa
 	}
 
 	url := fmt.Sprintf("%s/Items?SearchTerm=%s&IncludeItemTypes=Movie&Limit=5&Fields=Genres,CommunityRating&api_key=%s",
-		s.embyURL, query, s.embyAPIKey)
+		s.embyURL, url.QueryEscape(query), s.embyAPIKey)
 	resp, err := s.httpClient.Get(url)
 	if err != nil {
 		return "", 0, nil, 0, err
@@ -1141,9 +1142,8 @@ type RouletteService struct {
 	embyAPIKey string
 	tmdbAPIKey string
 	httpClient *http.Client
-	spinCounts map[int64]int // userID -> today's spin count
-	mu         sync.RWMutex
-	lastReset  time.Time
+	spinCounts map[string]int // "userID:date" -> spin count
+	mu         sync.Mutex
 }
 
 // NewRouletteService 创建轮盘服务
@@ -1153,25 +1153,22 @@ func NewRouletteService(embyURL, embyAPIKey, tmdbAPIKey string) *RouletteService
 		embyAPIKey: embyAPIKey,
 		tmdbAPIKey: tmdbAPIKey,
 		httpClient: &http.Client{Timeout: 20 * time.Second},
-		spinCounts: make(map[int64]int),
+		spinCounts: make(map[string]int),
 	}
 }
 
 // Spin 转轮盘
 func (s *RouletteService) Spin(userID int64, genre string) (*RouletteResult, error) {
-	// 检查每日限制
+	// 检查每日限制（原子操作）
 	s.mu.Lock()
 	today := time.Now().Format("2006-01-02")
-	if s.lastReset.Format("2006-01-02") != today {
-		s.spinCounts = make(map[int64]int)
-		s.lastReset = time.Now()
-	}
-	count := s.spinCounts[userID]
+	key := fmt.Sprintf("%d:%s", userID, today)
+	count := s.spinCounts[key]
 	if count >= 3 {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("今日已转 %d 次，每天最多 3 次哦～明天再来吧！", count)
 	}
-	s.spinCounts[userID] = count + 1
+	s.spinCounts[key] = count + 1
 	spinNum := count + 1
 	s.mu.Unlock()
 

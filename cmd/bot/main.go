@@ -151,6 +151,10 @@ func main() {
 			logger.Info("[UserMappingDB] 关闭数据库出错: %v", err)
 		}
 	}
+	// 关闭 GameHandler (SocialDB)
+	if depsWithHandlers.GameHandler != nil {
+		depsWithHandlers.GameHandler.Close()
+	}
 
 	logger.Info("✅ All services stopped")
 }
@@ -183,6 +187,7 @@ type Dependencies struct {
 	WishScheduler     *services.WishScheduler     // #6 许愿池 DailyRescan task
 	WishHandler       *handlers.WishHandler       // #6 许愿池命令/回调处理器
 	MyRequestsHandler *handlers.MyRequestsHandler // 「我的请求」聚合视图（/requests 命令复用）
+	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // initServices initializes all services
@@ -772,6 +777,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		WishScheduler:     deps.WishScheduler,
 		WishHandler:       wishHandler,
 		MyRequestsHandler: myRequestsHandler,
+		GameHandler:       gameHandler,
 	}
 
 	return registry, resultDeps

@@ -4,24 +4,33 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // GameHandler 游戏化功能回调处理器
 type GameHandler struct {
-	rankSvc       *services.RankService
+	rankSvc        *services.RankService
 	personalitySvc *services.PersonalityService
-	narratorSvc   *services.NarratorService
-	blinbBoxSvc   *services.BlindBoxService
-	socialDB      *services.SocialDB
-	rouletteSvc   *services.RouletteService
-	userMapping   services.UserMappingStore
-	telegram      *services.TelegramClient
+	narratorSvc    *services.NarratorService
+	blindBoxSvc    *services.BlindBoxService
+	socialDB       *services.SocialDB
+	rouletteSvc    *services.RouletteService
+	userMapping    services.UserMappingStore
+	telegram       *services.TelegramClient
+}
+
+// Close 清理资源
+func (h *GameHandler) Close() {
+	if h.socialDB != nil {
+		if err := h.socialDB.Close(); err != nil {
+			logger.Info("[Game] 关闭 SocialDB 出错: %v", err)
+		}
+	}
 }
 
 // NewGameHandler 创建游戏处理器
@@ -39,7 +48,7 @@ func NewGameHandler(
 		rankSvc:        rankSvc,
 		personalitySvc: personalitySvc,
 		narratorSvc:    narratorSvc,
-		blinbBoxSvc:    blindBoxSvc,
+		blindBoxSvc:    blindBoxSvc,
 		socialDB:       socialDB,
 		rouletteSvc:    rouletteSvc,
 		userMapping:    userMapping,
@@ -108,7 +117,7 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 	if h.rankSvc == nil || h.userMapping == nil {
 		return &callback.Response{CallbackMsg: "❌ 段位服务未就绪", ShowAlert: true}, nil
 	}
-	if ctx.ChatType != "private" {
+	if !requirePrivate(ctx) {
 		return &callback.Response{CallbackMsg: "🔒 段位是你的私人数据，请私聊查看", ShowAlert: true}, nil
 	}
 
@@ -124,7 +133,8 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 
 	result, err := h.rankSvc.CalculateRank(embyUserID, mpUsername)
 	if err != nil {
-		return &callback.Response{Text: "❌ 段位计算失败: " + err.Error(), CallbackMsg: "计算失败", ShowAlert: true}, nil
+		logger.Info("[Game] Rank calculation failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 段位计算失败，请稍后再试", CallbackMsg: "计算失败", ShowAlert: true}, nil
 	}
 
 	card := richmessage.BuildRankCard(richmessage.RankCardData{
@@ -161,7 +171,7 @@ func (h *GameHandler) handlePersonality(ctx *callback.Context) (*callback.Respon
 	if h.personalitySvc == nil || h.userMapping == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
-	if ctx.ChatType != "private" {
+	if !requirePrivate(ctx) {
 		return &callback.Response{CallbackMsg: "🔒 性格测试需要私聊进行", ShowAlert: true}, nil
 	}
 
@@ -177,7 +187,8 @@ func (h *GameHandler) handlePersonality(ctx *callback.Context) (*callback.Respon
 
 	result, err := h.personalitySvc.AnalyzePersonality(embyUserID, mpUsername)
 	if err != nil {
-		return &callback.Response{Text: "❌ 分析失败: " + err.Error(), CallbackMsg: "分析失败", ShowAlert: true}, nil
+		logger.Info("[Game] Personality analysis failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 性格分析失败，请稍后再试", CallbackMsg: "分析失败", ShowAlert: true}, nil
 	}
 
 	var dims []richmessage.PDimensionView
@@ -243,7 +254,8 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	// 生成解说
 	result, err := h.narratorSvc.GenerateNarration(title, year, false)
 	if err != nil {
-		return &callback.Response{Text: "❌ 生成失败: " + err.Error(), CallbackMsg: "生成失败", ShowAlert: true}, nil
+		logger.Info("[Game] Narration failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ AI 解说生成失败，请稍后再试", CallbackMsg: "生成失败", ShowAlert: true}, nil
 	}
 	result.Rating = rating
 	result.Genres = genres
@@ -272,9 +284,19 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	}, nil
 }
 
+// --- 工具函数 ---
+
+// requirePrivate 要求私聊环境
+func requirePrivate(ctx *callback.Context) bool {
+	return ctx.ChatType == "private"
+}
+
 // --- 盲盒 ---
 
 func (h *GameHandler) handleBlindBox(ctx *callback.Context) (*callback.Response, error) {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 盲盒需要私聊使用", ShowAlert: true}, nil
+	}
 	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{
 		Items: []richmessage.BlindBoxItemView{
 			{Revealed: false, Rarity: "?"},
@@ -297,13 +319,17 @@ func (h *GameHandler) handleBlindBox(ctx *callback.Context) (*callback.Response,
 }
 
 func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Response, error) {
-	if h.blinbBoxSvc == nil {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 盲盒需要私聊使用", ShowAlert: true}, nil
+	}
+	if h.blindBoxSvc == nil {
 		return &callback.Response{CallbackMsg: "❌ 盲盒服务未就绪", ShowAlert: true}, nil
 	}
 
-	items, err := h.blinbBoxSvc.OpenBlindBox("", 3)
+	items, err := h.blindBoxSvc.OpenBlindBox("", 3)
 	if err != nil {
-		return &callback.Response{Text: "❌ 开盒失败: " + err.Error(), CallbackMsg: "开盒失败", ShowAlert: true}, nil
+		logger.Info("[Game] BlindBox open failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 开盒失败，请稍后再试", CallbackMsg: "开盒失败", ShowAlert: true}, nil
 	}
 
 	var views []richmessage.BlindBoxItemView
@@ -334,6 +360,9 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 // --- 社交动态 ---
 
 func (h *GameHandler) handleSocialFeed(ctx *callback.Context) (*callback.Response, error) {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 影友圈需要私聊查看", ShowAlert: true}, nil
+	}
 	if h.socialDB == nil {
 		return &callback.Response{CallbackMsg: "❌ 社交服务未就绪", ShowAlert: true}, nil
 	}
@@ -409,7 +438,8 @@ func (h *GameHandler) handleReviewRate(ctx *callback.Context) (*callback.Respons
 
 	err = h.socialDB.AddReview(ctx.UserID, mpUsername, movieName, 0, rating, "")
 	if err != nil {
-		return &callback.Response{Text: "❌ 评分失败: " + err.Error(), CallbackMsg: "失败", ShowAlert: true}, nil
+		logger.Info("[Game] Review rating failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 评分失败，请稍后再试", CallbackMsg: "失败", ShowAlert: true}, nil
 	}
 
 	return &callback.Response{
@@ -422,6 +452,9 @@ func (h *GameHandler) handleReviewRate(ctx *callback.Context) (*callback.Respons
 // --- 命运轮盘 ---
 
 func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response, error) {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 轮盘需要私聊使用", ShowAlert: true}, nil
+	}
 	card := richmessage.BuildRouletteCard(richmessage.RouletteCardData{
 		Title:    "等待命运的裁决...",
 		SpinCount: 0,
@@ -441,6 +474,9 @@ func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response,
 }
 
 func (h *GameHandler) handleRouletteSpin(ctx *callback.Context) (*callback.Response, error) {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 轮盘需要私聊使用", ShowAlert: true}, nil
+	}
 	if h.rouletteSvc == nil {
 		return &callback.Response{CallbackMsg: "❌ 轮盘服务未就绪", ShowAlert: true}, nil
 	}
