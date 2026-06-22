@@ -599,6 +599,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	logger.Info("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
 	registry.RegisterFunc("my_feedback", feedbackHandler.Handle)
+	registry.RegisterFunc("portrait", startHandler.Handle)
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
