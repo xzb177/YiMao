@@ -412,7 +412,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
 		sent, _ := telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
 		// 3 秒自毁：不污染群聊记录
 		if sent != nil {

@@ -929,7 +929,13 @@ func BuildPortraitCard(data PortraitCardData) RichMessage {
 
 	// 核心指标
 	builder.Divider()
-	builder.BoldParagraph(fmt.Sprintf("🎭 %s　⭐ %.1f", data.TopGenres, data.AvgRating))
+	topGenreLine := fmt.Sprintf("🎭 %s", data.TopGenres)
+	if data.AvgRating >= 0 {
+		topGenreLine += fmt.Sprintf("　⭐ %.1f", data.AvgRating)
+	} else {
+		topGenreLine += "　⭐ 暂无评分"
+	}
+	builder.BoldParagraph(topGenreLine)
 	builder.Paragraph(fmt.Sprintf("%s — %s", data.TasteLevel, data.TasteDesc))
 	builder.Paragraph(fmt.Sprintf("%s — %s", data.RhythmType, data.RhythmDesc))
 

@@ -21,6 +21,7 @@ type PortraitData struct {
 
 // PortraitItem 单部作品信息
 type PortraitItem struct {
+	ID      string // Emby Item ID（用于去重）
 	Name    string
 	Year    int
 	Genres  []string
@@ -110,6 +111,10 @@ func (s *PortraitService) FindEmbyUserByName(name string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Emby Users API 返回 %d", resp.StatusCode)
+	}
+
 	var users []struct {
 		ID   string `json:"Id"`
 		Name string `json:"Name"`
@@ -155,25 +160,40 @@ func (s *PortraitService) GeneratePortrait(embyUserID, userName string) (*Portra
 	return result, nil
 }
 
-// collectData 从 Emby 采集用户观影数据
+// collectData 从 Emby 采集用户观影数据（并发拉取三种类型）
 func (s *PortraitService) collectData(userID string) (*PortraitData, error) {
 	data := &PortraitData{}
-	itemSet := make(map[string]bool) // 去重
+	itemSet := make(map[string]bool) // 用 Item ID 去重
 
-	// 采集电影、剧集、单集
 	types := []string{"Movie", "Series", "Episode"}
+	type fetchResult struct {
+		items []PortraitItem
+		err   error
+		typ   string
+	}
+
+	ch := make(chan fetchResult, len(types))
 	for _, typ := range types {
-		items, err := s.fetchLatest(userID, typ, 50)
-		if err != nil {
-			logger.Info("[Portrait] Failed to fetch %s: %v", typ, err)
+		go func(t string) {
+			items, err := s.fetchLatest(userID, t, 50)
+			ch <- fetchResult{items: items, err: err, typ: t}
+		}(typ)
+	}
+
+	for range types {
+		r := <-ch
+		if r.err != nil {
+			logger.Info("[Portrait] Failed to fetch %s: %v", r.typ, r.err)
 			continue
 		}
-		for _, item := range items {
-			key := item.Name + fmt.Sprintf("%d", item.Year)
-			if !itemSet[key] {
-				itemSet[key] = true
-				data.Items = append(data.Items, item)
+		for _, item := range r.items {
+			if item.ID != "" && itemSet[item.ID] {
+				continue
 			}
+			if item.ID != "" {
+				itemSet[item.ID] = true
+			}
+			data.Items = append(data.Items, item)
 		}
 	}
 
@@ -191,17 +211,22 @@ func (s *PortraitService) fetchLatest(userID, itemType string, limit int) ([]Por
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby Items/Latest API 返回 %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
 		return nil, err
 	}
 
 	var raw []struct {
-		Name           string   `json:"Name"`
-		ProductionYear int      `json:"ProductionYear"`
-		Genres         []string `json:"Genres"`
-		CommunityRating float64 `json:"CommunityRating"`
-		SeriesName     string   `json:"SeriesName"`
+		ID              string   `json:"Id"`
+		Name            string   `json:"Name"`
+		ProductionYear  int      `json:"ProductionYear"`
+		Genres          []string `json:"Genres"`
+		CommunityRating float64  `json:"CommunityRating"`
+		SeriesName      string   `json:"SeriesName"`
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("decode %s: %w", itemType, err)
@@ -214,6 +239,7 @@ func (s *PortraitService) fetchLatest(userID, itemType string, limit int) ([]Por
 			name = r.SeriesName
 		}
 		items = append(items, PortraitItem{
+			ID:     r.ID,
 			Name:   name,
 			Year:   r.ProductionYear,
 			Genres: r.Genres,
@@ -317,6 +343,11 @@ func (s *PortraitService) analyze(data *PortraitData, userName string) *Portrait
 
 	// 盲区
 	r.BlindSpots = s.findBlindSpots(genreCount)
+
+	// 如果没有评分数据，把 AvgRating 标记为 -1（卡片层据此显示"暂无"）
+	if r.RatingCount == 0 {
+		r.AvgRating = -1
+	}
 
 	return r
 }

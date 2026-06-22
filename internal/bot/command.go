@@ -129,6 +129,12 @@ var (
 	linkAttemptsMu sync.Mutex
 )
 
+// portraitSvc 单例复用 http.Client 连接池
+var (
+	portraitOnce sync.Once
+	portraitSvc  *services.PortraitService
+)
+
 const (
 	maxLinkAttempts = 5                // 最多 5 次失败
 	linkBlockTime   = 15 * time.Minute // 锁定 15 分钟
@@ -523,6 +529,12 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 		return
 	}
 
+	// 群组隐私保护：群内引导去私聊
+	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
+		telegram.SendMessage(msg.Chat.ID, "🔒 灵魂画像是你的私人观影密码，请私聊机器人查看 🧠", "", nil)
+		return
+	}
+
 	// 查找 MoviePilot 用户名
 	if userMapping == nil {
 		telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
@@ -537,19 +549,21 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	// 发送"生成中"提示
 	sent, _ := telegram.SendMessage(msg.Chat.ID, "🧠 正在分析你的观影灵魂，请稍候...", "", nil)
 
-	// 创建画像服务
-	portraitSvc := services.NewPortraitService(cfg.EmbyURL, cfg.EmbyAPIKey)
+	// 创建画像服务（单例复用 http.Client）
+	portraitOnce.Do(func() {
+		portraitSvc = services.NewPortraitService(cfg.EmbyURL, cfg.EmbyAPIKey)
+	})
 
 	// 查找 Emby 用户
 	embyUserID, err := portraitSvc.FindEmbyUserByName(mpUsername)
 	if err != nil {
 		logger.Info("[Portrait] Emby user not found for %s: %v", mpUsername, err)
-		// 回退：用默认 Emby 用户
-		embyUserID = cfg.EmbyUserID
-		if embyUserID == "" {
-			telegram.SendMessage(msg.Chat.ID, "❌ 未找到你的 Emby 观影记录\n\n需要你的 Emby 用户名与 MoviePilot 用户名一致", "", nil)
-			return
+		telegram.SendMessage(msg.Chat.ID, "❌ 未找到你的 Emby 观影记录\n\n需要你的 Emby 用户名与 MoviePilot 用户名一致", "", nil)
+		// 清理"生成中"提示
+		if sent != nil {
+			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
 		}
+		return
 	}
 
 	// 生成画像
@@ -557,6 +571,10 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	if err != nil {
 		logger.Info("[Portrait] Generate failed: %v", err)
 		telegram.SendMessage(msg.Chat.ID, "❌ 画像生成失败："+err.Error(), "", nil)
+		// 清理"生成中"提示
+		if sent != nil {
+			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
+		}
 		return
 	}
 
@@ -593,8 +611,12 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	if _, err := telegram.SendRichMessage(msg.Chat.ID, card.Markdown, nil); err != nil {
 		logger.Info("[Portrait] SendRichMessage failed: %v, falling back to text", err)
 		// 降级为纯文本
-		text := fmt.Sprintf("🧠 灵魂画像 — %s\n\n👤 %d 部作品\n🎭 %s\n⭐ %.1f\n%s — %s\n%s — %s",
-			result.UserName, result.TotalItems, cardData.TopGenres, result.AvgRating,
+		ratingText := "暂无评分"
+		if result.AvgRating >= 0 {
+			ratingText = fmt.Sprintf("⭐ %.1f", result.AvgRating)
+		}
+		text := fmt.Sprintf("🧠 灵魂画像 — %s\n\n👤 %d 部作品\n🎭 %s\n%s\n%s — %s\n%s — %s",
+			result.UserName, result.TotalItems, cardData.TopGenres, ratingText,
 			result.TasteLevel, result.TasteDesc, result.RhythmType, result.RhythmDesc)
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	}
