@@ -217,15 +217,22 @@ func escapeCarpoolMentionText(s string) string {
 // notifyRequesterOnLibraryAdd 入库后私聊通知求片用户。
 // 查找匹配 TMDB ID + mediaType 的审核请求，向求片人发送「已入库」私信。
 func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType string, title string) {
-	if s.review == nil || tmdbIDStr == "" {
+	if s.review == nil {
+		logger.Info("[入库通知] review service 未注入，跳过")
+		return
+	}
+	if tmdbIDStr == "" {
+		logger.Info("[入库通知] TMDB ID 为空，跳过")
 		return
 	}
 
 	tmdbID := 0
 	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
 	if tmdbID == 0 {
+		logger.Info("[入库通知] TMDB ID 解析失败: %s", tmdbIDStr)
 		return
 	}
+	logger.Info("[入库通知] 查找匹配: tmdbID=%d, type=%s, title=%s", tmdbID, mediaType, title)
 
 	// 查找所有匹配的已批准审核请求
 	s.review.mu.RLock()
@@ -253,6 +260,7 @@ func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType
 	s.review.mu.RUnlock()
 
 	if len(matched) == 0 {
+		logger.Info("[入库通知] 未找到匹配的已批准请求: tmdbID=%d, type=%s", tmdbID, mediaType)
 		return
 	}
 

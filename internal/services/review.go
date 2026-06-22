@@ -627,7 +627,7 @@ func (s *ReviewService) MarkLibraryNotifiedOnce(requestID string) bool {
 	if !exists || review == nil {
 		return false
 	}
-	if review.LibraryNotifiedAt != nil {
+	if review.LibraryNotifiedAt != nil && !review.LibraryNotifiedAt.IsZero() {
 		return false
 	}
 	now := time.Now()
