@@ -1209,3 +1209,48 @@ func (c *TelegramClient) GetChatMemberStatus(chatID int64, userID int64) (string
 	}
 	return result.Result.Status, nil
 }
+
+// GetUserDisplayName 通过 getChat API 获取用户的显示名称。
+// 返回格式：FirstName + LastName（如有），失败时返回空串。
+func (c *TelegramClient) GetUserDisplayName(userID int64) (string, error) {
+	apiURL := fmt.Sprintf("%s/getChat", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id": userID,
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := c.httpClient.Post(apiURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("getChat request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", fmt.Errorf("failed to read getChat response: %w", err)
+	}
+
+	var result struct {
+		OK     bool `json:"ok"`
+		Result struct {
+			FirstName string `json:"first_name"`
+			LastName  string `json:"last_name"`
+		} `json:"result"`
+		ErrorCode int    `json:"error_code,omitempty"`
+		ErrorDesc string `json:"description,omitempty"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return "", fmt.Errorf("failed to decode getChat response: %w", err)
+	}
+
+	if !result.OK {
+		return "", &types.TelegramError{Code: result.ErrorCode, Message: result.ErrorDesc}
+	}
+
+	name := strings.TrimSpace(result.Result.FirstName + " " + result.Result.LastName)
+	return name, nil
+}

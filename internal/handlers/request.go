@@ -152,6 +152,13 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if name, ok := sess.GetString("user_name"); ok {
 		userName = name
 	}
+	// 如果 session 里没有真实名字，尝试从 Telegram API 获取
+	if userName == "用户" {
+		if displayName, err := h.telegram.GetUserDisplayName(ctx.UserID); err == nil && displayName != "" {
+			userName = displayName
+			sess.Set("user_name", displayName) // 缓存到 session
+		}
+	}
 
 	// Find media from recent search results or AI cache
 	var mediaTitle string
@@ -636,6 +643,13 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	userName := "用户"
 	if name, ok := sess.GetString("user_name"); ok {
 		userName = name
+	}
+	// 如果 session 里没有真实名字，尝试从 Telegram API 获取
+	if userName == "用户" {
+		if displayName, err := h.telegram.GetUserDisplayName(ctx.UserID); err == nil && displayName != "" {
+			userName = displayName
+			sess.Set("user_name", displayName)
+		}
 	}
 
 	// Check Emby library for existing media (for admin info)
