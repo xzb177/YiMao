@@ -116,6 +116,8 @@ func HandleCommand(
 		if wishHandler != nil {
 			wishHandler.HandleCommand(msg.Chat.ID, msg.From.ID, msg.Text)
 		}
+	case "/portrait":
+		HandlePortraitCommand(telegram, msg, cfg, userMapping)
 		// Unknown commands are silently ignored
 	}
 }
@@ -442,7 +444,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Bold("⌨️ 命令速查").Newline()
 	msg.Text("/start 主菜单  /search 搜片  /ai 今晚看什么").Newline()
 	msg.Text("/wish 许愿  /requests 求片进度  /quota 配额").Newline()
-	msg.Text("/link 绑定  /resetpw 重置密码  /help 帮助").Newline()
+	msg.Text("/portrait 灵魂画像  /link 绑定  /resetpw 重置密码  /help 帮助").Newline()
 	msg.Newline()
 	msg.Italic("💬 想被通知出源？记得先和我私聊过一句哦，不然我发不出私信～").Newline()
 
@@ -510,4 +512,97 @@ func statusLine(name string, ok bool) string {
 func richMessageStatusEnabled() bool {
 	v := strings.ToLower(strings.TrimSpace(os.Getenv("ENABLE_RICH_MESSAGE")))
 	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
+}
+
+// HandlePortraitCommand handles /portrait command — 灵魂画像
+func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
+	logger.Info("[Portrait] Processing /portrait from user %d", msg.From.ID)
+
+	if cfg.EmbyURL == "" || cfg.EmbyAPIKey == "" {
+		telegram.SendMessage(msg.Chat.ID, "❌ Emby 未配置，无法生成画像", "", nil)
+		return
+	}
+
+	// 查找 MoviePilot 用户名
+	if userMapping == nil {
+		telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
+		return
+	}
+	mpUsername, err := userMapping.GetMoviePilotUsername(msg.From.ID)
+	if err != nil || mpUsername == "" {
+		telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号（/link），才能生成灵魂画像", "", nil)
+		return
+	}
+
+	// 发送"生成中"提示
+	sent, _ := telegram.SendMessage(msg.Chat.ID, "🧠 正在分析你的观影灵魂，请稍候...", "", nil)
+
+	// 创建画像服务
+	portraitSvc := services.NewPortraitService(cfg.EmbyURL, cfg.EmbyAPIKey)
+
+	// 查找 Emby 用户
+	embyUserID, err := portraitSvc.FindEmbyUserByName(mpUsername)
+	if err != nil {
+		logger.Info("[Portrait] Emby user not found for %s: %v", mpUsername, err)
+		// 回退：用默认 Emby 用户
+		embyUserID = cfg.EmbyUserID
+		if embyUserID == "" {
+			telegram.SendMessage(msg.Chat.ID, "❌ 未找到你的 Emby 观影记录\n\n需要你的 Emby 用户名与 MoviePilot 用户名一致", "", nil)
+			return
+		}
+	}
+
+	// 生成画像
+	result, err := portraitSvc.GeneratePortrait(embyUserID, mpUsername)
+	if err != nil {
+		logger.Info("[Portrait] Generate failed: %v", err)
+		telegram.SendMessage(msg.Chat.ID, "❌ 画像生成失败："+err.Error(), "", nil)
+		return
+	}
+
+	// 转换为卡片数据
+	cardData := richmessage.PortraitCardData{
+		UserName:   result.UserName,
+		TotalItems: result.TotalItems,
+		TopGenres:  strings.Join(result.TopGenres, " · "),
+		AvgRating:  result.AvgRating,
+		TasteLevel: result.TasteLevel,
+		TasteDesc:  result.TasteDesc,
+		RhythmType: result.RhythmType,
+		RhythmDesc: result.RhythmDesc,
+		Surprises:  result.Surprises,
+		BlindSpots: result.BlindSpots,
+	}
+	for _, bar := range result.GenreBar {
+		cardData.GenreBar = append(cardData.GenreBar, richmessage.GenreBarData{
+			Genre: bar.Genre,
+			Pct:   fmt.Sprintf("%.1f", bar.Pct),
+			Bar:   bar.Bar,
+		})
+	}
+	for _, pt := range result.PsychTraits {
+		cardData.PsychTraits = append(cardData.PsychTraits, richmessage.PsychTraitData{
+			Genre: pt.Genre,
+			Trait: pt.Trait,
+			Desc:  pt.Desc,
+		})
+	}
+
+	// 发送画像卡片
+	card := richmessage.BuildPortraitCard(cardData)
+	if _, err := telegram.SendRichMessage(msg.Chat.ID, card.Markdown, nil); err != nil {
+		logger.Info("[Portrait] SendRichMessage failed: %v, falling back to text", err)
+		// 降级为纯文本
+		text := fmt.Sprintf("🧠 灵魂画像 — %s\n\n👤 %d 部作品\n🎭 %s\n⭐ %.1f\n%s — %s\n%s — %s",
+			result.UserName, result.TotalItems, cardData.TopGenres, result.AvgRating,
+			result.TasteLevel, result.TasteDesc, result.RhythmType, result.RhythmDesc)
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+	}
+
+	// 删除"生成中"提示
+	if sent != nil {
+		go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
+	}
+
+	logger.Info("[Portrait] Portrait generated for %s (%d items)", mpUsername, result.TotalItems)
 }

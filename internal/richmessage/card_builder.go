@@ -883,3 +883,88 @@ func BuildMyReviewsCard(items []MyReviewItem) RichMessage {
 	builder.Table([]string{"状态", "标题", "时间"}, rows)
 	return builder.Build()
 }
+
+// ==================== 灵魂画像 ====================
+
+// PortraitCardData 灵魂画像卡片数据（从 services.PortraitResult 转换）
+type PortraitCardData struct {
+	UserName    string
+	TotalItems  int
+	GenreBar    []GenreBarData
+	TopGenres   string
+	AvgRating   float64
+	TasteLevel  string
+	TasteDesc   string
+	RhythmType  string
+	RhythmDesc  string
+	PsychTraits []PsychTraitData
+	Surprises   []string
+	BlindSpots  []string
+}
+
+// GenreBarData 类型条形图
+type GenreBarData struct {
+	Genre string
+	Pct   string
+	Bar   string
+}
+
+// PsychTraitData 心理特质
+type PsychTraitData struct {
+	Genre string
+	Trait string
+	Desc  string
+}
+
+// BuildPortraitCard builds the soul portrait Rich Message card.
+func BuildPortraitCard(data PortraitCardData) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("🧠 灵魂画像", 3)
+
+	nameText := "匿名用户"
+	if data.UserName != "" {
+		nameText = data.UserName
+	}
+	builder.BoldParagraph(fmt.Sprintf("👤 %s · %d 部作品", nameText, data.TotalItems))
+
+	// 核心指标
+	builder.Divider()
+	builder.BoldParagraph(fmt.Sprintf("🎭 %s　⭐ %.1f", data.TopGenres, data.AvgRating))
+	builder.Paragraph(fmt.Sprintf("%s — %s", data.TasteLevel, data.TasteDesc))
+	builder.Paragraph(fmt.Sprintf("%s — %s", data.RhythmType, data.RhythmDesc))
+
+	// 类型偏好
+	builder.Divider()
+	builder.BoldParagraph("📊 类型偏好")
+	for _, bar := range data.GenreBar {
+		builder.Paragraph(fmt.Sprintf("%s %s %s%%", bar.Bar, bar.Genre, bar.Pct))
+	}
+
+	// 心理特质
+	if len(data.PsychTraits) > 0 {
+		builder.Divider()
+		builder.BoldParagraph("🔮 心理特质")
+		for _, pt := range data.PsychTraits {
+			builder.Paragraph(fmt.Sprintf("• %s → %s: %s", pt.Genre, pt.Trait, pt.Desc))
+		}
+	}
+
+	// 反直觉发现
+	if len(data.Surprises) > 0 {
+		builder.Divider()
+		builder.BoldParagraph("💡 反直觉发现")
+		for _, s := range data.Surprises {
+			builder.Paragraph(fmt.Sprintf("• %s", s))
+		}
+	}
+
+	// 盲区
+	if len(data.BlindSpots) > 0 {
+		builder.Divider()
+		builder.BoldParagraph("🌑 你的盲区")
+		builder.Paragraph(strings.Join(data.BlindSpots, " · "))
+		builder.Italic("试试看？也许会打开新世界")
+	}
+
+	return builder.Build()
+}
