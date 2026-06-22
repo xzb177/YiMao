@@ -560,6 +560,19 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	if deps.Cfg.EmbyURL != "" && deps.Cfg.EmbyAPIKey != "" {
 		startHandler.SetPortraitService(services.NewPortraitService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey))
 	}
+
+	// ====== 游戏化服务 ======
+	rankSvc := services.NewRankService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
+	personalitySvc := services.NewPersonalityService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
+	narratorSvc := services.NewNarratorService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, "", "")
+	blindBoxSvc := services.NewBlindBoxService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
+	rouletteSvc := services.NewRouletteService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
+	socialDB, socialErr := services.NewSocialDB(deps.Cfg.DataDir)
+	if socialErr != nil {
+		logger.Info("[initRegistry] ⚠️ SocialDB init failed: %v", socialErr)
+	}
+	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram)
+	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
@@ -600,6 +613,22 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
 	registry.RegisterFunc("my_feedback", feedbackHandler.Handle)
 	registry.RegisterFunc("portrait", startHandler.Handle)
+	logger.Info("[initRegistry] portrait callback registered → startHandler.Handle")
+
+	// 游戏化功能回调
+	registry.RegisterFunc("game_menu", gameHandler.Handle)
+	registry.RegisterFunc("game_rank", gameHandler.Handle)
+	registry.RegisterFunc("game_personality", gameHandler.Handle)
+	registry.RegisterFunc("game_narrator", gameHandler.Handle)
+	registry.RegisterFunc("game_narrate", gameHandler.Handle)
+	registry.RegisterFunc("game_blindbox", gameHandler.Handle)
+	registry.RegisterFunc("game_blindbox_open", gameHandler.Handle)
+	registry.RegisterFunc("game_social", gameHandler.Handle)
+	registry.RegisterFunc("game_review", gameHandler.Handle)
+	registry.RegisterFunc("game_review_rate", gameHandler.Handle)
+	registry.RegisterFunc("game_roulette", gameHandler.Handle)
+	registry.RegisterFunc("game_roulette_spin", gameHandler.Handle)
+	logger.Info("[initRegistry] Game callbacks registered (12 actions)")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
@@ -758,6 +787,10 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "wish", Description: "🌟 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
+		{Command: "portrait", Description: "🧠 灵魂画像"},
+		{Command: "game", Description: "🎮 游戏中心"},
+		{Command: "narrate", Description: "🎬 AI 电影解说"},
+		{Command: "review", Description: "✍️ 写影评"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommands(commands, ""); err != nil {

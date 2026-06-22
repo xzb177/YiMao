@@ -387,7 +387,7 @@ func HandleWebhookGroupChat(
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/game", "/narrate", "/review":
 		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)

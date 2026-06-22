@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -118,6 +119,12 @@ func HandleCommand(
 		}
 	case "/portrait":
 		HandlePortraitCommand(telegram, msg, cfg, userMapping)
+	case "/game":
+		HandleGameCommand(telegram, msg)
+	case "/narrate":
+		HandleNarrateCommand(telegram, msg, cfg)
+	case "/review":
+		HandleReviewCommand(telegram, msg, cfg, userMapping)
 		// Unknown commands are silently ignored
 	}
 }
@@ -627,4 +634,149 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	}
 
 	logger.Info("[Portrait] Portrait generated for %s (%d items)", mpUsername, result.TotalItems)
+}
+
+// ==================== 游戏化命令 ====================
+
+// gameNarratorSvc 单例
+var (
+	gameNarratorOnce sync.Once
+	gameNarratorSvc  *services.NarratorService
+)
+
+// gameSocialDB 单例
+var (
+	gameSocialOnce sync.Once
+	gameSocialDB   *services.SocialDB
+)
+
+// HandleGameCommand 处理 /game 命令 — 游戏中心入口
+func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
+	card := richmessage.BuildGameCenterCard()
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🏆 段位", "game_rank")
+	kb.AddButton("🧠 性格", "game_personality")
+	kb.AddButton("🎬 AI解说", "game_narrator")
+	kb.NewRow()
+	kb.AddButton("🎰 盲盒", "game_blindbox")
+	kb.AddButton("📢 影友圈", "game_social")
+	kb.AddButton("🎡 轮盘", "game_roulette")
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回", "start")
+
+	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, kb.Build())
+}
+
+// HandleNarrateCommand 处理 /narrate 命令 — AI 电影解说
+func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config) {
+	parts := strings.Fields(msg.Text)
+	if len(parts) < 2 {
+		telegram.SendMessage(msg.Chat.ID, "🎬 用法: /narrate 电影名\n\n例如: /narrate 流浪地球", "", nil)
+		return
+	}
+	movieName := strings.Join(parts[1:], " ")
+
+	// 初始化服务
+	gameNarratorOnce.Do(func() {
+		gameNarratorSvc = services.NewNarratorService(cfg.EmbyURL, cfg.EmbyAPIKey, cfg.OpenAIAPIKey, "", "")
+	})
+
+	if gameNarratorSvc == nil {
+		telegram.SendMessage(msg.Chat.ID, "❌ AI 服务未就绪", "", nil)
+		return
+	}
+
+	// 发送"生成中"提示
+	sent, _ := telegram.SendMessage(msg.Chat.ID, "🎬 正在为你解说《"+movieName+"》...", "", nil)
+
+	// 搜索电影信息
+	title, year, genres, rating, _ := gameNarratorSvc.SearchMovie(movieName)
+	if title == "" {
+		title = movieName
+	}
+
+	// 生成解说
+	result, err := gameNarratorSvc.GenerateNarration(title, year, false)
+	if err != nil {
+		telegram.SendMessage(msg.Chat.ID, "❌ 解说生成失败: "+err.Error(), "", nil)
+		if sent != nil {
+			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
+		}
+		return
+	}
+	result.Rating = rating
+	result.Genres = genres
+
+	// 构建卡片
+	card := richmessage.BuildNarratorCard(richmessage.NarratorCardData{
+		Title:     result.Title,
+		Year:      result.Year,
+		Summary:   result.Summary,
+		KeyPoints: result.KeyPoints,
+		Mood:      result.Mood,
+		Similar:   result.Similar,
+		Rating:    result.Rating,
+		Genres:    result.Genres,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	// 删除"生成中"提示
+	if sent != nil {
+		go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
+	}
+
+	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, kb.Build())
+}
+
+// HandleReviewCommand 处理 /review 命令 — 写影评
+func HandleReviewCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
+	parts := strings.Fields(msg.Text)
+	if len(parts) < 3 {
+		telegram.SendMessage(msg.Chat.ID, "✍️ 用法: /review 电影名 评分(1-5) 评语\n\n例如: /review 流浪地球 5 特效炸裂", "", nil)
+		return
+	}
+
+	movieName := parts[1]
+	ratingStr := parts[2]
+	rating, err := strconv.Atoi(ratingStr)
+	if err != nil || rating < 1 || rating > 5 {
+		telegram.SendMessage(msg.Chat.ID, "❌ 评分必须是 1-5 的数字", "", nil)
+		return
+	}
+
+	content := ""
+	if len(parts) > 3 {
+		content = strings.Join(parts[3:], " ")
+	}
+
+	// 初始化社交DB
+	gameSocialOnce.Do(func() {
+		gameSocialDB, _ = services.NewSocialDB(cfg.DataDir)
+	})
+
+	if gameSocialDB == nil {
+		telegram.SendMessage(msg.Chat.ID, "❌ 社交服务未就绪", "", nil)
+		return
+	}
+
+	// 获取用户名
+	mpUsername := fmt.Sprintf("用户%d", msg.From.ID)
+	if userMapping != nil {
+		if name, err := userMapping.GetMoviePilotUsername(msg.From.ID); err == nil && name != "" {
+			mpUsername = name
+		}
+	}
+
+	err = gameSocialDB.AddReview(msg.From.ID, mpUsername, movieName, 0, rating, content)
+	if err != nil {
+		telegram.SendMessage(msg.Chat.ID, "❌ 发表影评失败: "+err.Error(), "", nil)
+		return
+	}
+
+	stars := strings.Repeat("⭐", rating)
+	text := fmt.Sprintf("✅ 影评发表成功！\n\n🎬 《%s》\n%s\n%s", movieName, stars, content)
+	telegram.SendMessage(msg.Chat.ID, text, "", nil)
 }

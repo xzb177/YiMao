@@ -174,6 +174,20 @@ var validActions = map[Action]bool{
 	// Portrait actions
 	"portrait": true, // 灵魂画像
 
+	// Game center actions
+	"game_menu":           true, // 游戏中心主菜单
+	"game_rank":           true, // 段位系统
+	"game_personality":    true, // 性格测试
+	"game_narrator":       true, // AI解说入口
+	"game_narrate":        true, // AI解说生成（前缀匹配）
+	"game_blindbox":       true, // 盲盒入口
+	"game_blindbox_open":  true, // 开盲盒
+	"game_social":         true, // 社交动态
+	"game_review":         true, // 写影评入口
+	"game_review_rate":    true, // 快速评分（前缀匹配）
+	"game_roulette":       true, // 命运轮盘入口
+	"game_roulette_spin":  true, // 转轮盘
+
 	// Resource candidate actions
 	ActionResourceList: true,
 	ActionResourcePick: true,
