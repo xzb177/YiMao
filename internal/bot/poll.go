@@ -33,6 +33,7 @@ type Dependencies struct {
 	FallbackService *services.SearchFallbackService
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -53,6 +54,7 @@ type PollDeps struct {
 	FallbackService *services.SearchFallbackService
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // StartPolling starts the Telegram update polling
@@ -84,6 +86,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequests,
+		GameHandler:     deps.GameHandler,
 	}
 
 	for {
@@ -345,6 +348,14 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
 		msg.Text = sanitizedText // Update with sanitized text
+
+		// 检查是否处于 AI 解说 pending 状态
+		if deps.GameHandler != nil {
+			if deps.GameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, sanitizedText) {
+				return
+			}
+		}
+
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
 }
@@ -375,6 +386,8 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		"waiting_for_time_input",
 		"pending_feedback_reply",
 		"pending_issue_reply",
+		// 游戏功能 pending 状态
+		"pending_narrate_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {

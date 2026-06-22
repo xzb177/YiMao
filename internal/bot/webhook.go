@@ -275,6 +275,15 @@ func HandleWebhookMessage(
 	// Handle search queries (non-command text)
 	// 只有在非反馈状态下才执行搜索
 	if len(msg.Text) > 1 {
+		// 检查是否处于 AI 解说 pending 状态
+		if deps.GameHandler != nil {
+			if deps.GameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, msg.Text) {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+		}
+
 		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}
 
@@ -310,6 +319,8 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"waiting_for_time_input",
 		"pending_feedback_reply",
 		"pending_issue_reply",
+		// 游戏功能 pending 状态
+		"pending_narrate_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {

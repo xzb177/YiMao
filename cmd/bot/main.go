@@ -576,7 +576,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	if socialErr != nil {
 		logger.Info("[initRegistry] ⚠️ SocialDB init failed: %v", socialErr)
 	}
-	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram)
+	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr)
 	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
@@ -838,5 +838,6 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		FeedbackHandler: deps.FeedbackHandler,
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequestsHandler,
+		GameHandler:     deps.GameHandler,
 	}
 }

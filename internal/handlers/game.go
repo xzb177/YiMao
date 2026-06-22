@@ -9,6 +9,7 @@ import (
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
 )
 
@@ -22,6 +23,7 @@ type GameHandler struct {
 	rouletteSvc    *services.RouletteService
 	userMapping    services.UserMappingStore
 	telegram       *services.TelegramClient
+	sessionMgr     *session.Manager
 }
 
 // Close 清理资源
@@ -43,6 +45,7 @@ func NewGameHandler(
 	rouletteSvc *services.RouletteService,
 	userMapping services.UserMappingStore,
 	telegram *services.TelegramClient,
+	sessionMgr *session.Manager,
 ) *GameHandler {
 	return &GameHandler{
 		rankSvc:        rankSvc,
@@ -53,6 +56,7 @@ func NewGameHandler(
 		rouletteSvc:    rouletteSvc,
 		userMapping:    userMapping,
 		telegram:       telegram,
+		sessionMgr:     sessionMgr,
 	}
 }
 
@@ -224,6 +228,13 @@ func (h *GameHandler) handlePersonality(ctx *callback.Context) (*callback.Respon
 // --- AI 解说员 ---
 
 func (h *GameHandler) handleNarratorEntry(ctx *callback.Context) (*callback.Response, error) {
+	// 设置 pending 状态，让下一条文本消息直接走解说流程
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+		if sess != nil {
+			sess.Set("pending_narrate_input", true)
+		}
+	}
 	return &callback.Response{
 		Text: "🎬 **AI 电影解说员**\n\n请直接发送电影名称，我来给你讲讲这部电影～\n\n例如：发送 `流浪地球` 或 `Inception`\n\n💡 也可以使用命令：`/narrate 电影名`",
 	}, nil
@@ -282,6 +293,64 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 		RichMessage: card.Markdown,
 		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// HandleNarrateText 处理文本消息中的电影解说请求（由 poll.go 调用）
+// 返回 true 表示已处理，false 表示不是解说请求
+func (h *GameHandler) HandleNarrateText(userID int64, chatID int64, movieName string) bool {
+	if h.narratorSvc == nil || h.sessionMgr == nil {
+		return false
+	}
+
+	sess := h.sessionMgr.GetOrCreate(userID)
+	if sess == nil {
+		return false
+	}
+
+	// 检查是否处于 pending 状态
+	if _, exists := sess.Get("pending_narrate_input"); !exists {
+		return false
+	}
+
+	// 清除 pending 状态
+	sess.Delete("pending_narrate_input")
+
+	// 搜索电影信息
+	title, year, genres, rating, err := h.narratorSvc.SearchMovie(movieName)
+	if err != nil {
+		title = movieName
+	}
+
+	// 生成解说
+	result, err := h.narratorSvc.GenerateNarration(title, year, false)
+	if err != nil {
+		logger.Info("[Game] Narration failed for user %d: %v", userID, err)
+		h.telegram.SendMessage(chatID, "❌ AI 解说生成失败，请稍后再试", "", nil)
+		return true
+	}
+	result.Rating = rating
+	result.Genres = genres
+
+	card := richmessage.BuildNarratorCard(richmessage.NarratorCardData{
+		Title:       result.Title,
+		Year:        result.Year,
+		Summary:     result.Summary,
+		KeyPoints:   result.KeyPoints,
+		Mood:        result.Mood,
+		Similar:     result.Similar,
+		Rating:      result.Rating,
+		Genres:      result.Genres,
+		SpoilerMode: result.SpoilerMode,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	kb.AddButton("🎬 换一部", "game_narrator")
+	kb.NewRow()
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+	return true
 }
 
 // --- 工具函数 ---
