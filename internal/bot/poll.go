@@ -482,12 +482,23 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 }
 
 // handleNaturalLanguageGame 识别自然语言触发游戏功能
+// 需要 # 前缀触发，避免正常聊天误触
 // 返回 true 表示已处理
 func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.TelegramMessage, sessMgr *session.Manager, gameHandler *handlers.GameHandler, text string) bool {
+	// 必须以 # 开头才触发
+	if !strings.HasPrefix(text, "#") {
+		return false
+	}
+	// 去掉 # 前缀
+	input := strings.TrimSpace(text[1:])
+	if input == "" {
+		return false
+	}
+
 	// 游戏中心
-	gameKeywords := []string{"游戏中心", "玩游戏", "来个游戏", "游戏菜单"}
+	gameKeywords := []string{"游戏中心", "游戏", "玩游戏", "来个游戏", "游戏菜单"}
 	for _, kw := range gameKeywords {
-		if text == kw {
+		if input == kw {
 			kb := services.NewKeyboardBuilder()
 			kb.AddButton("🎰 盲盒", "game_blindbox")
 			kb.AddButton("🎡 轮盘", "game_roulette")
@@ -498,10 +509,10 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 	}
 
 	// AI解说：支持多种自然语言前缀
-	narratePrefixes := []string{"解说", "讲讲", "说说", "聊聊", "讲一下", "说一下", "介绍一下", "这电影怎么样", "这片好看吗", "这好看吗"}
+	narratePrefixes := []string{"解说", "讲讲", "说说", "聊聊", "讲一下", "说一下", "介绍一下", "讲解", "这电影怎么样", "这片好看吗", "好看吗"}
 	for _, prefix := range narratePrefixes {
-		if strings.HasPrefix(text, prefix) {
-			movieName := strings.TrimSpace(strings.TrimPrefix(text, prefix))
+		if strings.HasPrefix(input, prefix) {
+			movieName := strings.TrimSpace(strings.TrimPrefix(input, prefix))
 			if movieName != "" {
 				go func() {
 					sess := sessMgr.GetOrCreate(msg.From.ID)
@@ -516,9 +527,9 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 	}
 
 	// 盲盒
-	blindboxKeywords := []string{"开盲盒", "来个盲盒", "盲盒", "开盒"}
+	blindboxKeywords := []string{"开盲盒", "盲盒", "来个盲盒", "开盒"}
 	for _, kw := range blindboxKeywords {
-		if text == kw {
+		if input == kw {
 			go func() {
 				ctx := &callback.Context{
 					UserID:   msg.From.ID,
@@ -535,7 +546,7 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 	// 轮盘
 	rouletteKeywords := []string{"转轮盘", "轮盘", "命运轮盘", "今晚看什么", "选个片"}
 	for _, kw := range rouletteKeywords {
-		if text == kw {
+		if input == kw {
 			go func() {
 				ctx := &callback.Context{
 					UserID:   msg.From.ID,
