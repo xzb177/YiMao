@@ -724,6 +724,9 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 		RecentMovies:   profile.RecentMovies,
 	})
 
+	// 群通知：首次查看情绪画像时通知
+	h.notifyGroup(mpUsername, fmt.Sprintf("解锁了观影人格：「%s」🪞", profile.PersonalityTag))
+
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📽️ 时光放映机", "game_time_machine")
 	kb.AddButton("💊 情绪处方", "game_prescription")
@@ -855,6 +858,10 @@ func (h *GameHandler) handlePrescription(ctx *callback.Context) (*callback.Respo
 		Trend:     trend,
 		Items:     prescriptionItems,
 	})
+
+	// 群通知
+	userName := h.getUserName(ctx.UserID)
+	h.notifyGroup(userName, fmt.Sprintf("开了一剂情绪处方 💊 诊断：%s", diagnosis))
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("💊 再开一剂", "game_prescription")
