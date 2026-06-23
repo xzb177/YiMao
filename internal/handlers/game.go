@@ -25,6 +25,7 @@ type GameHandler struct {
 	telegram       *services.TelegramClient
 	sessionMgr     *session.Manager
 	emotionSvc     *services.EmotionTimelineService
+	groupChatID    int64 // 群聊ID，用于发送群通知
 }
 
 // Close 清理资源
@@ -48,6 +49,7 @@ func NewGameHandler(
 	telegram *services.TelegramClient,
 	sessionMgr *session.Manager,
 	emotionSvc *services.EmotionTimelineService,
+	groupChatID int64,
 ) *GameHandler {
 	return &GameHandler{
 		rankSvc:        rankSvc,
@@ -60,6 +62,7 @@ func NewGameHandler(
 		telegram:       telegram,
 		sessionMgr:     sessionMgr,
 		emotionSvc:     emotionSvc,
+		groupChatID:    groupChatID,
 	}
 }
 
@@ -120,7 +123,8 @@ func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, err
 	kb.AddButton("📜 契约", "game_contract")
 	kb.AddButton("🎰 盲盒", "game_blindbox")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏆 段位", "game_rank")
+	kb.AddButton("📢 影友圈", "game_social")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -447,8 +451,20 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 
 	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{Items: views})
 
+	// 群通知：开出SSR/SR时通知群聊
+	userName := h.getUserName(ctx.UserID)
+	for _, item := range items {
+		if item.Rarity == "SSR" {
+			h.notifyGroup(userName, fmt.Sprintf("开出了🟡SSR盲盒：《%s》！恭喜！", item.Title))
+		} else if item.Rarity == "SR" {
+			h.notifyGroup(userName, fmt.Sprintf("开出了🟣SR盲盒：《%s》", item.Title))
+		}
+	}
+
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎰 再开一组", "game_blindbox_open")
+	kb.AddButton("📜 和它签契约", "game_contract")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
@@ -708,7 +724,9 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 	kb.AddButton("📽️ 时光放映机", "game_time_machine")
 	kb.AddButton("💊 情绪处方", "game_prescription")
 	kb.NewRow()
-	kb.AddButton("🔄 刷新画像", "game_emotion")
+	kb.AddButton("📜 签一份契约", "game_contract")
+	kb.AddButton("🎰 开盲盒", "game_blindbox")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
@@ -825,6 +843,7 @@ func (h *GameHandler) handlePrescription(ctx *callback.Context) (*callback.Respo
 	kb.AddButton("💊 再开一剂", "game_prescription")
 	kb.AddButton("🪞 情绪画像", "game_emotion")
 	kb.NewRow()
+	kb.AddButton("📜 和它签契约", "game_contract")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
@@ -873,16 +892,42 @@ func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response,
 		MaxSpins:  result.MaxSpins,
 	})
 
+	// 群通知
+	h.notifyGroup(h.getUserName(ctx.UserID), fmt.Sprintf("签了一份命运契约：《%s》📜", result.Title))
+
 	kb := services.NewKeyboardBuilder()
 	if result.SpinCount < result.MaxSpins {
 		kb.AddButton("📜 再签一份", "game_contract")
 	}
+	kb.AddButton("🪞 情绪变化", "game_emotion")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
 		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// notifyGroup 发送群通知（异步，不阻塞主流程）
+func (h *GameHandler) notifyGroup(userName, message string) {
+	if h.groupChatID == 0 || h.telegram == nil {
+		return
+	}
+	go func() {
+		text := fmt.Sprintf("🎮 **%s** %s", userName, message)
+		h.telegram.SendMessage(h.groupChatID, text, "Markdown", nil)
+	}()
+}
+
+// getUserName 获取用户显示名
+func (h *GameHandler) getUserName(userID int64) string {
+	if h.userMapping != nil {
+		if name, err := h.userMapping.GetMoviePilotUsername(userID); err == nil && name != "" {
+			return name
+		}
+	}
+	return fmt.Sprintf("用户%d", userID)
 }
 
 func formatTimeAgo(t time.Time) string {
