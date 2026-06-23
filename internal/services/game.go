@@ -1261,9 +1261,24 @@ func (s *RouletteService) Spin(userID int64, genre string) (*RouletteResult, err
 		fmt.Sscanf(pick.ReleaseDate[:4], "%d", &year)
 	}
 
+	// TMDB genre ID → 中文名映射
+	tmdbIDToName := map[int]string{
+		28: "动作", 12: "冒险", 16: "动画", 35: "喜剧", 80: "犯罪",
+		99: "纪录", 18: "剧情", 10751: "家庭", 14: "奇幻", 36: "历史",
+		27: "恐怖", 10402: "音乐", 9648: "悬疑", 10749: "爱情", 878: "科幻",
+		53: "惊悚", 10752: "战争", 37: "西部",
+	}
+	var genres []string
+	for _, id := range pick.GenreIDs {
+		if name, ok := tmdbIDToName[id]; ok {
+			genres = append(genres, name)
+		}
+	}
+
 	return &RouletteResult{
 		Title:     pick.Title,
 		Year:      year,
+		Genres:    genres,
 		Rating:    pick.VoteAverage,
 		Overview:  pick.Overview,
 		MediaType: "movie",

@@ -853,9 +853,7 @@ func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response,
 		"和家人/朋友一起看这部电影",
 	}
 	challengeIdx := int(time.Now().UnixNano()) % len(challenges)
-	if challengeIdx < 0 {
-		challengeIdx = -challengeIdx
-	}
+	if challengeIdx < 0 { challengeIdx = -challengeIdx }
 
 	genres := ""
 	if len(result.Genres) > 0 {

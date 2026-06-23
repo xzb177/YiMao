@@ -178,8 +178,10 @@ func BuildPrescriptionCard(data PrescriptionCardDataV2) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("💊 情绪处方", 2)
-	builder.BoldParagraph(fmt.Sprintf("👤 %s", data.UserName))
-	builder.Divider()
+	if data.UserName != "" {
+		builder.BoldParagraph(fmt.Sprintf("👤 %s", data.UserName))
+		builder.Divider()
+	}
 
 	// 诊断
 	builder.Paragraph(fmt.Sprintf("📋 %s", data.Diagnosis))
@@ -245,7 +247,11 @@ func BuildContractCard(data ContractCardData) RichMessage {
 	// 命运选中的电影
 	builder.Heading(fmt.Sprintf("🎬 %s (%d)", data.MovieName, data.Year), 3)
 	if data.Rating > 0 {
-		builder.Paragraph(fmt.Sprintf("⭐ TMDB %.1f · %s", data.Rating, data.Genres))
+		ratingLine := fmt.Sprintf("⭐ TMDB %.1f", data.Rating)
+		if data.Genres != "" {
+			ratingLine += " · " + data.Genres
+		}
+		builder.Paragraph(ratingLine)
 	}
 
 	// 简介
