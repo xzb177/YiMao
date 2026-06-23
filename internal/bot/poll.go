@@ -415,6 +415,12 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
 	if !strings.HasPrefix(text, "/") {
+		// 自然语言识别：非命令消息也能触发游戏功能
+		if gameHandler != nil {
+			if handleNaturalLanguageGame(telegram, msg, sessMgr, gameHandler, text) {
+				return
+			}
+		}
 		// 普通群聊消息不响应，避免刷屏。
 		return
 	}
@@ -473,6 +479,77 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		// 其他命令不响应，交给 Telegram/群管理习惯。
 		return
 	}
+}
+
+// handleNaturalLanguageGame 识别自然语言触发游戏功能
+// 返回 true 表示已处理
+func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.TelegramMessage, sessMgr *session.Manager, gameHandler *handlers.GameHandler, text string) bool {
+	// 游戏中心
+	gameKeywords := []string{"游戏中心", "玩游戏", "来个游戏", "游戏菜单"}
+	for _, kw := range gameKeywords {
+		if text == kw {
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("🎰 盲盒", "game_blindbox")
+			kb.AddButton("🎡 轮盘", "game_roulette")
+			kb.AddButton("🎬 AI解说", "game_narrator")
+			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
+			return true
+		}
+	}
+
+	// AI解说：支持多种自然语言前缀
+	narratePrefixes := []string{"解说", "讲讲", "说说", "聊聊", "讲一下", "说一下", "介绍一下", "这电影怎么样", "这片好看吗", "这好看吗"}
+	for _, prefix := range narratePrefixes {
+		if strings.HasPrefix(text, prefix) {
+			movieName := strings.TrimSpace(strings.TrimPrefix(text, prefix))
+			if movieName != "" {
+				go func() {
+					sess := sessMgr.GetOrCreate(msg.From.ID)
+					if sess != nil {
+						sess.Set("pending_narrate_input", true)
+					}
+					gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
+				}()
+				return true
+			}
+		}
+	}
+
+	// 盲盒
+	blindboxKeywords := []string{"开盲盒", "来个盲盒", "盲盒", "开盒"}
+	for _, kw := range blindboxKeywords {
+		if text == kw {
+			go func() {
+				ctx := &callback.Context{
+					UserID:   msg.From.ID,
+					ChatID:   msg.Chat.ID,
+					ChatType: msg.Chat.Type,
+					Callback: &callback.Callback{Action: "game_blindbox"},
+				}
+				gameHandler.Handle(ctx)
+			}()
+			return true
+		}
+	}
+
+	// 轮盘
+	rouletteKeywords := []string{"转轮盘", "轮盘", "命运轮盘", "今晚看什么", "选个片"}
+	for _, kw := range rouletteKeywords {
+		if text == kw {
+			go func() {
+				ctx := &callback.Context{
+					UserID:   msg.From.ID,
+					ChatID:   msg.Chat.ID,
+					ChatType: msg.Chat.Type,
+					Callback: &callback.Callback{Action: "game_roulette"},
+				}
+				gameHandler.Handle(ctx)
+			}()
+			return true
+		}
+	}
+
+	return false
 }
 
 // sendRecommendationMenu sends the recommendation menu.

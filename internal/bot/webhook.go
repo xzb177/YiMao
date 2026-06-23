@@ -391,6 +391,12 @@ func HandleWebhookGroupChat(
 	logger.Info("[WebhookGroupChat] ChatID=%d, Text=%q", msg.Chat.ID, text)
 
 	if !strings.HasPrefix(text, "/") {
+		// 自然语言识别
+		if gameHandler != nil {
+			if handleNaturalLanguageGame(telegram, msg, sessMgr, gameHandler, text) {
+				return
+			}
+		}
 		return
 	}
 
