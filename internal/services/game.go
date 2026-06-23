@@ -634,15 +634,22 @@ func (s *NarratorService) GenerateNarration(title string, year int, spoilerMode 
 		mode = "剧透模式，可以讲述完整剧情"
 	}
 
-	prompt := fmt.Sprintf(`你是一个专业的电影解说员。请为电影《%s》(%d) 生成解说。
+	prompt := fmt.Sprintf(`你是一个专业的电影解说员，风格简洁有趣。请为电影《%s》(%d) 生成解说。
+
 模式：%s
 
-请用JSON格式返回：
+要求：
+- summary：精炼剧情概要，200字以内，突出核心冲突和亮点，不要流水账
+- key_points：3个看点，每个15字以内，一针见血
+- mood：一句话描述适合心情
+- similar：3部类似电影，只写片名
+
+请严格用JSON格式返回：
 {
-  "summary": "3分钟剧情概要",
+  "summary": "...",
   "key_points": ["看点1", "看点2", "看点3"],
-  "mood": "适合什么心情看",
-  "similar": ["类似电影1", "类似电影2", "类似电影3"]
+  "mood": "一句话",
+  "similar": ["片名1", "片名2", "片名3"]
 }`, title, year, mode)
 
 	resp, err := s.callOpenAI(prompt)

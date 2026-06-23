@@ -143,52 +143,50 @@ type NarratorCardData struct {
 func BuildNarratorCard(data NarratorCardData) RichMessage {
 	builder := NewBuilder()
 
-	mode := "📖 无剧透版"
-	if data.SpoilerMode {
-		mode = "🔥 剧透模式"
-	}
+	// 标题行：电影名 + 年份
 	builder.Heading(fmt.Sprintf("🎬 %s (%d)", data.Title, data.Year), 2)
-	builder.BoldParagraph(mode)
-	builder.Divider()
 
-	// 基本信息
+	// 模式标签 + 评分 + 类型 一行搞定
+	var meta []string
+	if data.SpoilerMode {
+		meta = append(meta, "🔥 剧透模式")
+	} else {
+		meta = append(meta, "📖 安全观看")
+	}
 	if data.Rating > 0 {
-		builder.Paragraph(fmt.Sprintf("⭐ 评分: %.1f", data.Rating))
+		meta = append(meta, fmt.Sprintf("⭐ %.1f", data.Rating))
 	}
 	if len(data.Genres) > 0 {
-		builder.Paragraph(fmt.Sprintf("🎭 类型: %s", strings.Join(data.Genres, " / ")))
+		meta = append(meta, strings.Join(data.Genres, " · "))
 	}
-	builder.Divider()
+	builder.BoldParagraph(strings.Join(meta, "  |  "))
 
 	// 剧情概要
 	if data.Summary != "" {
-		builder.Heading("📝 剧情概要", 3)
-		if len([]rune(data.Summary)) > 800 {
-			data.Summary = string([]rune(data.Summary)[:800]) + "..."
+		if len([]rune(data.Summary)) > 600 {
+			data.Summary = string([]rune(data.Summary)[:600]) + "..."
 		}
 		builder.Paragraph(data.Summary)
 	}
-	builder.Divider()
 
 	// 关键看点
 	if len(data.KeyPoints) > 0 {
-		builder.Heading("💡 关键看点", 3)
+		builder.BoldParagraph("💡 看点")
 		for _, p := range data.KeyPoints {
-			builder.Paragraph(fmt.Sprintf("• %s", p))
+			builder.Paragraph(fmt.Sprintf("  • %s", p))
 		}
 	}
 
 	// 适合心情
 	if data.Mood != "" {
-		builder.Heading("🎭 适合心情", 3)
-		builder.Paragraph(data.Mood)
+		builder.Paragraph(fmt.Sprintf("🎭 **适合心情：** %s", data.Mood))
 	}
 
-	// 类似电影
+	// 类似推荐
 	if len(data.Similar) > 0 {
-		builder.Heading("🔗 类似推荐", 3)
+		builder.BoldParagraph("🔗 类似推荐")
 		for _, s := range data.Similar {
-			builder.Paragraph(fmt.Sprintf("• %s", s))
+			builder.Paragraph(fmt.Sprintf("  • %s", s))
 		}
 	}
 
