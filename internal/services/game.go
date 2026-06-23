@@ -72,13 +72,14 @@ func NewRankService(embyURL, embyAPIKey string) *RankService {
 	}
 }
 
-// FindEmbyUserByName 通过用户名查找 Emby 用户 ID
-func (s *RankService) FindEmbyUserByName(name string) (string, error) {
-	if s.embyURL == "" || s.embyAPIKey == "" {
+// findEmbyUserByName 通过用户名查找 Emby 用户 ID（共享函数）
+func findEmbyUserByName(client *http.Client, embyURL, embyAPIKey, name string) (string, error) {
+	if embyURL == "" || embyAPIKey == "" {
 		return "", fmt.Errorf("Emby 未配置")
 	}
-	url := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", s.embyURL, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
+	embyURL = strings.TrimRight(embyURL, "/")
+	u := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", embyURL, embyAPIKey)
+	resp, err := client.Get(u)
 	if err != nil {
 		return "", err
 	}
@@ -105,6 +106,57 @@ func (s *RankService) FindEmbyUserByName(name string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("未找到匹配的 Emby 用户: %s", name)
+}
+
+// fetchEmbyItems 从 Emby 获取用户媒体列表（共享函数）
+func fetchEmbyItems(client *http.Client, embyURL, embyAPIKey, userID, itemType string, limit int) ([]PortraitItem, error) {
+	if embyURL == "" || embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby 未配置")
+	}
+	embyURL = strings.TrimRight(embyURL, "/")
+	u := fmt.Sprintf("%s/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating&api_key=%s",
+		embyURL, userID, itemType, limit, embyAPIKey)
+	resp, err := client.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby API returned %d", resp.StatusCode)
+	}
+	var raw []struct {
+		ID              string   `json:"Id"`
+		Name            string   `json:"Name"`
+		ProductionYear  int      `json:"ProductionYear"`
+		Genres          []string `json:"Genres"`
+		CommunityRating float64  `json:"CommunityRating"`
+		SeriesName      string   `json:"SeriesName"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return nil, err
+	}
+	var items []PortraitItem
+	for _, r := range raw {
+		name := r.Name
+		if r.SeriesName != "" {
+			name = r.SeriesName
+		}
+		items = append(items, PortraitItem{
+			ID: r.ID, Name: name, Year: r.ProductionYear,
+			Genres: r.Genres, Rating: r.CommunityRating, Type: strings.ToLower(itemType),
+		})
+	}
+	return items, nil
+}
+
+// FindEmbyUserByName 通过用户名查找 Emby 用户 ID（RankService 方法）
+func (s *RankService) FindEmbyUserByName(name string) (string, error) {
+	return findEmbyUserByName(s.httpClient, s.embyURL, s.embyAPIKey, name)
+}
+
+// fetchItems 从 Emby 获取用户媒体列表（RankService 方法，委托给共享函数）
+func (s *RankService) fetchItems(userID, itemType string, limit int) ([]PortraitItem, error) {
+	return fetchEmbyItems(s.httpClient, s.embyURL, s.embyAPIKey, userID, itemType, limit)
 }
 
 // CalculateRank 计算用户段位
@@ -274,41 +326,7 @@ func (s *RankService) calculateBadges(items []PortraitItem, genres map[string]in
 	return badges
 }
 
-func (s *RankService) fetchItems(userID, itemType string, limit int) ([]PortraitItem, error) {
-	url := fmt.Sprintf("%s/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating&api_key=%s",
-		s.embyURL, userID, itemType, limit, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Emby API returned %d", resp.StatusCode)
-	}
-	var raw []struct {
-		ID              string   `json:"Id"`
-		Name            string   `json:"Name"`
-		ProductionYear  int      `json:"ProductionYear"`
-		Genres          []string `json:"Genres"`
-		CommunityRating float64  `json:"CommunityRating"`
-		SeriesName      string   `json:"SeriesName"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-	var items []PortraitItem
-	for _, r := range raw {
-		name := r.Name
-		if r.SeriesName != "" {
-			name = r.SeriesName
-		}
-		items = append(items, PortraitItem{
-			ID: r.ID, Name: name, Year: r.ProductionYear,
-			Genres: r.Genres, Rating: r.CommunityRating, Type: strings.ToLower(itemType),
-		})
-	}
-	return items, nil
-}
+
 
 // ============================================================
 //  性格测试 (Personality Test)
@@ -353,37 +371,7 @@ func NewPersonalityService(embyURL, embyAPIKey string) *PersonalityService {
 
 // FindEmbyUserByName 通过用户名查找 Emby 用户 ID
 func (s *PersonalityService) FindEmbyUserByName(name string) (string, error) {
-	if s.embyURL == "" || s.embyAPIKey == "" {
-		return "", fmt.Errorf("Emby 未配置")
-	}
-	url := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", s.embyURL, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Emby Users API returned %d", resp.StatusCode)
-	}
-	var users []struct {
-		ID   string `json:"Id"`
-		Name string `json:"Name"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
-		return "", err
-	}
-	for _, u := range users {
-		if strings.EqualFold(u.Name, name) {
-			return u.ID, nil
-		}
-	}
-	for _, u := range users {
-		if strings.Contains(strings.ToLower(u.Name), strings.ToLower(name)) ||
-			strings.Contains(strings.ToLower(name), strings.ToLower(u.Name)) {
-			return u.ID, nil
-		}
-	}
-	return "", fmt.Errorf("未找到匹配的 Emby 用户: %s", name)
+	return findEmbyUserByName(s.httpClient, s.embyURL, s.embyAPIKey, name)
 }
 
 // AnalyzePersonality 分析用户性格
@@ -393,7 +381,6 @@ func (s *PersonalityService) AnalyzePersonality(embyUserID, userName string) (*P
 	}
 
 	// 采集数据
-	rankSvc := NewRankService(s.embyURL, s.embyAPIKey)
 	types := []string{"Movie", "Series", "Episode"}
 	type fr struct {
 		items []PortraitItem
@@ -403,7 +390,7 @@ func (s *PersonalityService) AnalyzePersonality(embyUserID, userName string) (*P
 	ch := make(chan fr, len(types))
 	for _, typ := range types {
 		go func(t string) {
-			items, err := rankSvc.fetchItems(embyUserID, t, 100)
+			items, err := fetchEmbyItems(s.httpClient, s.embyURL, s.embyAPIKey, embyUserID, t, 100)
 			ch <- fr{items: items, err: err, typ: t}
 		}(typ)
 	}
@@ -830,17 +817,27 @@ func NewBlindBoxService(embyURL, embyAPIKey, tmdbAPIKey string) *BlindBoxService
 }
 
 // OpenBlindBox 开盲盒（从TMDB随机推荐）
-func (s *BlindBoxService) OpenBlindBox(genre string, count int) ([]BlindBoxItem, error) {
+func (s *BlindBoxService) OpenBlindBox(genreName string, count int) ([]BlindBoxItem, error) {
 	if count <= 0 || count > 5 {
 		count = 3
+	}
+
+	// TMDB genre name → ID 映射
+	tmdbGenreMap := map[string]string{
+		"动作": "28", "冒险": "12", "动画": "16", "喜剧": "35", "犯罪": "80",
+		"纪录": "99", "剧情": "18", "家庭": "10751", "奇幻": "14", "历史": "36",
+		"恐怖": "27", "音乐": "10402", "悬疑": "9648", "浪漫": "10749", "科幻": "878",
+		"惊悚": "53", "战争": "10752", "西部": "37",
 	}
 
 	// 使用 TMDB discover API 随机发现电影
 	page := rand.Intn(20) + 1
 	url := fmt.Sprintf("https://api.themoviedb.org/3/discover/movie?api_key=%s&language=zh-CN&page=%d&sort_by=popularity.desc&vote_count.gte=100",
 		s.tmdbAPIKey, page)
-	if genre != "" {
-		url += "&with_genres=" + genre
+	if genreName != "" {
+		if genreID, ok := tmdbGenreMap[genreName]; ok {
+			url += "&with_genres=" + genreID
+		}
 	}
 
 	resp, err := s.httpClient.Get(url)
@@ -874,7 +871,6 @@ func (s *BlindBoxService) OpenBlindBox(genre string, count int) ([]BlindBoxItem,
 	}
 
 	// 随机选取
-	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(result.Results), func(i, j int) {
 		result.Results[i], result.Results[j] = result.Results[j], result.Results[i]
 	})
@@ -1211,8 +1207,20 @@ func (s *RouletteService) Spin(userID int64, genre string) (*RouletteResult, err
 	spinNum := count + 1
 	s.mu.Unlock()
 
+	// 定期清理过期 key（超过1000条时清理非今天的）
+	go func() {
+		s.mu.Lock()
+		if len(s.spinCounts) > 1000 {
+			for k := range s.spinCounts {
+				if !strings.HasSuffix(k, today) {
+					delete(s.spinCounts, k)
+				}
+			}
+		}
+		s.mu.Unlock()
+	}()
+
 	// 随机选电影
-	rand.Seed(time.Now().UnixNano())
 	page := rand.Intn(50) + 1
 	url := fmt.Sprintf("https://api.themoviedb.org/3/discover/movie?api_key=%s&language=zh-CN&page=%d&sort_by=vote_average.desc&vote_count.gte=50&vote_average.gte=6",
 		s.tmdbAPIKey, page)

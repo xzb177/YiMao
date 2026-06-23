@@ -77,6 +77,8 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleBlindBox(ctx)
 	case action == "game_blindbox_open":
 		return h.handleBlindBoxOpen(ctx)
+	case action == "game_blindbox_horror":
+		return h.handleBlindBoxHorror(ctx)
 	case action == "game_social":
 		return h.handleSocialFeed(ctx)
 	case action == "game_review":
@@ -271,6 +273,13 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 
 // generateNarrationAsync 异步生成解说并发送结果
 func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieName string, spoilerMode bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Info("[Game] Narration panic for user %d: %v", userID, r)
+			h.telegram.SendMessage(chatID, "❌ AI 解说出错了，请稍后再试", "", nil)
+		}
+	}()
+
 	// 搜索电影信息
 	title, year, genres, rating, err := h.narratorSvc.SearchMovie(movieName)
 	if err != nil {
@@ -429,6 +438,46 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎰 再开一组", "game_blindbox_open")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	return &callback.Response{
+		RichMessage: card.Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// --- 恐怖盲盒 ---
+
+func (h *GameHandler) handleBlindBoxHorror(ctx *callback.Context) (*callback.Response, error) {
+	if h.blindBoxSvc == nil {
+		return &callback.Response{CallbackMsg: "❌ 盲盒服务未就绪", ShowAlert: true}, nil
+	}
+
+	items, err := h.blindBoxSvc.OpenBlindBox("恐怖", 3)
+	if err != nil {
+		logger.Info("[Game] Horror BlindBox open failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 开盒失败，请稍后再试", CallbackMsg: "开盒失败", ShowAlert: true}, nil
+	}
+
+	var views []richmessage.BlindBoxItemView
+	for _, item := range items {
+		views = append(views, richmessage.BlindBoxItemView{
+			Title:    item.Title,
+			Year:     item.Year,
+			Rating:   item.Rating,
+			Rarity:   item.Rarity,
+			Genres:   strings.Join(item.Genres, "/"),
+			Overview: item.Overview,
+			Revealed: true,
+		})
+	}
+
+	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{Items: views})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎲 再来一组恐怖片", "game_blindbox_horror")
+	kb.AddButton("🎰 普通盲盒", "game_blindbox_open")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
