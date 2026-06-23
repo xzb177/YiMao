@@ -71,7 +71,7 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handlePersonality(ctx)
 	case action == "game_narrator":
 		return h.handleNarratorEntry(ctx)
-	case strings.HasPrefix(action, "game_narrate:"):
+	case action == "game_narrate":
 		return h.handleNarrate(ctx)
 	case action == "game_blindbox":
 		return h.handleBlindBox(ctx)
