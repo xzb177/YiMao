@@ -37,6 +37,8 @@ type Config struct {
 	AnthropicAPIKey string
 	ZhipuAPIKey     string
 	OpenAIAPIKey    string
+	OpenAIBaseURL   string // Custom OpenAI-compatible base URL (e.g. mimo)
+	OpenAIModel     string // Custom model name (e.g. mimo-v2-pro)
 
 	// Server
 	ServerPort string
@@ -126,6 +128,8 @@ func Load() (*Config, error) {
 		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
 		ZhipuAPIKey:           getEnv("ZHIPU_API_KEY", ""),
 		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
+		OpenAIBaseURL:         getEnv("OPENAI_BASE_URL", ""),
+		OpenAIModel:           getEnv("OPENAI_MODEL", ""),
 		ServerPort:            getEnv("PORT", "8080"),
 		ServerHost:            getEnv("HOST", "0.0.0.0"),
 		WebhookURL:            getEnv("WEBHOOK_URL", ""),

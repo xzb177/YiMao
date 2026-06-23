@@ -569,7 +569,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// ====== 游戏化服务 ======
 	rankSvc := services.NewRankService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
 	personalitySvc := services.NewPersonalityService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
-	narratorSvc := services.NewNarratorService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, "", "")
+	narratorSvc := services.NewNarratorService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
 	blindBoxSvc := services.NewBlindBoxService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
 	rouletteSvc := services.NewRouletteService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
 	socialDB, socialErr := services.NewSocialDB(deps.Cfg.DataDir)
