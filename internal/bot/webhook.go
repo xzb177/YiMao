@@ -9,6 +9,7 @@ import (
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
@@ -149,7 +150,7 @@ func HandleWebhookMessage(
 	// 群聊处理 @mention 搜索
 	if msg.Chat.Type != "private" {
 		if len(msg.Text) > 1 {
-			HandleWebhookGroupChat(deps.Telegram, msg, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
+			HandleWebhookGroupChat(deps.Telegram, msg, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -384,6 +385,7 @@ func HandleWebhookGroupChat(
 	sessMgr *session.Manager,
 	searchHistory *services.SearchHistoryService,
 	tmdb *services.TMDBClient,
+	gameHandler *handlers.GameHandler,
 ) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[WebhookGroupChat] ChatID=%d, Text=%q", msg.Chat.ID, text)
@@ -407,11 +409,22 @@ func HandleWebhookGroupChat(
 		kb.AddButton("🎬 AI解说", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 	case "/narrate":
-		args := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
-		if args == "" {
+		movieName := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
+		if idx := strings.Index(movieName, "@"); idx >= 0 {
+			movieName = movieName[:idx]
+		}
+		movieName = strings.TrimSpace(movieName)
+		if movieName == "" {
 			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/narrate 电影名`\n\n例如：`/narrate 流浪地球`", "Markdown", nil)
-		} else {
-			telegram.SendMessage(msg.Chat.ID, "🎬 点击按钮开始解说 👇", "", nil)
+		} else if gameHandler != nil {
+			go func() {
+				sess := sessMgr.GetOrCreate(msg.From.ID)
+				if sess != nil {
+					sess.Set("pending_narrate_input", true)
+				}
+				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
+			}()
+			telegram.SendMessage(msg.Chat.ID, "🎬 正在生成解说...", "", nil)
 		}
 	case "/review":
 		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂`", "Markdown", nil)

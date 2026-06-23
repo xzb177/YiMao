@@ -137,7 +137,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
+		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
 		return
 	}
 
@@ -410,7 +410,7 @@ func allDigits(s string) bool {
 
 // HandleGroupChatMessage handles messages in group chats
 // 群组只做轻量引导和通知，不在群里展开搜索结果/求片进度，避免暴露观影隐私。
-func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
@@ -443,11 +443,26 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 	case "/narrate":
 		// 群聊中直接解说：/narrate 电影名
-		args := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
-		if args == "" {
+		movieName := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
+		// 去掉 @bot 后缀
+		if idx := strings.Index(movieName, "@"); idx >= 0 {
+			movieName = movieName[:idx]
+		}
+		movieName = strings.TrimSpace(movieName)
+		if movieName == "" {
 			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/narrate 电影名`\n\n例如：`/narrate 流浪地球`", "Markdown", nil)
-		} else {
-			telegram.SendMessage(msg.Chat.ID, "🎬 点击按钮开始解说 👇", "", nil)
+		} else if gameHandler != nil {
+			// 设置 pending 状态后调用解说
+			go func() {
+				// 直接调用 NarrateText，它会检查 pending 状态
+				// 所以先设置状态
+				sess := sessMgr.GetOrCreate(msg.From.ID)
+				if sess != nil {
+					sess.Set("pending_narrate_input", true)
+				}
+				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
+			}()
+			telegram.SendMessage(msg.Chat.ID, "🎬 正在生成解说...", "", nil)
 		}
 	case "/review":
 		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂`", "Markdown", nil)
