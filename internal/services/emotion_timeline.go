@@ -232,8 +232,40 @@ func (s *EmotionTimelineService) BuildProfile(embyUserID, userName string) (*Emo
 }
 
 // fetchViewRecords 从 Emby 拉取观影记录
+// 注意：如果 Emby 没有播放历史（LastPlayedDate 为空），则回退到"已入库=已看过"模式
 func (s *EmotionTimelineService) fetchViewRecords(userID string, limit int) ([]ViewRecord, error) {
-	// 使用 Recursive=true 获取所有已观看项目，按观影时间排序
+	var records []ViewRecord
+
+	// 策略1：尝试获取有播放记录的项目
+	playRecords := s.fetchPlayedItems(userID, limit)
+	if len(playRecords) >= 10 {
+		logger.Info("[Timeline] Fetched %d played records for user %s", len(playRecords), userID)
+		return playRecords, nil
+	}
+
+	// 策略2：回退到"已入库=已看过"模式（按入库时间倒序）
+	logger.Info("[Timeline] Played records不足(%d)，回退到库分析模式", len(playRecords))
+	libraryRecords := s.fetchLibraryItems(userID, limit)
+	if len(libraryRecords) > 0 {
+		// 合并：有播放记录的优先
+		seen := make(map[string]bool)
+		for _, r := range playRecords {
+			seen[r.ID] = true
+			records = append(records, r)
+		}
+		for _, r := range libraryRecords {
+			if !seen[r.ID] {
+				records = append(records, r)
+			}
+		}
+	}
+
+	logger.Info("[Timeline] Total %d records for user %s (played=%d, library=%d)", len(records), userID, len(playRecords), len(libraryRecords))
+	return records, nil
+}
+
+// fetchPlayedItems 获取有播放记录的项目
+func (s *EmotionTimelineService) fetchPlayedItems(userID string, limit int) []ViewRecord {
 	apiURL := fmt.Sprintf(
 		"%s/Users/%s/Items?Recursive=true&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&Limit=%d&Fields=Genres,CommunityRating,UserData,ProductionYear&api_key=%s",
 		s.embyURL, userID, limit, s.embyAPIKey,
@@ -241,12 +273,12 @@ func (s *EmotionTimelineService) fetchViewRecords(userID string, limit int) ([]V
 
 	resp, err := s.httpClient.Get(apiURL)
 	if err != nil {
-		return nil, err
+		return nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Emby API returned %d", resp.StatusCode)
+		return nil
 	}
 
 	var result struct {
@@ -266,7 +298,7 @@ func (s *EmotionTimelineService) fetchViewRecords(userID string, limit int) ([]V
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, err
+		return nil
 	}
 
 	var records []ViewRecord
@@ -276,28 +308,93 @@ func (s *EmotionTimelineService) fetchViewRecords(userID string, limit int) ([]V
 			name = item.SeriesName
 		}
 
-		// 解析观影时间
 		var watchedAt time.Time
 		if item.UserData.LastPlayedDate != "" {
 			watchedAt, _ = time.Parse(time.RFC3339, item.UserData.LastPlayedDate)
 		}
 		if watchedAt.IsZero() {
-			continue // 没有时间记录的跳过
+			continue
 		}
 
 		records = append(records, ViewRecord{
-			ID:        item.ID,
-			Name:      name,
-			Type:      strings.ToLower(item.Type),
-			Genres:    item.Genres,
-			Rating:    item.CommunityRating,
-			Year:      item.ProductionYear,
-			WatchedAt: watchedAt,
+			ID: item.ID, Name: name, Type: strings.ToLower(item.Type),
+			Genres: item.Genres, Rating: item.CommunityRating,
+			Year: item.ProductionYear, WatchedAt: watchedAt,
 		})
 	}
+	return records
+}
 
-	logger.Info("[Timeline] Fetched %d view records for user %s", len(records), userID)
-	return records, nil
+// fetchLibraryItems 获取库内项目（按入库时间倒序，假设入库≈看过）
+func (s *EmotionTimelineService) fetchLibraryItems(userID string, limit int) []ViewRecord {
+	// 获取电影
+	movieURL := fmt.Sprintf(
+		"%s/Users/%s/Items?Recursive=true&IncludeItemTypes=Movie&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear&api_key=%s",
+		s.embyURL, userID, limit, s.embyAPIKey,
+	)
+	// 获取剧集
+	seriesURL := fmt.Sprintf(
+		"%s/Users/%s/Items?Recursive=true&IncludeItemTypes=Series&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear&api_key=%s",
+		s.embyURL, userID, limit/2, s.embyAPIKey,
+	)
+
+	type fetchResult struct {
+		items []ViewRecord
+		typ   string
+	}
+	ch := make(chan fetchResult, 2)
+
+	for _, u := range []string{movieURL, seriesURL} {
+		go func(apiURL string) {
+			resp, err := s.httpClient.Get(apiURL)
+			if err != nil {
+				ch <- fetchResult{}
+				return
+			}
+			defer resp.Body.Close()
+
+			var result struct {
+				Items []struct {
+					ID              string   `json:"Id"`
+					Name            string   `json:"Name"`
+					Type            string   `json:"Type"`
+					Genres          []string `json:"Genres"`
+					CommunityRating float64  `json:"CommunityRating"`
+					ProductionYear  int      `json:"ProductionYear"`
+					DateCreated     string   `json:"DateCreated"`
+				} `json:"Items"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+				ch <- fetchResult{}
+				return
+			}
+
+			var records []ViewRecord
+			for _, item := range result.Items {
+				var createdAt time.Time
+				if item.DateCreated != "" {
+					createdAt, _ = time.Parse(time.RFC3339, item.DateCreated)
+				}
+				if createdAt.IsZero() {
+					createdAt = time.Now()
+				}
+				records = append(records, ViewRecord{
+					ID: item.ID, Name: item.Name, Type: strings.ToLower(item.Type),
+					Genres: item.Genres, Rating: item.CommunityRating,
+					Year: item.ProductionYear, WatchedAt: createdAt,
+				})
+			}
+			ch <- fetchResult{items: records}
+		}(u)
+	}
+
+	var allRecords []ViewRecord
+	for i := 0; i < 2; i++ {
+		r := <-ch
+		allRecords = append(allRecords, r.items...)
+	}
+
+	return allRecords
 }
 
 // buildTopGenres 构建类型排行榜
