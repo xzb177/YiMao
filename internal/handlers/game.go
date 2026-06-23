@@ -931,7 +931,7 @@ func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response,
 
 	kb := services.NewKeyboardBuilder()
 	if contractID > 0 {
-		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_contract_complete:%d", contractID))
+		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_contract_complete:id:%d", contractID))
 	}
 	if result.SpinCount < result.MaxSpins {
 		kb.AddButton("📜 再签一份", "game_contract")
@@ -990,10 +990,13 @@ func (h *GameHandler) handleContractComplete(ctx *callback.Context) (*callback.R
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
 
-	// 从 callback data 提取 contract ID
-	action := string(ctx.Callback.Action)
+	// 从 callback params 提取 contract ID
 	var contractID int64
-	fmt.Sscanf(action, "game_contract_complete:%d", &contractID)
+	if ctx.Callback != nil && ctx.Callback.Params != nil {
+		if idStr, ok := ctx.Callback.Params["id"]; ok {
+			fmt.Sscanf(idStr, "%d", &contractID)
+		}
+	}
 	if contractID == 0 {
 		return &callback.Response{CallbackMsg: "❌ 无效的契约", ShowAlert: true}, nil
 	}
