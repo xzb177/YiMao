@@ -176,11 +176,11 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔄 刷新段位", "game_rank")
-	kb.AddButton("🧠 性格测试", "game_personality")
+	kb.AddButton("🪞 情绪画像", "game_emotion")
+	kb.AddButton("💊 情绪处方", "game_prescription")
 	kb.NewRow()
+	kb.AddButton("📜 签契约", "game_contract")
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -232,11 +232,11 @@ func (h *GameHandler) handlePersonality(ctx *callback.Context) (*callback.Respon
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔄 重新测试", "game_personality")
-	kb.AddButton("🏆 查看段位", "game_rank")
+	kb.AddButton("🪞 情绪画像", "game_emotion")
+	kb.AddButton("💊 情绪处方", "game_prescription")
 	kb.NewRow()
+	kb.AddButton("📜 签契约", "game_contract")
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
