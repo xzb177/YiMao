@@ -28,6 +28,17 @@ type ViewRecord struct {
 	WatchedAt time.Time // 观影时间
 }
 
+// ViewingSession 观影会话（连续观看同一类型的一组记录）
+type ViewingSession struct {
+	Genres    []string
+	Movies    []string  // 电影名列表
+	StartTime time.Time
+	EndTime   time.Time
+	Count     int
+	Intensity float64
+	Mood      string
+}
+
 // EmotionData 情绪数据点
 type EmotionData struct {
 	Date      time.Time
@@ -79,6 +90,11 @@ type EmotionalProfile struct {
 	Narrative       string           // 生成的叙事文本
 	PersonalityTag  string           // 性格标签
 	LifePhase       string           // 当前人生阶段推断
+
+	// 深度分析
+	Sessions        []ViewingSession // 观影会话（连续同类型的观影）
+	RecentMovies    []string         // 最近10部看过的电影名
+	TasteSignature  string           // 口味签名（一句话概括）
 }
 
 // GenreCount 类型计数
@@ -92,14 +108,26 @@ type EmotionTimelineService struct {
 	embyURL    string
 	embyAPIKey string
 	httpClient *http.Client
+	openaiKey  string
+	openaiBase string
+	model      string
 }
 
 // NewEmotionTimelineService 创建时间线引擎
-func NewEmotionTimelineService(embyURL, embyAPIKey string) *EmotionTimelineService {
+func NewEmotionTimelineService(embyURL, embyAPIKey, openaiKey, openaiBase, model string) *EmotionTimelineService {
+	if openaiBase == "" {
+		openaiBase = "https://api.openai.com/v1"
+	}
+	if model == "" {
+		model = "gpt-4o-mini"
+	}
 	return &EmotionTimelineService{
 		embyURL:    strings.TrimRight(embyURL, "/"),
 		embyAPIKey: embyAPIKey,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		openaiKey:  openaiKey,
+		openaiBase: strings.TrimRight(openaiBase, "/"),
+		model:      model,
 	}
 }
 
@@ -186,6 +214,19 @@ func (s *EmotionTimelineService) BuildProfile(embyUserID, userName string) (*Emo
 	// 性格标签和人生阶段
 	profile.PersonalityTag = s.derivePersonalityTag(profile)
 	profile.LifePhase = s.deriveLifePhase(profile)
+
+	// 提取最近看过的电影名
+	for i, r := range records {
+		if i >= 15 {
+			break
+		}
+		if r.Name != "" {
+			profile.RecentMovies = append(profile.RecentMovies, r.Name)
+		}
+	}
+
+	// 生成口味签名
+	profile.TasteSignature = s.buildTasteSignature(profile)
 
 	return profile, nil
 }
@@ -714,6 +755,147 @@ func intensityToMood(intensity float64) string {
 
 // GenerateNarrative 生成叙事文本（用于时光放映机）
 func (s *EmotionTimelineService) GenerateNarrative(profile *EmotionalProfile, userName string) string {
+	// 尝试 AI 生成叙事
+	if s.openaiKey != "" {
+		narrative, err := s.generateAINarrative(profile, userName)
+		if err == nil && narrative != "" {
+			return narrative
+		}
+		logger.Info("[Timeline] AI narrative fallback: %v", err)
+	}
+	// 降级：模板叙事
+	return s.generateTemplateNarrative(profile, userName)
+}
+
+// generateAINarrative 用 AI 生成个性化叙事
+func (s *EmotionTimelineService) generateAINarrative(profile *EmotionalProfile, userName string) (string, error) {
+	var dataLines []string
+	dataLines = append(dataLines, fmt.Sprintf("用户：%s", userName))
+	dataLines = append(dataLines, fmt.Sprintf("观影总量：%d部（电影%d，剧集%d）", profile.TotalWatched, profile.MovieCount, profile.SeriesCount))
+	dataLines = append(dataLines, fmt.Sprintf("标志性类型：%s", profile.SignatureGenre))
+	dataLines = append(dataLines, fmt.Sprintf("当前情绪强度：%.1f/10（%s）", profile.EmotionalIntensity, profile.EmotionTrend))
+	dataLines = append(dataLines, fmt.Sprintf("性格标签：%s", profile.PersonalityTag))
+	dataLines = append(dataLines, fmt.Sprintf("人生阶段：%s", profile.LifePhase))
+	dataLines = append(dataLines, fmt.Sprintf("观影模式：%s型，%s最活跃", map[bool]string{true: "夜猫子", false: "规律作息"}[profile.Pattern.IsNightOwl], profile.Pattern.PeakPeriod))
+
+	if profile.WatchStreak >= 3 {
+		dataLines = append(dataLines, fmt.Sprintf("连续观影：%d天", profile.WatchStreak))
+	}
+	if profile.LongestGap >= 5 {
+		dataLines = append(dataLines, fmt.Sprintf("最长空白期：%d天", profile.LongestGap))
+	}
+	if len(profile.RecentMovies) > 0 {
+		dataLines = append(dataLines, fmt.Sprintf("最近看过的：%s", strings.Join(profile.RecentMovies, "、")))
+	}
+	if len(profile.TopGenres) > 0 {
+		var genreParts []string
+		for _, g := range profile.TopGenres {
+			genreParts = append(genreParts, fmt.Sprintf("%s(%d部)", g.Genre, g.Count))
+		}
+		dataLines = append(dataLines, fmt.Sprintf("类型偏好：%s", strings.Join(genreParts, "、")))
+	}
+	if len(profile.GenreTransitions) > 0 {
+		var transParts []string
+		for _, t := range profile.GenreTransitions {
+			transParts = append(transParts, fmt.Sprintf("%s→%s(%s)", t.From, t.To, t.Direction))
+		}
+		dataLines = append(dataLines, fmt.Sprintf("类型转变：%s", strings.Join(transParts, "、")))
+	}
+
+	prompt := fmt.Sprintf(`你是一个纪录片旁白，正在讲述一个人的观影故事。
+
+以下是这个人的观影数据：
+%s
+
+请用第二人称（"你"）写一段200字以内的叙事。要求：
+1. 必须引用至少2部具体电影名（从"最近看过"中选取）
+2. 不要用"深刻探讨""引人深思"等AI腔
+3. 像一个老朋友在聊天，说出你从他的观影习惯中看到的东西
+4. 如果有情绪转变或类型转变，讲出这个转变背后可能的故事
+5. 语气温暖但不矫情，有洞察但不说教
+6. 不要加标题、不要加emoji前缀、不要分段落编号，就是一段连贯的文字`, strings.Join(dataLines, "\n"))
+
+	body := map[string]interface{}{
+		"model": s.model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "你是一个擅长讲故事的人。你从数据中看到人的内心世界，然后用温暖的语言讲出来。只返回叙事文本，不要任何格式标记。"},
+			{"role": "user", "content": prompt},
+		},
+		"max_tokens":  500,
+		"temperature": 0.8,
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req, err := http.NewRequest("POST", s.openaiBase+"/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.openaiKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("AI API returned %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", err
+	}
+	if len(result.Choices) == 0 {
+		return "", fmt.Errorf("AI returned empty")
+	}
+
+	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+}
+
+// buildTasteSignature 生成口味签名
+func (s *EmotionTimelineService) buildTasteSignature(profile *EmotionalProfile) string {
+	genre := profile.SignatureGenre
+	intensity := profile.EmotionalIntensity
+	pattern := profile.Pattern
+
+	switch {
+	case genre == "恐怖" && intensity >= 7:
+		return "在黑暗中寻找刺激的灵魂"
+	case genre == "恐怖" && pattern.IsNightOwl:
+		return "深夜的恐惧猎人"
+	case genre == "科幻":
+		return "用想象力丈量宇宙的人"
+	case genre == "动作" && intensity >= 7:
+		return "肾上腺素驱动的冒险者"
+	case genre == "剧情" && intensity <= 4:
+		return "在安静中感受人生重量的人"
+	case genre == "喜剧":
+		return "用笑声对抗世界的人"
+	case genre == "爱情":
+		return "相信爱情的浪漫主义者"
+	case genre == "纪录":
+		return "用真实丈量世界的求知者"
+	case genre == "动画":
+		return "内心住着一个孩子的成年人"
+	case genre == "犯罪" || genre == "悬疑":
+		return "享受解谜快感的逻辑控"
+	case genre == "全能":
+		return "没有边界的好奇心"
+	default:
+		return "独特的观影灵魂"
+	}
+}
+
+// generateTemplateNarrative 模板叙事（降级方案）
+func (s *EmotionTimelineService) generateTemplateNarrative(profile *EmotionalProfile, userName string) string {
 	var parts []string
 
 	// 开场
