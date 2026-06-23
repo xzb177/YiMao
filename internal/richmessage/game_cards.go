@@ -163,8 +163,8 @@ func BuildNarratorCard(data NarratorCardData) RichMessage {
 
 	// 剧情概要
 	if data.Summary != "" {
-		if len([]rune(data.Summary)) > 600 {
-			data.Summary = string([]rune(data.Summary)[:600]) + "..."
+		if len([]rune(data.Summary)) > 800 {
+			data.Summary = string([]rune(data.Summary)[:800]) + "..."
 		}
 		builder.Paragraph(data.Summary)
 	}

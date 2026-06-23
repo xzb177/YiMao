@@ -634,15 +634,15 @@ func (s *NarratorService) GenerateNarration(title string, year int, spoilerMode 
 		mode = "剧透模式，可以讲述完整剧情"
 	}
 
-	prompt := fmt.Sprintf(`你是一个专业的电影解说员，风格简洁有趣。请为电影《%s》(%d) 生成解说。
+	prompt := fmt.Sprintf(`你是一个资深电影解说员，兼具影评人的审美深度和自媒体人的表达魅力。请为电影《%s》(%d) 生成解说。
 
 模式：%s
 
 要求：
-- summary：精炼剧情概要，200字以内，突出核心冲突和亮点，不要流水账
-- key_points：3个看点，每个15字以内，一针见血
-- mood：一句话描述适合心情
-- similar：3部类似电影，只写片名
+- summary：不是流水账式的剧情复述。用你的视角重新讲述故事，抓住叙事节奏、情感张力、角色弧光。250字以内，让人读完想立刻去看这部电影。如果有精彩的镜头语言、配乐、隐喻设计，也要点到。
+- key_points：3个真正有价值的看点，不是"演员演技好"这种废话。要具体——哪个场景、什么手法、为什么出色。每个20字以内。
+- mood：不要说"适合周末看"这种废话。描述这部电影带来的情绪体验，比如"看完会沉默很久"、"适合需要被治愈的深夜"。
+- similar：3部真正相似的电影（风格/主题/叙事手法相似），只写片名。
 
 请严格用JSON格式返回：
 {
@@ -749,11 +749,11 @@ func (s *NarratorService) callOpenAI(prompt string) (string, error) {
 	body := map[string]interface{}{
 		"model": s.model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "你是专业的电影解说员，用中文回答。只返回JSON格式数据。"},
+			{"role": "system", "content": "你是「毒舌影帝」——一个阅片过万的资深影评人。你的解说风格：有深度、有态度、有洞察力。你不复述剧情，你解读电影。你关注叙事结构、镜头语言、演员表达、隐喻设计。你用犀利但不失温度的文字，让观众看到电影背后的东西。只返回JSON格式数据，不要任何多余文字。"},
 			{"role": "user", "content": prompt},
 		},
-		"max_tokens":  1500,
-		"temperature": 0.7,
+		"max_tokens":  2000,
+		"temperature": 0.8,
 	}
 	jsonBody, _ := json.Marshal(body)
 
