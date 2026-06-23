@@ -670,7 +670,37 @@ func (s *NarratorService) GenerateNarration(title string, year int, spoilerMode 
 		Mood      string   `json:"mood"`
 		Similar   []string `json:"similar"`
 	}
-	if err := json.Unmarshal([]byte(resp), &parsed); err != nil {
+
+	// 清理AI返回的markdown代码块包裹
+	cleaned := resp
+	cleaned = strings.TrimSpace(cleaned)
+	if strings.HasPrefix(cleaned, "```") {
+		// 去掉 ```json 和 ```
+		lines := strings.Split(cleaned, "\n")
+		var jsonLines []string
+		inBlock := false
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "```") {
+				inBlock = !inBlock
+				continue
+			}
+			if inBlock || (!strings.HasPrefix(trimmed, "```") && len(jsonLines) > 0) {
+				jsonLines = append(jsonLines, line)
+			}
+		}
+		if len(jsonLines) > 0 {
+			cleaned = strings.Join(jsonLines, "\n")
+		}
+	}
+	// 尝试提取 { ... } 块
+	if idx := strings.Index(cleaned, "{"); idx >= 0 {
+		if endIdx := strings.LastIndex(cleaned, "}"); endIdx > idx {
+			cleaned = cleaned[idx : endIdx+1]
+		}
+	}
+
+	if err := json.Unmarshal([]byte(cleaned), &parsed); err != nil {
 		// 解析失败，用原文作为summary
 		result.Summary = resp
 	} else {
