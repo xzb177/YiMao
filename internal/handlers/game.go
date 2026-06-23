@@ -245,11 +245,15 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 		return &callback.Response{CallbackMsg: "❌ AI 服务未就绪", ShowAlert: true}, nil
 	}
 
-	// 从 callback params 中提取电影名
+	// 从 callback params 中提取电影名和剧透模式
 	movieName := ""
+	spoilerMode := false
 	if ctx.Callback != nil && ctx.Callback.Params != nil {
 		if name, ok := ctx.Callback.Params["name"]; ok {
 			movieName = name
+		}
+		if sp, ok := ctx.Callback.Params["spoiler"]; ok && sp == "1" {
+			spoilerMode = true
 		}
 	}
 	if movieName == "" {
@@ -263,7 +267,7 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	}
 
 	// 生成解说
-	result, err := h.narratorSvc.GenerateNarration(title, year, false)
+	result, err := h.narratorSvc.GenerateNarration(title, year, spoilerMode)
 	if err != nil {
 		logger.Info("[Game] Narration failed for user %d: %v", ctx.UserID, err)
 		return &callback.Response{Text: "❌ AI 解说生成失败，请稍后再试", CallbackMsg: "生成失败", ShowAlert: true}, nil
@@ -284,7 +288,11 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	if spoilerMode {
+		kb.AddButton("🔇 无剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	} else {
+		kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
+	}
 	kb.AddButton("🎬 换一部", "game_narrator")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
@@ -344,7 +352,7 @@ func (h *GameHandler) HandleNarrateText(userID int64, chatID int64, movieName st
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
 	kb.AddButton("🎬 换一部", "game_narrator")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
