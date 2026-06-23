@@ -391,12 +391,6 @@ func HandleWebhookGroupChat(
 	logger.Info("[WebhookGroupChat] ChatID=%d, Text=%q", msg.Chat.ID, text)
 
 	if !strings.HasPrefix(text, "/") {
-		// 自然语言识别
-		if gameHandler != nil {
-			if handleNaturalLanguageGame(telegram, msg, sessMgr, gameHandler, text) {
-				return
-			}
-		}
 		return
 	}
 
@@ -408,20 +402,16 @@ func HandleWebhookGroupChat(
 	switch cmd {
 	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
 		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
-	case "/game":
+	case "/game", "/游戏", "/游戏中心":
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🎰 盲盒", "game_blindbox")
 		kb.AddButton("🎡 轮盘", "game_roulette")
 		kb.AddButton("🎬 AI解说", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
-	case "/narrate":
-		movieName := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
-		if idx := strings.Index(movieName, "@"); idx >= 0 {
-			movieName = movieName[:idx]
-		}
-		movieName = strings.TrimSpace(movieName)
+	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
+		movieName := extractMovieName(text, cmd)
 		if movieName == "" {
-			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/narrate 电影名`\n\n例如：`/narrate 流浪地球`", "Markdown", nil)
+			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/解说 电影名`\n\n例如：`/解说 流浪地球`", "Markdown", nil)
 		} else if gameHandler != nil {
 			go func() {
 				sess := sessMgr.GetOrCreate(msg.From.ID)
@@ -430,10 +420,9 @@ func HandleWebhookGroupChat(
 				}
 				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
 			}()
-			telegram.SendMessage(msg.Chat.ID, "🎬 正在生成解说...", "", nil)
 		}
-	case "/review":
-		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂`", "Markdown", nil)
+	case "/review", "/评价", "/影评":
+		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)

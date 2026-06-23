@@ -415,12 +415,6 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
 	if !strings.HasPrefix(text, "/") {
-		// 自然语言识别：非命令消息也能触发游戏功能
-		if gameHandler != nil {
-			if handleNaturalLanguageGame(telegram, msg, sessMgr, gameHandler, text) {
-				return
-			}
-		}
 		// 普通群聊消息不响应，避免刷屏。
 		return
 	}
@@ -440,38 +434,29 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 				_ = telegram.DeleteMessage(chatID, msgID)
 			}(msg.Chat.ID, sent.MessageID)
 		}
-	case "/game":
+	case "/game", "/游戏", "/游戏中心":
 		// 群聊中发送游戏中心菜单
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🎰 盲盒", "game_blindbox")
 		kb.AddButton("🎡 轮盘", "game_roulette")
 		kb.AddButton("🎬 AI解说", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
-	case "/narrate":
-		// 群聊中直接解说：/narrate 电影名
-		movieName := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
-		// 去掉 @bot 后缀
-		if idx := strings.Index(movieName, "@"); idx >= 0 {
-			movieName = movieName[:idx]
-		}
-		movieName = strings.TrimSpace(movieName)
+	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
+		// 群聊中直接解说：/解说 电影名
+		movieName := extractMovieName(text, cmd)
 		if movieName == "" {
-			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/narrate 电影名`\n\n例如：`/narrate 流浪地球`", "Markdown", nil)
+			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/解说 电影名`\n\n例如：`/解说 流浪地球`\n\n也可以用：`/narrate 流浪地球`", "Markdown", nil)
 		} else if gameHandler != nil {
-			// 设置 pending 状态后调用解说
 			go func() {
-				// 直接调用 NarrateText，它会检查 pending 状态
-				// 所以先设置状态
 				sess := sessMgr.GetOrCreate(msg.From.ID)
 				if sess != nil {
 					sess.Set("pending_narrate_input", true)
 				}
 				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
 			}()
-			telegram.SendMessage(msg.Chat.ID, "🎬 正在生成解说...", "", nil)
 		}
-	case "/review":
-		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂`", "Markdown", nil)
+	case "/review", "/评价", "/影评":
+		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
@@ -479,6 +464,17 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		// 其他命令不响应，交给 Telegram/群管理习惯。
 		return
 	}
+}
+
+// extractMovieName 从命令文本中提取电影名
+// 支持: "/解说 逐玉", "/narrate@bot 逐玉", "/讲讲流浪地球"
+func extractMovieName(text, cmd string) string {
+	movieName := strings.TrimSpace(strings.TrimPrefix(text, cmd))
+	// 去掉 @bot 后缀
+	if idx := strings.Index(movieName, "@"); idx >= 0 {
+		movieName = movieName[:idx]
+	}
+	return strings.TrimSpace(movieName)
 }
 
 // handleNaturalLanguageGame 识别自然语言触发游戏功能
