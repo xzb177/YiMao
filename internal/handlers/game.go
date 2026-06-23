@@ -105,6 +105,8 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handlePrescription(ctx)
 	case action == "game_contract":
 		return h.handleContract(ctx)
+	case strings.HasPrefix(action, "game_contract_complete:"):
+		return h.handleContractComplete(ctx)
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}
@@ -907,10 +909,23 @@ func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response,
 		MaxSpins:  result.MaxSpins,
 	})
 
+	// 保存契约到数据库
+	contractID := int64(0)
+	if h.socialDB != nil {
+		userName := h.getUserName(ctx.UserID)
+		deadline := time.Now().Add(72 * time.Hour)
+		if id, err := h.socialDB.AddContract(ctx.UserID, userName, result.Title, challenges[challengeIdx], deadline); err == nil {
+			contractID = id
+		}
+	}
+
 	// 群通知
 	h.notifyGroup(h.getUserName(ctx.UserID), fmt.Sprintf("签了一份命运契约：《%s》📜", result.Title))
 
 	kb := services.NewKeyboardBuilder()
+	if contractID > 0 {
+		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_contract_complete:%d", contractID))
+	}
 	if result.SpinCount < result.MaxSpins {
 		kb.AddButton("📜 再签一份", "game_contract")
 	}
@@ -959,4 +974,39 @@ func formatTimeAgo(t time.Time) string {
 	default:
 		return t.Format("01-02")
 	}
+}
+
+// --- 完成契约 ---
+
+func (h *GameHandler) handleContractComplete(ctx *callback.Context) (*callback.Response, error) {
+	if h.socialDB == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	// 从 callback data 提取 contract ID
+	action := string(ctx.Callback.Action)
+	var contractID int64
+	fmt.Sscanf(action, "game_contract_complete:%d", &contractID)
+	if contractID == 0 {
+		return &callback.Response{CallbackMsg: "❌ 无效的契约", ShowAlert: true}, nil
+	}
+
+	ok, err := h.socialDB.CompleteContract(contractID, ctx.UserID)
+	if err != nil {
+		logger.Info("[Game] CompleteContract failed: %v", err)
+		return &callback.Response{CallbackMsg: "❌ 完成失败", ShowAlert: true}, nil
+	}
+	if !ok {
+		return &callback.Response{CallbackMsg: "❌ 契约不存在或已完成", ShowAlert: true}, nil
+	}
+
+	// 群通知
+	userName := h.getUserName(ctx.UserID)
+	h.notifyGroup(userName, "完成了一份命运契约挑战！✅ +3经验值")
+
+	return &callback.Response{
+		Text:        "🎉 **挑战完成！**\n\n✅ 契约已标记为完成\n📈 经验值 +3\n\n继续签新的契约，或者看看你的情绪变化。",
+		CallbackMsg: "挑战完成！",
+		ShowAlert:   true,
+	}, nil
 }

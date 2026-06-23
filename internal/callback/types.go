@@ -192,6 +192,7 @@ var validActions = map[Action]bool{
 	"game_prescription":   true, // 情绪处方
 	"game_contract":       true, // 命运契约
 	"game_blindbox_horror": true, // 恐怖盲盒
+	"game_contract_complete": true, // 完成契约
 
 	// Resource candidate actions
 	ActionResourceList: true,

@@ -904,13 +904,16 @@ func (s *EmotionTimelineService) generateAINarrative(profile *EmotionalProfile, 
 以下是这个人的观影数据：
 %s
 
-请用第二人称（"你"）写一段200字以内的叙事。要求：
-1. 必须引用至少2部具体电影名（从"最近看过"中选取）
-2. 不要用"深刻探讨""引人深思"等AI腔
-3. 像一个老朋友在聊天，说出你从他的观影习惯中看到的东西
-4. 如果有情绪转变或类型转变，讲出这个转变背后可能的故事
-5. 语气温暖但不矫情，有洞察但不说教
-6. 不要加标题、不要加emoji前缀、不要分段落编号，就是一段连贯的文字`, strings.Join(dataLines, "\n"))
+请用第二人称（"你"）写一段150字以内的叙事。
+
+写作规则：
+- 必须引用至少2部具体电影名（从"最近看过"中选取），用《》包裹
+- 像一个老朋友喝了点酒后随口说出的观察，不是正式评价
+- 如果有类型转变，用生活化的比喻来讲（比如"就像一个人突然从摇滚转向了爵士"）
+- 可以适度猜测这个人生活中可能发生了什么，但不要断言
+- 禁止使用：深刻、引人深思、不容错过、探讨、展现、呈现、值得一提
+- 不要加标题、emoji前缀、分段编号，就是一段连贯自然的文字
+- 以句号结尾，不要用感叹号`, strings.Join(dataLines, "\n"))
 
 	body := map[string]interface{}{
 		"model": s.model,
@@ -1003,11 +1006,18 @@ func (s *EmotionTimelineService) generateTemplateNarrative(profile *EmotionalPro
 	parts = append(parts, fmt.Sprintf("📍 %s", profile.LifePhase))
 	parts = append(parts, "")
 
-	// 标志性类型
-	if profile.SignatureGenre != "全能" {
+	// 标志性类型 + 口味签名
+	if profile.TasteSignature != "" {
+		parts = append(parts, fmt.Sprintf("🎭 %s。你的标志性类型是「%s」。", profile.TasteSignature, profile.SignatureGenre))
+	} else if profile.SignatureGenre != "全能" {
 		parts = append(parts, fmt.Sprintf("🎭 你的标志性类型是「%s」，在你看过的作品中占比最高。", profile.SignatureGenre))
 	} else {
 		parts = append(parts, "🎭 你是一个杂食型观众，没有固定的偏好类型，什么都看。")
+	}
+
+	// 最近观影（引用具体电影名）
+	if len(profile.RecentMovies) >= 3 {
+		parts = append(parts, fmt.Sprintf("🎬 最近你看了《%s》《%s》《%s》。", profile.RecentMovies[0], profile.RecentMovies[1], profile.RecentMovies[2]))
 	}
 
 	// 情绪曲线叙事

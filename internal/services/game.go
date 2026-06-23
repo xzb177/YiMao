@@ -990,6 +990,20 @@ func NewSocialDB(dataDir string) (*SocialDB, error) {
 		);
 		CREATE INDEX IF NOT EXISTS idx_events_user ON social_events(user_id);
 		CREATE INDEX IF NOT EXISTS idx_events_time ON social_events(created_at DESC);
+
+		CREATE TABLE IF NOT EXISTS contracts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			user_name TEXT NOT NULL,
+			movie_name TEXT NOT NULL,
+			challenge TEXT NOT NULL,
+			deadline DATETIME NOT NULL,
+			status TEXT NOT NULL DEFAULT 'pending',
+			completed_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_contracts_user ON contracts(user_id);
+		CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create social tables: %w", err)
@@ -1143,6 +1157,85 @@ func (s *SocialDB) addEvent(userID int64, userName, eventType, content string) {
 		"INSERT INTO social_events (user_id, user_name, event_type, content) VALUES (?, ?, ?, ?)",
 		userID, userName, eventType, content,
 	)
+}
+
+// Contract 契约记录
+type Contract struct {
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"user_id"`
+	UserName    string    `json:"user_name"`
+	MovieName   string    `json:"movie_name"`
+	Challenge   string    `json:"challenge"`
+	Deadline    time.Time `json:"deadline"`
+	Status      string    `json:"status"` // pending / completed / expired
+	CompletedAt time.Time `json:"completed_at"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// AddContract 添加契约
+func (s *SocialDB) AddContract(userID int64, userName, movieName, challenge string, deadline time.Time) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, err := s.db.Exec(
+		"INSERT INTO contracts (user_id, user_name, movie_name, challenge, deadline) VALUES (?, ?, ?, ?, ?)",
+		userID, userName, movieName, challenge, deadline.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("添加契约失败: %w", err)
+	}
+
+	id, _ := result.LastInsertId()
+
+	// 记录动态
+	s.addEvent(userID, userName, "contract", fmt.Sprintf("签了命运契约：《%s》", movieName))
+
+	return id, nil
+}
+
+// CompleteContract 完成契约
+func (s *SocialDB) CompleteContract(contractID, userID int64) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, err := s.db.Exec(
+		"UPDATE contracts SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND status = 'pending'",
+		contractID, userID,
+	)
+	if err != nil {
+		return false, err
+	}
+
+	rows, _ := result.RowsAffected()
+	return rows > 0, nil
+}
+
+// GetPendingContracts 获取用户的待完成契约
+func (s *SocialDB) GetPendingContracts(userID int64) ([]Contract, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	rows, err := s.db.Query(
+		"SELECT id, user_id, user_name, movie_name, challenge, deadline, status, created_at FROM contracts WHERE user_id = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 5",
+		userID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var contracts []Contract
+	for rows.Next() {
+		var c Contract
+		var deadlineStr, createdAtStr string
+		if err := rows.Scan(&c.ID, &c.UserID, &c.UserName, &c.MovieName, &c.Challenge, &deadlineStr, &c.Status, &createdAtStr); err != nil {
+			continue
+		}
+		c.Deadline, _ = time.Parse(time.RFC3339, deadlineStr)
+		c.CreatedAt, _ = time.Parse(time.RFC3339, createdAtStr)
+		contracts = append(contracts, c)
+	}
+	return contracts, nil
 }
 
 func stars(n int) string {
