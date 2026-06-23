@@ -371,9 +371,6 @@ func requirePrivate(ctx *callback.Context) bool {
 // --- 盲盒 ---
 
 func (h *GameHandler) handleBlindBox(ctx *callback.Context) (*callback.Response, error) {
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 盲盒需要私聊使用", ShowAlert: true}, nil
-	}
 	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{
 		Items: []richmessage.BlindBoxItemView{
 			{Revealed: false, Rarity: "?"},
@@ -396,9 +393,6 @@ func (h *GameHandler) handleBlindBox(ctx *callback.Context) (*callback.Response,
 }
 
 func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Response, error) {
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 盲盒需要私聊使用", ShowAlert: true}, nil
-	}
 	if h.blindBoxSvc == nil {
 		return &callback.Response{CallbackMsg: "❌ 盲盒服务未就绪", ShowAlert: true}, nil
 	}
@@ -529,9 +523,6 @@ func (h *GameHandler) handleReviewRate(ctx *callback.Context) (*callback.Respons
 // --- 命运轮盘 ---
 
 func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response, error) {
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 轮盘需要私聊使用", ShowAlert: true}, nil
-	}
 	card := richmessage.BuildRouletteCard(richmessage.RouletteCardData{
 		Title:    "等待命运的裁决...",
 		SpinCount: 0,
@@ -551,9 +542,6 @@ func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response,
 }
 
 func (h *GameHandler) handleRouletteSpin(ctx *callback.Context) (*callback.Response, error) {
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 轮盘需要私聊使用", ShowAlert: true}, nil
-	}
 	if h.rouletteSvc == nil {
 		return &callback.Response{CallbackMsg: "❌ 轮盘服务未就绪", ShowAlert: true}, nil
 	}

@@ -398,8 +398,23 @@ func HandleWebhookGroupChat(
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/game", "/narrate", "/review":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
 		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
+	case "/game":
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🎰 盲盒", "game_blindbox")
+		kb.AddButton("🎡 轮盘", "game_roulette")
+		kb.AddButton("🎬 AI解说", "game_narrator")
+		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
+	case "/narrate":
+		args := strings.TrimSpace(strings.TrimPrefix(text, "/narrate"))
+		if args == "" {
+			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/narrate 电影名`\n\n例如：`/narrate 流浪地球`", "Markdown", nil)
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "🎬 点击按钮开始解说 👇", "", nil)
+		}
+	case "/review":
+		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂`", "Markdown", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
