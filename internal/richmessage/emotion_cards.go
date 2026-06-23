@@ -18,20 +18,22 @@ type GenreCountView struct {
 
 // EmotionProfileCardData 情绪画像卡片数据
 type EmotionProfileCardData struct {
-	UserName         string
-	PersonalityTag   string
-	SignatureGenre   string
+	UserName           string
+	PersonalityTag     string
+	SignatureGenre     string
 	EmotionalIntensity float64
-	EmotionTrend     string
-	CurrentMood      string
-	LifePhase        string
-	TopGenres        []GenreCountView
-	MovieCount       int
-	SeriesCount      int
-	WatchDays        int
-	WatchStreak      int
-	Pattern          ViewingPatternView
-	Transitions      []GenreTransitionView
+	EmotionTrend       string
+	CurrentMood        string
+	LifePhase          string
+	TopGenres          []GenreCountView
+	MovieCount         int
+	SeriesCount        int
+	WatchDays          int
+	WatchStreak        int
+	Pattern            ViewingPatternView
+	Transitions        []GenreTransitionView
+	TasteSignature     string // 口味签名
+	RecentMovies       []string // 最近看过的电影
 }
 
 // ViewingPatternView 观影模式视图
@@ -57,6 +59,11 @@ func BuildEmotionProfileCard(data EmotionProfileCardData) RichMessage {
 	// 标题：用性格标签而非段位
 	builder.Heading(fmt.Sprintf("🪞 %s", data.PersonalityTag), 2)
 	builder.BoldParagraph(fmt.Sprintf("👤 %s 的观影人格", data.UserName))
+
+	// 口味签名
+	if data.TasteSignature != "" {
+		builder.Italic(fmt.Sprintf("「%s」", data.TasteSignature))
+	}
 	builder.Divider()
 
 	// 当前情绪状态 — 用叙事方式
@@ -103,6 +110,16 @@ func BuildEmotionProfileCard(data EmotionProfileCardData) RichMessage {
 		for _, t := range data.Transitions {
 			builder.Paragraph(fmt.Sprintf("🔄 %s → %s（%s）", t.From, t.To, t.Direction))
 		}
+	}
+
+	// 最近观影
+	if len(data.RecentMovies) > 0 {
+		builder.Divider()
+		recent := data.RecentMovies
+		if len(recent) > 5 {
+			recent = recent[:5]
+		}
+		builder.Paragraph(fmt.Sprintf("🎬 最近看过：%s", strings.Join(recent, "、")))
 	}
 
 	return builder.Build()

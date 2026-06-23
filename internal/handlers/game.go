@@ -718,6 +718,8 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 			IsNightOwl: profile.Pattern.IsNightOwl,
 		},
 		Transitions: transitions,
+		TasteSignature: profile.TasteSignature,
+		RecentMovies:   profile.RecentMovies,
 	})
 
 	kb := services.NewKeyboardBuilder()
@@ -814,7 +816,20 @@ func (h *GameHandler) handlePrescription(ctx *callback.Context) (*callback.Respo
 		}
 	}
 
-	items, err := h.blindBoxSvc.OpenBlindBox("", 3)
+	// 根据情绪状态智能选片
+	genre := ""
+	switch {
+	case intensity >= 7:
+		genre = "家庭" // 高压→舒缓降压
+	case intensity <= 3:
+		genre = "动作" // 低压→刺激升压
+	case trend == "上升":
+		genre = "纪录" // 情绪上升→冷静观察
+	case trend == "下降":
+		genre = "喜剧" // 情绪下降→提振心情
+	}
+
+	items, err := h.blindBoxSvc.OpenBlindBox(genre, 3)
 	if err != nil {
 		logger.Info("[Game] Prescription failed for user %d: %v", ctx.UserID, err)
 		return &callback.Response{Text: "❌ 处方开具失败，请稍后再试", CallbackMsg: "失败", ShowAlert: true}, nil

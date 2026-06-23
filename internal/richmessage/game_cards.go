@@ -218,18 +218,63 @@ func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎰 电影盲盒", 2)
-	builder.BoldParagraph("惊喜从这里开始...")
-	builder.Divider()
 
-	for i, item := range data.Items {
-		rarityIcon := map[string]string{
-			"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
-		}[item.Rarity]
-		if rarityIcon == "" {
-			rarityIcon = "⚪"
+	// 判断是否已揭晓
+	allRevealed := true
+	for _, item := range data.Items {
+		if !item.Revealed {
+			allRevealed = false
+			break
+		}
+	}
+
+	if !allRevealed {
+		builder.Italic("三个神秘盒子摆在你面前...")
+		builder.Divider()
+		for i, item := range data.Items {
+			rarityIcon := map[string]string{
+				"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
+			}[item.Rarity]
+			if rarityIcon == "" {
+				rarityIcon = "⚪"
+			}
+			builder.Paragraph(fmt.Sprintf("%s **盲盒 #%d** [%s %s]", rarityIcon, i+1, item.Rarity, rarityIcon))
+			builder.Paragraph("❓ 未揭晓 — 点击揭晓按钮看看是什么！")
+			if i < len(data.Items)-1 {
+				builder.Divider()
+			}
+		}
+	} else {
+		// 已揭晓 — 检查最高稀有度
+		maxRarity := "N"
+		for _, item := range data.Items {
+			if item.Rarity == "SSR" {
+				maxRarity = "SSR"
+			} else if item.Rarity == "SR" && maxRarity != "SSR" {
+				maxRarity = "SR"
+			} else if item.Rarity == "R" && maxRarity == "N" {
+				maxRarity = "R"
+			}
 		}
 
-		if item.Revealed {
+		switch maxRarity {
+		case "SSR":
+			builder.BoldParagraph("🟡 恭喜！你开出了传说级SSR！")
+		case "SR":
+			builder.BoldParagraph("🟣 不错！你开出了稀有SR！")
+		default:
+			builder.BoldParagraph("揭晓结果：")
+		}
+		builder.Divider()
+
+		for i, item := range data.Items {
+			rarityIcon := map[string]string{
+				"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
+			}[item.Rarity]
+			if rarityIcon == "" {
+				rarityIcon = "⚪"
+			}
+
 			builder.Paragraph(fmt.Sprintf("%s **盲盒 #%d** [%s %s]\n🎬 %s (%d)\n⭐ %.1f · %s",
 				rarityIcon, i+1, item.Rarity, rarityIcon, item.Title, item.Year, item.Rating, item.Genres))
 			if item.Overview != "" {
@@ -239,12 +284,9 @@ func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 				}
 				builder.Details("📖 简介", overview, false)
 			}
-		} else {
-			builder.Paragraph(fmt.Sprintf("%s **盲盒 #%d** [%s %s]\n❓ 未揭晓 - 点击揭晓按钮看看是什么！",
-				rarityIcon, i+1, item.Rarity, rarityIcon))
-		}
-		if i < len(data.Items)-1 {
-			builder.Divider()
+			if i < len(data.Items)-1 {
+				builder.Divider()
+			}
 		}
 	}
 
@@ -375,18 +417,23 @@ func BuildGameCenterCard() RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 云海游戏中心", 2)
-	builder.BoldParagraph("观影不止于看，更在于玩")
+	builder.Italic("你的观影数据，藏着一个你不知道的自己")
 	builder.Divider()
 
-	builder.Paragraph("🏆 **电影段位** — 你在影坛是什么级别？")
-	builder.Paragraph("🧠 **灵魂画像** — 你的观影人格是什么？")
-	builder.Paragraph("🎬 **AI 解说** — 3分钟了解一部电影")
-	builder.Paragraph("🎰 **电影盲盒** — 今天开什么惊喜？")
-	builder.Paragraph("📢 **影友圈** — 和朋友分享观影心得")
-	builder.Paragraph("🎡 **命运轮盘** — 让命运决定今晚看什么")
-
+	// 核心体验
+	builder.BoldParagraph("🪞 看见自己")
+	builder.Paragraph("  情绪画像 — 你的观影习惯暴露了什么？")
+	builder.Paragraph("  时光放映机 — AI讲一个关于你的故事")
 	builder.Divider()
-	builder.Italic("选择一个功能开始探索吧！")
+
+	// 互动玩法
+	builder.BoldParagraph("🎲 玩起来")
+	builder.Paragraph("  情绪处方 — 根据心情开药方")
+	builder.Paragraph("  命运契约 — 签一份观影挑战")
+	builder.Paragraph("  电影盲盒 — 开一个未知的惊喜")
+	builder.Divider()
+
+	builder.Italic("每个功能都通向下一个，像一个环，走进去就出不来")
 
 	return builder.Build()
 }
