@@ -187,6 +187,11 @@ var validActions = map[Action]bool{
 	"game_review_rate":    true, // 快速评分（前缀匹配）
 	"game_roulette":       true, // 命运轮盘入口
 	"game_roulette_spin":  true, // 转轮盘
+	"game_emotion":        true, // 情绪画像
+	"game_time_machine":   true, // 时光放映机
+	"game_prescription":   true, // 情绪处方
+	"game_contract":       true, // 命运契约
+	"game_blindbox_horror": true, // 恐怖盲盒
 
 	// Resource candidate actions
 	ActionResourceList: true,
