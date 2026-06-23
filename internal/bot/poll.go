@@ -440,8 +440,11 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		kb.AddButton("🎰 盲盒", "game_blindbox")
 		kb.AddButton("🎡 轮盘", "game_roulette")
 		kb.AddButton("🎬 AI解说", "game_narrator")
+		kb.AddButton("👥 关系对比", "game_compare")
+		kb.AddButton("🎯 今日挑战", "game_daily_challenge")
+		kb.AddButton("🏆 成就系统", "game_achievements")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
-	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
+		case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		// 群聊中直接解说：/解说 电影名
 		movieName := extractMovieName(text, cmd)
 		if movieName == "" {
@@ -499,6 +502,9 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 			kb.AddButton("🎰 盲盒", "game_blindbox")
 			kb.AddButton("🎡 轮盘", "game_roulette")
 			kb.AddButton("🎬 AI解说", "game_narrator")
+			kb.AddButton("👥 关系对比", "game_compare")
+			kb.AddButton("🎯 今日挑战", "game_daily_challenge")
+			kb.AddButton("🏆 成就系统", "game_achievements")
 			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 			return true
 		}

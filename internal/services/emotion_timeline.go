@@ -1068,3 +1068,203 @@ func (s *EmotionTimelineService) generateTemplateNarrative(profile *EmotionalPro
 
 	return strings.Join(parts, "\n")
 }
+
+// ============================================================
+//  观影关系对比
+// ============================================================
+
+type TasteComparison struct {
+	User1        string
+	User2        string
+	MatchScore   int
+	SharedCount  int
+	Total1       int
+	Total2       int
+	Genre1       string
+	Genre2       string
+	Relation     string
+	RelationIcon string
+	Description  string
+}
+
+// CompareTaste 对比两个用户的观影口味
+func (s *EmotionTimelineService) CompareTaste(uid1, uid2 string) (*TasteComparison, error) {
+	// 并行获取两个用户的数据
+	ch1 := make(chan []ViewRecord, 1)
+	ch2 := make(chan []ViewRecord, 1)
+
+	go func() {
+		records, _ := s.fetchViewRecords(uid1, 200)
+		ch1 <- records
+	}()
+	go func() {
+		records, _ := s.fetchViewRecords(uid2, 200)
+		ch2 <- records
+	}()
+
+	records1 := <-ch1
+	records2 := <-ch2
+
+	if len(records1) == 0 || len(records2) == 0 {
+		return nil, fmt.Errorf("至少一个用户没有观影数据")
+	}
+
+	// 统计类型
+	genreMap1 := make(map[string]int)
+	set1 := make(map[string]bool)
+	for _, r := range records1 {
+		set1[r.Name] = true
+		for _, g := range r.Genres {
+			genreMap1[g]++
+		}
+	}
+
+	genreMap2 := make(map[string]int)
+	sharedSet := make(map[string]bool)
+	for _, r := range records2 {
+		if set1[r.Name] {
+			sharedSet[r.Name] = true
+		}
+		for _, g := range r.Genres {
+			genreMap2[g]++
+		}
+	}
+
+	shared := len(sharedSet)
+
+	// 计算类型重叠
+	genreOverlap := 0
+	for g := range genreMap1 {
+		if _, ok := genreMap2[g]; ok {
+			genreOverlap++
+		}
+	}
+
+	totalUnique := len(genreMap1) + len(genreMap2) - genreOverlap
+	matchScore := 0
+	if totalUnique > 0 {
+		matchScore = genreOverlap * 100 / totalUnique
+	}
+
+	// 口味签名
+	top1 := s.buildTopGenresFromMap(genreMap1)
+	top2 := s.buildTopGenresFromMap(genreMap2)
+
+	// 判定关系
+	relation, icon := judgeRelation(matchScore, shared)
+
+	// AI 描述
+	desc := s.generateRelationAI(uid1, uid2, matchScore, shared, top1, top2)
+
+	return &TasteComparison{
+		User1:        uid1,
+		User2:        uid2,
+		MatchScore:   matchScore,
+		SharedCount:  shared,
+		Total1:       len(records1),
+		Total2:       len(records2),
+		Genre1:       top1,
+		Genre2:       top2,
+		Relation:     relation,
+		RelationIcon: icon,
+		Description:  desc,
+	}, nil
+}
+
+// buildTopGenresFromMap 从类型map生成top3描述
+func (s *EmotionTimelineService) buildTopGenresFromMap(genreMap map[string]int) string {
+	type kv struct {
+		Key   string
+		Value int
+	}
+	var sorted []kv
+	for k, v := range genreMap {
+		sorted = append(sorted, kv{k, v})
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].Value > sorted[j].Value
+	})
+	if len(sorted) > 3 {
+		sorted = sorted[:3]
+	}
+	var parts []string
+	for _, kv := range sorted {
+		parts = append(parts, kv.Key)
+	}
+	return strings.Join(parts, "·")
+}
+
+// judgeRelation 判定关系类型
+func judgeRelation(score int, shared int) (string, string) {
+	if score >= 80 && shared >= 5 {
+		return "灵魂伴侣", "💜"
+	}
+	if score >= 60 {
+		return "默契搭档", "💚"
+	}
+	if score >= 40 {
+		return "偶尔共鸣", "💛"
+	}
+	if shared >= 3 {
+		return "互补型", "🧡"
+	}
+	return "平行线", "🤍"
+}
+
+// generateRelationAI AI 生成关系描述
+func (s *EmotionTimelineService) generateRelationAI(uid1, uid2 string, score int, shared int, sig1, sig2 string) string {
+	if s.openaiKey == "" {
+		return fmt.Sprintf("%s 和 %s 的观影品味匹配度 %d%%，有 %d 部共同观影", uid1, uid2, score, shared)
+	}
+
+	prompt := fmt.Sprintf(`两个用户的观影口味对比：
+用户A（%s）：%s
+用户B（%s）：%s
+匹配度：%d%%
+共同观影：%d 部
+
+用一句话描述他们的观影关系，要求：
+1. 有趣、有画面感
+2. 基于口味差异/相似
+3. 不超过50字`, uid1, sig1, uid2, sig2, score, shared)
+
+	body := map[string]interface{}{
+		"model": s.model,
+		"messages": []map[string]string{
+			{"role": "system", "content": "你是影友圈社交分析师，用一句话描述两个影迷的关系。有趣、有洞察。"},
+			{"role": "user", "content": prompt},
+		},
+		"max_tokens":  100,
+		"temperature": 0.8,
+	}
+	jsonBody, _ := json.Marshal(body)
+
+	req, err := http.NewRequest("POST", s.openaiBase+"/chat/completions", strings.NewReader(string(jsonBody)))
+	if err != nil {
+		return fmt.Sprintf("%s 和 %s 的观影品味匹配度 %d%%，有 %d 部共同观影", uid1, uid2, score, shared)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.openaiKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Sprintf("%s 和 %s 的观影品味匹配度 %d%%，有 %d 部共同观影", uid1, uid2, score, shared)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Sprintf("%s 和 %s 的观影品味匹配度 %d%%，有 %d 部共同观影", uid1, uid2, score, shared)
+	}
+
+	var result struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil || len(result.Choices) == 0 {
+		return fmt.Sprintf("%s 和 %s 的观影品味匹配度 %d%%，有 %d 部共同观影", uid1, uid2, score, shared)
+	}
+	return strings.TrimSpace(result.Choices[0].Message.Content)
+}

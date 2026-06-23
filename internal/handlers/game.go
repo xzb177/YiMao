@@ -107,6 +107,14 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleContract(ctx)
 	case strings.HasPrefix(action, "game_contract_complete:"):
 		return h.handleContractComplete(ctx)
+	case action == "game_compare":
+		return h.handleCompareTaste(ctx)
+	case action == "game_daily_challenge":
+		return h.handleDailyChallenge(ctx)
+	case strings.HasPrefix(action, "game_daily_complete:"):
+		return h.handleDailyChallengeComplete(ctx)
+	case action == "game_achievements":
+		return h.handleAchievements(ctx)
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}
@@ -947,13 +955,22 @@ func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response,
 }
 
 // notifyGroup 发送群通知（异步，不阻塞主流程）
+// notifyGroup 发送群通知（10分钟后自毁）
 func (h *GameHandler) notifyGroup(userName, message string) {
 	if h.groupChatID == 0 || h.telegram == nil {
 		return
 	}
 	go func() {
 		text := fmt.Sprintf("🎮 **%s** %s", userName, message)
-		h.telegram.SendMessage(h.groupChatID, text, "Markdown", nil)
+		sent, err := h.telegram.SendMessage(h.groupChatID, text, "Markdown", nil)
+		if err != nil {
+			return
+		}
+		// 10分钟后自毁
+		go func(chatID int64, msgID int64) {
+			time.Sleep(10 * time.Minute)
+			_ = h.telegram.DeleteMessage(chatID, msgID)
+		}(h.groupChatID, sent.MessageID)
 	}()
 }
 
@@ -1018,5 +1035,186 @@ func (h *GameHandler) handleContractComplete(ctx *callback.Context) (*callback.R
 		Text:        "🎉 **挑战完成！**\n\n✅ 契约已标记为完成\n📈 经验值 +3\n\n继续签新的契约，或者看看你的情绪变化。",
 		CallbackMsg: "挑战完成！",
 		ShowAlert:   true,
+	}, nil
+}
+
+// handleCompareTaste 处理观影关系对比
+func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Response, error) {
+	// 从 session 获取目标用户
+	var targetUser string
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.Get(ctx.UserID)
+		if sess != nil {
+			if v, ok := sess.Data["compare_target"]; ok {
+				targetUser, _ = v.(string)
+			}
+		}
+	}
+
+	user1Name := h.getUserName(ctx.UserID)
+
+	if targetUser == "" {
+		// 设置 pending 状态，等待用户输入目标用户名
+		if h.sessionMgr != nil {
+			sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+			if sess != nil {
+				sess.Set("pending_compare_input", true)
+			}
+		}
+		return &callback.Response{
+			Text:      "👥 **观影关系对比**\n\n请发送要对比的用户名\n\n💡 想知道你和谁的观影品味最像？",
+			CallbackMsg: "请发送对比用户名",
+		}, nil
+	}
+
+	user2Name := targetUser
+
+	if user1Name == user2Name {
+		return &callback.Response{
+			Text:      "😅 不能和自己对比哦\n\n去邀请朋友来测测看！",
+			CallbackMsg: "不能和自己对比",
+		}, nil
+	}
+
+	// 调用对比
+	result, err := h.emotionSvc.CompareTaste(user1Name, user2Name)
+	if err != nil {
+		logger.Info("[Game] CompareTaste failed: %v", err)
+		return &callback.Response{
+			Text:      "❌ 对比失败，可能用户数据不足",
+			CallbackMsg: "对比失败",
+		}, nil
+	}
+
+	// 生成卡片
+	card := fmt.Sprintf(`👥 **观影关系报告**
+
+%s %s vs %s
+━━━━━━━━━━━━
+🎯 匹配度: %d%%
+🎬 共同观影: %d 部
+
+%s 的口味: %s
+%s 的口味: %s
+
+%s
+━━━━━━━━━━━━
+💜 灵魂伴侣 > 💚 默契搭档 > 💛 偶尔共鸣 > 🧡 互补型 > 🤍 平行线`,
+		result.RelationIcon, result.User1, result.User2,
+		result.MatchScore, result.SharedCount,
+		result.User1, result.Genre1,
+		result.User2, result.Genre2,
+		result.Description,
+	)
+
+	// 清除 session
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.Get(ctx.UserID)
+		if sess != nil {
+			sess.Set("compare_target", nil)
+		}
+	}
+
+	return &callback.Response{
+		Text:        card,
+		CallbackMsg: "观影关系报告",
+	}, nil
+}
+
+// handleDailyChallenge 处理每日挑战
+func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Response, error) {
+	if h.socialDB == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	challenge, err := h.socialDB.GetDailyChallenge(ctx.UserID)
+	if err != nil {
+		logger.Info("[Game] GetDailyChallenge failed: %v", err)
+		return &callback.Response{CallbackMsg: "❌ 获取挑战失败", ShowAlert: true}, nil
+	}
+
+	// 获取用户昵称
+	userName := h.getUserName(ctx.UserID)
+
+	// 构建卡片
+	statusIcon := "⬜"
+	statusText := "未完成"
+	if challenge.Completed {
+		statusIcon = "✅"
+		statusText = "已完成！"
+	}
+
+	card := fmt.Sprintf(`🎯 **今日挑战**
+
+%s %s
+
+%s
+━━━━━━━━━━━━
+🎁 奖励: +%d XP
+📅 日期: %s`,
+		statusIcon, challenge.Description,
+		statusText,
+		challenge.RewardXP,
+		challenge.Date,
+	)
+
+	// 构建按钮
+	kb := services.NewKeyboardBuilder()
+	if !challenge.Completed {
+		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_daily_complete:%d", ctx.UserID))
+	}
+	kb.AddButton("🔄 刷新", "game_daily_challenge")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	// 群通知（如果完成）
+	if challenge.Completed {
+		h.notifyGroup(userName, fmt.Sprintf("完成了今日挑战：%s 🎯 +%dXP", challenge.Description, challenge.RewardXP))
+	}
+
+	return &callback.Response{
+		Text:        card,
+		Keyboard:    convertKeyboard(kb.Build()),
+		CallbackMsg: "今日挑战",
+	}, nil
+}
+
+// handleDailyChallengeComplete 处理完成每日挑战
+func (h *GameHandler) handleDailyChallengeComplete(ctx *callback.Context) (*callback.Response, error) {
+	if h.socialDB == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	userName := h.getUserName(ctx.UserID)
+	completed, rewardXP, err := h.socialDB.CompleteDailyChallenge(ctx.UserID, userName)
+	if err != nil {
+		logger.Info("[Game] CompleteDailyChallenge failed: %v", err)
+		return &callback.Response{CallbackMsg: "❌ 完成失败", ShowAlert: true}, nil
+	}
+
+	if !completed {
+		return &callback.Response{CallbackMsg: "ℹ️ 今日挑战已完成过了", ShowAlert: true}, nil
+	}
+
+	// 群通知
+	h.notifyGroup(userName, fmt.Sprintf("完成了今日挑战！🎯 +%dXP", rewardXP))
+
+	return &callback.Response{
+		Text:        fmt.Sprintf("🎉 **挑战完成！**\n\n+%d XP\n\n继续加油，明天还有新挑战！", rewardXP),
+		CallbackMsg: "挑战完成！",
+		ShowAlert:   true,
+	}, nil
+}
+
+// handleAchievements 处理成就系统
+func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Response, error) {
+	// 构建成就卡片
+	achievements := []services.UserAchievement{} // 实际应该从数据库获取
+	totalXP := 0 // 实际应该计算
+	
+	card := services.BuildAchievementCard(achievements, totalXP)
+	
+	return &callback.Response{
+		Text:        card,
+		CallbackMsg: "成就系统",
 	}, nil
 }

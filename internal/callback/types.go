@@ -193,6 +193,10 @@ var validActions = map[Action]bool{
 	"game_contract":       true, // 命运契约
 	"game_blindbox_horror": true, // 恐怖盲盒
 	"game_contract_complete": true, // 完成契约
+	"game_compare":          true, // 观影关系对比
+	"game_daily_challenge":  true, // 每日挑战
+	"game_daily_complete":   true, // 完成每日挑战
+	"game_achievements":     true, // 成就系统
 
 	// Resource candidate actions
 	ActionResourceList: true,

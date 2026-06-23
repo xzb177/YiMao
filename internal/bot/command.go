@@ -662,6 +662,9 @@ func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	kb.AddButton("📢 影友圈", "game_social")
 	kb.AddButton("🎡 轮盘", "game_roulette")
 	kb.NewRow()
+	kb.AddButton("👥 关系对比", "game_compare")
+	kb.AddButton("🎯 今日挑战", "game_daily_challenge")
+	kb.AddButton("🏆 成就系统", "game_achievements")
 	kb.AddButton("⬅️ 返回", "start")
 
 	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, kb.Build())

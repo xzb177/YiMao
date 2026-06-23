@@ -1004,6 +1004,24 @@ func NewSocialDB(dataDir string) (*SocialDB, error) {
 		);
 		CREATE INDEX IF NOT EXISTS idx_contracts_user ON contracts(user_id);
 		CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);
+		CREATE TABLE IF NOT EXISTS daily_challenges (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			challenge_date TEXT NOT NULL UNIQUE,
+			challenge_type TEXT NOT NULL,
+			challenge_desc TEXT NOT NULL,
+			reward_xp INTEGER DEFAULT 5,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE IF NOT EXISTS challenge_completions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			user_name TEXT NOT NULL,
+			challenge_date TEXT NOT NULL,
+			completed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(user_id, challenge_date)
+		);
+		CREATE INDEX IF NOT EXISTS idx_daily_challenges_date ON daily_challenges(challenge_date);
+		CREATE INDEX IF NOT EXISTS idx_challenge_completions_user ON challenge_completions(user_id, challenge_date);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create social tables: %w", err)
@@ -1378,4 +1396,131 @@ func (s *RouletteService) Spin(userID int64, genre string) (*RouletteResult, err
 		SpinCount: spinNum,
 		MaxSpins:  3,
 	}, nil
+}
+
+// ============================================================
+//  每日挑战系统 (Daily Challenge)
+// ============================================================
+
+// DailyChallenge 每日挑战
+type DailyChallenge struct {
+	ID          int64  `json:"id"`
+	Date        string `json:"date"`
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	RewardXP    int    `json:"reward_xp"`
+	Completed   bool   `json:"completed"`
+}
+
+// GetDailyChallenge 获取今日挑战
+func (s *SocialDB) GetDailyChallenge(userID int64) (*DailyChallenge, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	today := time.Now().Format("2006-01-02")
+
+	// 检查是否已有今日挑战
+	var challenge DailyChallenge
+	err := s.db.QueryRow(
+		"SELECT id, challenge_date, challenge_type, challenge_desc, reward_xp FROM daily_challenges WHERE challenge_date = ?",
+		today,
+	).Scan(&challenge.ID, &challenge.Date, &challenge.Type, &challenge.Description, &challenge.RewardXP)
+
+	if err == sql.ErrNoRows {
+		// 生成新挑战
+		challengeType, challengeDesc, rewardXP := generateChallenge()
+		result, err := s.db.Exec(
+			"INSERT INTO daily_challenges (challenge_date, challenge_type, challenge_desc, reward_xp) VALUES (?, ?, ?, ?)",
+			today, challengeType, challengeDesc, rewardXP,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("创建挑战失败: %w", err)
+		}
+		challenge.ID, _ = result.LastInsertId()
+		challenge.Date = today
+		challenge.Type = challengeType
+		challenge.Description = challengeDesc
+		challenge.RewardXP = rewardXP
+	} else if err != nil {
+		return nil, err
+	}
+
+	// 检查是否已完成
+	var completionID int64
+	err = s.db.QueryRow(
+		"SELECT id FROM challenge_completions WHERE user_id = ? AND challenge_date = ?",
+		userID, today,
+	).Scan(&completionID)
+	challenge.Completed = (err == nil)
+
+	return &challenge, nil
+}
+
+// CompleteDailyChallenge 完成每日挑战
+func (s *SocialDB) CompleteDailyChallenge(userID int64, userName string) (bool, int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	today := time.Now().Format("2006-01-02")
+
+	// 检查挑战是否存在
+	var rewardXP int
+	err := s.db.QueryRow(
+		"SELECT reward_xp FROM daily_challenges WHERE challenge_date = ?",
+		today,
+	).Scan(&rewardXP)
+	if err != nil {
+		return false, 0, fmt.Errorf("今日挑战不存在")
+	}
+
+	// 检查是否已完成
+	var existing int
+	err = s.db.QueryRow(
+		"SELECT COUNT(*) FROM challenge_completions WHERE user_id = ? AND challenge_date = ?",
+		userID, today,
+	).Scan(&existing)
+	if err == nil && existing > 0 {
+		return false, 0, nil // 已完成
+	}
+
+	// 记录完成
+	_, err = s.db.Exec(
+		"INSERT INTO challenge_completions (user_id, user_name, challenge_date) VALUES (?, ?, ?)",
+		userID, userName, today,
+	)
+	if err != nil {
+		return false, 0, fmt.Errorf("记录完成失败: %w", err)
+	}
+
+	// 记录动态
+	s.addEvent(userID, userName, "challenge", fmt.Sprintf("完成了今日挑战！+%dXP", rewardXP))
+
+	return true, rewardXP, nil
+}
+
+// generateChallenge 生成随机挑战
+func generateChallenge() (string, string, int) {
+	challenges := []struct {
+		Type string
+		Desc string
+		XP   int
+	}{
+		{"watch", "看一部你从未看过的类型的电影", 10},
+		{"watch", "看一部评分8.0以上的电影", 8},
+		{"watch", "看一部2000年以前的经典老片", 8},
+		{"watch", "看一部纪录片", 10},
+		{"watch", "看一部动画电影", 8},
+		{"watch", "看一部超过2小时的电影", 6},
+		{"watch", "看一部你朋友推荐的电影", 10},
+		{"review", "给一部电影写超过50字的影评", 12},
+		{"review", "给一部老电影重新评分", 6},
+		{"social", "在影友圈分享一部冷门好片", 10},
+		{"social", "挑战：和朋友看同一部电影", 15},
+		{"explore", "开一个恐怖盲盒", 8},
+		{"explore", "转一次命运轮盘", 8},
+		{"explore", "测一下今日情绪画像", 8},
+	}
+
+	pick := challenges[rand.Intn(len(challenges))]
+	return pick.Type, pick.Desc, pick.XP
 }

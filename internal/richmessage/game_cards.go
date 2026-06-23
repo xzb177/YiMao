@@ -29,27 +29,40 @@ type RankCardData struct {
 func BuildRankCard(data RankCardData) RichMessage {
 	builder := NewBuilder()
 
-	builder.Heading(fmt.Sprintf("%s %s 的影坛段位", data.TierIcon, data.TierName), 2)
-	builder.BoldParagraph(fmt.Sprintf("👤 %s", data.UserName))
+	// 主标题 - 更有冲击力
+	builder.Heading(fmt.Sprintf("%s %s", data.TierIcon, data.TierName), 2)
+	builder.BoldParagraph(fmt.Sprintf("👤 %s 的影坛战绩", data.UserName))
 	builder.Divider()
 
-	// 段位进度
-	scoreBar := fmt.Sprintf("🏆 总分: **%d**", data.Score)
+	// 核心数据 - 用更直观的方式展示
+	builder.Heading("📊 核心数据", 3)
+	
+	// 分数和进度
+	scoreText := fmt.Sprintf("🏆 **%d** 分", data.Score)
 	if data.NextTier != "" {
-		scoreBar += fmt.Sprintf("  →  距离 **%s** 还差 %d 分", data.NextTier, data.NextTierDiff)
+		progress := 100 - (data.NextTierDiff * 100 / (data.Score + data.NextTierDiff))
+		if progress < 0 {
+			progress = 0
+		}
+		if progress > 100 {
+			progress = 100
+		}
+		bar := buildProgressBar(progress)
+		scoreText += fmt.Sprintf("\n%s %d%% → %s", bar, progress, data.NextTier)
 	}
-	builder.Paragraph(scoreBar)
+	builder.Paragraph(scoreText)
 	builder.Divider()
 
-	// 数据统计
-	stats := fmt.Sprintf("🎬 电影: %d  |  📺 剧集: %d  |  🎭 类型: %d 种\n⭐ 平均评分: %.1f  |  ❤️ 最爱: %s",
+	// 观影统计 - 用图标和数字
+	builder.Heading("🎬 观影档案", 3)
+	stats := fmt.Sprintf("🎬 **%d** 部电影\n📺 **%d** 部剧集\n🎭 **%d** 种类型\n⭐ **%.1f** 平均评分\n❤️ 最爱：**%s**",
 		data.TotalMovies, data.TotalSeries, data.GenreCount, data.AvgRating, data.TopGenre)
 	builder.Paragraph(stats)
 	builder.Divider()
 
-	// 成就徽章
+	// 成就徽章 - 更有仪式感
 	if len(data.Badges) > 0 {
-		builder.Heading("🏅 成就徽章", 3)
+		builder.Heading("🏅 荣誉勋章", 3)
 		for _, b := range data.Badges {
 			builder.Paragraph(fmt.Sprintf("• %s", b))
 		}
@@ -86,11 +99,12 @@ type PDimensionView struct {
 func BuildPersonalityCard(data PersonalityCardData) RichMessage {
 	builder := NewBuilder()
 
+	// 主标题 - 更有个性
 	builder.Heading(fmt.Sprintf("🧠 %s 的电影人格", data.UserName), 2)
 	builder.BoldParagraph(fmt.Sprintf("%s %s", data.Type, data.TypeName))
 	builder.Divider()
 
-	// 四个维度
+	// 四个维度 - 用更直观的进度条
 	builder.Heading("📊 人格维度", 3)
 	for _, d := range data.Dimensions {
 		bar := buildDimensionBar(d.Score)
@@ -99,12 +113,12 @@ func BuildPersonalityCard(data PersonalityCardData) RichMessage {
 	}
 	builder.Divider()
 
-	// 核心特质
+	// 核心特质 - 更有洞察
 	builder.Heading("🎯 核心特质", 3)
 	builder.Paragraph(fmt.Sprintf("• %s", data.TopTrait))
 	builder.Divider()
 
-	// 总结
+	// 总结 - 更有温度
 	builder.Italic(data.Description)
 
 	return builder.Build()
@@ -143,10 +157,10 @@ type NarratorCardData struct {
 func BuildNarratorCard(data NarratorCardData) RichMessage {
 	builder := NewBuilder()
 
-	// 标题行：电影名 + 年份
+	// 标题行：电影名 + 年份 - 更有电影感
 	builder.Heading(fmt.Sprintf("🎬 %s (%d)", data.Title, data.Year), 2)
 
-	// 模式标签 + 评分 + 类型 一行搞定
+	// 模式标签 + 评分 + 类型 - 更紧凑
 	var meta []string
 	if data.SpoilerMode {
 		meta = append(meta, "🔥 剧透模式")
@@ -160,8 +174,9 @@ func BuildNarratorCard(data NarratorCardData) RichMessage {
 		meta = append(meta, strings.Join(data.Genres, " · "))
 	}
 	builder.BoldParagraph(strings.Join(meta, "  |  "))
+	builder.Divider()
 
-	// 剧情概要
+	// 剧情概要 - 更有故事感
 	if data.Summary != "" {
 		if len([]rune(data.Summary)) > 800 {
 			data.Summary = string([]rune(data.Summary)[:800]) + "..."
@@ -169,20 +184,21 @@ func BuildNarratorCard(data NarratorCardData) RichMessage {
 		builder.Paragraph(data.Summary)
 	}
 
-	// 关键看点
+	// 关键看点 - 更有洞察
 	if len(data.KeyPoints) > 0 {
 		builder.BoldParagraph("💡 看点")
 		for _, p := range data.KeyPoints {
 			builder.Paragraph(fmt.Sprintf("  • %s", p))
 		}
 	}
+	builder.Divider()
 
-	// 适合心情
+	// 适合心情 - 更有温度
 	if data.Mood != "" {
 		builder.Paragraph(fmt.Sprintf("🎭 **适合心情：** %s", data.Mood))
 	}
 
-	// 类似推荐
+	// 类似推荐 - 更有引导
 	if len(data.Similar) > 0 {
 		builder.BoldParagraph("🔗 类似推荐")
 		for _, s := range data.Similar {
@@ -217,6 +233,7 @@ type BlindBoxItemView struct {
 func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 	builder := NewBuilder()
 
+	// 主标题 - 更有神秘感
 	builder.Heading("🎰 电影盲盒", 2)
 
 	// 判断是否已揭晓
@@ -229,6 +246,7 @@ func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 	}
 
 	if !allRevealed {
+		// 未揭晓 - 更有悬念
 		builder.Italic("三个神秘盒子摆在你面前...")
 		builder.Divider()
 		for i, item := range data.Items {
@@ -245,7 +263,7 @@ func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 			}
 		}
 	} else {
-		// 已揭晓 — 检查最高稀有度
+		// 已揭晓 - 更有仪式感
 		maxRarity := "N"
 		for _, item := range data.Items {
 			if item.Rarity == "SSR" {
@@ -314,6 +332,7 @@ type SocialEventView struct {
 func BuildSocialFeedCard(data SocialFeedCardData) RichMessage {
 	builder := NewBuilder()
 
+	// 主标题 - 更有社交感
 	builder.Heading("📢 影友圈动态", 2)
 	builder.Divider()
 
@@ -322,6 +341,7 @@ func BuildSocialFeedCard(data SocialFeedCardData) RichMessage {
 		return builder.Build()
 	}
 
+	// 动态列表 - 更有节奏感
 	for _, e := range data.Events {
 		icon := "📝"
 		switch e.EventType {
@@ -331,6 +351,10 @@ func BuildSocialFeedCard(data SocialFeedCardData) RichMessage {
 			icon = "🏆"
 		case "watch":
 			icon = "🎬"
+		case "contract":
+			icon = "📜"
+		case "challenge":
+			icon = "🎯"
 		}
 		builder.Paragraph(fmt.Sprintf("%s **%s** %s\n🕐 %s", icon, e.UserName, e.Content, e.TimeAgo))
 	}
@@ -352,14 +376,17 @@ type ReviewCardData struct {
 func BuildReviewCard(data ReviewCardData) RichMessage {
 	builder := NewBuilder()
 
+	// 主标题 - 更有影评感
 	builder.Heading(fmt.Sprintf("⭐ %s 的影评", data.UserName), 2)
 	builder.BoldParagraph(fmt.Sprintf("《%s》", data.MovieName))
 	builder.Divider()
 
+	// 评分 - 更有视觉冲击
 	builder.Paragraph(fmt.Sprintf("评分: %s", strings.Repeat("⭐", data.Rating)))
 	builder.Paragraph(data.Content)
 	builder.Divider()
 
+	// 互动信息 - 更有社交感
 	builder.Italic(fmt.Sprintf("❤️ %d 赞 · %s", data.Likes, data.TimeAgo))
 
 	return builder.Build()
@@ -383,16 +410,19 @@ type RouletteCardData struct {
 func BuildRouletteCard(data RouletteCardData) RichMessage {
 	builder := NewBuilder()
 
+	// 主标题 - 更有轮盘感
 	builder.Heading("🎡 命运轮盘", 2)
 	builder.BoldParagraph(fmt.Sprintf("🎰 轮盘转动！今日第 %d/%d 次", data.SpinCount, data.MaxSpins))
 	builder.Divider()
 
+	// 电影信息 - 更有期待感
 	builder.Heading(fmt.Sprintf("🎬 %s (%d)", data.Title, data.Year), 3)
 	if data.Rating > 0 {
 		builder.Paragraph(fmt.Sprintf("⭐ TMDB 评分: %.1f", data.Rating))
 	}
 	builder.Divider()
 
+	// 简介 - 更有故事感
 	if data.Overview != "" {
 		overview := data.Overview
 		if len([]rune(overview)) > 400 {
@@ -431,6 +461,10 @@ func BuildGameCenterCard() RichMessage {
 	builder.Paragraph("  情绪处方 — 根据心情开药方")
 	builder.Paragraph("  命运契约 — 签一份观影挑战")
 	builder.Paragraph("  电影盲盒 — 开一个未知的惊喜")
+	builder.Paragraph("  👥 关系对比 — 看看谁是你的观影灵魂伴侣")
+	builder.Paragraph("  🎯 今日挑战 — 每天一个观影小任务")
+	builder.Paragraph("  🏆 成就系统 — 解锁成就徽章，收集经验值")
+	builder.Paragraph("  📊 观影周报 — 每周观影数据回顾")
 	builder.Divider()
 
 	builder.Italic("每个功能都通向下一个，像一个环，走进去就出不来")
