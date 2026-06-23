@@ -260,6 +260,17 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 		return &callback.Response{CallbackMsg: "❌ 缺少电影名", ShowAlert: true}, nil
 	}
 
+	// 异步生成：先返回"生成中"，后台完成后发新消息
+	go h.generateNarrationAsync(ctx.UserID, ctx.ChatID, movieName, spoilerMode)
+
+	return &callback.Response{
+		CallbackMsg: "🎬 正在生成解说...",
+		ShowAlert:   false,
+	}, nil
+}
+
+// generateNarrationAsync 异步生成解说并发送结果
+func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieName string, spoilerMode bool) {
 	// 搜索电影信息
 	title, year, genres, rating, err := h.narratorSvc.SearchMovie(movieName)
 	if err != nil {
@@ -269,8 +280,9 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	// 生成解说
 	result, err := h.narratorSvc.GenerateNarration(title, year, spoilerMode)
 	if err != nil {
-		logger.Info("[Game] Narration failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ AI 解说生成失败，请稍后再试", CallbackMsg: "生成失败", ShowAlert: true}, nil
+		logger.Info("[Game] Narration failed for user %d: %v", userID, err)
+		h.telegram.SendMessage(chatID, "❌ AI 解说生成失败，请稍后再试", "", nil)
+		return
 	}
 	result.Rating = rating
 	result.Genres = genres
@@ -297,10 +309,7 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
+	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 }
 
 // HandleNarrateText 处理文本消息中的电影解说请求（由 poll.go 调用）
