@@ -189,6 +189,8 @@ var validActions = map[Action]bool{
 	"adventure_retry":  true, // 重试冒险
 	"adventure_quit":   true, // 退出冒险
 	"game_adventure_stats": true, // 冒险统计
+	"game_adventure_rank":  true, // 冒险排行榜
+	"game_daily_challenge": true, // 每日挑战
 
 	// Resource candidate actions
 	ActionResourceList: true,

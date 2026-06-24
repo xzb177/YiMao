@@ -72,28 +72,29 @@ func NewGameHandler(
 func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	action := string(ctx.Callback.Action)
 
-	switch {
-	case action == "game_rank":
-		return h.handleRank(ctx)
-		case action == "game_narrator":
-		return h.handleNarratorEntry(ctx)
-	case action == "game_narrate":
-		return h.handleNarrate(ctx)
-	case action == "game_blindbox":
-		return h.handleBlindBox(ctx)
-	case action == "game_blindbox_open":
-		return h.handleBlindBoxOpen(ctx)
-		case action == "game_social":
-		return h.handleSocialFeed(ctx)
-				case action == "game_menu":
+	switch action {
+	case "game_menu":
 		return h.handleMenu(ctx)
-	case action == "game_emotion":
-		return h.handleEmotionProfile(ctx)
-						case action == "game_achievements":
-	return h.handleAchievements(ctx)
-case action == "game_adventure_stats":
-	return h.handleAdventureStats(ctx)
-default:
+	case "game_narrator":
+		return h.handleNarratorEntry(ctx)
+	case "game_narrate":
+		return h.handleNarrate(ctx)
+	case "game_blindbox":
+		return h.handleBlindBox(ctx)
+	case "game_blindbox_open":
+		return h.handleBlindBoxOpen(ctx)
+	case "game_adventure_rank":
+		return h.handleAdventureRank(ctx)
+	case "game_adventure_stats":
+		return h.handleAdventureStats(ctx)
+	case "game_daily_challenge":
+		return h.handleDailyChallenge(ctx)
+	// 以下功能已废弃，返回友好提示
+	case "game_rank", "game_social", "game_emotion", "game_achievements",
+		"game_contract", "game_prescription", "game_time_machine",
+		"game_roulette", "game_review", "game_compare":
+		return &callback.Response{CallbackMsg: "🚧 该功能已升级，请从游戏中心进入", ShowAlert: true}, nil
+	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}
 }
@@ -103,16 +104,13 @@ default:
 func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, error) {
 	card := richmessage.BuildGameCenterCard()
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🏆 段位", "game_rank")
-	kb.AddButton("🎬 AI解说", "game_narrator")
-	kb.AddButton("🎰 盲盒", "game_blindbox")
-	kb.NewRow()
 	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-	kb.AddButton("📢 影友圈", "game_social")
-	kb.AddButton("🪞 情绪", "game_emotion")
+	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()
-	kb.AddButton("🏅 成就", "game_achievements")
-	kb.AddButton("📊 冒险统计", "game_adventure_stats")
+	kb.AddButton("📊 冒险排行", "game_adventure_rank")
+	kb.AddButton("🎯 每日挑战", "game_daily_challenge")
+	kb.NewRow()
+	kb.AddButton("🎰 通关盲盒", "game_blindbox")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -656,14 +654,116 @@ func (h *GameHandler) handleAdventureStats(ctx *callback.Context) (*callback.Res
 
 // handleAchievements 处理成就系统
 func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Response, error) {
-	// 构建成就卡片
-	achievements := []services.UserAchievement{} // 实际应该从数据库获取
-	totalXP := 0 // 实际应该计算
-	
-	card := services.BuildAchievementCard(achievements, totalXP)
-	
+	return &callback.Response{CallbackMsg: "🚧 成就系统升级中，请从游戏中心进入新功能", ShowAlert: true}, nil
+}
+
+// --- 冒险排行榜 ---
+
+func (h *GameHandler) handleAdventureRank(ctx *callback.Context) (*callback.Response, error) {
+	if h.socialDB == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	// 获取排行榜数据
+	topEntries, err := h.socialDB.GetAdventureLeaderboard(10)
+	if err != nil {
+		return &callback.Response{Text: "❌ 获取排行榜失败", CallbackMsg: "获取失败", ShowAlert: true}, nil
+	}
+
+	// 转换类型
+	var topPlayers []richmessage.AdventureRankPlayer
+	for _, e := range topEntries {
+		topPlayers = append(topPlayers, richmessage.AdventureRankPlayer{
+			Rank:         0, // 由card builder分配
+			UserName:     e.UserName,
+			BestScore:    e.BestScore,
+			BestGrade:    e.BestGrade,
+			BestCombo:    e.BestCombo,
+			TotalSuccess: e.TotalSuccess,
+			PerfectRuns:  e.PerfectRuns,
+		})
+		// 分配rank
+		topPlayers[len(topPlayers)-1].Rank = len(topPlayers)
+	}
+
+	userName := h.getUserName(ctx.UserID)
+
+	card := richmessage.BuildAdventureRankCard(richmessage.AdventureRankCardData{
+		UserName:    userName,
+		TopPlayers:  topPlayers,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⚔️ 挑战霸榜", "adventure_start")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
 	return &callback.Response{
-		Text:        card,
-		CallbackMsg: "成就系统",
+		RichMessage: card.Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
+	}, nil
+}
+
+// --- 每日挑战 ---
+
+func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Response, error) {
+	// 每日挑战：基于日期生成一个固定的电影推荐
+	challengeMovies := []struct {
+		Title string
+		Year  int
+		Genre string
+		Hint  string
+	}{
+		{"盗梦空间", 2010, "科幻/悬疑", "那个陀螺到底倒了没？"},
+		{"肖申克的救赎", 1994, "剧情", "有些鸟是关不住的"},
+		{"星际穿越", 2014, "科幻", "爱是唯一能穿越时空的力量"},
+		{"搏击俱乐部", 1999, "悬疑/动作", "第一条规则：不要谈论搏击俱乐部"},
+		{"寄生虫", 2019, "剧情/悬疑", "你闻到了什么味道？"},
+		{"泰坦尼克号", 1997, "爱情/灾难", "你跳我也跳"},
+		{"黑客帝国", 1999, "科幻/动作", "红药丸还是蓝药丸？"},
+		{"千与千寻", 2001, "动画/奇幻", "不要忘记自己的名字"},
+		{"让子弹飞", 2010, "喜剧/动作", "站着，还把钱挣了"},
+		{"楚门的世界", 1998, "剧情", "如果一切都是假的呢？"},
+		{"阿甘正传", 1994, "剧情", "人生就像一盒巧克力"},
+		{"沉默的羔羊", 1991, "悬疑/惊悚", "你好吗，克拉丽斯？"},
+		{"无间道", 2002, "犯罪/悬疑", "我想做个好人"},
+		{"少年派的奇幻漂流", 2012, "奇幻/剧情", "你相信哪个故事？"},
+		{"疯狂的麦克斯：狂暴之路", 2015, "动作/科幻", "见证我！"},
+		{"布达佩斯大饭店", 2014, "喜剧/剧情", "在这个野蛮的酒店里保持文明"},
+		{"禁闭岛", 2010, "悬疑/惊悚", "哪个才是真相？"},
+		{"V字仇杀队", 2005, "动作/科幻", "面具下面是一个理念"},
+		{"大话西游", 1995, "喜剧/爱情", "曾经有一份真诚的爱情"},
+		{"电锯惊魂", 2004, "恐怖/悬疑", "你想玩个游戏吗？"},
+	}
+
+	// 用日期作为索引，每天不同
+	dayIndex := time.Now().YearDay() % len(challengeMovies)
+	challenge := challengeMovies[dayIndex]
+
+	// 检查今天是否已挑战
+	alreadyChallenged := false
+	if h.socialDB != nil {
+		alreadyChallenged, _ = h.socialDB.HasDailyChallenge(ctx.UserID, time.Now().Format("2006-01-02"))
+	}
+
+	card := richmessage.BuildDailyChallengeCard(richmessage.DailyChallengeCardData{
+		MovieTitle: challenge.Title,
+		MovieYear:  challenge.Year,
+		Genre:      challenge.Genre,
+		Hint:       challenge.Hint,
+		Completed:  alreadyChallenged,
+		DayStreak:  0, // TODO: 连续挑战天数
+	})
+
+	kb := services.NewKeyboardBuilder()
+	if !alreadyChallenged {
+		kb.AddButton("⚔️ 接受挑战", "adventure_start")
+	} else {
+		kb.AddButton("⚔️ 再来一局", "adventure_start")
+	}
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	return &callback.Response{
+		RichMessage: card.Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }

@@ -172,3 +172,105 @@ func BuildUserRequestStatsCard(data UserRequestStatsData) RichMessage {
 
 	return b.Build()
 }
+
+// ============================================================
+//  冒险排行榜卡片
+// ============================================================
+
+// AdventureRankPlayer 排行榜玩家数据
+type AdventureRankPlayer struct {
+	Rank     int
+	UserName string
+	BestScore int
+	BestGrade string
+	BestCombo int
+	TotalSuccess int
+	PerfectRuns  int
+}
+
+// AdventureRankCardData 排行榜卡片数据
+type AdventureRankCardData struct {
+	UserName   string
+	TopPlayers []AdventureRankPlayer
+}
+
+// BuildAdventureRankCard 构建冒险排行榜卡片
+func BuildAdventureRankCard(data AdventureRankCardData) RichMessage {
+	b := NewBuilder()
+
+	b.Heading("📊 冒险排行榜", 2)
+	b.Italic("谁是最强影迷？用实力说话")
+	b.Divider()
+
+	if len(data.TopPlayers) == 0 {
+		b.Italic("还没有人通关过... 你要做第一个吗？")
+		return b.Build()
+	}
+
+	boldLine := "🏆 殿堂"
+	b.BoldParagraph(boldLine)
+
+	rankIcons := []string{"🥇", "🥈", "🥉"}
+	for _, p := range data.TopPlayers {
+		icon := fmt.Sprintf("#%d", p.Rank)
+		if p.Rank <= 3 {
+			icon = rankIcons[p.Rank-1]
+		}
+
+		suffix := ""
+		if p.PerfectRuns > 0 {
+			suffix = fmt.Sprintf(" 🛡️x%d", p.PerfectRuns)
+		}
+
+		b.Paragraph(fmt.Sprintf("%s %s — %d分 %s 🔥x%d%s",
+			icon, p.UserName, p.BestScore, p.BestGrade, p.BestCombo, suffix))
+	}
+
+	b.Divider()
+	b.Italic(fmt.Sprintf("👤 %s — 向排行榜发起冲击！", data.UserName))
+
+	return b.Build()
+}
+
+// ============================================================
+//  每日挑战卡片
+// ============================================================
+
+// DailyChallengeCardData 每日挑战卡片数据
+type DailyChallengeCardData struct {
+	MovieTitle string
+	MovieYear  int
+	Genre      string
+	Hint       string
+	Completed  bool
+	DayStreak  int
+}
+
+// BuildDailyChallengeCard 构建每日挑战卡片
+func BuildDailyChallengeCard(data DailyChallengeCardData) RichMessage {
+	b := NewBuilder()
+
+	b.Heading("🎯 今日挑战", 2)
+	b.Italic("每天一部电影，通关有额外奖励")
+	b.Divider()
+
+	b.BoldParagraph(fmt.Sprintf("🎬 《%s》(%d)", data.MovieTitle, data.MovieYear))
+	b.Paragraph(fmt.Sprintf("📂 类型：%s", data.Genre))
+	b.Italic(fmt.Sprintf("💡 线索：%s", data.Hint))
+	b.Divider()
+
+	if data.Completed {
+		b.BoldParagraph("✅ 今日挑战已完成！")
+		if data.DayStreak > 0 {
+			b.Paragraph(fmt.Sprintf("🔥 连续挑战 %d 天", data.DayStreak))
+		}
+		b.Italic("明天还有一部新电影等你")
+	} else {
+		b.BoldParagraph("⚔️ 你敢接受挑战吗？")
+		b.Paragraph("  • 通关双倍冒险积分")
+		b.Paragraph("  • SSS评级额外奖励盲盒")
+		b.Italic("  大多数人会在第3关倒下")
+	}
+
+	return b.Build()
+}

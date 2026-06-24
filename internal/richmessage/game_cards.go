@@ -420,28 +420,24 @@ func BuildGameCenterCard() RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 云海游戏中心", 2)
-	builder.Italic("你的观影数据，藏着一个你不知道的自己")
+	builder.Italic("闯关 · 竞技 · 奖励 — 三位一体")
 	builder.Divider()
 
-	// 核心体验
-	builder.BoldParagraph("🪞 看见自己")
-	builder.Paragraph("  情绪画像 — 你的观影习惯暴露了什么？")
-	builder.Paragraph("  时光放映机 — AI讲一个关于你的故事")
+	builder.BoldParagraph("⚔️ 双核心")
+	builder.Paragraph("  求片大冒险 — 化身主角闯关，通关才能求片")
+	builder.Paragraph("  📖 情报站 — AI解说电影剧情，闯关前做好功课")
 	builder.Divider()
 
-	// 互动玩法
-	builder.BoldParagraph("🎲 玩起来")
-	builder.Paragraph("  ⚔️ 求片大冒险 — 以主角身份闯关，通关才能求片！")
-	builder.Paragraph("  情绪处方 — 根据心情开药方")
-	builder.Paragraph("  命运契约 — 签一份观影挑战")
-	builder.Paragraph("  电影盲盒 — 开一个未知的惊喜")
-	builder.Paragraph("  👥 关系对比 — 看看谁是你的观影灵魂伴侣")
-	builder.Paragraph("  🎯 今日挑战 — 每天一个观影小任务")
-	builder.Paragraph("  🏆 成就系统 — 解锁成就徽章，收集经验值")
-	builder.Paragraph("  📊 观影周报 — 每周观影数据回顾")
+	builder.BoldParagraph("🏆 竞技场")
+	builder.Paragraph("  📊 冒险排行 — 群内TOP10，谁是最强影迷")
+	builder.Paragraph("  🎯 每日挑战 — 今日推荐电影，通关双倍积分")
 	builder.Divider()
 
-	builder.Italic("每个功能都通向下一个，像一个环，走进去就出不来")
+	builder.BoldParagraph("🎁 奖励")
+	builder.Paragraph("  🎰 通关盲盒 — 冒险通关免费开，评分越高越稀有")
+	builder.Divider()
+
+	builder.Italic("闯关是手段，求片是目的，排行是动力")
 
 	return builder.Build()
 }

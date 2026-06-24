@@ -1579,6 +1579,18 @@ type AdventureUserStats struct {
 }
 
 // SaveAdventureRecord 保存冒险记录
+
+// AdventureRankEntry 排行榜条目
+type AdventureRankEntry struct {
+	Rank         int
+	UserName     string
+	BestScore    int
+	BestGrade    string
+	BestCombo    int
+	TotalSuccess int
+	PerfectRuns  int
+}
+
 func (s *SocialDB) SaveAdventureRecord(userID int64, userName, movieName string, movieYear, score int, grade string, maxCombo, hp, levelsCompleted, totalLevels int, perfectRun, success bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1657,4 +1669,63 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// GetAdventureLeaderboard 获取冒险排行榜（按最高分排序）
+func (s *SocialDB) GetAdventureLeaderboard(limit int) ([]*AdventureRankEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if limit <= 0 {
+		limit = 10
+	}
+
+	rows, err := s.db.Query(`
+		SELECT user_name,
+			   MAX(score) as best_score,
+			   (SELECT grade FROM adventure_stats a2 WHERE a2.user_name = a1.user_name ORDER BY score DESC LIMIT 1) as best_grade,
+			   MAX(max_combo) as best_combo,
+			   SUM(success) as total_success,
+			   SUM(perfect_run) as perfect_runs
+		FROM adventure_stats a1
+		WHERE success = 1
+		GROUP BY user_name
+		ORDER BY best_score DESC
+		LIMIT ?
+	`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var players []*AdventureRankEntry
+	rank := 1
+	for rows.Next() {
+		var p AdventureRankEntry
+		err := rows.Scan(&p.UserName, &p.BestScore, &p.BestGrade, &p.BestCombo, &p.TotalSuccess, &p.PerfectRuns)
+		if err != nil {
+			continue
+		}
+		p.Rank = rank
+		players = append(players, &p)
+		rank++
+	}
+
+	return players, nil
+}
+
+// HasDailyChallenge 检查用户今天是否已完成每日挑战
+func (s *SocialDB) HasDailyChallenge(userID int64, dateStr string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM adventure_stats WHERE user_id = ? AND success = 1 AND date(created_at) = ?",
+		userID, dateStr,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
