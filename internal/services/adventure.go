@@ -76,12 +76,18 @@ func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase,
 
 // MovieInfo 电影基本信息
 type MovieInfo struct {
-	Title    string   `json:"title"`
-	Year     int      `json:"year"`
-	Genres   []string `json:"genres"`
-	Overview string   `json:"overview"`
-	Rating   float64  `json:"rating"`
-	TMDBID   int      `json:"tmdb_id"`
+	Title      string   `json:"title"`
+	Year       int      `json:"year"`
+	Genres     []string `json:"genres"`
+	Overview   string   `json:"overview"`
+	Rating     float64  `json:"rating"`
+	TMDBID     int      `json:"tmdb_id"`
+	Keywords   []string `json:"keywords,omitempty"`   // 剧情关键词
+	Cast       []string `json:"cast,omitempty"`       // 主要演员
+	Similar    []string `json:"similar,omitempty"`     // 类似电影
+	Director   string   `json:"director,omitempty"`   // 导演
+	Tagline    string   `json:"tagline,omitempty"`    // 一句话宣传语
+	VoteCount  int      `json:"vote_count,omitempty"` // 评价人数
 }
 
 // SearchMovieInfo 搜索电影信息
@@ -127,6 +133,7 @@ func (s *AdventureService) searchTMDB(query string) (*MovieInfo, error) {
 			GenreIDs     []int   `json:"genre_ids"`
 			Overview     string  `json:"overview"`
 			VoteAverage  float64 `json:"vote_average"`
+			VoteCount    int     `json:"vote_count"`
 			MediaType    string  `json:"media_type"`
 		} `json:"results"`
 	}
@@ -136,27 +143,157 @@ func (s *AdventureService) searchTMDB(query string) (*MovieInfo, error) {
 	if len(result.Results) == 0 {
 		return nil, fmt.Errorf("TMDB未找到: %s", query)
 	}
+
+	var picked *struct {
+		ID          int
+		Title       string
+		ReleaseDate string
+		GenreIDs    []int
+		Overview    string
+		VoteAverage float64
+		VoteCount   int
+		MediaType   string
+	}
 	for _, r := range result.Results {
 		if r.MediaType == "movie" || r.MediaType == "tv" {
-			title := r.Title
-			if title == "" {
-				title = r.Name
-			}
-			date := r.ReleaseDate
-			if date == "" {
-				date = r.FirstAirDate
-			}
-			year := 0
-			if len(date) >= 4 {
-				fmt.Sscanf(date[:4], "%d", &year)
-			}
-			return &MovieInfo{
-				Title: title, Year: year, Genres: genreIDsToNames(r.GenreIDs),
-				Overview: r.Overview, Rating: r.VoteAverage, TMDBID: r.ID,
-			}, nil
+			picked = &struct {
+				ID          int
+				Title       string
+				ReleaseDate string
+				GenreIDs    []int
+				Overview    string
+				VoteAverage float64
+				VoteCount   int
+				MediaType   string
+			}{r.ID, func() string {
+				if r.Title != "" {
+					return r.Title
+				}
+				return r.Name
+			}(), func() string {
+				if r.ReleaseDate != "" {
+					return r.ReleaseDate
+				}
+				return r.FirstAirDate
+			}(), r.GenreIDs, r.Overview, r.VoteAverage, r.VoteCount, r.MediaType}
+			break
 		}
 	}
-	return nil, fmt.Errorf("未找到电影/剧集")
+	if picked == nil {
+		return nil, fmt.Errorf("未找到电影/剧集")
+	}
+
+	year := 0
+	if len(picked.ReleaseDate) >= 4 {
+		fmt.Sscanf(picked.ReleaseDate[:4], "%d", &year)
+	}
+
+	info := &MovieInfo{
+		Title:     picked.Title,
+		Year:      year,
+		Genres:    genreIDsToNames(picked.GenreIDs),
+		Overview:  picked.Overview,
+		Rating:    picked.VoteAverage,
+		TMDBID:    picked.ID,
+		VoteCount: picked.VoteCount,
+	}
+
+	// 获取详细信息：关键词、演员、导演、类似电影
+	s.enrichMovieDetails(info, picked.MediaType)
+
+	return info, nil
+}
+
+// enrichMovieDetails 获取电影详细信息（关键词/演员/类似电影）
+func (s *AdventureService) enrichMovieDetails(info *MovieInfo, mediaType string) {
+	var detailURL string
+	if mediaType == "tv" {
+		detailURL = fmt.Sprintf("%s/tv/%d?api_key=%s&language=zh-CN&append_to_response=keywords,credits,similar", TMDBBaseURL, info.TMDBID, s.tmdbAPIKey)
+	} else {
+		detailURL = fmt.Sprintf("%s/movie/%d?api_key=%s&language=zh-CN&append_to_response=keywords,credits,similar", TMDBBaseURL, info.TMDBID, s.tmdbAPIKey)
+	}
+
+	req, err := http.NewRequest("GET", detailURL, nil)
+	if err != nil {
+		return
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	var detail struct {
+		Tagline  string `json:"tagline"`
+		Keywords struct {
+			Keywords []struct {
+				Name string `json:"name"`
+			} `json:"keywords"`
+		} `json:"keywords"`
+		Credits struct {
+			Cast []struct {
+				Name string `json:"name"`
+			} `json:"cast"`
+			Crew []struct {
+				Name string `json:"name"`
+				Job  string `json:"job"`
+			} `json:"crew"`
+		} `json:"credits"`
+		Similar struct {
+			Results []struct {
+				Title string `json:"title"`
+				Name  string `json:"name"`
+			} `json:"results"`
+		} `json:"similar"`
+	}
+	if err := json.Unmarshal(body, &detail); err != nil {
+		return
+	}
+
+	info.Tagline = detail.Tagline
+
+	// 关键词
+	for _, kw := range detail.Keywords.Keywords {
+		if kw.Name != "" {
+			info.Keywords = append(info.Keywords, kw.Name)
+		}
+	}
+
+	// 主要演员（前5）
+	for i, c := range detail.Credits.Cast {
+		if i >= 5 {
+			break
+		}
+		if c.Name != "" {
+			info.Cast = append(info.Cast, c.Name)
+		}
+	}
+
+	// 导演
+	for _, c := range detail.Credits.Crew {
+		if c.Job == "Director" && c.Name != "" {
+			info.Director = c.Name
+			break
+		}
+	}
+
+	// 类似电影（前5）
+	for i, s2 := range detail.Similar.Results {
+		if i >= 5 {
+			break
+		}
+		title := s2.Title
+		if title == "" {
+			title = s2.Name
+		}
+		if title != "" {
+			info.Similar = append(info.Similar, title)
+		}
+	}
 }
 
 func (s *AdventureService) searchEmby(query string) (*MovieInfo, error) {
@@ -206,74 +343,111 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
 		historyStr = fmt.Sprintf("\n玩家之前的路径：%s", strings.Join(history, " → "))
 	}
 
-	// 根据关卡递增难度
-	difficultyGuide := ""
-	switch level {
-	case 1:
-		difficultyGuide = `难度：中等。1个陷阱选项（看起来合理但电影里不是这样发展的）。
-让玩家建立虚假信心——第一个陷阱要"差点骗到"但仔细想想能避开。`
-	case 2:
-		difficultyGuide = `难度：高。2个陷阱选项。其中一个必须是"大多数人都会选的"但其实是错的。
-利用认知偏差：人们倾向于选择看起来"安全"的选项，但在这部电影里，主角恰恰做了相反的事。`
-	case 3:
-		difficultyGuide = `难度：很高。2个陷阱+1个wildcard（看起来疯狂但其实正确）。
-利用这部电影的关键转折点。如果没看过电影，几乎不可能选对。
-陷阱要利用"常识性错误"——用现实生活中的合理逻辑来迷惑玩家，但电影世界有自己的规则。`
-	case 4:
-		difficultyGuide = `难度：极高。3个选项全部有迷惑性。正确答案看起来最不可能。
-利用道德困境：一个选项看起来是"正确的事"但电影里主角没这么做；另一个看起来"不道德"但恰恰是主角的选择。
-这是"献祭"关——玩家必须抛弃常识，真正理解主角的动机。`
-	case 5:
-		difficultyGuide = `难度：地狱级。4个选项，每一个都有理由选。
-利用电影的终极悬念。正确答案需要理解整部电影的主题和主角的核心信念。
-一个选项是"大多数人希望的结局"，一个选项是"看起来合理的结局"，一个选项是"黑暗结局"，正确选项是"电影实际的结局"。
-如果玩家到了这一关，说明他真的在认真玩——但越认真越容易被自己的期望误导。`
+	// 构建电影详细信息块
+	movieDetail := fmt.Sprintf("片名：%s (%d年)\n类型：%s", info.Title, info.Year, strings.Join(info.Genres, "/"))
+	if info.Director != "" {
+		movieDetail += fmt.Sprintf("\n导演：%s", info.Director)
+	}
+	if len(info.Cast) > 0 {
+		movieDetail += fmt.Sprintf("\n主演：%s", strings.Join(info.Cast, "、"))
+	}
+	if info.Tagline != "" {
+		movieDetail += fmt.Sprintf("\n宣传语：%s", info.Tagline)
+	}
+	if len(info.Keywords) > 0 {
+		movieDetail += fmt.Sprintf("\n剧情关键词：%s", strings.Join(info.Keywords, "、"))
+	}
+	if info.Overview != "" {
+		movieDetail += fmt.Sprintf("\n剧情简介：%s", truncate(info.Overview, 400))
 	}
 
-	prompt := fmt.Sprintf(`你是「求片大冒险」的终极游戏引擎。你的设计哲学：
-- 每一个错误选项都要让玩家事后觉得"我怎么没想到"
-- 正确答案不能靠猜，必须真正理解这部电影
-- 利用玩家的"常识偏见"和"道德直觉"来设陷阱
-- 让玩家在选择时犹豫不决——这才是好游戏
+	// 每关对应电影叙事结构的不同阶段
+	levelFocus := ""
+	switch level {
+	case 1:
+		levelFocus = `聚焦电影的**开端**：主角的身份、处境、世界观设定。
+场景必须基于电影的前1/3——主角还没遇到核心冲突时的状态。
+考验：玩家是否了解这部电影的基本设定和主角的性格特征。
+陷阱设计：用"合理但不符合主角性格"的选项来迷惑。`
+	case 2:
+		levelFocus = fmt.Sprintf(`聚焦电影的**第一个关键转折**：主角面临的第一个重大选择或遭遇。
+场景必须基于电影中一个具体的、有名的情节节点。
+考验：玩家是否记得这部电影的具体剧情发展。
+陷阱设计：选项中加入一个"大多数%s片都会这样发展"的通用选项——但这部电影偏偏不按套路来。`, strings.Join(info.Genres[:min(2, len(info.Genres))], "/"))
+	case 3:
+		levelFocus = `聚焦电影的**核心冲突**：主角面对的最大困境或反派。
+场景必须涉及电影中最关键的情节转折——那个让观众"卧槽"的时刻。
+考验：玩家是否真正理解这部电影的叙事逻辑。
+陷阱设计：加入一个wildcard选项——看起来疯狂但恰恰是主角在电影里的真实选择。`
+	case 4:
+		levelFocus = `聚焦电影的**高潮前夕**：主角做出最艰难决定的时刻。
+场景必须基于电影中最具争议性或最反直觉的情节。
+考验：玩家能否抛弃"正常人"的思维，用主角的逻辑来思考。
+陷阱设计：一个选项代表"道德正确"，一个选项代表"实用主义"，正确选项是"主角实际做的"——往往是最不被理解的那个。`
+	case 5:
+		levelFocus = `聚焦电影的**结局/主题**：整部电影要表达什么。
+场景必须涉及电影的最终选择或结局的深层含义。
+考验：玩家是否理解这部电影的核心主题——不只是剧情，而是导演想说什么。
+陷阱设计：一个选项是"观众希望的结局"，一个选项是"看起来合理的结局"，正确选项是"电影实际表达的"。`
+	}
 
-电影信息：
-- 片名：%s (%d年)
-- 类型：%s
-- 简介：%s
+	prompt := fmt.Sprintf(`你是「求片大冒险」的终极游戏引擎。
+
+## 你的设计哲学
+- 你设计的每一关都必须**只属于这部电影**——换一部电影就不成立
+- 禁止生成通用模板场景（"你睁开眼睛发现自己在一个世界里"这种废话）
+- 必须引用电影中的**具体情节、具体角色、具体场景**
+- 选项文字要像电影台词一样——有那部电影的味道
+- 陷阱要利用**这部电影的独特逻辑**，不是通用的"认知偏差"
+
+## 电影完整资料
 %s
 
-当前是第 %d/%d 关，阶段名：%s
+## 当前关卡
+第 %d/%d 关：%s
 玩家剩余生命：%d%%
 
+## 本关聚焦
+%s
 %s
 
-严格要求：
-1. 用第一人称叙事，150字以内，要有画面感和紧张感
-2. 氛围词必须符合当前关卡的紧张程度
-3. 每个选项20字以内
-4. result描述30字以内，要让玩家感受到选择的后果
-5. trap字段说明哪个选项是陷阱以及为什么
-6. hint要非常隐晦——像是给真正看过电影的人的暗示
-7. 所有文字用中文
+## 严格要求
+1. 场景描述（150字以内）：
+   - 必须提到电影中的具体地点/场景/情境
+   - 用第一人称，让玩家感觉真的在那部电影里
+   - 有画面感，像在描述一个电影镜头
+2. 选项（每个15-25字）：
+   - 每个选项都要有具体的行动描述，不能是抽象的"选择A"
+   - 正确选项必须对应电影中的真实情节
+   - 陷阱选项要利用电影类型特有的套路（比如恐怖片的"别回头"、科幻片的"信任AI"）
+   - result描述要有画面感，像电影旁白
+3. hint（20字以内）：像一个看过这部电影的人在偷偷提醒朋友
+4. atmosphere：从 紧张/诡异/压迫/绝望/史诗/窒息/癫狂 中选一个
 
-严格按以下JSON格式返回，不要有任何多余文字：
+## 禁止
+- 禁止"你睁开眼睛发现自己在..."这种开头
+- 禁止"你面临一个选择"这种废话
+- 禁止与电影无关的通用冒险场景
+- 禁止选项用"选项A/B/C"这种无聊标签
+
+严格按JSON格式返回：
 {
   "level": %d,
   "total_levels": %d,
-  "title": "关卡标题（简短有力，4字以内）",
+  "title": "4字以内的关卡标题",
   "stage_name": "%s",
-  "description": "场景描述（第一人称，有画面感，150字以内）",
-  "atmosphere": "氛围词（1个词：紧张/诡异/压迫/绝望/史诗/窒息/癫狂）",
+  "description": "场景描述（150字以内，必须涉及电影具体情节）",
+  "atmosphere": "氛围词",
   "choices": [
-    {"text": "选项文字", "correct": false, "result": "结果描述", "is_trap": true, "is_wildcard": false, "hp_change": 0},
+    {"text": "选项文字（15-25字）", "correct": false, "result": "结果描述（30字以内）", "is_trap": true, "is_wildcard": false, "hp_change": 0},
     {"text": "选项文字", "correct": true, "result": "结果描述", "is_trap": false, "is_wildcard": false, "hp_change": 0},
     {"text": "选项文字", "correct": false, "result": "结果描述", "is_trap": false, "is_wildcard": false, "hp_change": 0}
   ],
-  "hint": "极其隐晦的提示",
-  "trap": "陷阱分析（给游戏引擎用，不展示给玩家）"
-}`, info.Title, info.Year, strings.Join(info.Genres, "/"),
-		truncate(info.Overview, 300), historyStr,
-		level, totalLevels, stageName, hp, difficultyGuide,
+  "hint": "隐晦提示（20字以内）",
+  "trap": "陷阱分析（不展示给玩家）"
+}`, movieDetail,
+		level, totalLevels, stageName, hp,
+		levelFocus, historyStr,
 		level, totalLevels, stageName)
 
 	return s.callAIForScene(prompt)
