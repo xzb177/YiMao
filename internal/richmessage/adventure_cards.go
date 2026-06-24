@@ -277,6 +277,7 @@ type AdventureDamageCardData struct {
 	Score        int
 	IsDead       bool
 	RemainingChoices []AdventureChoiceView // 剩余选项
+	TriedChoices map[int]bool             // 已试过的选项
 }
 
 func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
@@ -317,17 +318,22 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 			b.Italic("💡 仔细想想，别急着选")
 		}
 
-		// 显示剩余选项
+		// 显示剩余选项（标记已试过的）
 		if len(data.RemainingChoices) > 0 {
 			b.Divider()
-			b.BoldParagraph("🎯 剩余选项：")
+			b.BoldParagraph("🎯 选项：")
 			numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
 			for i, c := range data.RemainingChoices {
 				num := "?"
 				if i < len(numbers) {
 					num = numbers[i]
 				}
-				b.Paragraph(fmt.Sprintf("%s %s", num, c.Text))
+				// 已试过的选项加标记
+				if data.TriedChoices != nil && data.TriedChoices[c.Index] {
+					b.Paragraph(fmt.Sprintf("~~%s %s~~ ❌ 已试过", num, c.Text))
+				} else {
+					b.Paragraph(fmt.Sprintf("%s %s", num, c.Text))
+				}
 			}
 		}
 

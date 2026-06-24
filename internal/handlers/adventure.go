@@ -386,6 +386,11 @@ func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Respons
 		return &callback.Response{CallbackMsg: "❌ 数据异常", ShowAlert: true}, nil
 	}
 
+	// 只有已结束的冒险才能分享
+	if advState.InProgress {
+		return &callback.Response{CallbackMsg: "⏳ 冒险还没结束呢，先通关再说！", ShowAlert: true}, nil
+	}
+
 	userName := h.getUserName(ctx.UserID)
 
 	// 构建炫耀卡（不泄露Scene.Choices中的正确答案信息）
@@ -467,9 +472,9 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 	h.generating[userID] = true
 	h.mu.Unlock()
 
-	// 超时清理：60秒后强制清除generating标记（防止panic后残留）
+	// 超时清理：120秒后强制清除generating标记（90s超时+重试=最多180s，留余量）
 	go func(uid int64) {
-		time.Sleep(60 * time.Second)
+		time.Sleep(120 * time.Second)
 		h.mu.Lock()
 		if h.generating[uid] {
 			delete(h.generating, uid)
@@ -608,6 +613,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		Score:        state.Score,
 		IsDead:       isDead,
 		RemainingChoices: remainingChoices,
+		TriedChoices: state.TriedChoices,
 	})
 
 	if isDead {
@@ -620,7 +626,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		return
 	}
 
-	// 还活着 — 显示剩余选项让用户继续选
+	// 还活着 — 显示剩余选项让用户继续选（排除已试过的）
 	scene := state.Scene
 	if scene == nil {
 		return
@@ -628,17 +634,29 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 
 	kb := services.NewKeyboardBuilder()
 	numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
+	hasRemaining := false
 	for i, c := range scene.Choices {
-		if c.Text != "" {
-			num := fmt.Sprintf("#%d", i+1)
-			if i < len(numbers) {
-				num = numbers[i]
-			}
-			kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
+		if c.Text == "" {
+			continue
 		}
+		// 跳过已经试过的选项
+		if state.TriedChoices != nil && state.TriedChoices[i] {
+			continue
+		}
+		num := fmt.Sprintf("#%d", i+1)
+		if i < len(numbers) {
+			num = numbers[i]
+		}
+		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
+		hasRemaining = true
 	}
 	kb.NewRow()
 	kb.AddButton("🚪 退出冒险", "adventure_quit")
+
+	// 如果所有选项都试过了（理论上不可能，但防御性编程）
+	if !hasRemaining {
+		kb.AddButton("🔄 重新开始", "adventure_retry")
+	}
 
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 }
@@ -983,9 +1001,13 @@ func (h *AdventureHandler) notifyGroup(userName, message string) {
 		return
 	}
 	go func() {
-		sent, err := h.telegram.SendMessage(h.groupChatID, message, "", nil)
+		sent, err := h.telegram.SendMessage(h.groupChatID, message, "Markdown", nil)
 		if err != nil {
-			return
+			// Markdown 失败时回退纯文本
+			sent, err = h.telegram.SendMessage(h.groupChatID, message, "", nil)
+			if err != nil {
+				return
+			}
 		}
 		go func(chatID int64, msgID int64) {
 			time.Sleep(10 * time.Minute)
@@ -1074,7 +1096,6 @@ func generateBonusEffect(grade string, perfectRun bool) string {
 	if len(bonusPool) == 0 {
 		return ""
 	}
-	rand.Seed(time.Now().UnixNano())
 	if rand.Intn(100) >= 30 {
 		return ""
 	}
