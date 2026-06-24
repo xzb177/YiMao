@@ -575,7 +575,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		)
 	}
 
-	// 群通知：只有神仙操作才通报（稀缺性 = 更有面子）
+	// 群通知：荣耀播报（稀缺性 = 更有面子）
 	userName := h.getUserName(userID)
 	if success {
 		shouldNotify := false
@@ -583,64 +583,138 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		switch {
 		case result.Grade == "SSS":
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`👑 ━━━ SSS ━━━ 👑
+			if state.PerfectRun {
+				notifyMsg = fmt.Sprintf(`👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑
 
-%s  ·  《%s》
+⚡ 传说诞生 ⚡
 
-🎯 %d分  ❤️ %d%%  🔥 x%d%s
+🏆 %s
+🏆 《%s》(%d)
 
-%s`,
-				userName, state.MovieInfo.Title,
-				result.Score, state.HP, state.MaxCombo,
-				boolStr(state.PerfectRun, "  ⚔️ 完美", ""),
-				boolStr(state.PerfectRun, "全程无伤通关，无人能及", "传奇操作，群内首位通关者"))
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ 满血  🔥 x%d 连击
+🛡️ 全程无伤  ⚔️ 五关全通
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💯 SSS · 完美通关
+零失误 · 零扣血 · 无可挑剔
+
+👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑`,
+					userName, state.MovieInfo.Title, state.MovieInfo.Year,
+					result.Score, state.MaxCombo)
+			} else {
+				notifyMsg = fmt.Sprintf(`👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑
+
+⚡ 传奇操作 ⚡
+
+🏆 %s
+🏆 《%s》(%d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ %d%%  🔥 x%d 连击
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+💯 SSS · 近乎完美
+这部电影他不只是看过——他活过
+
+👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑`,
+					userName, state.MovieInfo.Title, state.MovieInfo.Year,
+					result.Score, state.HP, state.MaxCombo)
+			}
 
 		case result.Grade == "SS":
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`💎 ━━━ SS ━━━ 💎
+			notifyMsg = fmt.Sprintf(`💎━━━━━━━━━━━━━━━━━━━━━━━━━━💎
 
-%s  ·  《%s》
+⚡ 王者通关 ⚡
 
-🎯 %d分  ❤️ %d%%  🔥 x%d
+💎 %s
+💎 《%s》(%d)
 
-距离完美，只差一步`,
-				userName, state.MovieInfo.Title,
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ %d%%  🔥 x%d 连击
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🥈 SS · 距离传说一步之遥
+五关险境，他几乎毫发无伤地走了出来
+
+💎━━━━━━━━━━━━━━━━━━━━━━━━━━💎`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year,
 				result.Score, state.HP, state.MaxCombo)
 
 		case state.PerfectRun:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🛡️ ━━━ 无伤通关 ━━━ 🛡️
+			notifyMsg = fmt.Sprintf(`🛡️━━━━━━━━━━━━━━━━━━━━━━━━━━🛡️
 
-%s  ·  《%s》
+⚡ 无伤传说 ⚡
 
-🎯 %d分  全程零失误
+🛡️ %s
+🛡️ 《%s》(%d)
 
-五关全过，一滴血没掉`,
-				userName, state.MovieInfo.Title, result.Score)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ 100%%  🛡️ 全程零失误
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+五关全过，一滴血没掉
+这个人看电影是认真的
+
+🛡️━━━━━━━━━━━━━━━━━━━━━━━━━━🛡️`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score)
 
 		case state.MaxCombo >= 4:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🔥 ━━━ x%d 连击 ━━━ 🔥
+			notifyMsg = fmt.Sprintf(`🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥
 
-%s  ·  《%s》
+⚡ 连击风暴 ⚡
 
-🎯 %d分  连续%d关一选即中
+🔥 %s
+🔥 《%s》(%d)
 
-这部电影他真的看过`,
-				state.MaxCombo, userName, state.MovieInfo.Title, result.Score, state.MaxCombo)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ %d%%  🔥 x%d 连击
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+连续%d关一选即中
+这部电影他真的看过
+
+🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year,
+				result.Score, state.HP, state.MaxCombo, state.MaxCombo)
 		}
 		if shouldNotify {
 			h.notifyGroup(userName, notifyMsg)
 		}
 	} else if state.Level-1 >= 4 {
-		h.notifyGroup(userName, fmt.Sprintf(`💀 ━━━ 惜败 ━━━ 💀
+		h.notifyGroup(userName, fmt.Sprintf(`💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀
 
-%s  ·  《%s》
+⚡ 惜败 · 差一步 ⚡
+
+💀 %s
+💀 《%s》(%d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 倒在第 %d/%d 关
 
-差一步就通关了... 要不要帮他一把？`,
-			userName, state.MovieInfo.Title, state.Level-1, state.TotalLevels))
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+他已经看到了终点的光...
+却在最后一刻倒下了
+要不要帮他一把？
+
+💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀`,
+			userName, state.MovieInfo.Title, state.MovieInfo.Year,
+			state.Level-1, state.TotalLevels))
 	}
 
 	// 发送结果卡片
