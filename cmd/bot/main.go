@@ -614,6 +614,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 			MediaTitle:     movieName,
 			MediaYear:      movieYear,
 			MediaType:      services.MediaTypeMovie,
+			Priority:       "high", // 冒险通关用户优先处理
 			RequestOrigin:  "adventure",
 			AdventureScore: score,
 			AdventureGrade: grade,
@@ -625,7 +626,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		}
 		logger.Info("[Adventure] 冒险通关自动提交求片: %s (%d), 用户 %d, 评级 %s", movieName, movieYear, userID, grade)
 	})
-	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID, adventureHandler)
+	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, adventureHandler, groupChatID)
+	gameHandler.SetViewingHistoryService(viewingSvc)
 	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)

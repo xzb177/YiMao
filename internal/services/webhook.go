@@ -146,7 +146,7 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	case "item.updated", "itemupdated", "library.updated", "libraryupdated":
 		// Skip update events to reduce noise
 		return nil
-	case "system.notificationtest", "system.test", "test", "playback.start", "playback.stop", "playback.pause", "playback.resume":
+	case "system.notificationtest", "system.test", "test", "playback.start", "playback.pause", "playback.resume":
 		// For test/playback events, send a simple notification
 		if itemName != "" {
 			message := fmt.Sprintf("🎬 Emby 通知\n\n事件: %s\n内容: %s", eventType, itemName)
@@ -155,6 +155,10 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 			}
 		}
 		return s.handleTestNotification(payload)
+	case "playback.stop":
+		// 播放结束 → 推送冒险挑战
+		go s.handlePlaybackStop(payload)
+		return nil
 	default:
 		return nil
 	}
@@ -978,6 +982,63 @@ func (s *WebhookService) sendWithCacheAndKeyboard(chatID int64, message string, 
 	if s.messageCache != nil {
 		s.messageCache.Add(chatID, message)
 	}
+}
+
+// handlePlaybackStop 播放结束 → 推送冒险挑战
+func (s *WebhookService) handlePlaybackStop(payload EmbyWebhookPayload) {
+	// 只对电影推送（不推剧集单集）
+	itemType := payload.ItemType
+	if itemType == "" && payload.Item != nil {
+		itemType = payload.Item.Type
+	}
+	if itemType != "Movie" {
+		return
+	}
+
+	itemName := payload.ItemName
+	if itemName == "" && payload.Item != nil {
+		itemName = payload.Item.Name
+	}
+	if itemName == "" {
+		return
+	}
+
+	userName := payload.UserName
+	if userName == "" {
+		return
+	}
+
+	// 通过 userMapping 找到 Telegram 用户 ID
+	if s.userMapping == nil {
+		return
+	}
+
+	// 查找 Telegram user ID
+	// userMapping 是 MoviePilot username → Telegram ID 的映射
+	// Emby username 可能跟 MoviePilot username 不同，需要兼容
+	tgUserID := s.findTelegramUser(userName)
+	if tgUserID == 0 {
+		return
+	}
+
+	// 发送冒险挑战推送
+	message := fmt.Sprintf("🎬 你刚看完《%s》\n\n来证明你真的看懂了吗？\n\n点击 /game 进入游戏中心，选择「求片大冒险」挑战！", itemName)
+	s.telegram.SendMessage(tgUserID, message, "", nil)
+}
+
+// findTelegramUser 通过 Emby 用户名查找 Telegram 用户 ID
+func (s *WebhookService) findTelegramUser(embyUserName string) int64 {
+	if s.userMapping == nil {
+		return 0
+	}
+
+	// 用 MoviePilot 用户名查找（Emby 用户名通常跟 MoviePilot 一致）
+	tgID, found := s.userMapping.GetTelegramIDByMoviePilotUsername(embyUserName)
+	if found && tgID != 0 {
+		return tgID
+	}
+
+	return 0
 }
 
 // HandleMoviePilotWebhook handles a MoviePilot webhook

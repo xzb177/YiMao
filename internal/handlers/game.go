@@ -25,6 +25,7 @@ type GameHandler struct {
 	sessionMgr     *session.Manager
 	emotionSvc     *services.EmotionTimelineService
 	adventureHdl   *AdventureHandler // 求片大冒险
+	viewingSvc     *services.ViewingHistoryService
 	groupChatID    int64 // 群聊ID，用于发送群通知
 }
 
@@ -49,8 +50,8 @@ func NewGameHandler(
 	telegram *services.TelegramClient,
 	sessionMgr *session.Manager,
 	emotionSvc *services.EmotionTimelineService,
-	groupChatID int64,
 	adventureHdl *AdventureHandler,
+	groupChatID  int64,
 ) *GameHandler {
 	return &GameHandler{
 		rankSvc:        rankSvc,
@@ -66,6 +67,11 @@ func NewGameHandler(
 		adventureHdl:   adventureHdl,
 		groupChatID:    groupChatID,
 	}
+}
+
+// SetViewingHistoryService 注入观影历史服务
+func (h *GameHandler) SetViewingHistoryService(svc *services.ViewingHistoryService) {
+	h.viewingSvc = svc
 }
 
 // Handle 游戏中心路由
@@ -711,38 +717,8 @@ func (h *GameHandler) handleAdventureRank(ctx *callback.Context) (*callback.Resp
 // --- 每日挑战 ---
 
 func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Response, error) {
-	// 每日挑战：基于日期生成一个固定的电影推荐
-	challengeMovies := []struct {
-		Title string
-		Year  int
-		Genre string
-		Hint  string
-	}{
-		{"盗梦空间", 2010, "科幻/悬疑", "那个陀螺到底倒了没？"},
-		{"肖申克的救赎", 1994, "剧情", "有些鸟是关不住的"},
-		{"星际穿越", 2014, "科幻", "爱是唯一能穿越时空的力量"},
-		{"搏击俱乐部", 1999, "悬疑/动作", "第一条规则：不要谈论搏击俱乐部"},
-		{"寄生虫", 2019, "剧情/悬疑", "你闻到了什么味道？"},
-		{"泰坦尼克号", 1997, "爱情/灾难", "你跳我也跳"},
-		{"黑客帝国", 1999, "科幻/动作", "红药丸还是蓝药丸？"},
-		{"千与千寻", 2001, "动画/奇幻", "不要忘记自己的名字"},
-		{"让子弹飞", 2010, "喜剧/动作", "站着，还把钱挣了"},
-		{"楚门的世界", 1998, "剧情", "如果一切都是假的呢？"},
-		{"阿甘正传", 1994, "剧情", "人生就像一盒巧克力"},
-		{"沉默的羔羊", 1991, "悬疑/惊悚", "你好吗，克拉丽斯？"},
-		{"无间道", 2002, "犯罪/悬疑", "我想做个好人"},
-		{"少年派的奇幻漂流", 2012, "奇幻/剧情", "你相信哪个故事？"},
-		{"疯狂的麦克斯：狂暴之路", 2015, "动作/科幻", "见证我！"},
-		{"布达佩斯大饭店", 2014, "喜剧/剧情", "在这个野蛮的酒店里保持文明"},
-		{"禁闭岛", 2010, "悬疑/惊悚", "哪个才是真相？"},
-		{"V字仇杀队", 2005, "动作/科幻", "面具下面是一个理念"},
-		{"大话西游", 1995, "喜剧/爱情", "曾经有一份真诚的爱情"},
-		{"电锯惊魂", 2004, "恐怖/悬疑", "你想玩个游戏吗？"},
-	}
-
-	// 用日期作为索引，每天不同
-	dayIndex := time.Now().YearDay() % len(challengeMovies)
-	challenge := challengeMovies[dayIndex]
+	// 个性化挑战：根据用户偏好类型推荐电影
+	challengeMovie := h.getPersonalizedChallenge(ctx.UserID)
 
 	// 检查今天是否已挑战
 	alreadyChallenged := false
@@ -751,12 +727,12 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	}
 
 	card := richmessage.BuildDailyChallengeCard(richmessage.DailyChallengeCardData{
-		MovieTitle: challenge.Title,
-		MovieYear:  challenge.Year,
-		Genre:      challenge.Genre,
-		Hint:       challenge.Hint,
+		MovieTitle: challengeMovie.Title,
+		MovieYear:  challengeMovie.Year,
+		Genre:      challengeMovie.Genre,
+		Hint:       challengeMovie.Hint,
 		Completed:  alreadyChallenged,
-		DayStreak:  0, // TODO: 连续挑战天数
+		DayStreak:  0,
 	})
 
 	kb := services.NewKeyboardBuilder()
@@ -765,10 +741,101 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	} else {
 		kb.AddButton("⚔️ 再来一局", "adventure_start")
 	}
+	kb.AddButton("📖 情报站", "game_narrator")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
 		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// getPersonalizedChallenge 获取个性化挑战电影
+func (h *GameHandler) getPersonalizedChallenge(userID int64) challengeMovie {
+	// 备选池（按类型分类）
+	challengePool := map[string][]challengeMovie{
+		"科幻": {
+			{"盗梦空间", 2010, "科幻/悬疑", "那个陀螺到底倒了没？"},
+			{"星际穿越", 2014, "科幻", "爱是唯一能穿越时空的力量"},
+			{"黑客帝国", 1999, "科幻/动作", "红药丸还是蓝药丸？"},
+			{"银翼杀手2049", 2017, "科幻", "你见过奇迹吗？"},
+			{"降临", 2016, "科幻", "如果你能看到自己的未来..."},
+		},
+		"剧情": {
+			{"肖申克的救赎", 1994, "剧情", "有些鸟是关不住的"},
+			{"阿甘正传", 1994, "剧情", "人生就像一盒巧克力"},
+			{"楚门的世界", 1998, "剧情", "如果一切都是假的呢？"},
+			{"搏击俱乐部", 1999, "悬疑/动作", "第一条规则：不要谈论搏击俱乐部"},
+		},
+		"悬疑": {
+			{"禁闭岛", 2010, "悬疑/惊悚", "哪个才是真相？"},
+			{"沉默的羔羊", 1991, "悬疑/惊悚", "你好吗，克拉丽斯？"},
+			{"无间道", 2002, "犯罪/悬疑", "我想做个好人"},
+			{"电锯惊魂", 2004, "恐怖/悬疑", "你想玩个游戏吗？"},
+		},
+		"喜剧": {
+			{"让子弹飞", 2010, "喜剧/动作", "站着，还把钱挣了"},
+			{"大话西游", 1995, "喜剧/爱情", "曾经有一份真诚的爱情"},
+			{"布达佩斯大饭店", 2014, "喜剧/剧情", "在这个野蛮的酒店里保持文明"},
+		},
+		"动画": {
+			{"千与千寻", 2001, "动画/奇幻", "不要忘记自己的名字"},
+			{"你的名字。", 2016, "动画/爱情", "我们是不是在哪里见过？"},
+		},
+		"爱情": {
+			{"泰坦尼克号", 1997, "爱情/灾难", "你跳我也跳"},
+			{"大话西游", 1995, "喜剧/爱情", "曾经有一份真诚的爱情"},
+		},
+	}
+
+	// 尝试根据用户偏好类型选择
+	if h.viewingSvc != nil && h.userMapping != nil {
+		mpName, err := h.userMapping.GetMoviePilotUsername(userID)
+		if err == nil && mpName != "" {
+			topGenre := h.viewingSvc.GetTopGenre("", mpName)
+			if topGenre != "" {
+				// 映射Emby类型到挑战池
+				mappedGenre := mapEmbyGenre(topGenre)
+				if movies, ok := challengePool[mappedGenre]; ok && len(movies) > 0 {
+					// 用日期作为索引，每天不同
+					dayIndex := time.Now().YearDay() % len(movies)
+					return movies[dayIndex]
+				}
+			}
+		}
+	}
+
+	// 回退：从全池随机选
+	allMovies := []challengeMovie{}
+	for _, movies := range challengePool {
+		allMovies = append(allMovies, movies...)
+	}
+	dayIndex := time.Now().YearDay() % len(allMovies)
+	return allMovies[dayIndex]
+}
+
+type challengeMovie struct {
+	Title string
+	Year  int
+	Genre string
+	Hint  string
+}
+
+// mapEmbyGenre 映射Emby类型到挑战池类型
+func mapEmbyGenre(embyGenre string) string {
+	switch {
+	case strings.Contains(embyGenre, "科幻"):
+		return "科幻"
+	case strings.Contains(embyGenre, "悬疑") || strings.Contains(embyGenre, "惊悚") || strings.Contains(embyGenre, "犯罪"):
+		return "悬疑"
+	case strings.Contains(embyGenre, "喜剧"):
+		return "喜剧"
+	case strings.Contains(embyGenre, "动画"):
+		return "动画"
+	case strings.Contains(embyGenre, "爱情") || strings.Contains(embyGenre, "浪漫"):
+		return "爱情"
+	default:
+		return "剧情"
+	}
 }
