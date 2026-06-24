@@ -188,6 +188,7 @@ type Dependencies struct {
 	WishHandler       *handlers.WishHandler       // #6 许愿池命令/回调处理器
 	MyRequestsHandler *handlers.MyRequestsHandler // 「我的请求」聚合视图（/requests 命令复用）
 	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler  *handlers.AdventureHandler  // 求片大冒险
 }
 
 // initServices initializes all services
@@ -577,7 +578,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		logger.Info("[initRegistry] ⚠️ SocialDB init failed: %v", socialErr)
 	}
 	emotionSvc := services.NewEmotionTimelineService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID)
+	// 求片大冒险服务
+	adventureSvc := services.NewAdventureService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
+	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
+	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID, adventureHandler)
 	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
@@ -644,7 +648,12 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("game_daily_challenge", gameHandler.Handle)
 	registry.RegisterFunc("game_daily_complete", gameHandler.Handle)
 	registry.RegisterFunc("game_achievements", gameHandler.Handle)
-	logger.Info("[initRegistry] Game callbacks registered (22 actions)")
+	// 求片大冒险回调
+	registry.RegisterFunc("adventure_start", adventureHandler.Handle)
+	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
+	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
+	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
+	logger.Info("[initRegistry] Game callbacks registered (22+4 actions)")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
@@ -789,6 +798,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		WishHandler:       wishHandler,
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,
+		AdventureHandler:  adventureHandler,
 	}
 
 	return registry, resultDeps
@@ -850,5 +860,6 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequestsHandler,
 		GameHandler:     deps.GameHandler,
+		AdventureHandler: deps.AdventureHandler,
 	}
 }

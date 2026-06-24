@@ -285,6 +285,15 @@ func HandleWebhookMessage(
 			}
 		}
 
+		// 检查是否处于求片大冒险 pending 状态
+		if deps.AdventureHandler != nil {
+			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, msg.Text) {
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+		}
+
 		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}
 
@@ -322,6 +331,7 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"pending_issue_reply",
 		// 游戏功能 pending 状态
 		"pending_narrate_input",
+		"pending_adventure_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {

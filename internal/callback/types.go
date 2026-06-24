@@ -177,26 +177,17 @@ var validActions = map[Action]bool{
 	// Game center actions
 	"game_menu":           true, // 游戏中心主菜单
 	"game_rank":           true, // 段位系统
-	"game_personality":    true, // 性格测试
 	"game_narrator":       true, // AI解说入口
-	"game_narrate":        true, // AI解说生成（前缀匹配）
 	"game_blindbox":       true, // 盲盒入口
-	"game_blindbox_open":  true, // 开盲盒
 	"game_social":         true, // 社交动态
-	"game_review":         true, // 写影评入口
-	"game_review_rate":    true, // 快速评分（前缀匹配）
-	"game_roulette":       true, // 命运轮盘入口
-	"game_roulette_spin":  true, // 转轮盘
 	"game_emotion":        true, // 情绪画像
-	"game_time_machine":   true, // 时光放映机
-	"game_prescription":   true, // 情绪处方
-	"game_contract":       true, // 命运契约
-	"game_blindbox_horror": true, // 恐怖盲盒
-	"game_contract_complete": true, // 完成契约
-	"game_compare":          true, // 观影关系对比
-	"game_daily_challenge":  true, // 每日挑战
-	"game_daily_complete":   true, // 完成每日挑战
 	"game_achievements":     true, // 成就系统
+
+	// Adventure game actions
+	"adventure_start":  true, // 求片大冒险入口
+	"adventure_choice": true, // 选择选项
+	"adventure_retry":  true, // 重试冒险
+	"adventure_quit":   true, // 退出冒险
 
 	// Resource candidate actions
 	ActionResourceList: true,

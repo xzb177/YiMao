@@ -34,6 +34,7 @@ type Dependencies struct {
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler *handlers.AdventureHandler // 求片大冒险
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -55,6 +56,7 @@ type PollDeps struct {
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler *handlers.AdventureHandler // 求片大冒险
 }
 
 // StartPolling starts the Telegram update polling
@@ -87,6 +89,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequests,
 		GameHandler:     deps.GameHandler,
+		AdventureHandler: deps.AdventureHandler,
 	}
 
 	for {
@@ -356,6 +359,13 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 			}
 		}
 
+		// 检查是否处于求片大冒险 pending 状态
+		if deps.AdventureHandler != nil {
+			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, sanitizedText) {
+				return
+			}
+		}
+
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
 }
@@ -388,6 +398,7 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		"pending_issue_reply",
 		// 游戏功能 pending 状态
 		"pending_narrate_input",
+		"pending_adventure_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {

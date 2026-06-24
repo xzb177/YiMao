@@ -96,33 +96,6 @@ type PDimensionView struct {
 }
 
 // BuildPersonalityCard 构建性格卡片
-func BuildPersonalityCard(data PersonalityCardData) RichMessage {
-	builder := NewBuilder()
-
-	// 主标题 - 更有个性
-	builder.Heading(fmt.Sprintf("🧠 %s 的电影人格", data.UserName), 2)
-	builder.BoldParagraph(fmt.Sprintf("%s %s", data.Type, data.TypeName))
-	builder.Divider()
-
-	// 四个维度 - 用更直观的进度条
-	builder.Heading("📊 人格维度", 3)
-	for _, d := range data.Dimensions {
-		bar := buildDimensionBar(d.Score)
-		builder.Paragraph(fmt.Sprintf("%s **%s**\n%s %s %s\n结果: **%s**",
-			d.Icon, d.Name, d.Left, bar, d.Right, d.Result))
-	}
-	builder.Divider()
-
-	// 核心特质 - 更有洞察
-	builder.Heading("🎯 核心特质", 3)
-	builder.Paragraph(fmt.Sprintf("• %s", data.TopTrait))
-	builder.Divider()
-
-	// 总结 - 更有温度
-	builder.Italic(data.Description)
-
-	return builder.Build()
-}
 
 func buildDimensionBar(score float64) string {
 	// 用 10 格进度条表示
@@ -458,6 +431,7 @@ func BuildGameCenterCard() RichMessage {
 
 	// 互动玩法
 	builder.BoldParagraph("🎲 玩起来")
+	builder.Paragraph("  ⚔️ 求片大冒险 — 以主角身份闯关，通关才能求片！")
 	builder.Paragraph("  情绪处方 — 根据心情开药方")
 	builder.Paragraph("  命运契约 — 签一份观影挑战")
 	builder.Paragraph("  电影盲盒 — 开一个未知的惊喜")

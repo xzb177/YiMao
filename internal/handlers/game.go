@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +24,7 @@ type GameHandler struct {
 	telegram       *services.TelegramClient
 	sessionMgr     *session.Manager
 	emotionSvc     *services.EmotionTimelineService
+	adventureHdl   *AdventureHandler // 求片大冒险
 	groupChatID    int64 // 群聊ID，用于发送群通知
 }
 
@@ -50,6 +50,7 @@ func NewGameHandler(
 	sessionMgr *session.Manager,
 	emotionSvc *services.EmotionTimelineService,
 	groupChatID int64,
+	adventureHdl *AdventureHandler,
 ) *GameHandler {
 	return &GameHandler{
 		rankSvc:        rankSvc,
@@ -62,6 +63,7 @@ func NewGameHandler(
 		telegram:       telegram,
 		sessionMgr:     sessionMgr,
 		emotionSvc:     emotionSvc,
+		adventureHdl:   adventureHdl,
 		groupChatID:    groupChatID,
 	}
 }
@@ -73,9 +75,7 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	switch {
 	case action == "game_rank":
 		return h.handleRank(ctx)
-	case action == "game_personality":
-		return h.handlePersonality(ctx)
-	case action == "game_narrator":
+		case action == "game_narrator":
 		return h.handleNarratorEntry(ctx)
 	case action == "game_narrate":
 		return h.handleNarrate(ctx)
@@ -83,37 +83,13 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleBlindBox(ctx)
 	case action == "game_blindbox_open":
 		return h.handleBlindBoxOpen(ctx)
-	case action == "game_blindbox_horror":
-		return h.handleBlindBoxHorror(ctx)
-	case action == "game_social":
+		case action == "game_social":
 		return h.handleSocialFeed(ctx)
-	case action == "game_review":
-		return h.handleReviewEntry(ctx)
-	case strings.HasPrefix(action, "game_review_rate:"):
-		return h.handleReviewRate(ctx)
-	case action == "game_roulette":
-		return h.handleRoulette(ctx)
-	case action == "game_roulette_spin":
-		return h.handleRouletteSpin(ctx)
-	case action == "game_menu":
+				case action == "game_menu":
 		return h.handleMenu(ctx)
 	case action == "game_emotion":
 		return h.handleEmotionProfile(ctx)
-	case action == "game_time_machine":
-		return h.handleTimeMachine(ctx)
-	case action == "game_prescription":
-		return h.handlePrescription(ctx)
-	case action == "game_contract":
-		return h.handleContract(ctx)
-	case strings.HasPrefix(action, "game_contract_complete:"):
-		return h.handleContractComplete(ctx)
-	case action == "game_compare":
-		return h.handleCompareTaste(ctx)
-	case action == "game_daily_challenge":
-		return h.handleDailyChallenge(ctx)
-	case strings.HasPrefix(action, "game_daily_complete:"):
-		return h.handleDailyChallengeComplete(ctx)
-	case action == "game_achievements":
+						case action == "game_achievements":
 		return h.handleAchievements(ctx)
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
@@ -125,16 +101,15 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, error) {
 	card := richmessage.BuildGameCenterCard()
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🪞 情绪画像", "game_emotion")
-	kb.AddButton("📽️ 时光机", "game_time_machine")
+	kb.AddButton("🏆 段位", "game_rank")
 	kb.AddButton("🎬 AI解说", "game_narrator")
-	kb.NewRow()
-	kb.AddButton("💊 处方", "game_prescription")
-	kb.AddButton("📜 契约", "game_contract")
 	kb.AddButton("🎰 盲盒", "game_blindbox")
 	kb.NewRow()
-	kb.AddButton("🏆 段位", "game_rank")
+	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
 	kb.AddButton("📢 影友圈", "game_social")
+	kb.AddButton("🪞 情绪", "game_emotion")
+	kb.NewRow()
+	kb.AddButton("🏅 成就", "game_achievements")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -198,59 +173,6 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 
 // --- 性格测试 ---
 
-func (h *GameHandler) handlePersonality(ctx *callback.Context) (*callback.Response, error) {
-	if h.personalitySvc == nil || h.userMapping == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 性格测试需要私聊进行", ShowAlert: true}, nil
-	}
-
-	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
-	if err != nil || mpUsername == "" {
-		return &callback.Response{Text: "🔗 请先绑定账号（/link）", CallbackMsg: "请先绑定", ShowAlert: true}, nil
-	}
-
-	embyUserID, err := h.personalitySvc.FindEmbyUserByName(mpUsername)
-	if err != nil {
-		return &callback.Response{Text: "❌ 未找到 Emby 用户", CallbackMsg: "未找到用户", ShowAlert: true}, nil
-	}
-
-	result, err := h.personalitySvc.AnalyzePersonality(embyUserID, mpUsername)
-	if err != nil {
-		logger.Info("[Game] Personality analysis failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ 性格分析失败，请稍后再试", CallbackMsg: "分析失败", ShowAlert: true}, nil
-	}
-
-	var dims []richmessage.PDimensionView
-	for _, d := range result.Dimensions {
-		dims = append(dims, richmessage.PDimensionView{
-			Name: d.Name, Left: d.Left, Right: d.Right,
-			Score: d.Score, Result: d.Result, Icon: d.Icon,
-		})
-	}
-
-	card := richmessage.BuildPersonalityCard(richmessage.PersonalityCardData{
-		UserName:    result.UserName,
-		Type:        result.Type,
-		TypeName:    result.TypeName,
-		Description: result.Description,
-		Dimensions:  dims,
-		TopTrait:    result.TopTrait,
-	})
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🪞 情绪画像", "game_emotion")
-	kb.AddButton("💊 情绪处方", "game_prescription")
-	kb.NewRow()
-	kb.AddButton("📜 签契约", "game_contract")
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // --- AI 解说员 ---
 
@@ -485,43 +407,6 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 
 // --- 恐怖盲盒 ---
 
-func (h *GameHandler) handleBlindBoxHorror(ctx *callback.Context) (*callback.Response, error) {
-	if h.blindBoxSvc == nil {
-		return &callback.Response{CallbackMsg: "❌ 盲盒服务未就绪", ShowAlert: true}, nil
-	}
-
-	items, err := h.blindBoxSvc.OpenBlindBox("恐怖", 3)
-	if err != nil {
-		logger.Info("[Game] Horror BlindBox open failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ 开盒失败，请稍后再试", CallbackMsg: "开盒失败", ShowAlert: true}, nil
-	}
-
-	var views []richmessage.BlindBoxItemView
-	for _, item := range items {
-		views = append(views, richmessage.BlindBoxItemView{
-			Title:    item.Title,
-			Year:     item.Year,
-			Rating:   item.Rating,
-			Rarity:   item.Rarity,
-			Genres:   strings.Join(item.Genres, "/"),
-			Overview: item.Overview,
-			Revealed: true,
-		})
-	}
-
-	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{Items: views})
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎲 再来一组恐怖片", "game_blindbox_horror")
-	kb.AddButton("🎰 普通盲盒", "game_blindbox_open")
-	kb.NewRow()
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // --- 社交动态 ---
 
@@ -565,109 +450,11 @@ func (h *GameHandler) handleSocialFeed(ctx *callback.Context) (*callback.Respons
 
 // --- 影评 ---
 
-func (h *GameHandler) handleReviewEntry(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{
-		Text: "✍️ **写影评**\n\n请按格式发送：\n`/review 电影名 评分(1-5) 评语`\n\n例如：`/review 流浪地球 5 特效炸裂，剧情紧凑`\n\n评分：⭐~⭐⭐⭐⭐⭐",
-	}, nil
-}
 
-func (h *GameHandler) handleReviewRate(ctx *callback.Context) (*callback.Response, error) {
-	// 从 callback params 中提取参数
-	movieName := ""
-	ratingStr := ""
-	if ctx.Callback != nil && ctx.Callback.Params != nil {
-		if name, ok := ctx.Callback.Params["movie"]; ok {
-			movieName = name
-		}
-		if rate, ok := ctx.Callback.Params["rate"]; ok {
-			ratingStr = rate
-		}
-	}
-	if movieName == "" || ratingStr == "" {
-		return &callback.Response{CallbackMsg: "❌ 参数错误", ShowAlert: true}, nil
-	}
-
-	rating, err := strconv.Atoi(ratingStr)
-	if err != nil || rating < 1 || rating > 5 {
-		return &callback.Response{CallbackMsg: "❌ 评分无效", ShowAlert: true}, nil
-	}
-
-	if h.socialDB == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-
-	// 获取用户名
-	mpUsername, _ := h.userMapping.GetMoviePilotUsername(ctx.UserID)
-	if mpUsername == "" {
-		mpUsername = fmt.Sprintf("用户%d", ctx.UserID)
-	}
-
-	err = h.socialDB.AddReview(ctx.UserID, mpUsername, movieName, 0, rating, "")
-	if err != nil {
-		logger.Info("[Game] Review rating failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ 评分失败，请稍后再试", CallbackMsg: "失败", ShowAlert: true}, nil
-	}
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 已为《%s》评分 %s", movieName, strings.Repeat("⭐", rating)),
-		CallbackMsg: "评分成功！",
-		ShowAlert:   true,
-	}, nil
-}
 
 // --- 命运轮盘 ---
 
-func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response, error) {
-	card := richmessage.BuildRouletteCard(richmessage.RouletteCardData{
-		Title:    "等待命运的裁决...",
-		SpinCount: 0,
-		MaxSpins: 3,
-	})
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎡 转！","game_roulette_spin")
-	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
-
-func (h *GameHandler) handleRouletteSpin(ctx *callback.Context) (*callback.Response, error) {
-	if h.rouletteSvc == nil {
-		return &callback.Response{CallbackMsg: "❌ 轮盘服务未就绪", ShowAlert: true}, nil
-	}
-
-	result, err := h.rouletteSvc.Spin(ctx.UserID, "")
-	if err != nil {
-		return &callback.Response{CallbackMsg: err.Error(), ShowAlert: true}, nil
-	}
-
-	card := richmessage.BuildRouletteCard(richmessage.RouletteCardData{
-		Title:     result.Title,
-		Year:      result.Year,
-		Rating:    result.Rating,
-		Overview:  result.Overview,
-		SpinCount: result.SpinCount,
-		MaxSpins:  result.MaxSpins,
-	})
-
-	kb := services.NewKeyboardBuilder()
-	if result.SpinCount < result.MaxSpins {
-		kb.AddButton("🎡 再转一次", "game_roulette_spin")
-	}
-	kb.AddButton("🎰 开盲盒", "game_blindbox_open")
-	kb.NewRow()
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // --- 工具函数 ---
 
@@ -752,207 +539,12 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 
 // --- 时光放映机 ---
 
-func (h *GameHandler) handleTimeMachine(ctx *callback.Context) (*callback.Response, error) {
-	if h.emotionSvc == nil || h.userMapping == nil || h.rankSvc == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 时光放映机需要私聊查看", ShowAlert: true}, nil
-	}
-
-	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
-	if err != nil || mpUsername == "" {
-		return &callback.Response{Text: "🔗 请先绑定账号（/link）", CallbackMsg: "请先绑定", ShowAlert: true}, nil
-	}
-
-	embyUserID, err := h.rankSvc.FindEmbyUserByName(mpUsername)
-	if err != nil {
-		return &callback.Response{Text: "❌ 未找到 Emby 用户", CallbackMsg: "未找到用户", ShowAlert: true}, nil
-	}
-
-	profile, err := h.emotionSvc.BuildProfile(embyUserID, mpUsername)
-	if err != nil {
-		logger.Info("[Game] Time machine failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ 生成失败，请稍后再试", CallbackMsg: "生成失败", ShowAlert: true}, nil
-	}
-
-	narrative := h.emotionSvc.GenerateNarrative(profile, mpUsername)
-
-	now := time.Now()
-	weekRange := fmt.Sprintf("📅 %s — %s",
-		now.AddDate(0, 0, -28).Format("01/02"),
-		now.Format("01/02"))
-
-	card := richmessage.BuildTimeMachineCard(richmessage.TimeMachineCardData{
-		UserName:  mpUsername,
-		Narrative: narrative,
-		WeekRange: weekRange,
-	})
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🪞 情绪画像", "game_emotion")
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // --- 情绪处方 ---
 
-func (h *GameHandler) handlePrescription(ctx *callback.Context) (*callback.Response, error) {
-	if h.blindBoxSvc == nil || h.emotionSvc == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-
-	diagnosis := "基于你的观影习惯，为你开具处方"
-	intensity := 5.0
-	trend := "平稳"
-
-	if h.userMapping != nil && h.rankSvc != nil {
-		if mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID); err == nil && mpUsername != "" {
-			if embyUserID, err := h.rankSvc.FindEmbyUserByName(mpUsername); err == nil {
-				if profile, err := h.emotionSvc.BuildProfile(embyUserID, mpUsername); err == nil {
-					intensity = profile.EmotionalIntensity
-					trend = profile.EmotionTrend
-					switch {
-					case intensity >= 7:
-						diagnosis = fmt.Sprintf("你的观影情绪偏高（%.1f/10），需要一些舒缓的内容", intensity)
-					case intensity <= 3:
-						diagnosis = fmt.Sprintf("你的观影情绪偏低（%.1f/10），可以来点刺激的", intensity)
-					default:
-						diagnosis = fmt.Sprintf("你的观影情绪平稳（%.1f/10），适合探索新类型", intensity)
-					}
-				}
-			}
-		}
-	}
-
-	// 根据情绪状态智能选片
-	genre := ""
-	switch {
-	case intensity >= 7:
-		genre = "家庭" // 高压→舒缓降压
-	case intensity <= 3:
-		genre = "动作" // 低压→刺激升压
-	case trend == "上升":
-		genre = "纪录" // 情绪上升→冷静观察
-	case trend == "下降":
-		genre = "喜剧" // 情绪下降→提振心情
-	}
-
-	items, err := h.blindBoxSvc.OpenBlindBox(genre, 3)
-	if err != nil {
-		logger.Info("[Game] Prescription failed for user %d: %v", ctx.UserID, err)
-		return &callback.Response{Text: "❌ 处方开具失败，请稍后再试", CallbackMsg: "失败", ShowAlert: true}, nil
-	}
-
-	var prescriptionItems []richmessage.PrescriptionItem
-	for _, item := range items {
-		prescriptionItems = append(prescriptionItems, richmessage.PrescriptionItem{
-			Title:    item.Title,
-			Year:     item.Year,
-			Rating:   item.Rating,
-			Genres:   strings.Join(item.Genres, "/"),
-			Overview: item.Overview,
-			Rarity:   item.Rarity,
-		})
-	}
-
-	card := richmessage.BuildPrescriptionCard(richmessage.PrescriptionCardDataV2{
-		Diagnosis: diagnosis,
-		Intensity: intensity,
-		Trend:     trend,
-		Items:     prescriptionItems,
-	})
-
-	// 群通知
-	userName := h.getUserName(ctx.UserID)
-	h.notifyGroup(userName, fmt.Sprintf("开了一剂情绪处方 💊 诊断：%s", diagnosis))
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("💊 再开一剂", "game_prescription")
-	kb.AddButton("🪞 情绪画像", "game_emotion")
-	kb.NewRow()
-	kb.AddButton("📜 和它签契约", "game_contract")
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // --- 命运契约 ---
 
-func (h *GameHandler) handleContract(ctx *callback.Context) (*callback.Response, error) {
-	if h.rouletteSvc == nil {
-		return &callback.Response{CallbackMsg: "❌ 轮盘服务未就绪", ShowAlert: true}, nil
-	}
-
-	result, err := h.rouletteSvc.Spin(ctx.UserID, "")
-	if err != nil {
-		return &callback.Response{CallbackMsg: err.Error(), ShowAlert: true}, nil
-	}
-
-	challenges := []string{
-		"今晚看完这部电影，并写3句话感受",
-		"看完后给朋友推荐这部电影",
-		"观影时关掉手机，专注看完",
-		"看完后去影友圈写一条影评",
-		"和家人/朋友一起看这部电影",
-	}
-	challengeIdx := int(time.Now().UnixNano()) % len(challenges)
-	if challengeIdx < 0 { challengeIdx = -challengeIdx }
-
-	genres := ""
-	if len(result.Genres) > 0 {
-		genres = strings.Join(result.Genres, "/")
-	}
-
-	card := richmessage.BuildContractCard(richmessage.ContractCardData{
-		MovieName: result.Title,
-		Year:      result.Year,
-		Rating:    result.Rating,
-		Genres:    genres,
-		Overview:  result.Overview,
-		Challenge: challenges[challengeIdx],
-		Deadline:  time.Now().Add(72 * time.Hour).Format("01/02 15:04"),
-		Reward:    "经验值×3 + 段位加成",
-		SpinCount: result.SpinCount,
-		MaxSpins:  result.MaxSpins,
-	})
-
-	// 保存契约到数据库
-	contractID := int64(0)
-	if h.socialDB != nil {
-		userName := h.getUserName(ctx.UserID)
-		deadline := time.Now().Add(72 * time.Hour)
-		if id, err := h.socialDB.AddContract(ctx.UserID, userName, result.Title, challenges[challengeIdx], deadline); err == nil {
-			contractID = id
-		}
-	}
-
-	// 群通知
-	h.notifyGroup(h.getUserName(ctx.UserID), fmt.Sprintf("签了一份命运契约：《%s》📜", result.Title))
-
-	kb := services.NewKeyboardBuilder()
-	if contractID > 0 {
-		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_contract_complete:id:%d", contractID))
-	}
-	if result.SpinCount < result.MaxSpins {
-		kb.AddButton("📜 再签一份", "game_contract")
-	}
-	kb.AddButton("🪞 情绪变化", "game_emotion")
-	kb.NewRow()
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
-	}, nil
-}
 
 // notifyGroup 发送群通知（异步，不阻塞主流程）
 // notifyGroup 发送群通知（10分钟后自毁）
@@ -1002,208 +594,12 @@ func formatTimeAgo(t time.Time) string {
 
 // --- 完成契约 ---
 
-func (h *GameHandler) handleContractComplete(ctx *callback.Context) (*callback.Response, error) {
-	if h.socialDB == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-
-	// 从 callback params 提取 contract ID
-	var contractID int64
-	if ctx.Callback != nil && ctx.Callback.Params != nil {
-		if idStr, ok := ctx.Callback.Params["id"]; ok {
-			fmt.Sscanf(idStr, "%d", &contractID)
-		}
-	}
-	if contractID == 0 {
-		return &callback.Response{CallbackMsg: "❌ 无效的契约", ShowAlert: true}, nil
-	}
-
-	ok, err := h.socialDB.CompleteContract(contractID, ctx.UserID)
-	if err != nil {
-		logger.Info("[Game] CompleteContract failed: %v", err)
-		return &callback.Response{CallbackMsg: "❌ 完成失败", ShowAlert: true}, nil
-	}
-	if !ok {
-		return &callback.Response{CallbackMsg: "❌ 契约不存在或已完成", ShowAlert: true}, nil
-	}
-
-	// 群通知
-	userName := h.getUserName(ctx.UserID)
-	h.notifyGroup(userName, "完成了一份命运契约挑战！✅ +3经验值")
-
-	return &callback.Response{
-		Text:        "🎉 **挑战完成！**\n\n✅ 契约已标记为完成\n📈 经验值 +3\n\n继续签新的契约，或者看看你的情绪变化。",
-		CallbackMsg: "挑战完成！",
-		ShowAlert:   true,
-	}, nil
-}
 
 // handleCompareTaste 处理观影关系对比
-func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Response, error) {
-	// 从 session 获取目标用户
-	var targetUser string
-	if h.sessionMgr != nil {
-		sess := h.sessionMgr.Get(ctx.UserID)
-		if sess != nil {
-			if v, ok := sess.Data["compare_target"]; ok {
-				targetUser, _ = v.(string)
-			}
-		}
-	}
-
-	user1Name := h.getUserName(ctx.UserID)
-
-	if targetUser == "" {
-		// 设置 pending 状态，等待用户输入目标用户名
-		if h.sessionMgr != nil {
-			sess := h.sessionMgr.GetOrCreate(ctx.UserID)
-			if sess != nil {
-				sess.Set("pending_compare_input", true)
-			}
-		}
-		return &callback.Response{
-			Text:      "👥 **观影关系对比**\n\n请发送要对比的用户名\n\n💡 想知道你和谁的观影品味最像？",
-			CallbackMsg: "请发送对比用户名",
-		}, nil
-	}
-
-	user2Name := targetUser
-
-	if user1Name == user2Name {
-		return &callback.Response{
-			Text:      "😅 不能和自己对比哦\n\n去邀请朋友来测测看！",
-			CallbackMsg: "不能和自己对比",
-		}, nil
-	}
-
-	// 调用对比
-	result, err := h.emotionSvc.CompareTaste(user1Name, user2Name)
-	if err != nil {
-		logger.Info("[Game] CompareTaste failed: %v", err)
-		return &callback.Response{
-			Text:      "❌ 对比失败，可能用户数据不足",
-			CallbackMsg: "对比失败",
-		}, nil
-	}
-
-	// 生成卡片
-	card := fmt.Sprintf(`👥 **观影关系报告**
-
-%s %s vs %s
-━━━━━━━━━━━━
-🎯 匹配度: %d%%
-🎬 共同观影: %d 部
-
-%s 的口味: %s
-%s 的口味: %s
-
-%s
-━━━━━━━━━━━━
-💜 灵魂伴侣 > 💚 默契搭档 > 💛 偶尔共鸣 > 🧡 互补型 > 🤍 平行线`,
-		result.RelationIcon, result.User1, result.User2,
-		result.MatchScore, result.SharedCount,
-		result.User1, result.Genre1,
-		result.User2, result.Genre2,
-		result.Description,
-	)
-
-	// 清除 session
-	if h.sessionMgr != nil {
-		sess := h.sessionMgr.Get(ctx.UserID)
-		if sess != nil {
-			sess.Set("compare_target", nil)
-		}
-	}
-
-	return &callback.Response{
-		Text:        card,
-		CallbackMsg: "观影关系报告",
-	}, nil
-}
 
 // handleDailyChallenge 处理每日挑战
-func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Response, error) {
-	if h.socialDB == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-
-	challenge, err := h.socialDB.GetDailyChallenge(ctx.UserID)
-	if err != nil {
-		logger.Info("[Game] GetDailyChallenge failed: %v", err)
-		return &callback.Response{CallbackMsg: "❌ 获取挑战失败", ShowAlert: true}, nil
-	}
-
-	// 获取用户昵称
-	userName := h.getUserName(ctx.UserID)
-
-	// 构建卡片
-	statusIcon := "⬜"
-	statusText := "未完成"
-	if challenge.Completed {
-		statusIcon = "✅"
-		statusText = "已完成！"
-	}
-
-	card := fmt.Sprintf(`🎯 **今日挑战**
-
-%s %s
-
-%s
-━━━━━━━━━━━━
-🎁 奖励: +%d XP
-📅 日期: %s`,
-		statusIcon, challenge.Description,
-		statusText,
-		challenge.RewardXP,
-		challenge.Date,
-	)
-
-	// 构建按钮
-	kb := services.NewKeyboardBuilder()
-	if !challenge.Completed {
-		kb.AddButton("✅ 完成挑战", fmt.Sprintf("game_daily_complete:%d", ctx.UserID))
-	}
-	kb.AddButton("🔄 刷新", "game_daily_challenge")
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	// 群通知（如果完成）
-	if challenge.Completed {
-		h.notifyGroup(userName, fmt.Sprintf("完成了今日挑战：%s 🎯 +%dXP", challenge.Description, challenge.RewardXP))
-	}
-
-	return &callback.Response{
-		Text:        card,
-		Keyboard:    convertKeyboard(kb.Build()),
-		CallbackMsg: "今日挑战",
-	}, nil
-}
 
 // handleDailyChallengeComplete 处理完成每日挑战
-func (h *GameHandler) handleDailyChallengeComplete(ctx *callback.Context) (*callback.Response, error) {
-	if h.socialDB == nil {
-		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
-	}
-
-	userName := h.getUserName(ctx.UserID)
-	completed, rewardXP, err := h.socialDB.CompleteDailyChallenge(ctx.UserID, userName)
-	if err != nil {
-		logger.Info("[Game] CompleteDailyChallenge failed: %v", err)
-		return &callback.Response{CallbackMsg: "❌ 完成失败", ShowAlert: true}, nil
-	}
-
-	if !completed {
-		return &callback.Response{CallbackMsg: "ℹ️ 今日挑战已完成过了", ShowAlert: true}, nil
-	}
-
-	// 群通知
-	h.notifyGroup(userName, fmt.Sprintf("完成了今日挑战！🎯 +%dXP", rewardXP))
-
-	return &callback.Response{
-		Text:        fmt.Sprintf("🎉 **挑战完成！**\n\n+%d XP\n\n继续加油，明天还有新挑战！", rewardXP),
-		CallbackMsg: "挑战完成！",
-		ShowAlert:   true,
-	}, nil
-}
 
 // handleAchievements 处理成就系统
 func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Response, error) {
