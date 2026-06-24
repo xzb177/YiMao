@@ -50,6 +50,9 @@ type AdventureHandler struct {
 	socialDB     *services.SocialDB
 	groupChatID  int64
 
+	// 冒险成功后的求片回调（由 main 注入，解耦 requestHandler）
+	onAdventureSuccess func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)
+
 	mu         sync.Mutex
 	generating map[int64]bool
 }
@@ -77,6 +80,11 @@ func NewAdventureHandler(
 // SetSocialDB 注入社交数据库
 func (h *AdventureHandler) SetSocialDB(db *services.SocialDB) {
 	h.socialDB = db
+}
+
+// SetOnAdventureSuccess 注入冒险成功回调
+func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)) {
+	h.onAdventureSuccess = fn
 }
 
 // Handle 冒险回调路由
@@ -540,6 +548,16 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 			state.MaxCombo, state.HP,
 			state.Level-1, state.TotalLevels,
 			state.PerfectRun, success,
+		)
+	}
+
+	// 通关 → 自动提交求片请求
+	if success && h.onAdventureSuccess != nil {
+		go h.onAdventureSuccess(
+			userID, chatID,
+			state.MovieInfo.Title, state.MovieInfo.Year,
+			state.MovieInfo.TMDBID, state.MovieInfo.Genres,
+			result.Score, result.Grade,
 		)
 	}
 

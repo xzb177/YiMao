@@ -584,6 +584,40 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	if socialDB != nil {
 		adventureHandler.SetSocialDB(socialDB)
 	}
+	// 冒险通关 → 自动提交求片请求（不消耗配额，冒险本身就是代价）
+	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string) {
+		if deps.ReviewService == nil {
+			return
+		}
+		userName := ""
+		if deps.UserMapping != nil {
+			if name, err := deps.UserMapping.GetMoviePilotUsername(userID); err == nil && name != "" {
+				userName = name
+			}
+		}
+		if userName == "" {
+			userName = fmt.Sprintf("用户%d", userID)
+		}
+		reviewID := fmt.Sprintf("adv_%d_%d", userID, time.Now().UnixNano())
+		review := &services.ReviewRequest{
+			RequestID:      reviewID,
+			TelegramID:     userID,
+			TelegramName:   userName,
+			TmdbID:         tmdbID,
+			MediaTitle:     movieName,
+			MediaYear:      movieYear,
+			MediaType:      services.MediaTypeMovie,
+			RequestOrigin:  "adventure",
+			AdventureScore: score,
+			AdventureGrade: grade,
+		}
+		if err := deps.ReviewService.CreateRequest(review); err != nil {
+			logger.Info("[Adventure] 求片提交失败: %v", err)
+			deps.Telegram.SendMessage(chatID, "❌ 求片自动提交失败，请使用普通求片重试", "", nil)
+			return
+		}
+		logger.Info("[Adventure] 冒险通关自动提交求片: %s (%d), 用户 %d, 评级 %s", movieName, movieYear, userID, grade)
+	})
 	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID, adventureHandler)
 	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)

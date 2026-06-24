@@ -345,6 +345,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		Season:       season,
 		PosterPath:   posterPath,
 		Overview:     overview,
+		RequestOrigin: "normal",
 	}
 
 	if mediaType == "tv" {
@@ -696,6 +697,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		MediaType:    services.MediaTypeMovie,
 		EmbyExists:   embyInfo != nil,
 		EmbyInfo:     embyInfo,
+		RequestOrigin: "normal",
 	}
 
 	if mediaType == "tv" {
