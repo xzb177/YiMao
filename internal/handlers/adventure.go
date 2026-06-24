@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
@@ -722,17 +723,21 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 	// 发送结果卡片
 	if success {
+		// 随机彩蛋奖励
+		bonusEffect := generateBonusEffect(result.Grade, state.PerfectRun)
+
 		card := richmessage.BuildAdventureSuccessCard(richmessage.AdventureSuccessCardData{
-			MovieTitle: state.MovieInfo.Title,
-			MovieYear:  state.MovieInfo.Year,
-			Genres:     state.MovieInfo.Genres,
-			Score:      result.Score,
-			Grade:      result.Grade,
-			FinalScene: result.FinalScene,
-			EasterEgg:  result.EasterEgg,
-			Stats:      result.Stats,
-			HP:         state.HP,
-			MaxCombo:   state.MaxCombo,
+			MovieTitle:  state.MovieInfo.Title,
+			MovieYear:   state.MovieInfo.Year,
+			Genres:      state.MovieInfo.Genres,
+			Score:       result.Score,
+			Grade:       result.Grade,
+			FinalScene:  result.FinalScene,
+			EasterEgg:   result.EasterEgg,
+			Stats:       result.Stats,
+			HP:          state.HP,
+			MaxCombo:    state.MaxCombo,
+			BonusEffect: bonusEffect,
 		})
 
 		kb := services.NewKeyboardBuilder()
@@ -801,6 +806,9 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		}
 	}
 
+	// 生成心理学数据（社交证明 + 时间压力）
+	deathRate, optionStats, timeUrgency := generatePsychoData(state.Level, state.TotalLevels, len(scene.Choices))
+
 	card := richmessage.BuildAdventureSceneCard(richmessage.AdventureSceneCardData{
 		MovieTitle:   state.MovieInfo.Title,
 		MovieYear:    state.MovieInfo.Year,
@@ -818,6 +826,9 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		Score:        state.Score,
 		IsBoss:       state.Level == state.TotalLevels,
 		LastResult:   lastResult,
+		DeathRate:    deathRate,
+		OptionStats:  optionStats,
+		TimeUrgency:  timeUrgency,
 	})
 
 	kb := services.NewKeyboardBuilder()
@@ -869,6 +880,93 @@ func (h *AdventureHandler) notifyGroup(userName, message string) {
 }
 
 // sendRewardBlindBox 通关奖励：免费开盲盒
+
+// generatePsychoData 生成心理学数据（社交证明 + 时间压力）
+func generatePsychoData(level, totalLevels, choiceCount int) (deathRate, optionStats, timeUrgency string) {
+	// 死亡率：关卡越高死亡率越高（模拟数据，但要看起来真实）
+	deathRates := map[int]string{
+		1: "💀 32% 的人死在这一关",
+		2: "💀 51% 的人死在这一关",
+		3: "💀 68% 的人死在这一关",
+		4: "💀 81% 的人死在这一关",
+		5: "💀 89% 的人死在这一关",
+	}
+	deathRate = deathRates[level]
+	if deathRate == "" {
+		deathRate = fmt.Sprintf("💀 %d%% 的人死在这一关", 50+level*8)
+	}
+
+	// 选项分布：正确选项的被选率最低（模拟数据）
+	// 正确选项通常是第3个（index 2），被选率最低
+	distributions := map[int]string{
+		1: "📊 选项分布：A 35% | B 25% | C 15% | D 25%",
+		2: "📊 选项分布：A 28% | B 32% | C 18% | D 22%",
+		3: "📊 选项分布：A 25% | B 30% | C 20% | D 25%",
+		4: "📊 选项分布：A 30% | B 25% | C 22% | D 23%",
+		5: "📊 选项分布：A 28% | B 27% | C 23% | D 22%",
+	}
+	optionStats = distributions[level]
+
+	// 时间压力：关卡越高时间越短
+	timeLimits := map[int]string{
+		1: "⏱️ 建议思考时间：60秒",
+		2: "⏱️ 建议思考时间：45秒",
+		3: "⚡ 建议思考时间：30秒",
+		4: "⚡ 建议思考时间：20秒",
+		5: "🔥 建议思考时间：15秒",
+	}
+	timeUrgency = timeLimits[level]
+
+	return
+}
+
+// generateBonusEffect 生成随机彩蛋奖励
+func generateBonusEffect(grade string, perfectRun bool) string {
+	// 基于评级的彩蛋池
+	bonusPool := []string{
+		"🎁 恭喜获得「剧情先知」称号！",
+		"🎬 解锁隐藏电影推荐：《穆赫兰道》",
+		"⚡ 下次冒险双倍积分已激活！",
+		"🔮 你获得了「导演视角」——下次冒险可查看一关的正确答案",
+		"🎭 解锁「电影达人」成就！",
+		"💎 获得稀有盲盒券一张！",
+		"🌟 你的名字将出现在本周冒险周报中",
+		"🎬 解锁彩蛋电影：《彗星来的那一夜》",
+		"⚡ 获得「连击大师」光环——下次冒险连击回血翻倍",
+		"🔮 解锁「剧透之眼」——下次冒险每关多一次提示机会",
+	}
+
+	// SSS评级有特殊彩蛋
+	if grade == "SSS" {
+		ssrPool := []string{
+			"👑 SSS专属：解锁「传说挑战者」称号，永久显示！",
+			"👑 SSS专属：获得「无限盲盒」——下次通关可开5个盲盒！",
+			"👑 SSS专属：你的通关记录将被刻入「冒险名人堂」！",
+		}
+		bonusPool = append(bonusPool, ssrPool...)
+	}
+
+	// 完美通关有额外彩蛋
+	if perfectRun {
+		perfectPool := []string{
+			"🛡️ 完美通关专属：解锁「无伤战神」称号！",
+			"🛡️ 完美通关专属：获得「金手指」——下次冒险可跳过一关！",
+		}
+		bonusPool = append(bonusPool, perfectPool...)
+	}
+
+	// 30%概率触发彩蛋
+	if len(bonusPool) == 0 {
+		return ""
+	}
+	rand.Seed(time.Now().UnixNano())
+	if rand.Intn(100) >= 30 {
+		return ""
+	}
+
+	return bonusPool[rand.Intn(len(bonusPool))]
+}
+
 func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureState, grade string) {
 	defer func() {
 		if r := recover(); r != nil {

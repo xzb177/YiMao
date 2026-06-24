@@ -27,6 +27,10 @@ type AdventureSceneCardData struct {
 	Score        int
 	IsBoss       bool
 	LastResult   string // 上一关的结果反馈（内嵌，不单独发卡片）
+	// 心理学数据
+	DeathRate    string // "73% 的人死在这一关"
+	OptionStats  string // "📊 A 35% | B 15% | C 42% | D 8%"
+	TimeUrgency  string // "⚡ 思考时间：30秒"
 }
 
 type AdventureChoiceView struct {
@@ -88,6 +92,20 @@ func BuildAdventureSceneCard(data AdventureSceneCardData) RichMessage {
 	// 提示（如果有）
 	if data.Hint != "" {
 		b.Italic(fmt.Sprintf("💡 %s", data.Hint))
+	}
+
+	// 心理学数据：社交证明 + 时间压力
+	if data.DeathRate != "" || data.OptionStats != "" || data.TimeUrgency != "" {
+		b.Divider()
+		if data.DeathRate != "" {
+			b.BoldParagraph(data.DeathRate)
+		}
+		if data.TimeUrgency != "" {
+			b.Paragraph(data.TimeUrgency)
+		}
+		if data.OptionStats != "" {
+			b.Italic(data.OptionStats)
+		}
 	}
 
 	// 选项全文（显示在卡片里，按钮只放编号）
@@ -283,6 +301,7 @@ type AdventureSuccessCardData struct {
 	Stats      string
 	HP         int
 	MaxCombo   int
+	BonusEffect string // 随机彩蛋效果
 }
 
 func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
@@ -318,6 +337,12 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 	if data.EasterEgg != "" {
 		b.Heading("🥚 通关彩蛋", 3)
 		b.Paragraph(data.EasterEgg)
+		b.Divider()
+	}
+
+	// 随机彩蛋奖励
+	if data.BonusEffect != "" {
+		b.BoldParagraph(fmt.Sprintf("🎰 %s", data.BonusEffect))
 		b.Divider()
 	}
 
@@ -381,14 +406,22 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 	nearMiss := ""
 	switch {
 	case data.Level >= 4:
-		nearMiss = "你已经走了这么远... 就差一点点了"
+		nearMiss = "你已经看到了终点的光... 就差这一步"
 	case data.Level >= 3:
-		nearMiss = "你比大多数人走得都远了，真的要放弃吗？"
+		nearMiss = "你比73%的人走得都远了，再来一次就能过"
 	default:
-		nearMiss = "这部电影比你想象的要复杂，但你已经学到了一些东西"
+		nearMiss = "这部电影比你想象的要复杂，但你已经学到了关键线索"
 	}
 	b.BoldParagraph(fmt.Sprintf("🔄 %s", nearMiss))
 	b.Italic("求片请求未提交——只有通关才能求片")
+
+	// 惜败安慰：第4-5关失败给安慰奖
+	if data.Level >= 4 {
+		b.Divider()
+		b.BoldParagraph("🎁 惜败安慰奖")
+		b.Paragraph("  虽然没能通关，但你的勇气值得奖励")
+		b.Italic("  下次挑战时，第1关直接跳过，从第2关开始")
+	}
 
 	return b.Build()
 }
