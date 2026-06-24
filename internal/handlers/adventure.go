@@ -497,7 +497,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
 	}
 
-	// 群通知：只有特别优秀才通报（稀缺性 = 更有面子）
+	// 群通知：只有神仙操作才通报（稀缺性 = 更有面子）
 	userName := h.getUserName(userID)
 	if success {
 		shouldNotify := false
@@ -505,24 +505,64 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		switch {
 		case result.Grade == "SSS":
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出👑SSS评级！通关得分 %d，全程%s！",
-				state.MovieInfo.Title, result.Score, boolStr(state.PerfectRun, "无伤", fmt.Sprintf("最高连击 x%d", state.MaxCombo)))
+			notifyMsg = fmt.Sprintf(`👑 ━━━ SSS ━━━ 👑
+
+%s  ·  《%s》
+
+🎯 %d分  ❤️ %d%%  🔥 x%d%s
+
+%s`,
+				userName, state.MovieInfo.Title,
+				result.Score, state.HP, state.MaxCombo,
+				boolStr(state.PerfectRun, "  ⚔️ 完美", ""),
+				boolStr(state.PerfectRun, "全程无伤通关，无人能及", "传奇操作，群内首位通关者"))
+
 		case result.Grade == "SS":
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出💎SS评级！得分 %d 🏆", state.MovieInfo.Title, result.Score)
+			notifyMsg = fmt.Sprintf(`💎 ━━━ SS ━━━ 💎
+
+%s  ·  《%s》
+
+🎯 %d分  ❤️ %d%%  🔥 x%d
+
+距离完美，只差一步`,
+				userName, state.MovieInfo.Title,
+				result.Score, state.HP, state.MaxCombo)
+
 		case state.PerfectRun:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf("在《%s》大冒险中全程无伤通关！🏆", state.MovieInfo.Title)
+			notifyMsg = fmt.Sprintf(`🛡️ ━━━ 无伤通关 ━━━ 🛡️
+
+%s  ·  《%s》
+
+🎯 %d分  全程零失误
+
+五关全过，一滴血没掉`,
+				userName, state.MovieInfo.Title, result.Score)
+
 		case state.MaxCombo >= 4:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出🔥x%d连击通关！", state.MovieInfo.Title, state.MaxCombo)
+			notifyMsg = fmt.Sprintf(`🔥 ━━━ x%d 连击 ━━━ 🔥
+
+%s  ·  《%s》
+
+🎯 %d分  连续%d关一选即中
+
+这部电影他真的看过`,
+				state.MaxCombo, userName, state.MovieInfo.Title, result.Score, state.MaxCombo)
 		}
 		if shouldNotify {
 			h.notifyGroup(userName, notifyMsg)
 		}
 	} else if state.Level-1 >= 4 {
-		// 倒在第4-5关也通报（差一点就过了，制造FOMO）
-		h.notifyGroup(userName, fmt.Sprintf("在《%s》大冒险中倒在第%d关... 差一点就通关了 💀", state.MovieInfo.Title, state.Level-1))
+		h.notifyGroup(userName, fmt.Sprintf(`💀 ━━━ 惜败 ━━━ 💀
+
+%s  ·  《%s》
+
+倒在第 %d/%d 关
+
+差一步就通关了... 要不要帮他一把？`,
+			userName, state.MovieInfo.Title, state.Level-1, state.TotalLevels))
 	}
 
 	// 发送结果卡片
@@ -639,8 +679,7 @@ func (h *AdventureHandler) notifyGroup(userName, message string) {
 		return
 	}
 	go func() {
-		text := fmt.Sprintf("⚔️ **%s** %s", userName, message)
-		sent, err := h.telegram.SendMessage(h.groupChatID, text, "Markdown", nil)
+		sent, err := h.telegram.SendMessage(h.groupChatID, message, "", nil)
 		if err != nil {
 			return
 		}
