@@ -103,7 +103,17 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 	if _, exists := sess.Get("pending_adventure_input"); !exists {
 		return false
 	}
+	// 消耗 pending 状态（无论后续是否成功，都清除）
 	sess.Delete("pending_adventure_input")
+
+	// 二次校验：如果已经有进行中的冒险，不重复启动
+	if state, ok := sess.Get("adventure_state"); ok {
+		if advState, ok := state.(*AdventureState); ok && advState.InProgress {
+			h.telegram.SendMessage(chatID, "⚠️ 你已经有一场进行中的冒险了", "", nil)
+			return true
+		}
+	}
+
 	go h.startAdventureAsync(userID, chatID, movieName)
 	return true
 }
@@ -279,6 +289,7 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 
 // handleQuit 退出
 func (h *AdventureHandler) handleQuit(ctx *callback.Context) (*callback.Response, error) {
+	// 无条件清除所有冒险相关状态
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 		if sess != nil {
@@ -286,6 +297,15 @@ func (h *AdventureHandler) handleQuit(ctx *callback.Context) (*callback.Response
 			sess.Delete("pending_adventure_input")
 		}
 	}
+
+	// 群聊里直接返回toast，不发长消息
+	if ctx.ChatType != "private" {
+		return &callback.Response{
+			CallbackMsg: "👋 已退出冒险",
+			ShowAlert:   false,
+		}, nil
+	}
+
 	return &callback.Response{
 		Text: "👋 冒险已退出\n\n输入 /game 回到游戏中心",
 	}, nil
