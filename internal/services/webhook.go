@@ -34,6 +34,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		aggregationDelay:     60 * time.Second, // 默认60秒聚合延迟
 		fileInfoCache:        make(map[string]*cachedFileInfo),
 		fileInfoCacheTTL:     1 * time.Hour, // 缓存1小时
+		playbackPushThrottle: make(map[int64]time.Time),
 	}
 
 	// Auto-discover Emby user ID if not configured
@@ -1013,17 +1014,31 @@ func (s *WebhookService) handlePlaybackStop(payload EmbyWebhookPayload) {
 		return
 	}
 
-	// 查找 Telegram user ID
-	// userMapping 是 MoviePilot username → Telegram ID 的映射
-	// Emby username 可能跟 MoviePilot username 不同，需要兼容
 	tgUserID := s.findTelegramUser(userName)
 	if tgUserID == 0 {
 		return
 	}
 
-	// 发送冒险挑战推送
-	message := fmt.Sprintf("🎬 你刚看完《%s》\n\n来证明你真的看懂了吗？\n\n点击 /game 进入游戏中心，选择「求片大冒险」挑战！", itemName)
-	s.telegram.SendMessage(tgUserID, message, "", nil)
+	// 频率限制：每用户每小时最多推送一次
+	s.playbackPushThrottleMu.Lock()
+	if lastPush, ok := s.playbackPushThrottle[tgUserID]; ok && time.Since(lastPush) < time.Hour {
+		s.playbackPushThrottleMu.Unlock()
+		return
+	}
+	s.playbackPushThrottle[tgUserID] = time.Now()
+	s.playbackPushThrottleMu.Unlock()
+
+	// 发送冒险挑战推送（带按钮 + Markdown）
+	message := fmt.Sprintf("🎬 *%s* 看完了！\n\n来证明你真的看懂了吗？", itemName)
+	kb := &types.TelegramInlineKeyboard{
+		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+			{
+				{Text: "⚔️ 开始冒险", CallbackData: "adventure_start"},
+				{Text: "🎮 游戏中心", CallbackData: "game_menu"},
+			},
+		},
+	}
+	s.telegram.SendMessage(tgUserID, message, "Markdown", kb)
 }
 
 // findTelegramUser 通过 Emby 用户名查找 Telegram 用户 ID

@@ -739,7 +739,7 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	if !alreadyChallenged {
 		kb.AddButton("⚔️ 接受挑战", "adventure_start")
 	} else {
-		kb.AddButton("⚔️ 再来一局", "adventure_start")
+		kb.AddButton("🎲 换一部挑战", "adventure_start")
 	}
 	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()
@@ -793,14 +793,16 @@ func (h *GameHandler) getPersonalizedChallenge(userID int64) challengeMovie {
 	if h.viewingSvc != nil && h.userMapping != nil {
 		mpName, err := h.userMapping.GetMoviePilotUsername(userID)
 		if err == nil && mpName != "" {
-			topGenre := h.viewingSvc.GetTopGenre("", mpName)
-			if topGenre != "" {
-				// 映射Emby类型到挑战池
-				mappedGenre := mapEmbyGenre(topGenre)
-				if movies, ok := challengePool[mappedGenre]; ok && len(movies) > 0 {
-					// 用日期作为索引，每天不同
-					dayIndex := time.Now().YearDay() % len(movies)
-					return movies[dayIndex]
+			// 先拿 Emby 用户 ID（避免空 userID 导致缓存碰撞）
+			embyUserID, findErr := h.viewingSvc.FindEmbyUserByName(mpName)
+			if findErr == nil && embyUserID != "" {
+				topGenre := h.viewingSvc.GetTopGenre(embyUserID, mpName)
+				if topGenre != "" {
+					mappedGenre := mapEmbyGenre(topGenre)
+					if movies, ok := challengePool[mappedGenre]; ok && len(movies) > 0 {
+						dayIndex := time.Now().YearDay() % len(movies)
+						return movies[dayIndex]
+					}
 				}
 			}
 		}

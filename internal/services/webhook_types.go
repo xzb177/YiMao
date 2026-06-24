@@ -155,6 +155,9 @@ type WebhookService struct {
 	carpool *CarpoolService
 	// 审核服务（可选注入）：入库时通知求片用户。允许为 nil。
 	review *ReviewService
+	// 播放结束推送频率限制：userID → lastPushTime
+	playbackPushThrottle   map[int64]time.Time
+	playbackPushThrottleMu sync.Mutex
 }
 
 // SetCarpoolService 注入拼车服务（#3 拼车 +1）。采用 setter 注入避免改动构造函数签名。
