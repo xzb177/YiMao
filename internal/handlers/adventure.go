@@ -40,6 +40,8 @@ type AdventureState struct {
 	InProgress  bool
 	TotalLevels int
 	PerfectRun  bool  // 全程无伤
+	TriedChoices map[int]bool // 已尝试的选项索引（防作弊）
+	ChoiceLock  sync.Mutex   // 选择锁（防并发刷分）
 }
 
 // AdventureHandler 冒险处理器
@@ -120,6 +122,20 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 	if h.adventureSvc == nil || h.sessionMgr == nil {
 		return false
 	}
+
+	// 输入净化：限制长度，去除危险字符
+	movieName = strings.TrimSpace(movieName)
+	if len([]rune(movieName)) < 1 || len([]rune(movieName)) > 100 {
+		h.telegram.SendMessage(chatID, "❌ 电影名太长或为空，请重新输入", "", nil)
+		return true
+	}
+	// 去除可能导致prompt注入的字符
+	movieName = strings.NewReplacer(
+		"\n", " ", "\r", "", "	", " ",
+		"```", "", "~~~", "",
+		"{{", "", "}}", "",
+	).Replace(movieName)
+
 	sess := h.sessionMgr.GetOrCreate(userID)
 	if sess == nil {
 		return false
@@ -169,7 +185,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 			fmt.Sscanf(idxStr, "%d", &choiceIdx)
 		}
 	}
-	if choiceIdx < 0 {
+	if choiceIdx < 0 || choiceIdx > 3 {
 		return &callback.Response{CallbackMsg: "❌ 无效选项", ShowAlert: true}, nil
 	}
 
@@ -191,10 +207,24 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		return &callback.Response{CallbackMsg: "❌ 冒险已结束，请重新开始", ShowAlert: true}, nil
 	}
 
+	// 防并发刷分
+	advState.ChoiceLock.Lock()
+	defer advState.ChoiceLock.Unlock()
+
 	scene := advState.Scene
 	if scene == nil || choiceIdx >= len(scene.Choices) {
 		return &callback.Response{CallbackMsg: "❌ 无效选项", ShowAlert: true}, nil
 	}
+
+	// 防作弊：检查是否已经选过这个选项
+	if advState.TriedChoices != nil && advState.TriedChoices[choiceIdx] {
+		return &callback.Response{CallbackMsg: "⚠️ 你已经选过这个了，试试别的吧", ShowAlert: true}, nil
+	}
+	// 记录已试选项
+	if advState.TriedChoices == nil {
+		advState.TriedChoices = make(map[int]bool)
+	}
+	advState.TriedChoices[choiceIdx] = true
 
 	choice := scene.Choices[choiceIdx]
 	advState.History = append(advState.History, fmt.Sprintf("L%d选[%s]", advState.Level, choice.Text))
@@ -217,8 +247,14 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		baseScore := advState.Level * 10
 		comboBonus := advState.Combo * 5
 		advState.Score += baseScore + comboBonus
+		if advState.Score > 100 {
+			advState.Score = 100
+		}
 
 		advState.Level++
+
+		// 新关卡重置已试选项
+		advState.TriedChoices = make(map[int]bool)
 
 		if advState.Level > advState.TotalLevels {
 			// 🏆 通关！
@@ -346,9 +382,9 @@ func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Respons
 
 	userName := h.getUserName(ctx.UserID)
 
-	// 构建炫耀卡
+	// 构建炫耀卡（不泄露Scene.Choices中的正确答案信息）
 	shareCard := richmessage.BuildAdventureShareCard(richmessage.AdventureShareCardData{
-		UserName:  userName,
+		UserName:   userName,
 		MovieTitle: advState.MovieInfo.Title,
 		MovieYear:  advState.MovieInfo.Year,
 		Score:      advState.Score,
@@ -425,6 +461,17 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 	h.generating[userID] = true
 	h.mu.Unlock()
 
+	// 超时清理：60秒后强制清除generating标记（防止panic后残留）
+	go func(uid int64) {
+		time.Sleep(60 * time.Second)
+		h.mu.Lock()
+		if h.generating[uid] {
+			delete(h.generating, uid)
+			logger.Info("[Adventure] Force cleaned generating flag for user %d (timeout)", uid)
+		}
+		h.mu.Unlock()
+	}(userID)
+
 	loadingMsg, _ := h.telegram.SendMessage(chatID, "⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
 
 	// 清除旧的冒险状态（防止"已过期"错误）
@@ -479,6 +526,7 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 		InProgress:  true,
 		TotalLevels: adventureMaxLevels,
 		PerfectRun:  true,
+		TriedChoices: make(map[int]bool),
 	}
 
 	if h.sessionMgr != nil {
