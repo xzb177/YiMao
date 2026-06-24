@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xzb177/yimao/pkg/logger"
@@ -59,10 +60,25 @@ type AdventureService struct {
 	openaiBase string
 	model      string
 	httpClient *http.Client
+	// 性能优化：电影信息缓存（同一部电影不重复请求TMDB）
+	movieCache   map[string]*movieCacheEntry
+	movieCacheMu sync.RWMutex
+}
+
+type movieCacheEntry struct {
+	info      *MovieInfo
+	expiresAt time.Time
 }
 
 // NewAdventureService 创建冒险服务
 func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase, model string) *AdventureService {
+	// 共享连接池：复用TCP连接，减少握手开销
+	transport := &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
 	return &AdventureService{
 		embyURL:    strings.TrimRight(embyURL, "/"),
 		embyAPIKey: embyAPIKey,
@@ -70,7 +86,8 @@ func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase,
 		openaiKey:  openaiKey,
 		openaiBase: openaiBase,
 		model:      model,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
+		httpClient: &http.Client{Timeout: 30 * time.Second, Transport: transport},
+		movieCache: make(map[string]*movieCacheEntry),
 	}
 }
 
@@ -90,21 +107,57 @@ type MovieInfo struct {
 	VoteCount  int      `json:"vote_count,omitempty"` // 评价人数
 }
 
-// SearchMovieInfo 搜索电影信息
+// SearchMovieInfo 搜索电影信息（带缓存）
 func (s *AdventureService) SearchMovieInfo(query string) (*MovieInfo, error) {
+	// 缓存命中：同一部电影1小时内不重复请求
+	cacheKey := strings.ToLower(strings.TrimSpace(query))
+	s.movieCacheMu.RLock()
+	if entry, ok := s.movieCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		s.movieCacheMu.RUnlock()
+		return entry.info, nil
+	}
+	s.movieCacheMu.RUnlock()
+
+	var info *MovieInfo
+	var err error
+
 	if s.tmdbAPIKey != "" {
-		info, err := s.searchTMDB(query)
+		info, err = s.searchTMDB(query)
 		if err == nil && info != nil {
+			s.cacheMovie(cacheKey, info)
 			return info, nil
 		}
 	}
 	if s.embyURL != "" && s.embyAPIKey != "" {
-		info, err := s.searchEmby(query)
+		info, err = s.searchEmby(query)
 		if err == nil && info != nil {
+			s.cacheMovie(cacheKey, info)
 			return info, nil
 		}
 	}
 	return nil, fmt.Errorf("未找到电影: %s", query)
+}
+
+// cacheMovie 缓存电影信息（1小时TTL）
+func (s *AdventureService) cacheMovie(key string, info *MovieInfo) {
+	s.movieCacheMu.Lock()
+	defer s.movieCacheMu.Unlock()
+	// 缓存清理：超过100条删最旧的
+	if len(s.movieCache) > 100 {
+		oldest := ""
+		for k, v := range s.movieCache {
+			if oldest == "" || v.expiresAt.Before(s.movieCache[oldest].expiresAt) {
+				oldest = k
+			}
+		}
+		if oldest != "" {
+			delete(s.movieCache, oldest)
+		}
+	}
+	s.movieCache[key] = &movieCacheEntry{
+		info:      info,
+		expiresAt: time.Now().Add(1 * time.Hour),
+	}
 }
 
 func (s *AdventureService) searchTMDB(query string) (*MovieInfo, error) {

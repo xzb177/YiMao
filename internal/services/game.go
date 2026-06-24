@@ -1738,18 +1738,18 @@ type AdventureStreak struct {
 	TodayPlayed   bool   // 今天是否已游玩
 }
 
-// GetAdventureStreak 获取用户连胜数据
+// GetAdventureStreak 获取用户连胜数据（优化：单次查询）
 func (s *SocialDB) GetAdventureStreak(userID int64) (*AdventureStreak, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// 获取所有有游玩记录的日期（去重）
+	// 单次查询获取所有有游玩记录的日期
 	rows, err := s.db.Query(`
 		SELECT DISTINCT date(created_at) as play_date
 		FROM adventure_stats
 		WHERE user_id = ?
 		ORDER BY play_date DESC
-		LIMIT 365
+		LIMIT 30
 	`, userID)
 	if err != nil {
 		return &AdventureStreak{}, nil
@@ -1768,53 +1768,82 @@ func (s *SocialDB) GetAdventureStreak(userID int64) (*AdventureStreak, error) {
 		return &AdventureStreak{}, nil
 	}
 
+	today := time.Now().Format("2006-01-02")
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+
 	streak := &AdventureStreak{
 		LastPlayDate: dates[0],
-		TodayPlayed:  dates[0] == time.Now().Format("2006-01-02"),
+		TodayPlayed:  dates[0] == today,
 	}
 
-	// 计算当前连胜：从最近的日期开始，逐天往前数
+	// 计算当前连胜和最佳连胜（一次遍历）
 	currentStreak := 0
-	expectedDate := time.Now()
-	if !streak.TodayPlayed {
-		// 如果今天没玩，从昨天开始算
-		expectedDate = expectedDate.AddDate(0, 0, -1)
-	}
+	bestStreak := 0
+	tempStreak := 0
+	expectedDate := today
 
 	for _, d := range dates {
-		expected := expectedDate.Format("2006-01-02")
-		if d == expected {
-			currentStreak++
-			expectedDate = expectedDate.AddDate(0, 0, -1)
-		} else if d < expected {
-			// 日期不连续，断签
-			break
-		}
-	}
-	streak.CurrentStreak = currentStreak
-
-	// 计算最佳连胜：遍历所有日期找最长连续序列
-	bestStreak := 0
-	tempStreak := 1
-	for i := 1; i < len(dates); i++ {
-		d1, _ := time.Parse("2006-01-02", dates[i-1])
-		d2, _ := time.Parse("2006-01-02", dates[i])
-		if d1.Sub(d2).Hours() == 24 {
+		if d == expectedDate {
 			tempStreak++
+			// 更新当前连胜（从最近日期开始连续的）
+			if currentStreak == 0 || d == expectedDate {
+				if currentStreak == 0 {
+					currentStreak = tempStreak
+				} else {
+					currentStreak = tempStreak
+				}
+			}
+			// 往前推一天
+			t, _ := time.Parse("2006-01-02", expectedDate)
+			expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
+		} else if d == yesterday && expectedDate == today && !streak.TodayPlayed {
+			// 今天没玩，从昨天开始算
+			expectedDate = yesterday
+			tempStreak = 0
+			// 重新匹配
+			if d == expectedDate {
+				tempStreak = 1
+				t, _ := time.Parse("2006-01-02", expectedDate)
+				expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
+			}
 		} else {
+			// 断签
 			if tempStreak > bestStreak {
 				bestStreak = tempStreak
 			}
-			tempStreak = 1
+			tempStreak = 0
+			expectedDate = "" // 停止匹配
 		}
 	}
 	if tempStreak > bestStreak {
 		bestStreak = tempStreak
 	}
-	if currentStreak > bestStreak {
-		bestStreak = currentStreak
+
+	// 如果今天没玩，当前连胜为0（从昨天开始的连续天数）
+	if !streak.TodayPlayed {
+		// 检查昨天是否玩了
+		if len(dates) > 0 && dates[0] == yesterday {
+			// 从昨天开始算连胜
+			currentStreak = 0
+			expectedDate = yesterday
+			for _, d := range dates {
+				if d == expectedDate {
+					currentStreak++
+					t, _ := time.Parse("2006-01-02", expectedDate)
+					expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
+				} else {
+					break
+				}
+			}
+		} else {
+			currentStreak = 0
+		}
 	}
+	streak.CurrentStreak = currentStreak
 	streak.BestStreak = bestStreak
+	if currentStreak > bestStreak {
+		streak.BestStreak = currentStreak
+	}
 
 	return streak, nil
 }
