@@ -357,17 +357,18 @@ func buildAdventureHPBar(hp int) string {
 // ============================================================
 
 type AdventureSuccessCardData struct {
-	MovieTitle string
-	MovieYear  int
-	Genres     []string
-	Score      int
-	Grade      string
-	FinalScene string
-	EasterEgg  string
-	Stats      string
-	HP         int
-	MaxCombo   int
+	MovieTitle  string
+	MovieYear   int
+	Genres      []string
+	Score       int
+	Grade       string
+	FinalScene  string
+	EasterEgg   string
+	Stats       string
+	HP          int
+	MaxCombo    int
 	BonusEffect string // 随机彩蛋效果
+	Recommendation string // 基于观影历史的推荐
 }
 
 func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
@@ -409,6 +410,13 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 	// 随机彩蛋奖励
 	if data.BonusEffect != "" {
 		b.BoldParagraph(fmt.Sprintf("🎰 %s", data.BonusEffect))
+		b.Divider()
+	}
+
+	// 个性化推荐（基于观影历史）
+	if data.Recommendation != "" {
+		b.BoldParagraph("🎬 推荐下一部")
+		b.Paragraph(data.Recommendation)
 		b.Divider()
 	}
 

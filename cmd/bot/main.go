@@ -588,6 +588,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	if blindBoxSvc != nil {
 		adventureHandler.SetBlindBoxService(blindBoxSvc)
 	}
+	// 注入观影历史服务（用于个性化推荐）
+	viewingSvc := services.NewViewingHistoryService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
+	adventureHandler.SetViewingHistoryService(viewingSvc)
 	// 冒险通关 → 自动提交求片请求（不消耗配额，冒险本身就是代价）
 	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string) {
 		if deps.ReviewService == nil {

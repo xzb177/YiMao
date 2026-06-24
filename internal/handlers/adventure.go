@@ -49,6 +49,7 @@ type AdventureHandler struct {
 	adventureSvc *services.AdventureService
 	tmdbClient   *services.TMDBClient
 	blindBoxSvc  *services.BlindBoxService
+	viewingSvc   *services.ViewingHistoryService
 	sessionMgr   *session.Manager
 	telegram     *services.TelegramClient
 	userMapping  services.UserMappingStore
@@ -95,6 +96,11 @@ func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID in
 // SetBlindBoxService 注入盲盒服务（用于通关奖励）
 func (h *AdventureHandler) SetBlindBoxService(svc *services.BlindBoxService) {
 	h.blindBoxSvc = svc
+}
+
+// SetViewingHistoryService 注入观影历史服务（用于个性化推荐）
+func (h *AdventureHandler) SetViewingHistoryService(svc *services.ViewingHistoryService) {
+	h.viewingSvc = svc
 }
 
 // Handle 冒险回调路由
@@ -830,18 +836,22 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		// 随机彩蛋奖励
 		bonusEffect := generateBonusEffect(result.Grade, state.PerfectRun)
 
+		// 基于观影历史的个性化推荐
+		recommendation := h.generateRecommendation(userID, state.MovieInfo)
+
 		card := richmessage.BuildAdventureSuccessCard(richmessage.AdventureSuccessCardData{
-			MovieTitle:  state.MovieInfo.Title,
-			MovieYear:   state.MovieInfo.Year,
-			Genres:      state.MovieInfo.Genres,
-			Score:       result.Score,
-			Grade:       result.Grade,
-			FinalScene:  result.FinalScene,
-			EasterEgg:   result.EasterEgg,
-			Stats:       result.Stats,
-			HP:          state.HP,
-			MaxCombo:    state.MaxCombo,
-			BonusEffect: bonusEffect,
+			MovieTitle:     state.MovieInfo.Title,
+			MovieYear:      state.MovieInfo.Year,
+			Genres:         state.MovieInfo.Genres,
+			Score:          result.Score,
+			Grade:          result.Grade,
+			FinalScene:     result.FinalScene,
+			EasterEgg:      result.EasterEgg,
+			Stats:          result.Stats,
+			HP:             state.HP,
+			MaxCombo:       state.MaxCombo,
+			BonusEffect:    bonusEffect,
+			Recommendation: recommendation,
 		})
 
 		kb := services.NewKeyboardBuilder()
@@ -1070,6 +1080,47 @@ func generateBonusEffect(grade string, perfectRun bool) string {
 	}
 
 	return bonusPool[rand.Intn(len(bonusPool))]
+}
+
+// generateRecommendation 基于观影历史生成个性化推荐
+func (h *AdventureHandler) generateRecommendation(userID int64, movieInfo *services.MovieInfo) string {
+	if h.viewingSvc == nil || h.userMapping == nil {
+		return ""
+	}
+
+	// 获取用户Emby名
+	mpName, err := h.userMapping.GetMoviePilotUsername(userID)
+	if err != nil || mpName == "" {
+		return ""
+	}
+
+	// 获取Emby用户ID
+	embyUserID, err := h.viewingSvc.FindEmbyUserByName(mpName)
+	if err != nil || embyUserID == "" {
+		return ""
+	}
+
+	// 获取观影画像
+	profile, err := h.viewingSvc.GetProfile(embyUserID, mpName)
+	if err != nil || len(profile.TopGenres) == 0 {
+		return ""
+	}
+
+	// 生成推荐：基于用户最喜欢的类型 + 刚通关的电影类型
+	topGenre := profile.TopGenres[0].Genre
+	adventureGenre := ""
+	if len(movieInfo.Genres) > 0 {
+		adventureGenre = movieInfo.Genres[0]
+	}
+
+	if topGenre == adventureGenre {
+		return fmt.Sprintf("你好像很喜欢%s片——试试同类型的其他经典？", topGenre)
+	} else if topGenre != "" && adventureGenre != "" {
+		return fmt.Sprintf("你平时爱看%s片，今天挑战了%s片——要不要试试两者结合的？", topGenre, adventureGenre)
+	} else if topGenre != "" {
+		return fmt.Sprintf("根据你的观影记录，你最喜欢%s片——下次挑战这个类型？", topGenre)
+	}
+	return ""
 }
 
 func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureState, grade string) {
