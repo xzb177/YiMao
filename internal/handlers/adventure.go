@@ -381,7 +381,7 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 		return
 	}
 
-	// 发送入口卡片
+	// 发送入口卡片（纯展示，无按钮）
 	entryCard := richmessage.BuildAdventureEntryCard(richmessage.AdventureEntryCardData{
 		MovieTitle: movieInfo.Title,
 		MovieYear:  movieInfo.Year,
@@ -390,14 +390,10 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 		Rating:     movieInfo.Rating,
 	})
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⚔️ 接受挑战", "adventure_choice:idx:0") // 先占位，生成场景后替换
-	kb.AddButton("❌ 退出", "adventure_quit")
-
 	if loadingMsg != nil {
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
 	}
-	h.telegram.SendMessage(chatID, entryCard.Markdown, "Markdown", kb.Build())
+	h.telegram.SendMessage(chatID, entryCard.Markdown, "Markdown", nil)
 
 	// 生成第一关
 	scene, err := h.adventureSvc.GenerateScene(movieInfo, 1, adventureMaxLevels, nil, adventureMaxHP)
