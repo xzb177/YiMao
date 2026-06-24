@@ -140,6 +140,72 @@ func buildLevelProgress(current, total int) string {
 }
 
 // ============================================================
+//  炫耀卡（分享到群）
+// ============================================================
+
+// AdventureShareCardData 炫耀卡数据
+type AdventureShareCardData struct {
+	UserName   string
+	MovieTitle string
+	MovieYear  int
+	Score      int
+	HP         int
+	MaxCombo   int
+	PerfectRun bool
+	Success    bool
+	Level      int
+	TotalLevels int
+}
+
+// BuildAdventureShareCard 构建炫耀卡（群内分享用，精简有冲击力）
+func BuildAdventureShareCard(data AdventureShareCardData) RichMessage {
+	b := NewBuilder()
+
+	if data.Success {
+		// 通关炫耀
+		gradeIcon := "🏆"
+		if data.Score >= 90 {
+			gradeIcon = "👑"
+		} else if data.Score >= 80 {
+			gradeIcon = "💎"
+		} else if data.Score >= 70 {
+			gradeIcon = "⭐"
+		}
+
+		b.BoldParagraph(fmt.Sprintf("%s %s 通关了《%s》的求片大冒险！", gradeIcon, data.UserName, data.MovieTitle))
+
+		statsLine := fmt.Sprintf("🎯 %d分  ❤️ %d%%  🔥 x%d", data.Score, data.HP, data.MaxCombo)
+		b.Paragraph(statsLine)
+
+		if data.PerfectRun {
+			b.BoldParagraph("🛡️ 全程无伤 — 无人能及！")
+		}
+
+		if data.Score >= 90 {
+			b.Italic("这不是挑战，这是碾压")
+		} else if data.Score >= 70 {
+			b.Italic("这部电影他不只是看过——他活过")
+		} else {
+			b.Italic("险象环生，但他挺过来了")
+		}
+	} else {
+		// 失败炫耀（惜败也有面子）
+		b.BoldParagraph(fmt.Sprintf("💀 %s 在《%s》的求片大冒险中惜败", data.UserName, data.MovieTitle))
+		b.Paragraph(fmt.Sprintf("⚔️ 倒在第 %d/%d 关  🎯 %d分", data.Level, data.TotalLevels, data.Score))
+
+		if data.Level >= 4 {
+			b.Italic("差一步就通关了... 这个人有实力")
+		} else if data.Level >= 3 {
+			b.Italic("走到了深渊边缘，差一点就能看到真相")
+		} else {
+			b.Italic("这部电影比想象中要难...")
+		}
+	}
+
+	return b.Build()
+}
+
+// ============================================================
 //  入口卡片
 // ============================================================
 

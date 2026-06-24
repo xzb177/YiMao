@@ -1729,3 +1729,92 @@ func (s *SocialDB) HasDailyChallenge(userID int64, dateStr string) (bool, error)
 	}
 	return count > 0, nil
 }
+
+// AdventureStreak 连胜数据
+type AdventureStreak struct {
+	CurrentStreak int // 当前连胜天数
+	BestStreak    int // 最佳连胜天数
+	LastPlayDate  string // 最后一次游玩日期
+	TodayPlayed   bool   // 今天是否已游玩
+}
+
+// GetAdventureStreak 获取用户连胜数据
+func (s *SocialDB) GetAdventureStreak(userID int64) (*AdventureStreak, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// 获取所有有游玩记录的日期（去重）
+	rows, err := s.db.Query(`
+		SELECT DISTINCT date(created_at) as play_date
+		FROM adventure_stats
+		WHERE user_id = ?
+		ORDER BY play_date DESC
+		LIMIT 365
+	`, userID)
+	if err != nil {
+		return &AdventureStreak{}, nil
+	}
+	defer rows.Close()
+
+	var dates []string
+	for rows.Next() {
+		var d string
+		if err := rows.Scan(&d); err == nil {
+			dates = append(dates, d)
+		}
+	}
+
+	if len(dates) == 0 {
+		return &AdventureStreak{}, nil
+	}
+
+	streak := &AdventureStreak{
+		LastPlayDate: dates[0],
+		TodayPlayed:  dates[0] == time.Now().Format("2006-01-02"),
+	}
+
+	// 计算当前连胜：从最近的日期开始，逐天往前数
+	currentStreak := 0
+	expectedDate := time.Now()
+	if !streak.TodayPlayed {
+		// 如果今天没玩，从昨天开始算
+		expectedDate = expectedDate.AddDate(0, 0, -1)
+	}
+
+	for _, d := range dates {
+		expected := expectedDate.Format("2006-01-02")
+		if d == expected {
+			currentStreak++
+			expectedDate = expectedDate.AddDate(0, 0, -1)
+		} else if d < expected {
+			// 日期不连续，断签
+			break
+		}
+	}
+	streak.CurrentStreak = currentStreak
+
+	// 计算最佳连胜：遍历所有日期找最长连续序列
+	bestStreak := 0
+	tempStreak := 1
+	for i := 1; i < len(dates); i++ {
+		d1, _ := time.Parse("2006-01-02", dates[i-1])
+		d2, _ := time.Parse("2006-01-02", dates[i])
+		if d1.Sub(d2).Hours() == 24 {
+			tempStreak++
+		} else {
+			if tempStreak > bestStreak {
+				bestStreak = tempStreak
+			}
+			tempStreak = 1
+		}
+	}
+	if tempStreak > bestStreak {
+		bestStreak = tempStreak
+	}
+	if currentStreak > bestStreak {
+		bestStreak = currentStreak
+	}
+	streak.BestStreak = bestStreak
+
+	return streak, nil
+}

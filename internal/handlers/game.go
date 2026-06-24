@@ -616,6 +616,9 @@ func (h *GameHandler) handleAdventureStats(ctx *callback.Context) (*callback.Res
 		return &callback.Response{Text: "❌ 获取统计失败", CallbackMsg: "获取失败", ShowAlert: true}, nil
 	}
 
+	// 获取连胜数据
+	streak, _ := h.socialDB.GetAdventureStreak(ctx.UserID)
+
 	userName := h.getUserName(ctx.UserID)
 
 	var records []richmessage.AdventureRecordView
@@ -640,6 +643,8 @@ func (h *GameHandler) handleAdventureStats(ctx *callback.Context) (*callback.Res
 		BestCombo:       stats.BestCombo,
 		PerfectRuns:     stats.PerfectRuns,
 		RecentRecords:   records,
+		CurrentStreak:   streak.CurrentStreak,
+		BestStreak:      streak.BestStreak,
 	})
 
 	kb := services.NewKeyboardBuilder()

@@ -188,6 +188,7 @@ var validActions = map[Action]bool{
 	"adventure_choice": true, // 选择选项
 	"adventure_retry":  true, // 重试冒险
 	"adventure_quit":   true, // 退出冒险
+	"adventure_share":  true, // 分享战绩到群
 	"game_adventure_stats": true, // 冒险统计
 	"game_adventure_rank":  true, // 冒险排行榜
 	"game_daily_challenge": true, // 每日挑战

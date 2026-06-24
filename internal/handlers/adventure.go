@@ -108,6 +108,8 @@ func (h *AdventureHandler) Handle(ctx *callback.Context) (*callback.Response, er
 		return h.handleRetry(ctx)
 	case "adventure_quit":
 		return h.handleQuit(ctx)
+	case "adventure_share":
+		return h.handleShare(ctx)
 	default:
 		return nil, fmt.Errorf("unknown adventure action: %s", action)
 	}
@@ -321,7 +323,61 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 	}, nil
 }
 
-// handleQuit 退出
+// handleShare 分享战绩到群
+func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Response, error) {
+	if h.sessionMgr == nil || h.groupChatID == 0 {
+		return &callback.Response{CallbackMsg: "❌ 分享功能未就绪", ShowAlert: true}, nil
+	}
+
+	sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+	if sess == nil {
+		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
+	}
+
+	state, ok := sess.Get("adventure_state")
+	if !ok {
+		return &callback.Response{CallbackMsg: "❌ 没有冒险记录", ShowAlert: true}, nil
+	}
+
+	advState, ok := state.(*AdventureState)
+	if !ok {
+		return &callback.Response{CallbackMsg: "❌ 数据异常", ShowAlert: true}, nil
+	}
+
+	userName := h.getUserName(ctx.UserID)
+
+	// 构建炫耀卡
+	shareCard := richmessage.BuildAdventureShareCard(richmessage.AdventureShareCardData{
+		UserName:  userName,
+		MovieTitle: advState.MovieInfo.Title,
+		MovieYear:  advState.MovieInfo.Year,
+		Score:      advState.Score,
+		HP:         advState.HP,
+		MaxCombo:   advState.MaxCombo,
+		PerfectRun: advState.PerfectRun,
+		Success:    !advState.InProgress && advState.HP > 0,
+		Level:      advState.Level - 1,
+		TotalLevels: advState.TotalLevels,
+	})
+
+	// 发送到群
+	go func() {
+		sent, err := h.telegram.SendMessage(h.groupChatID, shareCard.Markdown, "Markdown", nil)
+		if err != nil {
+			return
+		}
+		// 10分钟后自毁
+		go func(chatID int64, msgID int64) {
+			time.Sleep(10 * time.Minute)
+			_ = h.telegram.DeleteMessage(chatID, msgID)
+		}(h.groupChatID, sent.MessageID)
+	}()
+
+	return &callback.Response{
+		CallbackMsg: "📢 战绩已分享到群！",
+		ShowAlert:   false,
+	}, nil
+}
 func (h *AdventureHandler) handleQuit(ctx *callback.Context) (*callback.Response, error) {
 	// 无条件清除所有冒险相关状态
 	if h.sessionMgr != nil {
@@ -741,9 +797,10 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		})
 
 		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📢 分享战绩", "adventure_share")
 		kb.AddButton("🔄 再挑战一次", "adventure_retry")
-		kb.AddButton("🎬 换一部电影", "adventure_start")
 		kb.NewRow()
+		kb.AddButton("🎰 通关盲盒", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
 		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
@@ -768,8 +825,8 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		})
 
 		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📢 分享战绩", "adventure_share")
 		kb.AddButton("🔄 我知道答案了！", "adventure_retry")
-		kb.AddButton("🎬 换一部电影", "adventure_start")
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
 

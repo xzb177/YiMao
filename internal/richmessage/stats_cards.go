@@ -19,6 +19,8 @@ type AdventureStatsCardData struct {
 	BestCombo       int
 	PerfectRuns     int
 	RecentRecords   []AdventureRecordView
+	CurrentStreak   int // 当前连胜天数
+	BestStreak      int // 最佳连胜天数
 }
 
 // AdventureRecordView 冒险记录视图
@@ -58,6 +60,23 @@ func BuildAdventureStatsCard(data AdventureStatsCardData) RichMessage {
 	b.Paragraph(fmt.Sprintf("🔥 最高连击：x%d", data.BestCombo))
 	if data.PerfectRuns > 0 {
 		b.Paragraph(fmt.Sprintf("🛡️ 全程无伤：%d 次", data.PerfectRuns))
+	}
+
+	// 连胜数据
+	if data.CurrentStreak > 0 {
+		b.Divider()
+		streakEmoji := "🔥"
+		if data.CurrentStreak >= 7 {
+			streakEmoji = "🔥🔥🔥"
+		} else if data.CurrentStreak >= 3 {
+			streakEmoji = "🔥🔥"
+		}
+		b.BoldParagraph(fmt.Sprintf("%s 连胜 %d 天！", streakEmoji, data.CurrentStreak))
+		if data.BestStreak > data.CurrentStreak {
+			b.Italic(fmt.Sprintf("最佳纪录：%d 天", data.BestStreak))
+		}
+		b.Paragraph("  每天挑战，连胜越长奖励越丰厚")
+		b.Paragraph("  断签一次，连胜归零")
 	}
 
 	// 最近记录
