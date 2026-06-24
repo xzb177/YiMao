@@ -11,21 +11,22 @@ import (
 
 // AdventureSceneCardData 场景卡片
 type AdventureSceneCardData struct {
-	MovieTitle  string
-	MovieYear   int
-	Genres      []string
-	Level       int
-	TotalLevels int
-	StageName   string
-	SceneTitle  string
-	Description string
-	Atmosphere  string
-	Choices     []AdventureChoiceView
-	Hint        string
-	HP          int
-	Combo       int
-	Score       int
-	IsBoss      bool // 最终关
+	MovieTitle   string
+	MovieYear    int
+	Genres       []string
+	Level        int
+	TotalLevels  int
+	StageName    string
+	SceneTitle   string
+	Description  string
+	Atmosphere   string
+	Choices      []AdventureChoiceView
+	Hint         string
+	HP           int
+	Combo        int
+	Score        int
+	IsBoss       bool
+	LastResult   string // 上一关的结果反馈（内嵌，不单独发卡片）
 }
 
 type AdventureChoiceView struct {
@@ -68,6 +69,12 @@ func BuildAdventureSceneCard(data AdventureSceneCardData) RichMessage {
 		atmoIcon = "🎭"
 	}
 	b.Italic(fmt.Sprintf("%s 氛围：%s", atmoIcon, data.Atmosphere))
+
+	// 上一关结果反馈（内嵌，不单独发卡片）
+	if data.LastResult != "" {
+		b.BoldParagraph(data.LastResult)
+	}
+
 	b.Divider()
 
 	// 场景描述 — 核心沉浸

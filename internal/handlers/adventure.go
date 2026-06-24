@@ -337,6 +337,15 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 
 	loadingMsg, _ := h.telegram.SendMessage(chatID, "⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
 
+	// 清除旧的冒险状态（防止"已过期"错误）
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.GetOrCreate(userID)
+		if sess != nil {
+			sess.Delete("adventure_state")
+			sess.Delete("pending_adventure_input")
+		}
+	}
+
 	movieInfo, err := h.adventureSvc.SearchMovieInfo(movieName)
 	if err != nil {
 		if loadingMsg != nil {
@@ -396,7 +405,7 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 	h.sendSceneCard(chatID, state)
 }
 
-// handleCorrectChoice 选对后的处理
+// handleCorrectChoice 选对后的处理 — 只发场景卡片，反馈内嵌
 func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state *AdventureState, choiceResult string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -404,23 +413,7 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 		}
 	}()
 
-	// 发送连击卡片
-	comboCard := richmessage.BuildAdventureComboCard(richmessage.AdventureComboCardData{
-		ChoiceResult: choiceResult,
-		Combo:        state.Combo,
-		HP:           state.HP,
-		Score:        state.Score,
-		Level:        state.Level - 1,
-		TotalLevels:  state.TotalLevels,
-		IsPerfect:    state.PerfectRun,
-	})
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⚔️ 继续前进", fmt.Sprintf("adventure_choice:idx:0")) // 占位
-
-	h.telegram.SendMessage(chatID, comboCard.Markdown, "Markdown", kb.Build())
-
-	// 生成下一关
+	// 生成下一关（不发单独的combo卡片，反馈直接写在场景卡片里）
 	loadingMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 %d 关...", state.Level), "", nil)
 
 	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level, state.TotalLevels, state.History, state.HP)
@@ -646,22 +639,40 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		choices = append(choices, richmessage.AdventureChoiceView{Index: i, Text: c.Text})
 	}
 
+	// 构建内嵌反馈（只在第2关以后显示，表示上一关的结果）
+	lastResult := ""
+	if state.Level > 1 {
+		switch {
+		case state.Combo >= 5:
+			lastResult = fmt.Sprintf("🔥🔥🔥 五连绝世！x%d 连击！", state.Combo)
+		case state.Combo >= 4:
+			lastResult = fmt.Sprintf("🔥🔥 四连超凡！x%d 连击", state.Combo)
+		case state.Combo >= 3:
+			lastResult = fmt.Sprintf("🔥 三连破敌！x%d 连击", state.Combo)
+		case state.Combo >= 2:
+			lastResult = fmt.Sprintf("⚡ 双连命中！x%d 连击", state.Combo)
+		default:
+			lastResult = "✅ 上一关正确"
+		}
+	}
+
 	card := richmessage.BuildAdventureSceneCard(richmessage.AdventureSceneCardData{
-		MovieTitle:  state.MovieInfo.Title,
-		MovieYear:   state.MovieInfo.Year,
-		Genres:      state.MovieInfo.Genres,
-		Level:       state.Level,
-		TotalLevels: state.TotalLevels,
-		StageName:   scene.StageName,
-		SceneTitle:  scene.Title,
-		Description: scene.Description,
-		Atmosphere:  scene.Atmosphere,
-		Choices:     choices,
-		Hint:        scene.Hint,
-		HP:          state.HP,
-		Combo:       state.Combo,
-		Score:       state.Score,
-		IsBoss:      state.Level == state.TotalLevels,
+		MovieTitle:   state.MovieInfo.Title,
+		MovieYear:    state.MovieInfo.Year,
+		Genres:       state.MovieInfo.Genres,
+		Level:        state.Level,
+		TotalLevels:  state.TotalLevels,
+		StageName:    scene.StageName,
+		SceneTitle:   scene.Title,
+		Description:  scene.Description,
+		Atmosphere:   scene.Atmosphere,
+		Choices:      choices,
+		Hint:         scene.Hint,
+		HP:           state.HP,
+		Combo:        state.Combo,
+		Score:        state.Score,
+		IsBoss:       state.Level == state.TotalLevels,
+		LastResult:   lastResult,
 	})
 
 	kb := services.NewKeyboardBuilder()
