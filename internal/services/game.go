@@ -1022,6 +1022,26 @@ func NewSocialDB(dataDir string) (*SocialDB, error) {
 		);
 		CREATE INDEX IF NOT EXISTS idx_daily_challenges_date ON daily_challenges(challenge_date);
 		CREATE INDEX IF NOT EXISTS idx_challenge_completions_user ON challenge_completions(user_id, challenge_date);
+
+		CREATE TABLE IF NOT EXISTS adventure_stats (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			user_name TEXT NOT NULL,
+			movie_name TEXT NOT NULL,
+			movie_year INTEGER DEFAULT 0,
+			score INTEGER DEFAULT 0,
+			grade TEXT DEFAULT '',
+			max_combo INTEGER DEFAULT 0,
+			hp_remaining INTEGER DEFAULT 0,
+			levels_completed INTEGER DEFAULT 0,
+			total_levels INTEGER DEFAULT 5,
+			perfect_run INTEGER DEFAULT 0,
+			success INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE INDEX IF NOT EXISTS idx_adv_user ON adventure_stats(user_id);
+		CREATE INDEX IF NOT EXISTS idx_adv_time ON adventure_stats(created_at DESC);
+		CREATE INDEX IF NOT EXISTS idx_adv_success ON adventure_stats(user_id, success);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create social tables: %w", err)
@@ -1523,4 +1543,118 @@ func generateChallenge() (string, string, int) {
 
 	pick := challenges[rand.Intn(len(challenges))]
 	return pick.Type, pick.Desc, pick.XP
+}
+
+// ============================================================
+//  冒险记录 (Adventure Stats)
+// ============================================================
+
+// AdventureRecord 冒险记录
+type AdventureRecord struct {
+	ID             int
+	UserID         int64
+	UserName       string
+	MovieName      string
+	MovieYear      int
+	Score          int
+	Grade          string
+	MaxCombo       int
+	HPRemaining    int
+	LevelsCompleted int
+	TotalLevels    int
+	PerfectRun     bool
+	Success        bool
+	CreatedAt      time.Time
+}
+
+// AdventureUserStats 用户冒险统计
+type AdventureUserStats struct {
+	TotalChallenges int
+	TotalSuccess    int
+	BestScore       int
+	BestGrade       string
+	BestCombo       int
+	PerfectRuns     int
+	RecentRecords   []AdventureRecord
+}
+
+// SaveAdventureRecord 保存冒险记录
+func (s *SocialDB) SaveAdventureRecord(userID int64, userName, movieName string, movieYear, score int, grade string, maxCombo, hp, levelsCompleted, totalLevels int, perfectRun, success bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(
+		`INSERT INTO adventure_stats (user_id, user_name, movie_name, movie_year, score, grade, max_combo, hp_remaining, levels_completed, total_levels, perfect_run, success)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		userID, userName, movieName, movieYear, score, grade, maxCombo, hp, levelsCompleted, totalLevels, boolToInt(perfectRun), boolToInt(success),
+	)
+	if err != nil {
+		return fmt.Errorf("保存冒险记录失败: %w", err)
+	}
+
+	// 记录社交动态
+	if success {
+		s.addEvent(userID, userName, "adventure", fmt.Sprintf("在《%s》大冒险中通关！评级 %s", movieName, grade))
+	}
+
+	return nil
+}
+
+// GetAdventureStats 获取用户冒险统计
+func (s *SocialDB) GetAdventureStats(userID int64) (*AdventureUserStats, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	stats := &AdventureUserStats{}
+
+	// 总挑战次数和成功次数
+	err := s.db.QueryRow(
+		"SELECT COUNT(*), COALESCE(SUM(success), 0) FROM adventure_stats WHERE user_id = ?",
+		userID,
+	).Scan(&stats.TotalChallenges, &stats.TotalSuccess)
+	if err != nil {
+		return nil, err
+	}
+
+	// 最高分、最高评级、最高连击、完美通关
+	s.db.QueryRow(
+		`SELECT COALESCE(MAX(score), 0), COALESCE(MAX(max_combo), 0), COALESCE(SUM(perfect_run), 0)
+		 FROM adventure_stats WHERE user_id = ?`,
+		userID,
+	).Scan(&stats.BestScore, &stats.BestCombo, &stats.PerfectRuns)
+
+	// 最高评级
+	s.db.QueryRow(
+		"SELECT COALESCE(grade, '') FROM adventure_stats WHERE user_id = ? ORDER BY score DESC LIMIT 1",
+		userID,
+	).Scan(&stats.BestGrade)
+
+	// 最近5条记录
+	rows, err := s.db.Query(
+		`SELECT id, user_id, user_name, movie_name, movie_year, score, grade, max_combo, hp_remaining, levels_completed, total_levels, perfect_run, success, created_at
+		 FROM adventure_stats WHERE user_id = ? ORDER BY created_at DESC LIMIT 5`,
+		userID,
+	)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var r AdventureRecord
+			var perfectInt, successInt int
+			err := rows.Scan(&r.ID, &r.UserID, &r.UserName, &r.MovieName, &r.MovieYear, &r.Score, &r.Grade, &r.MaxCombo, &r.HPRemaining, &r.LevelsCompleted, &r.TotalLevels, &perfectInt, &successInt, &r.CreatedAt)
+			if err == nil {
+				r.PerfectRun = perfectInt != 0
+				r.Success = successInt != 0
+				stats.RecentRecords = append(stats.RecentRecords, r)
+			}
+		}
+	}
+
+	return stats, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

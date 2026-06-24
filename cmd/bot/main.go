@@ -581,6 +581,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// 求片大冒险服务
 	adventureSvc := services.NewAdventureService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
 	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
+	if socialDB != nil {
+		adventureHandler.SetSocialDB(socialDB)
+	}
 	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID, adventureHandler)
 	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
@@ -653,7 +656,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
-	logger.Info("[initRegistry] Game callbacks registered (22+4 actions)")
+	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
+	logger.Info("[initRegistry] Game callbacks registered (22+5 actions)")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)

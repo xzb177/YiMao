@@ -47,6 +47,7 @@ type AdventureHandler struct {
 	sessionMgr   *session.Manager
 	telegram     *services.TelegramClient
 	userMapping  services.UserMappingStore
+	socialDB     *services.SocialDB
 	groupChatID  int64
 
 	mu         sync.Mutex
@@ -71,6 +72,11 @@ func NewAdventureHandler(
 		groupChatID:  groupChatID,
 		generating:   make(map[int64]bool),
 	}
+}
+
+// SetSocialDB 注入社交数据库
+func (h *AdventureHandler) SetSocialDB(db *services.SocialDB) {
+	h.socialDB = db
 }
 
 // Handle 冒险回调路由
@@ -520,6 +526,19 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 	if loadingMsg != nil {
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
+	}
+
+	// 保存冒险记录到数据库
+	if h.socialDB != nil {
+		userName := h.getUserName(userID)
+		_ = h.socialDB.SaveAdventureRecord(
+			userID, userName,
+			state.MovieInfo.Title, state.MovieInfo.Year,
+			result.Score, result.Grade,
+			state.MaxCombo, state.HP,
+			state.Level-1, state.TotalLevels,
+			state.PerfectRun, success,
+		)
 	}
 
 	// 群通知：只有神仙操作才通报（稀缺性 = 更有面子）

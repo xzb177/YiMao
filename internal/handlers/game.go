@@ -90,8 +90,10 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	case action == "game_emotion":
 		return h.handleEmotionProfile(ctx)
 						case action == "game_achievements":
-		return h.handleAchievements(ctx)
-	default:
+	return h.handleAchievements(ctx)
+case action == "game_adventure_stats":
+	return h.handleAdventureStats(ctx)
+default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}
 }
@@ -110,6 +112,7 @@ func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, err
 	kb.AddButton("🪞 情绪", "game_emotion")
 	kb.NewRow()
 	kb.AddButton("🏅 成就", "game_achievements")
+	kb.AddButton("📊 冒险统计", "game_adventure_stats")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -600,6 +603,56 @@ func formatTimeAgo(t time.Time) string {
 // handleDailyChallenge 处理每日挑战
 
 // handleDailyChallengeComplete 处理完成每日挑战
+
+// handleAdventureStats 处理冒险统计
+func (h *GameHandler) handleAdventureStats(ctx *callback.Context) (*callback.Response, error) {
+	if !requirePrivate(ctx) {
+		return &callback.Response{CallbackMsg: "🔒 冒险统计请私聊查看", ShowAlert: true}, nil
+	}
+	if h.socialDB == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	stats, err := h.socialDB.GetAdventureStats(ctx.UserID)
+	if err != nil {
+		return &callback.Response{Text: "❌ 获取统计失败", CallbackMsg: "获取失败", ShowAlert: true}, nil
+	}
+
+	userName := h.getUserName(ctx.UserID)
+
+	var records []richmessage.AdventureRecordView
+	for _, r := range stats.RecentRecords {
+		records = append(records, richmessage.AdventureRecordView{
+			MovieName: r.MovieName,
+			MovieYear: r.MovieYear,
+			Score:     r.Score,
+			Grade:     r.Grade,
+			Success:   r.Success,
+			MaxCombo:  r.MaxCombo,
+			TimeAgo:   formatTimeAgo(r.CreatedAt),
+		})
+	}
+
+	card := richmessage.BuildAdventureStatsCard(richmessage.AdventureStatsCardData{
+		UserName:        userName,
+		TotalChallenges: stats.TotalChallenges,
+		TotalSuccess:    stats.TotalSuccess,
+		BestScore:       stats.BestScore,
+		BestGrade:       stats.BestGrade,
+		BestCombo:       stats.BestCombo,
+		PerfectRuns:     stats.PerfectRuns,
+		RecentRecords:   records,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("⚔️ 再来一局", "adventure_start")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	return &callback.Response{
+		RichMessage: card.Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
+	}, nil
+}
 
 // handleAchievements 处理成就系统
 func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Response, error) {
