@@ -808,7 +808,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 func setupBotCommands(telegram *services.TelegramClient) {
 	commands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
-		{Command: "search", Description: "🔍 搜索影片"},
+		{Command: "search", Description: "🔍 普通求片"},
+		{Command: "adventure", Description: "⚔️ 趣味求片（闯关）"},
 		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
 		{Command: "wish", Description: "🌟 许愿求片（无源片众筹）"},

@@ -318,7 +318,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜影片").Newline()
+	msg.Bold("🔍 普通求片").Newline()
 	msg.Newline()
 	msg.Text("把片名发给我就行").Newline()
 	msg.Newline()
@@ -376,14 +376,21 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 
 	switch topic {
 	case "search":
-		msg.Bold("🔍 怎么搜片").Newline()
+		msg.Bold("🔍 怎么求片").Newline()
 		msg.Newline()
-		msg.Text("1. 点「搜影片」").Newline()
+		msg.Bold("普通求片：").Newline()
+		msg.Text("1. 点「普通求片」").Newline()
 		msg.Text("2. 直接发片名给我").Newline()
 		msg.Text("3. 点结果里的数字看详情").Newline()
 		msg.Text("4. 点「求片」或「订阅」").Newline()
 		msg.Newline()
-		msg.Italic("就这么简单 💡")
+		msg.Bold("趣味求片：").Newline()
+		msg.Text("1. 点「趣味求片」").Newline()
+		msg.Text("2. 输入电影名").Newline()
+		msg.Text("3. 以主角身份闯关").Newline()
+		msg.Text("4. 通关才能提交求片！").Newline()
+		msg.Newline()
+		msg.Italic("两种方式都能求片，趣味模式更有挑战 💡")
 
 	case "link":
 		msg.Bold("🔗 怎么绑定").Newline()

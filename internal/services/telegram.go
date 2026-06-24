@@ -1137,7 +1137,8 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
-	kb.AddButton("🔍 搜影片", "start_search")
+	kb.AddButton("🔍 普通求片", "start_search")
+	kb.AddButton("⚔️ 趣味求片", "adventure_start")
 	kb.NewRow()
 	kb.AddButton("📊 求片进度", "start_requests")
 	if showWish {
