@@ -497,12 +497,32 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
 	}
 
-	// 群通知
+	// 群通知：只有特别优秀才通报（稀缺性 = 更有面子）
 	userName := h.getUserName(userID)
 	if success {
-		h.notifyGroup(userName, fmt.Sprintf("在《%s》大冒险中通关！评级 %s 🏆", state.MovieInfo.Title, result.Grade))
-	} else {
-		h.notifyGroup(userName, fmt.Sprintf("在《%s》大冒险中倒在第%d关 💀", state.MovieInfo.Title, state.Level-1))
+		shouldNotify := false
+		notifyMsg := ""
+		switch {
+		case result.Grade == "SSS":
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出👑SSS评级！通关得分 %d，全程%s！",
+				state.MovieInfo.Title, result.Score, boolStr(state.PerfectRun, "无伤", fmt.Sprintf("最高连击 x%d", state.MaxCombo)))
+		case result.Grade == "SS":
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出💎SS评级！得分 %d 🏆", state.MovieInfo.Title, result.Score)
+		case state.PerfectRun:
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf("在《%s》大冒险中全程无伤通关！🏆", state.MovieInfo.Title)
+		case state.MaxCombo >= 4:
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf("在《%s》大冒险中打出🔥x%d连击通关！", state.MovieInfo.Title, state.MaxCombo)
+		}
+		if shouldNotify {
+			h.notifyGroup(userName, notifyMsg)
+		}
+	} else if state.Level-1 >= 4 {
+		// 倒在第4-5关也通报（差一点就过了，制造FOMO）
+		h.notifyGroup(userName, fmt.Sprintf("在《%s》大冒险中倒在第%d关... 差一点就通关了 💀", state.MovieInfo.Title, state.Level-1))
 	}
 
 	// 发送结果卡片
@@ -593,6 +613,14 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 	}
 
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+}
+
+// boolStr 条件字符串
+func boolStr(cond bool, trueVal, falseVal string) string {
+	if cond {
+		return trueVal
+	}
+	return falseVal
 }
 
 // getUserName 获取用户显示名
