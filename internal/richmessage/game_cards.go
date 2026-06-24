@@ -412,6 +412,72 @@ func BuildRouletteCard(data RouletteCardData) RichMessage {
 }
 
 // ============================================================
+//  通关奖励盲盒卡片
+// ============================================================
+
+// BlindBoxRewardCardData 通关奖励盲盒数据
+type BlindBoxRewardCardData struct {
+	Grade string
+	Items []BlindBoxItemView
+}
+
+// BuildBlindBoxRewardCard 构建通关奖励盲盒卡片
+func BuildBlindBoxRewardCard(data BlindBoxRewardCardData) RichMessage {
+	b := NewBuilder()
+
+	gradeLabel := map[string]string{
+		"SSS": "👑 SSS · 传说宝箱",
+		"SS":  "💎 SS · 王者宝箱",
+		"S":   "⭐ S · 精英宝箱",
+		"A":   "🏆 A · 勇者宝箱",
+	}[data.Grade]
+	if gradeLabel == "" {
+		gradeLabel = "🎁 通关宝箱"
+	}
+
+	b.Heading("🎁 通关奖励", 2)
+	b.BoldParagraph(fmt.Sprintf("%s", gradeLabel))
+	b.Italic(fmt.Sprintf("你在《冒险》中获得了 %s 评级，这是你的奖励", data.Grade))
+	b.Divider()
+
+	for _, item := range data.Items {
+		rarityIcon := map[string]string{
+			"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
+		}[item.Rarity]
+		if rarityIcon == "" {
+			rarityIcon = "⚪"
+		}
+
+		yearStr := ""
+		if item.Year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", item.Year)
+		}
+
+		ratingStr := ""
+		if item.Rating > 0 {
+			ratingStr = fmt.Sprintf(" ⭐ %.1f", item.Rating)
+		}
+
+		b.BoldParagraph(fmt.Sprintf("%s [%s] 《%s》%s%s", rarityIcon, item.Rarity, item.Title, yearStr, ratingStr))
+		if item.Genres != "" {
+			b.Paragraph(fmt.Sprintf("  📂 %s", item.Genres))
+		}
+		if item.Overview != "" {
+			overview := item.Overview
+			if len([]rune(overview)) > 80 {
+				overview = string([]rune(overview)[:80]) + "..."
+			}
+			b.Italic(fmt.Sprintf("  %s", overview))
+		}
+	}
+
+	b.Divider()
+	b.Italic("评级越高，宝箱越稀有。继续挑战解锁更好的奖励！")
+
+	return b.Build()
+}
+
+// ============================================================
 //  游戏中心入口卡片
 // ============================================================
 

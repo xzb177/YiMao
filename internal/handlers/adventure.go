@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -44,6 +45,7 @@ type AdventureState struct {
 type AdventureHandler struct {
 	adventureSvc *services.AdventureService
 	tmdbClient   *services.TMDBClient
+	blindBoxSvc  *services.BlindBoxService
 	sessionMgr   *session.Manager
 	telegram     *services.TelegramClient
 	userMapping  services.UserMappingStore
@@ -85,6 +87,11 @@ func (h *AdventureHandler) SetSocialDB(db *services.SocialDB) {
 // SetOnAdventureSuccess 注入冒险成功回调
 func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)) {
 	h.onAdventureSuccess = fn
+}
+
+// SetBlindBoxService 注入盲盒服务（用于通关奖励）
+func (h *AdventureHandler) SetBlindBoxService(svc *services.BlindBoxService) {
+	h.blindBoxSvc = svc
 }
 
 // Handle 冒险回调路由
@@ -735,6 +742,9 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
 		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+
+		// 通关奖励：免费开盲盒
+		go h.sendRewardBlindBox(chatID, state, result.Grade)
 	} else {
 		card := richmessage.BuildAdventureFailCard(richmessage.AdventureFailCardData{
 			MovieTitle:  state.MovieInfo.Title,
@@ -856,4 +866,84 @@ func (h *AdventureHandler) notifyGroup(userName, message string) {
 			_ = h.telegram.DeleteMessage(chatID, msgID)
 		}(h.groupChatID, sent.MessageID)
 	}()
+}
+
+// sendRewardBlindBox 通关奖励：免费开盲盒
+func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureState, grade string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Info("[Adventure] Reward blindbox panic: %v", r)
+		}
+	}()
+
+	if h.blindBoxSvc == nil {
+		return
+	}
+
+	// 根据评级决定开几个盲盒 + 稀有度保底
+	boxCount := 1
+	minRarity := "N"
+	switch grade {
+	case "SSS":
+		boxCount = 3
+		minRarity = "SR"
+	case "SS":
+		boxCount = 2
+		minRarity = "R"
+	case "S":
+		boxCount = 2
+		minRarity = "R"
+	case "A":
+		boxCount = 1
+		minRarity = "N"
+	default:
+		boxCount = 1
+		minRarity = "N"
+	}
+
+	// 用电影类型开盲盒
+	genre := ""
+	if len(state.MovieInfo.Genres) > 0 {
+		genre = state.MovieInfo.Genres[0]
+	}
+
+	items, err := h.blindBoxSvc.OpenBlindBox(genre, boxCount)
+	if err != nil {
+		logger.Info("[Adventure] Reward blindbox failed: %v", err)
+		return
+	}
+
+	// 保底稀有度：如果开出来的低于保底，升级
+	rarityOrder := map[string]int{"N": 0, "R": 1, "SR": 2, "SSR": 3}
+	minVal := rarityOrder[minRarity]
+	for i := range items {
+		if rarityOrder[items[i].Rarity] < minVal {
+			items[i].Rarity = minRarity
+		}
+	}
+
+	// 构建奖励卡片
+	var views []richmessage.BlindBoxItemView
+	for _, item := range items {
+		views = append(views, richmessage.BlindBoxItemView{
+			Title:    item.Title,
+			Year:     item.Year,
+			Rating:   item.Rating,
+			Rarity:   item.Rarity,
+			Genres:   strings.Join(item.Genres, "/"),
+			Overview: item.Overview,
+			Revealed: true,
+		})
+	}
+
+	rewardCard := richmessage.BuildBlindBoxRewardCard(richmessage.BlindBoxRewardCardData{
+		Grade: grade,
+		Items: views,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎰 再开一个", "game_blindbox")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	h.telegram.SendMessage(chatID, rewardCard.Markdown, "Markdown", kb.Build())
 }

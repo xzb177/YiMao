@@ -584,6 +584,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	if socialDB != nil {
 		adventureHandler.SetSocialDB(socialDB)
 	}
+	// 注入盲盒服务（用于通关奖励）
+	if blindBoxSvc != nil {
+		adventureHandler.SetBlindBoxService(blindBoxSvc)
+	}
 	// 冒险通关 → 自动提交求片请求（不消耗配额，冒险本身就是代价）
 	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string) {
 		if deps.ReviewService == nil {
