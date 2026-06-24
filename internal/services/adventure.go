@@ -86,7 +86,7 @@ func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase,
 		openaiKey:  openaiKey,
 		openaiBase: openaiBase,
 		model:      model,
-		httpClient: &http.Client{Timeout: 30 * time.Second, Transport: transport},
+		httpClient: &http.Client{Timeout: 90 * time.Second, Transport: transport},
 		movieCache: make(map[string]*movieCacheEntry),
 	}
 }
@@ -704,37 +704,49 @@ func (s *AdventureService) callOpenAI(prompt string) (string, error) {
 	}
 	jsonBody, _ := json.Marshal(body)
 
-	req, err := http.NewRequest("POST", s.openaiBase+"/chat/completions", strings.NewReader(string(jsonBody)))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.openaiKey)
+	// 重试一次（超时场景）
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			logger.Info("[Adventure] AI call retry #%d", attempt)
+			time.Sleep(2 * time.Second)
+		}
 
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
+		req, err := http.NewRequest("POST", s.openaiBase+"/chat/completions", strings.NewReader(string(jsonBody)))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+s.openaiKey)
 
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("OpenAI API returned %d", resp.StatusCode)
-	}
+		resp, err := s.httpClient.Do(req)
+		if err != nil {
+			if attempt == 0 && isTimeoutError(err) {
+				continue // 超时 → 重试
+			}
+			return "", err
+		}
+		defer resp.Body.Close()
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("OpenAI API returned %d", resp.StatusCode)
+		}
+
+		var result struct {
+			Choices []struct {
+				Message struct {
+					Content string `json:"content"`
+				} `json:"message"`
+			} `json:"choices"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return "", err
+		}
+		if len(result.Choices) == 0 {
+			return "", fmt.Errorf("AI 返回空结果")
+		}
+		return strings.TrimSpace(result.Choices[0].Message.Content), nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
-	}
-	if len(result.Choices) == 0 {
-		return "", fmt.Errorf("AI 返回空结果")
-	}
-	return strings.TrimSpace(result.Choices[0].Message.Content), nil
+	return "", fmt.Errorf("AI call failed after retry")
 }
 
 // ============================================================
@@ -792,6 +804,16 @@ func genreIDsToNames(ids []int) []string {
 	return names
 }
 
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if netErr, ok := err.(interface{ Timeout() bool }); ok {
+		return netErr.Timeout()
+	}
+	return strings.Contains(err.Error(), "context deadline exceeded") || strings.Contains(err.Error(), "Client.Timeout")
+}
+
 func truncate(s string, maxLen int) string {
 	runes := []rune(s)
 	if len(runes) <= maxLen {
@@ -800,7 +822,7 @@ func truncate(s string, maxLen int) string {
 	return string(runes[:maxLen]) + "..."
 }
 
-// GenerateFallbackScene 模板兜底场景（地狱难度版）
+// GenerateFallbackScene 模板兜底场景（类型感知版）
 func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, totalLevels int) *AdventureScene {
 	stageNames := map[int]string{1: "序章·试炼", 2: "迷局·抉择", 3: "深渊·审判", 4: "黑暗·献祭", 5: "终局·命运"}
 	stageName := stageNames[level]
@@ -809,66 +831,167 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 	}
 
 	title := info.Title
+	genre := ""
+	if len(info.Genres) > 0 {
+		genre = info.Genres[0]
+	}
+	director := info.Director
+	cast := ""
+	if len(info.Cast) > 0 {
+		cast = info.Cast[0]
+	}
+
+	// 根据类型生成不同的场景氛围和陷阱风格
+	genreAtmosphere := map[string]string{
+		"科幻": "未来感", "悬疑": "诡异", "惊悚": "窒息", "恐怖": "阴森",
+		"动作": "紧绷", "犯罪": "压抑", "喜剧": "荒诞", "爱情": "暧昧",
+		"动画": "奇幻", "剧情": "沉重", "战争": "残酷", "奇幻": "迷幻",
+	}
+	atmosphere := genreAtmosphere[genre]
+	if atmosphere == "" {
+		atmosphere = "紧张"
+	}
+
+	// 根据类型生成不同的场景描述前缀
+	genrePrefix := map[string]string{
+		"科幻": "霓虹灯在头顶闪烁，空气中弥漫着金属和臭氧的味道",
+		"悬疑": "走廊尽头的灯忽明忽暗，墙上挂着一幅歪斜的画",
+		"惊悚": "你的后背发凉，总觉得有人在暗处盯着你",
+		"恐怖": "远处传来低沉的呻吟，地板上的血迹还没有干透",
+		"动作": "肾上腺素飙升，你的心跳快到能听到自己的脉搏",
+		"犯罪": "巷子里弥漫着烟味和潮湿的气息，远处传来警笛",
+		"喜剧": "一切看起来都很正常——但你总觉得哪里不对劲",
+		"爱情": "空气中飘着花香，但你的心里却有一丝不安",
+		"动画": "周围的色彩突然变得鲜艳得不真实，像走进了一幅画",
+		"剧情": "沉默笼罩着一切，你能感受到空气中未说出口的秘密",
+	}
+	prefix := genrePrefix[genre]
+	if prefix == "" {
+		prefix = "空气凝固了，你能感觉到命运的齿轮开始转动"
+	}
+
+	// 根据类型生成不同的陷阱风格
+	genreTraps := map[string]struct {
+		trap1, trap2, trap3, trap4 string
+		result1, result2, result3, result4 string
+	}{
+		"科幻": {
+			"按照逻辑推演做出最优选择", "相信科技能解决一切问题", "凭直觉选最不合理的那个", "模仿电影中AI的决策模式",
+			"逻辑在这里是最危险的陷阱。", "科技有时候是最大的幻觉。", "直觉这次救了你一命。", "你读懂了这部电影的AI。", 
+		},
+		"悬疑": {
+			"相信你看到的第一条线索", "跟着最可疑的人走", "停下来重新审视所有细节", "相信那个看起来最无辜的人",
+			"第一条线索往往是诱饵。", "最可疑的人恰恰是烟雾弹。", "你的耐心让你发现了真相。", "天真在这里是最危险的。",
+		},
+		"恐怖": {
+			"立刻逃跑，远离危险源", "躲在看起来最安全的地方", "面对恐惧，走向声源", "装死，等待危险过去",
+			"逃跑只会让你陷入更大的陷阱。", "安全的地方往往是最危险的。", "面对恐惧是你唯一的出路。", "装死？在这部电影里没有用。",
+		},
+		"动作": {
+			"正面硬刚，用力量碾压", "先撤退，等援军到了再打", "用最出人意料的方式反击", "尝试谈判，避免正面冲突",
+			"硬刚在这里是最蠢的选择。", "撤退？时间不站在你这边。", "你找到了主角的节奏！", "谈判？敌人从不讲道理。",
+		},
+		"犯罪": {
+			"跟着证据走，相信法律", "信任那个给你承诺的人", "用非常规手段接近真相", "保持沉默，等待时机",
+			"证据有时候是被精心设计的。", "承诺在这里是最廉价的货币。", "你理解了这个世界的规则。", "沉默不会保护你。",
+		},
+		"爱情": {
+			"勇敢表白，说出心里话", "默默守护，等待时机", "做出牺牲来成全对方", "放下一切，跟随感觉走",
+			"表白有时候是最自私的选择。", "等待只会让你错过最后的机会。", "牺牲？这部电影要的不是牺牲。", "感觉把你带到了正确的方向。",
+		},
+	}
+	trap := genreTraps[genre]
+	if trap.trap1 == "" {
+		trap = struct {
+			trap1, trap2, trap3, trap4 string
+			result1, result2, result3, result4 string
+		}{
+			"选择看起来最安全的路", "凭直觉选最不显眼的", "先观察再行动", "跟着大多数人的选择",
+			"安全的表象下藏着最深的陷阱。", "直觉这次背叛了你。", "你的细心救了你一命。", "从众心理让你错过了答案。",
+		}
+	}
+
+	// 根据导演/演员生成个性化 hint
+	directorHint := ""
+	if director != "" {
+		directorHints := map[string]string{
+			"诺兰": "时间从来不是线性的",
+			"昆汀": "暴力也可以很美学",
+			"王家卫": "留白比台词更重要",
+			"大卫·芬奇": "真相藏在细节里",
+			"奉俊昊": "阶级是看不见的墙",
+			"克里斯托弗·诺兰": "时间从来不是线性的",
+			"昆汀·塔伦蒂诺": "暴力也可以很美学",
+		}
+		directorHint = directorHints[director]
+	}
+	if directorHint == "" && cast != "" {
+		directorHint = fmt.Sprintf("想想%s在这部电影里的表演风格", cast)
+	}
+	if directorHint == "" {
+		directorHint = "这部电影的主角从不走寻常路"
+	}
+
 	scenes := map[int]*AdventureScene{
 		1: {
 			Level: 1, TotalLevels: totalLevels, Title: "迷雾初现", StageName: stageName,
-			Atmosphere: "紧张",
-			Description: fmt.Sprintf(`你站在《%s》的起点。空气中弥漫着一种说不清的不安——像是暴风雨前的宁静。你面前有四条路，每一条都看起来似曾相识，但你总觉得哪里不对。`, title),
+			Atmosphere: atmosphere,
+			Description: fmt.Sprintf(`你站在《%s》的起点。%s。导演%s的镜头下，一切都暗藏玄机。你面前有四条路，每一条都似曾相识，但你总觉得哪里不对。`, title, prefix, director),
 			Choices: []AdventureChoice{
-				{Text: "选择看起来最安全的那条路", Correct: false, Result: "安全的表象下藏着最深的陷阱。", IsTrap: true},
-				{Text: "凭直觉选最不显眼的那条", Correct: false, Result: "直觉这次背叛了你。"},
-				{Text: "先停下来观察周围的细节再决定", Correct: true, Result: "你发现了别人忽略的线索。"},
-				{Text: "走和大多数人一样的路", Correct: false, Result: "从众心理让你错过了真正的答案。"},
+				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
+				{Text: trap.trap2, Correct: false, Result: trap.result2},
+				{Text: trap.trap3, Correct: true, Result: trap.result3},
+				{Text: trap.trap4, Correct: false, Result: trap.result4},
 			},
-			Hint: "这部电影的主角从不走寻常路",
+			Hint: directorHint,
 		},
 		2: {
 			Level: 2, TotalLevels: totalLevels, Title: "致命诱惑", StageName: stageName,
-			Atmosphere: "压迫",
-			Description: fmt.Sprintf(`你深入了《%s》的核心地带。一个声音在耳边低语，诱惑你做出选择。每一个选项都像是正确答案——但只有一个能让你活着走出去。`, title),
+			Atmosphere: atmosphere,
+			Description: fmt.Sprintf(`你深入了《%s》的核心地带。%s。每一个选项都像是正确答案——但只有一个能让你活着走出去。`, title, prefix),
 			Choices: []AdventureChoice{
-				{Text: "遵循内心的正义感行动", Correct: false, Result: "正义感在这里是最危险的幻觉。", IsTrap: true},
-				{Text: "冷静分析眼前的局势", Correct: true, Result: "理性让你看清了真相。"},
-				{Text: "相信直觉，跟着感觉走", Correct: false, Result: "感觉把你带进了死胡同。"},
-				{Text: "模仿你见过的类似情境的解法", Correct: false, Result: "历史不会简单重复。"},
+				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
+				{Text: trap.trap2, Correct: false, Result: trap.result2},
+				{Text: trap.trap3, Correct: true, Result: trap.result3},
+				{Text: trap.trap4, Correct: false, Result: trap.result4},
 			},
-			Hint: "想想主角面对类似情况时的第一反应",
+			Hint: fmt.Sprintf("想想%s面对类似情况时的第一反应", cast),
 		},
 		3: {
 			Level: 3, TotalLevels: totalLevels, Title: "深渊凝视", StageName: stageName,
-			Atmosphere: "绝望",
-			Description: fmt.Sprintf(`你终于来到了《%s》最黑暗的时刻。四面八方都是镜子，每一面都映照出不同的你。但只有一个影像是真实的——你需要找到它。`, title),
+			Atmosphere: atmosphere,
+			Description: fmt.Sprintf(`你终于来到了《%s》最黑暗的时刻。%s。四面八方都是镜子，每一面都映照出不同的你。但只有一个影像是真实的——你需要找到它。`, title, prefix),
 			Choices: []AdventureChoice{
-				{Text: "选择看起来最勇敢的那个影像", Correct: false, Result: "勇气和鲁莽只有一线之隔。"},
-				{Text: "选择最冷静理性的那个影像", Correct: false, Result: "过度理性反而让你失去了关键信息。"},
-				{Text: "闭上眼睛，不看任何影像", Correct: true, Result: "你选择了用心感受，而非用眼看。"},
-				{Text: "打碎所有镜子", Correct: false, Result: "暴力解决不了根本问题。", IsTrap: true},
+				{Text: trap.trap1, Correct: false, Result: trap.result1},
+				{Text: trap.trap2, Correct: false, Result: trap.result2, IsTrap: true},
+				{Text: trap.trap3, Correct: true, Result: trap.result3},
+				{Text: trap.trap4, Correct: false, Result: trap.result4},
 			},
 			Hint: "在这部电影里，眼见不一定为实",
 		},
 		4: {
 			Level: 4, TotalLevels: totalLevels, Title: "献祭时刻", StageName: stageName,
-			Atmosphere: "窒息",
-			Description: fmt.Sprintf(`《%s》的终章前奏。你手中握着改变一切的钥匙——但每一扇门背后都是未知的代价。时间不多了，你必须现在就做出选择。`, title),
+			Atmosphere: atmosphere,
+			Description: fmt.Sprintf(`《%s》的终章前奏。%s。你手中握着改变一切的钥匙——但每一扇门背后都是未知的代价。时间不多了。`, title, prefix),
 			Choices: []AdventureChoice{
-				{Text: "牺牲自己拯救所有人", Correct: false, Result: "英雄主义在这里行不通。", IsTrap: true},
-				{Text: "保全自己，让命运自行安排", Correct: false, Result: "冷漠的选择带来了更大的灾难。"},
-				{Text: "找到第三条没人想到的路", Correct: false, Result: "有时候没有第三条路。"},
-				{Text: "用最不可能的方式解决问题", Correct: true, Result: "你找到了主角真正的答案！"},
+				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
+				{Text: trap.trap2, Correct: false, Result: trap.result2},
+				{Text: trap.trap3, Correct: false, Result: trap.result3},
+				{Text: trap.trap4, Correct: true, Result: trap.result4},
 			},
-			Hint: "主角从不做'正常人'会做的选择",
+			Hint: directorHint,
 		},
 		5: {
 			Level: 5, TotalLevels: totalLevels, Title: "终局审判", StageName: stageName,
-			Atmosphere: "史诗",
-			Description: fmt.Sprintf(`最后的时刻。《%s》的一切都汇聚于此。你的每一个选择都承载着之前的全部重量。这不是选择题——这是命运的终极审判。`, title),
+			Atmosphere: atmosphere,
+			Description: fmt.Sprintf(`最后的时刻。《%s》的一切都汇聚于此。%s。你的每一个选择都承载着之前的全部重量。这不是选择题——这是命运的终极审判。`, title, prefix),
 			Choices: []AdventureChoice{
-				{Text: "跟随内心的信念走到最后", Correct: false, Result: "信念有时候是最大的幻觉。", IsTrap: true},
-				{Text: "接受命运的安排", Correct: false, Result: "命运从来不是被接受的。"},
-				{Text: "做出所有人都认为不可能的选择", Correct: true, Result: "这就是主角的答案！"},
-				{Text: "用爱和牺牲来结束一切", Correct: false, Result: "这个世界需要的不是牺牲。"},
+				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
+				{Text: trap.trap2, Correct: false, Result: trap.result2},
+				{Text: trap.trap3, Correct: true, Result: trap.result3},
+				{Text: trap.trap4, Correct: false, Result: trap.result4},
 			},
-			Hint: "这部电影的核心主题是什么？",
+			Hint: fmt.Sprintf("这部电影的核心主题是%s", genre),
 		},
 	}
 
