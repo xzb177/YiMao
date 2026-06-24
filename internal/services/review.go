@@ -47,6 +47,11 @@ type ReviewRequest struct {
 	RetryCount int    `json:"retry_count,omitempty"` // 已重试次数
 	LastError  string `json:"last_error,omitempty"`  // 最近一次提交 MP 的错误
 	Stuck      bool   `json:"stuck,omitempty"`       // 审核通过但提交 MP 失败，卡住待处理
+
+	// 求片路径追踪
+	RequestOrigin  string `json:"request_origin,omitempty"`  // "normal" | "adventure"
+	AdventureScore int    `json:"adventure_score,omitempty"` // 冒险得分
+	AdventureGrade string `json:"adventure_grade,omitempty"` // 冒险评级 SSS-SS-S-A-B-C-D
 }
 
 // ReviewService manages review requests

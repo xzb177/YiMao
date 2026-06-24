@@ -123,6 +123,8 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 		if sess != nil {
+			// 清除所有旧的冒险状态（防止"已过期"残留）
+			sess.Delete("adventure_state")
 			sess.Set("pending_adventure_input", true)
 		}
 	}
@@ -154,12 +156,15 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 
 	state, ok := sess.Get("adventure_state")
 	if !ok {
-		return &callback.Response{CallbackMsg: "❌ 冒险已过期，请重新开始", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险，请先开始", ShowAlert: true}, nil
 	}
 
 	advState, ok := state.(*AdventureState)
 	if !ok || !advState.InProgress {
-		return &callback.Response{CallbackMsg: "❌ 冒险已结束", ShowAlert: true}, nil
+		// 旧状态残留，自动清除，不让用户卡死
+		sess.Delete("adventure_state")
+		sess.Delete("pending_adventure_input")
+		return &callback.Response{CallbackMsg: "❌ 冒险已结束，请重新开始", ShowAlert: true}, nil
 	}
 
 	scene := advState.Scene
@@ -271,18 +276,25 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
 	}
 
-	state, ok := sess.Get("adventure_state")
-	if !ok {
-		return h.handleStart(ctx)
+	// 获取旧的电影信息用于重试
+	var movieName string
+	if state, ok := sess.Get("adventure_state"); ok {
+		if advState, ok := state.(*AdventureState); ok && advState.MovieInfo != nil {
+			movieName = advState.MovieInfo.Title
+		}
 	}
-	advState, ok := state.(*AdventureState)
-	if !ok || advState.MovieInfo == nil {
+
+	// 无条件清除所有旧状态
+	sess.Delete("adventure_state")
+	sess.Delete("pending_adventure_input")
+
+	if movieName == "" {
 		return h.handleStart(ctx)
 	}
 
-	go h.startAdventureAsync(ctx.UserID, ctx.ChatID, advState.MovieInfo.Title)
+	go h.startAdventureAsync(ctx.UserID, ctx.ChatID, movieName)
 	return &callback.Response{
-		CallbackMsg: fmt.Sprintf("🔄 重新挑战《%s》...", advState.MovieInfo.Title),
+		CallbackMsg: fmt.Sprintf("🔄 重新挑战《%s》...", movieName),
 		ShowAlert:   false,
 	}, nil
 }
