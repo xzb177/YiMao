@@ -252,10 +252,19 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 				advState.HP = adventureMaxHP
 			}
 		}
+		// 背水一战：HP≤20时选对，额外回血+5
+		lastStandBonus := 0
+		if advState.HP <= 20+lastStandBonus {
+			advState.HP += 5
+			lastStandBonus = 5
+			if advState.HP > adventureMaxHP {
+				advState.HP = adventureMaxHP
+			}
+		}
 		// 计分
 		baseScore := advState.Level * 10
 		comboBonus := advState.Combo * 5
-		advState.Score += baseScore + comboBonus
+		advState.Score += baseScore + comboBonus + lastStandBonus
 		if advState.Score > 100 {
 			advState.Score = 100
 		}
@@ -308,6 +317,10 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	// 自定义扣血
 	if choice.HPChange != 0 {
 		damage = choice.HPChange
+	}
+	// 背水一战：HP≤20时选错，直接毙命（不给苟延残喘的机会）
+	if advState.HP <= 20 && damage < advState.HP {
+		damage = advState.HP // 确保一击毙命
 	}
 
 	advState.HP -= damage
@@ -1052,14 +1065,16 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 	lastResult := ""
 	if state.Level > 1 {
 		switch {
-		case state.Combo >= 5:
-			lastResult = fmt.Sprintf("🔥🔥🔥 五连绝世！x%d 连击！", state.Combo)
-		case state.Combo >= 4:
-			lastResult = fmt.Sprintf("🔥🔥 四连超凡！x%d 连击", state.Combo)
-		case state.Combo >= 3:
-			lastResult = fmt.Sprintf("🔥 三连破敌！x%d 连击", state.Combo)
-		case state.Combo >= 2:
-			lastResult = fmt.Sprintf("⚡ 双连命中！x%d 连击", state.Combo)
+		case state.Combo >= 6:
+			lastResult = fmt.Sprintf("🔥🔥🔥🔥 六连神话！x%d 连击！你是怎么看的？！", state.Combo)
+		case state.Combo == 5:
+			lastResult = "🔥🔥🔥 五连绝世！这部电影你倒背如流吧？"
+		case state.Combo == 4:
+			lastResult = "🔥🔥 四连超凡！你是不是提前看了剧本？"
+		case state.Combo == 3:
+			lastResult = "🔥 三连破敌！手感来了！"
+		case state.Combo == 2:
+			lastResult = "⚡ 双连命中！继续保持"
 		default:
 			lastResult = "✅ 上一关正确"
 		}
