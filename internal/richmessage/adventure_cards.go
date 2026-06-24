@@ -278,6 +278,8 @@ type AdventureDamageCardData struct {
 	IsDead       bool
 	RemainingChoices []AdventureChoiceView // 剩余选项
 	TriedChoices map[int]bool             // 已试过的选项
+	CorrectAnswer string                 // 正确答案（死亡时展示）
+	CorrectReason string                 // 正确原因（死亡时展示）
 }
 
 func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
@@ -288,6 +290,18 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 		b.BoldParagraph(fmt.Sprintf("💥 %s", data.ChoiceResult))
 		b.Divider()
 		b.Paragraph(fmt.Sprintf("❤️ 0%% — 你倒在了第 %d/%d 关", data.Level, data.TotalLevels))
+
+		// 真相时刻：展示正确答案
+		if data.CorrectAnswer != "" {
+			b.Divider()
+			b.BoldParagraph("🔍 真相时刻")
+			b.Paragraph(fmt.Sprintf("✅ 正确答案：%s", data.CorrectAnswer))
+			if data.CorrectReason != "" {
+				b.Italic(fmt.Sprintf("💡 %s", data.CorrectReason))
+			}
+		}
+
+		b.Divider()
 		b.Italic("这不是结束... 还是想再来一次？")
 	} else {
 		b.Heading("💥 受伤！", 2)

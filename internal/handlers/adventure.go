@@ -42,6 +42,7 @@ type AdventureState struct {
 	PerfectRun  bool  // 全程无伤
 	TriedChoices map[int]bool // 已尝试的选项索引（防作弊）
 	ChoiceLock  sync.Mutex   // 选择锁（防并发刷分）
+	HintUsed    bool  // 本关是否已用过提示
 }
 
 // AdventureHandler 冒险处理器
@@ -112,6 +113,8 @@ func (h *AdventureHandler) Handle(ctx *callback.Context) (*callback.Response, er
 		return h.handleStart(ctx)
 	case "adventure_choice":
 		return h.handleChoice(ctx)
+	case "adventure_hint":
+		return h.handleHint(ctx)
 	case "adventure_retry":
 		return h.handleRetry(ctx)
 	case "adventure_quit":
@@ -259,8 +262,9 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 
 		advState.Level++
 
-		// 新关卡重置已试选项
+		// 新关卡重置已试选项和提示状态
 		advState.TriedChoices = make(map[int]bool)
+		advState.HintUsed = false
 
 		if advState.Level > advState.TotalLevels {
 			// 🏆 通关！
@@ -328,6 +332,103 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 
 	return &callback.Response{
 		CallbackMsg: fmt.Sprintf("💥 %s\n❤️ -%d HP（剩余 %d%%）", choice.Result, damage, advState.HP),
+		ShowAlert:   false,
+	}, nil
+}
+
+// handleHint 「问导演」— 花10HP换一条精准线索
+const hintCost = 10
+
+func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response, error) {
+	if h.sessionMgr == nil {
+		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
+	}
+
+	sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+	if sess == nil {
+		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
+	}
+
+	state, ok := sess.Get("adventure_state")
+	if !ok {
+		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险", ShowAlert: true}, nil
+	}
+
+	advState, ok := state.(*AdventureState)
+	if !ok || !advState.InProgress {
+		return &callback.Response{CallbackMsg: "❌ 冒险已结束", ShowAlert: true}, nil
+	}
+
+	advState.ChoiceLock.Lock()
+	defer advState.ChoiceLock.Unlock()
+
+	// 检查是否已用过提示
+	if advState.HintUsed {
+		return &callback.Response{CallbackMsg: "🎬 导演已经给过你提示了，这关只能靠自己", ShowAlert: true}, nil
+	}
+
+	// 检查HP是否够
+	if advState.HP <= hintCost {
+		return &callback.Response{CallbackMsg: fmt.Sprintf("💔 生命值不足（需要%dHP），导演不敢再消耗你了", hintCost), ShowAlert: true}, nil
+	}
+
+	// 扣HP
+	advState.HP -= hintCost
+	advState.HintUsed = true
+	advState.PerfectRun = false // 用提示不算完美
+	advState.Score -= 5         // 扣分
+	if advState.Score < 0 {
+		advState.Score = 0
+	}
+
+	// 生成导演提示
+	scene := advState.Scene
+	if scene == nil {
+		return &callback.Response{CallbackMsg: "❌ 场景异常", ShowAlert: true}, nil
+	}
+
+	// 找到正确选项
+	correctIdx := -1
+	for i, c := range scene.Choices {
+		if c.Correct {
+			correctIdx = i
+			break
+		}
+	}
+
+	// 生成不同层次的提示（不直接给答案）
+	var hintMsg string
+	if correctIdx >= 0 {
+		// 消除法：随机排除一个错误选项（非陷阱）
+		var excludeList []int
+		for i, c := range scene.Choices {
+			if !c.Correct && !c.IsTrap && i != correctIdx {
+				excludeList = append(excludeList, i)
+			}
+		}
+		excludeMsg := ""
+		if len(excludeList) > 0 {
+			excludeIdx := excludeList[rand.Intn(len(excludeList))]
+			numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
+			excludeMsg = fmt.Sprintf("\n\n❌ 导演说：%s 可以排除", numbers[excludeIdx])
+		}
+
+		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s%s", hintCost, scene.Hint, excludeMsg)
+	} else {
+		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s", hintCost, scene.Hint)
+	}
+
+	sess.Set("adventure_state", advState)
+
+	// 发送提示 + 更新场景卡片
+	go func() {
+		h.telegram.SendMessage(ctx.ChatID, hintMsg, "", nil)
+		// 重新发送场景卡片（更新HP和按钮状态）
+		h.sendSceneCard(ctx.ChatID, advState)
+	}()
+
+	return &callback.Response{
+		CallbackMsg: fmt.Sprintf("🎬 导演给了提示\n❤️ -%dHP（剩余 %d%%）", hintCost, advState.HP),
 		ShowAlert:   false,
 	}, nil
 }
@@ -517,6 +618,10 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 	}
 	h.telegram.SendMessage(chatID, entryCard.Markdown, "Markdown", nil)
 
+	// 生成第一关（带随机冷知识加载提示）
+	tip := randomMovieTip()
+	tipMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 1 关...\n\n%s", tip), "", nil)
+
 	// 生成第一关
 	scene, err := h.adventureSvc.GenerateScene(movieInfo, 1, adventureMaxLevels, nil, adventureMaxHP)
 	if err != nil {
@@ -524,6 +629,11 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 		scene = h.adventureSvc.GenerateFallbackScene(movieInfo, 1, adventureMaxLevels)
 	}
 	scene.TotalLevels = adventureMaxLevels
+
+	// 删除加载提示
+	if tipMsg != nil {
+		h.telegram.DeleteMessage(chatID, tipMsg.MessageID)
+	}
 
 	state := &AdventureState{
 		MovieInfo:   movieInfo,
@@ -559,7 +669,8 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 	}()
 
 	// 生成下一关（不发单独的combo卡片，反馈直接写在场景卡片里）
-	loadingMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 %d 关...", state.Level), "", nil)
+	tip := randomMovieTip()
+	loadingMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
 
 	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level, state.TotalLevels, state.History, state.HP)
 	if err != nil {
@@ -603,6 +714,19 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		}
 	}
 
+	// 死亡时提取正确答案
+	correctAnswer := ""
+	correctReason := ""
+	if isDead && state.Scene != nil {
+		for _, c := range state.Scene.Choices {
+			if c.Correct {
+				correctAnswer = c.Text
+				correctReason = c.Result
+				break
+			}
+		}
+	}
+
 	card := richmessage.BuildAdventureDamageCard(richmessage.AdventureDamageCardData{
 		ChoiceResult: choiceResult,
 		Damage:       damage,
@@ -614,6 +738,8 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		IsDead:       isDead,
 		RemainingChoices: remainingChoices,
 		TriedChoices: state.TriedChoices,
+		CorrectAnswer: correctAnswer,
+		CorrectReason: correctReason,
 	})
 
 	if isDead {
@@ -973,6 +1099,12 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		}
 		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
 	}
+	kb.NewRow()
+	// 问导演按钮（每关限用一次，花10HP）
+	if !state.HintUsed && state.HP > hintCost {
+		kb.AddButton("🎬 问导演 (-10HP)", "adventure_hint")
+	}
+	kb.AddButton("🚪 退出", "adventure_quit")
 
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 }
@@ -1055,6 +1187,28 @@ func generatePsychoData(level, totalLevels, choiceCount int) (deathRate, optionS
 	timeUrgency = timeLimits[level]
 
 	return
+}
+
+// randomMovieTip 随机电影冷知识（加载时展示）
+func randomMovieTip() string {
+	tips := []string{
+		"🎬 《盗梦空间》的陀螺其实有倒下的声音，诺兰故意没让观众听到",
+		"🎬 《肖申克的救赎》原著小说只有100页，电影加了大量细节",
+		"🎬 《泰坦尼克号》里老年Rose的照片全是导演老婆年轻时的照片",
+		"🎬 《黑客帝国》的绿色代码其实是日本寿司食谱",
+		"🎬 《星际穿越》的虫洞方程式是基普·索恩亲自算的",
+		"🎬 《教父》马头场景用的是真马头，不是道具",
+		"🎬 《阿甘正传》里所有历史影像都是后期合成的",
+		"🎬 《搏击俱乐部》里每隔几分钟都会闪现一帧Tyler",
+		"🎬 《沉默的羔羊》安东尼·霍普金斯只出场16分钟就拿了奥斯卡",
+		"🎬 《楚门的世界》全片只有一个真实外景——最后的海",
+		"🎬 90%的电影配乐师都说：最难配的不是恐怖片，而是喜剧片",
+		"🎬 希区柯克在《惊魂记》里故意把巧克力酱当血浆用",
+		"🎬 《星球大战》光剑的声音其实是电视机噪音+放映机马达声",
+		"🎬 电影里打耳光的声音通常是拍手+拍大腿合成的",
+		"🎬 《侏罗纪公园》恐龙的吼声是乌龟、老虎、大象混音出来的",
+	}
+	return tips[rand.Intn(len(tips))]
 }
 
 // generateBonusEffect 生成随机彩蛋奖励

@@ -186,6 +186,7 @@ var validActions = map[Action]bool{
 	// Adventure game actions
 	"adventure_start":  true, // 求片大冒险入口
 	"adventure_choice": true, // 选择选项
+	"adventure_hint":   true, // 问导演（花HP换线索）
 	"adventure_retry":  true, // 重试冒险
 	"adventure_quit":   true, // 退出冒险
 	"adventure_share":  true, // 分享战绩到群
