@@ -164,15 +164,16 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 	b.BoldParagraph("📜 冒险规则")
 	b.Paragraph("  • 你将化身这部电影的主角")
 	b.Paragraph("  • 5道关卡，难度逐级递增")
-	b.Paragraph("  • 每关3-4个选项，只有1个能活")
-	b.Paragraph("  • ❤️ 生命值100，选错扣血，归零即死")
-	b.Paragraph("  • 陷阱选项看起来非常合理——这正是它的危险之处")
+	b.Paragraph("  • 每关4个选项，每个都看起来非常合理")
+	b.Paragraph("  • ❤️ 生命值100，选错扣45-60HP")
+	b.Paragraph("  • ⚠️ 两次失误即死，没有犯错空间")
+	b.Paragraph("  • 陷阱选项看起来最正确——这正是它的危险之处")
 	b.Divider()
 
 	// 心理学钩子
 	b.BoldParagraph("⚠️ 你确定你了解这部电影吗？")
 	b.Paragraph("  大多数人在第2关就会倒下")
-	b.Paragraph("  通关率不到 15%")
+	b.Paragraph("  通关率不到 10%")
 	b.Italic("  只有通关才能提交求片请求")
 
 	return b.Build()
@@ -191,6 +192,7 @@ type AdventureDamageCardData struct {
 	Combo        int
 	Score        int
 	IsDead       bool
+	RemainingChoices []AdventureChoiceView // 剩余选项
 }
 
 func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
@@ -229,6 +231,20 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 			b.BoldParagraph("⚠️ 生命值危险！下一次失误可能是最后一次...")
 		} else if data.HP <= 60 {
 			b.Italic("💡 仔细想想，别急着选")
+		}
+
+		// 显示剩余选项
+		if len(data.RemainingChoices) > 0 {
+			b.Divider()
+			b.BoldParagraph("🎯 剩余选项：")
+			numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
+			for i, c := range data.RemainingChoices {
+				num := "?"
+				if i < len(numbers) {
+					num = numbers[i]
+				}
+				b.Paragraph(fmt.Sprintf("%s %s", num, c.Text))
+			}
 		}
 
 		b.Divider()

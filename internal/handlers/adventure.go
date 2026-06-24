@@ -19,10 +19,10 @@ import (
 const (
 	adventureMaxLevels = 5
 	adventureMaxHP     = 100
-	adventureBaseDmg   = 30  // 基础扣血
-	adventureTrapDmg   = 45  // 陷阱扣血更多
-	adventureBossDmg   = 50  // Boss关扣血
-	adventureComboHeal = 5   // 连击回血
+	adventureBaseDmg   = 45  // 基础扣血（两次必死）
+	adventureTrapDmg   = 60  // 陷阱扣血（一次半残）
+	adventureBossDmg   = 70  // Boss关扣血（基本一击毙命）
+	adventureComboHeal = 3   // 连击回血（微乎其微）
 )
 
 // AdventureState 冒险状态
@@ -143,7 +143,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 		}
 	}
 	return &callback.Response{
-		Text: "⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n大多数人会在第2关倒下",
+		Text: "⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n每关4个选项，两次失误即死\n通关率不到 10%",
 	}, nil
 }
 
@@ -473,6 +473,17 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 	}()
 
 	isDead := state.HP <= 0
+
+	// 收集剩余选项（包含正确答案，只排除已经选过的）
+	var remainingChoices []richmessage.AdventureChoiceView
+	if !isDead && state.Scene != nil {
+		for i, c := range state.Scene.Choices {
+			if c.Text != "" {
+				remainingChoices = append(remainingChoices, richmessage.AdventureChoiceView{Index: i, Text: c.Text})
+			}
+		}
+	}
+
 	card := richmessage.BuildAdventureDamageCard(richmessage.AdventureDamageCardData{
 		ChoiceResult: choiceResult,
 		Damage:       damage,
@@ -482,6 +493,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		Combo:        state.Combo,
 		Score:        state.Score,
 		IsDead:       isDead,
+		RemainingChoices: remainingChoices,
 	})
 
 	if isDead {
@@ -494,7 +506,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		return
 	}
 
-	// 还活着 — 显示剩余选项
+	// 还活着 — 显示剩余选项让用户继续选
 	scene := state.Scene
 	if scene == nil {
 		return
@@ -502,8 +514,8 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 
 	kb := services.NewKeyboardBuilder()
 	numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
-	for i, choice := range scene.Choices {
-		if choice.Correct || (!choice.Correct && choice.Text != "") {
+	for i, c := range scene.Choices {
+		if c.Text != "" {
 			num := fmt.Sprintf("#%d", i+1)
 			if i < len(numbers) {
 				num = numbers[i]
@@ -511,6 +523,8 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 			kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
 		}
 	}
+	kb.NewRow()
+	kb.AddButton("🚪 退出冒险", "adventure_quit")
 
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 }
