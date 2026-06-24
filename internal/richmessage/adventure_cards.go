@@ -90,6 +90,19 @@ func BuildAdventureSceneCard(data AdventureSceneCardData) RichMessage {
 		b.Italic(fmt.Sprintf("💡 %s", data.Hint))
 	}
 
+	// 选项全文（显示在卡片里，按钮只放编号）
+	if len(data.Choices) > 0 {
+		b.Divider()
+		numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
+		for i, c := range data.Choices {
+			num := "?"
+			if i < len(numbers) {
+				num = numbers[i]
+			}
+			b.Paragraph(fmt.Sprintf("%s %s", num, c.Text))
+		}
+	}
+
 	return b.Build()
 }
 

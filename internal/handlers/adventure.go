@@ -493,12 +493,14 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 	}
 
 	kb := services.NewKeyboardBuilder()
+	numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
 	for i, choice := range scene.Choices {
 		if choice.Correct || (!choice.Correct && choice.Text != "") {
-			kb.AddButton(choice.Text, fmt.Sprintf("adventure_choice:idx:%d", i))
-			if i == 1 {
-				kb.NewRow()
+			num := fmt.Sprintf("#%d", i+1)
+			if i < len(numbers) {
+				num = numbers[i]
 			}
+			kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
 		}
 	}
 
@@ -707,11 +709,13 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 	})
 
 	kb := services.NewKeyboardBuilder()
-	for i, choice := range scene.Choices {
-		kb.AddButton(choice.Text, fmt.Sprintf("adventure_choice:idx:%d", i))
-		if i == 1 || i == 3 {
-			kb.NewRow()
+	numbers := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
+	for i := range scene.Choices {
+		num := fmt.Sprintf("#%d", i+1)
+		if i < len(numbers) {
+			num = numbers[i]
 		}
+		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
 	}
 
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
