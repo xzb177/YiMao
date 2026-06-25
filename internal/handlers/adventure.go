@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -29,20 +30,20 @@ const (
 
 // AdventureState 冒险状态
 type AdventureState struct {
-	MovieInfo   *services.MovieInfo
-	Level       int
-	HP          int
-	Combo       int
-	MaxCombo    int
-	Score       int
-	History     []string
-	Scene       *services.AdventureScene
-	InProgress  bool
-	TotalLevels int
-	PerfectRun  bool  // 全程无伤
-	TriedChoices map[int]bool // 已尝试的选项索引（防作弊）
-	ChoiceLock  sync.Mutex   // 选择锁（防并发刷分）
-	HintUsed    bool  // 本关是否已用过提示
+	MovieInfo    *services.MovieInfo         `json:"movie_info"`
+	Level        int                         `json:"level"`
+	HP           int                         `json:"hp"`
+	Combo        int                         `json:"combo"`
+	MaxCombo     int                         `json:"max_combo"`
+	Score        int                         `json:"score"`
+	History      []string                    `json:"history"`
+	Scene        *services.AdventureScene    `json:"scene"`
+	InProgress   bool                        `json:"in_progress"`
+	TotalLevels  int                         `json:"total_levels"`
+	PerfectRun   bool                        `json:"perfect_run"`
+	TriedChoices map[int]bool                `json:"tried_choices"`
+	HintUsed     bool                        `json:"hint_used"`
+	ChoiceLock   sync.Mutex                  `json:"-"` // 不序列化
 }
 
 // AdventureHandler 冒险处理器
@@ -104,6 +105,85 @@ func (h *AdventureHandler) SetViewingHistoryService(svc *services.ViewingHistory
 	h.viewingSvc = svc
 }
 
+// ============================================================
+//  持久化方法 — 冒险状态存取 SocialDB
+// ============================================================
+
+// saveState 持久化冒险状态到 SocialDB（每次状态变更时调用）
+func (h *AdventureHandler) saveState(userID int64, state *AdventureState) {
+	if h.socialDB == nil || state == nil {
+		return
+	}
+	data, err := json.Marshal(state)
+	if err != nil {
+		logger.Info("[Adventure] 序列化状态失败 user=%d: %v", userID, err)
+		return
+	}
+	movieName := ""
+	if state.MovieInfo != nil {
+		movieName = state.MovieInfo.Title
+	}
+	if err := h.socialDB.SaveAdventureSession(userID, string(data), movieName, state.Level, state.HP); err != nil {
+		logger.Info("[Adventure] 持久化状态失败 user=%d: %v", userID, err)
+	}
+}
+
+// loadState 从 SocialDB 恢复冒险状态（session 内存中没有时调用）
+func (h *AdventureHandler) loadState(userID int64) *AdventureState {
+	if h.socialDB == nil {
+		return nil
+	}
+	stateJSON, err := h.socialDB.LoadAdventureSession(userID)
+	if err != nil || stateJSON == "" {
+		return nil
+	}
+	var state AdventureState
+	if err := json.Unmarshal([]byte(stateJSON), &state); err != nil {
+		logger.Info("[Adventure] 反序列化状态失败 user=%d: %v", userID, err)
+		return nil
+	}
+	// 重建 mutex（不可序列化）
+	state.ChoiceLock = sync.Mutex{}
+	// TriedChoices 可能是 nil
+	if state.TriedChoices == nil {
+		state.TriedChoices = make(map[int]bool)
+	}
+	return &state
+}
+
+// removeState 清除持久化的冒险状态（冒险结束/退出时调用）
+func (h *AdventureHandler) removeState(userID int64) {
+	if h.socialDB == nil {
+		return
+	}
+	if err := h.socialDB.DeleteAdventureSession(userID); err != nil {
+		logger.Info("[Adventure] 删除持久化状态失败 user=%d: %v", userID, err)
+	}
+}
+
+// getOrRestoreState 优先从 session 内存获取，没有则从 DB 恢复
+func (h *AdventureHandler) getOrRestoreState(userID int64, sess *session.Session) *AdventureState {
+	if sess == nil {
+		return h.loadState(userID)
+	}
+	// 先尝试内存
+	if state, ok := sess.Get("adventure_state"); ok {
+		if advState, ok := state.(*AdventureState); ok && advState.InProgress {
+			return advState
+		}
+	}
+	// 内存没有，尝试从 DB 恢复
+	restored := h.loadState(userID)
+	if restored != nil && restored.InProgress {
+		// 写回 session
+		sess.Set("adventure_state", restored)
+		logger.Info("[Adventure] 从DB恢复冒险状态 user=%d movie=%s level=%d hp=%d",
+			userID, restored.MovieInfo.Title, restored.Level, restored.HP)
+		return restored
+	}
+	return nil
+}
+
 // Handle 冒险回调路由
 func (h *AdventureHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	action := string(ctx.Callback.Action)
@@ -155,12 +235,10 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 	// 消耗 pending 状态（无论后续是否成功，都清除）
 	sess.Delete("pending_adventure_input")
 
-	// 二次校验：如果已经有进行中的冒险，不重复启动
-	if state, ok := sess.Get("adventure_state"); ok {
-		if advState, ok := state.(*AdventureState); ok && advState.InProgress {
-			h.telegram.SendMessage(chatID, "⚠️ 你已经有一场进行中的冒险了", "", nil)
-			return true
-		}
+	// 二次校验：如果已经有进行中的冒险，不重复启动（内存+DB双重检查）
+	if advState := h.getOrRestoreState(userID, sess); advState != nil {
+		h.telegram.SendMessage(chatID, "⚠️ 你已经有一场进行中的冒险了", "", nil)
+		return true
 	}
 
 	go h.startAdventureAsync(userID, chatID, movieName)
@@ -177,6 +255,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 			sess.Set("pending_adventure_input", true)
 		}
 	}
+	h.removeState(ctx.UserID) // 清除持久化
 	return &callback.Response{
 		Text: "⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n每关4个选项，两次失误即死\n通关率不到 10%",
 	}, nil
@@ -203,17 +282,9 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
 	}
 
-	state, ok := sess.Get("adventure_state")
-	if !ok {
+	advState := h.getOrRestoreState(ctx.UserID, sess)
+	if advState == nil {
 		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险，请先开始", ShowAlert: true}, nil
-	}
-
-	advState, ok := state.(*AdventureState)
-	if !ok || !advState.InProgress {
-		// 旧状态残留，自动清除，不让用户卡死
-		sess.Delete("adventure_state")
-		sess.Delete("pending_adventure_input")
-		return &callback.Response{CallbackMsg: "❌ 冒险已结束，请重新开始", ShowAlert: true}, nil
 	}
 
 	// 防并发刷分
@@ -283,6 +354,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 				advState.Score = 100
 			}
 			sess.Set("adventure_state", advState)
+			h.removeState(ctx.UserID) // 通关，清除持久化
 			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, true)
 
 			return &callback.Response{
@@ -292,6 +364,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		}
 
 		sess.Set("adventure_state", advState)
+		h.saveState(ctx.UserID, advState) // 持久化
 
 		// 显示连击卡片 + 生成下一关
 		go h.handleCorrectChoice(ctx.UserID, ctx.ChatID, advState, choice.Result)
@@ -332,6 +405,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		advState.HP = 0
 		advState.InProgress = false
 		sess.Set("adventure_state", advState)
+		h.removeState(ctx.UserID) // 死亡，清除持久化
 		go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("💀 %s\n生命耗尽...", choice.Result),
@@ -341,6 +415,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 
 	// 还活着
 	sess.Set("adventure_state", advState)
+	h.saveState(ctx.UserID, advState) // 持久化
 	go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result)
 
 	return &callback.Response{
@@ -362,14 +437,9 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
 	}
 
-	state, ok := sess.Get("adventure_state")
-	if !ok {
+	advState := h.getOrRestoreState(ctx.UserID, sess)
+	if advState == nil {
 		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险", ShowAlert: true}, nil
-	}
-
-	advState, ok := state.(*AdventureState)
-	if !ok || !advState.InProgress {
-		return &callback.Response{CallbackMsg: "❌ 冒险已结束", ShowAlert: true}, nil
 	}
 
 	advState.ChoiceLock.Lock()
@@ -432,6 +502,7 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 	}
 
 	sess.Set("adventure_state", advState)
+	h.saveState(ctx.UserID, advState) // 持久化
 
 	// 发送提示 + 更新场景卡片
 	go func() {
@@ -456,17 +527,24 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
 	}
 
-	// 获取旧的电影信息用于重试
+	// 获取旧的电影信息用于重试（优先内存，其次DB）
 	var movieName string
 	if state, ok := sess.Get("adventure_state"); ok {
 		if advState, ok := state.(*AdventureState); ok && advState.MovieInfo != nil {
 			movieName = advState.MovieInfo.Title
 		}
 	}
+	if movieName == "" {
+		// 尝试从DB恢复电影名
+		if restored := h.loadState(ctx.UserID); restored != nil && restored.MovieInfo != nil {
+			movieName = restored.MovieInfo.Title
+		}
+	}
 
 	// 无条件清除所有旧状态
 	sess.Delete("adventure_state")
 	sess.Delete("pending_adventure_input")
+	h.removeState(ctx.UserID) // 清除持久化
 
 	if movieName == "" {
 		return h.handleStart(ctx)
@@ -548,6 +626,7 @@ func (h *AdventureHandler) handleQuit(ctx *callback.Context) (*callback.Response
 			sess.Delete("pending_adventure_input")
 		}
 	}
+	h.removeState(ctx.UserID) // 清除持久化
 
 	// 群聊里直接返回toast，不发长消息
 	if ctx.ChatType != "private" {
@@ -607,6 +686,7 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 			sess.Delete("pending_adventure_input")
 		}
 	}
+	h.removeState(userID) // 清除旧的持久化记录
 
 	movieInfo, err := h.adventureSvc.SearchMovieInfo(movieName)
 	if err != nil {
@@ -669,6 +749,7 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 			sess.Set("adventure_state", state)
 		}
 	}
+	h.saveState(userID, state) // 持久化
 
 	h.sendSceneCard(chatID, state)
 }
@@ -699,6 +780,7 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 			sess.Set("adventure_state", state)
 		}
 	}
+	h.saveState(userID, state) // 持久化
 
 	if loadingMsg != nil {
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)

@@ -1042,6 +1042,15 @@ func NewSocialDB(dataDir string) (*SocialDB, error) {
 		CREATE INDEX IF NOT EXISTS idx_adv_user ON adventure_stats(user_id);
 		CREATE INDEX IF NOT EXISTS idx_adv_time ON adventure_stats(created_at DESC);
 		CREATE INDEX IF NOT EXISTS idx_adv_success ON adventure_stats(user_id, success);
+
+		CREATE TABLE IF NOT EXISTS adventure_sessions (
+			user_id INTEGER PRIMARY KEY,
+			state_json TEXT NOT NULL,
+			movie_name TEXT NOT NULL DEFAULT '',
+			level INTEGER NOT NULL DEFAULT 1,
+			hp INTEGER NOT NULL DEFAULT 100,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create social tables: %w", err)
@@ -1610,6 +1619,70 @@ func (s *SocialDB) SaveAdventureRecord(userID int64, userName, movieName string,
 	}
 
 	return nil
+}
+
+// SaveAdventureSession 持久化进行中的冒险状态
+func (s *SocialDB) SaveAdventureSession(userID int64, stateJSON string, movieName string, level, hp int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec(
+		`INSERT INTO adventure_sessions (user_id, state_json, movie_name, level, hp, updated_at)
+		 VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		 ON CONFLICT(user_id) DO UPDATE SET
+		 state_json=excluded.state_json, movie_name=excluded.movie_name,
+		 level=excluded.level, hp=excluded.hp, updated_at=excluded.updated_at`,
+		userID, stateJSON, movieName, level, hp,
+	)
+	if err != nil {
+		return fmt.Errorf("保存冒险会话失败: %w", err)
+	}
+	return nil
+}
+
+// LoadAdventureSession 从DB恢复进行中的冒险状态
+func (s *SocialDB) LoadAdventureSession(userID int64) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var stateJSON string
+	err := s.db.QueryRow(
+		"SELECT state_json FROM adventure_sessions WHERE user_id = ?", userID,
+	).Scan(&stateJSON)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // 没有进行中的冒险
+		}
+		return "", fmt.Errorf("加载冒险会话失败: %w", err)
+	}
+	return stateJSON, nil
+}
+
+// DeleteAdventureSession 清除冒险会话（结束/退出时调用）
+func (s *SocialDB) DeleteAdventureSession(userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, err := s.db.Exec("DELETE FROM adventure_sessions WHERE user_id = ?", userID)
+	if err != nil {
+		return fmt.Errorf("删除冒险会话失败: %w", err)
+	}
+	return nil
+}
+
+// CleanStaleAdventureSessions 清理超时的冒险会话（超过2小时视为过期）
+func (s *SocialDB) CleanStaleAdventureSessions() (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	result, err := s.db.Exec(
+		"DELETE FROM adventure_sessions WHERE updated_at < datetime('now', '-2 hours')",
+	)
+	if err != nil {
+		return 0, fmt.Errorf("清理过期冒险会话失败: %w", err)
+	}
+	rows, _ := result.RowsAffected()
+	return int(rows), nil
 }
 
 // GetAdventureStats 获取用户冒险统计

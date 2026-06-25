@@ -583,6 +583,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
 	if socialDB != nil {
 		adventureHandler.SetSocialDB(socialDB)
+		// 定期清理过期的冒险会话（每30分钟）
+		go func() {
+			ticker := time.NewTicker(30 * time.Minute)
+			defer ticker.Stop()
+			for range ticker.C {
+				if cleaned, err := socialDB.CleanStaleAdventureSessions(); err == nil && cleaned > 0 {
+					logger.Info("[Adventure] 清理过期冒险会话: %d 条", cleaned)
+				}
+			}
+		}()
 	}
 	// 注入盲盒服务（用于通关奖励）
 	if blindBoxSvc != nil {
