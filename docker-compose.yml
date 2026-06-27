@@ -5,45 +5,37 @@ services:
     restart: unless-stopped
 
     environment:
-      # Telegram Bot Configuration
+      # === Telegram ===
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
 
-      # Server Configuration
+      # === Server ===
       - PORT=8080
+      - TZ=Asia/Shanghai
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
 
-      # Emby Configuration
+      # === Emby / Jellyfin ===
       - EMBY_URL=${EMBY_URL}
       - EMBY_API_KEY=${EMBY_API_KEY}
 
-      # MoviePilot Configuration
+      # === MoviePilot ===
       - MOVIEPILOT_URL=${MOVIEPILOT_URL}
       - MOVIEPILOT_API_KEY=${MOVIEPILOT_API_KEY}
 
-      # TMDB Configuration (Optional - will use default if not provided)
+      # === TMDB ===
       - TMDB_API_KEY=${TMDB_API_KEY}
 
-      # AI Configuration (Optional)
-      - AI_ENABLED=${AI_ENABLED:-false}   # 设为 true 可显示 AI 推荐按钮（适用于 Mimo 等非 Zhipu/Claude 提供商）
-      - ENABLE_AI=${AI_ENABLED:-false}      # 兼容旧配置名
-      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
-      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      # === AI (Adventure scenes) ===
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL}
 
-      # Timezone
-      - TZ=Asia/Shanghai
-
-    # Use host network for better network access
     network_mode: "host"
 
-    # Volume for persistent data (preferences, quotas, cache, etc.)
     volumes:
       - ./data:/app/data
 
-    # Logging configuration
     logging:
       driver: "json-file"
       options:

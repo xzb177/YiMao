@@ -1,4 +1,5 @@
-# Multi-stage build for YiMao (Telegram 影视求片助手)
+# Multi-stage build for YiMao · 云海求片助手
+# Telegram Media Request Bot — Dual-Core: Search & Adventure
 FROM golang:1.24-alpine AS builder
 
 # Install build dependencies
