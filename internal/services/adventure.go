@@ -699,7 +699,7 @@ func (s *AdventureService) callOpenAI(prompt string) (string, error) {
 			{"role": "system", "content": systemMsg},
 			{"role": "user", "content": prompt},
 		},
-		"max_tokens":  3000,
+		"max_tokens":  4000,
 		"temperature": 0.95,
 	}
 	jsonBody, _ := json.Marshal(body)
@@ -776,11 +776,135 @@ func cleanAIJSON(raw string) string {
 	if idx := strings.Index(cleaned, "{"); idx >= 0 {
 		if endIdx := strings.LastIndex(cleaned, "}"); endIdx > idx {
 			cleaned = cleaned[idx : endIdx+1]
+		} else {
+			// JSON被截断，尝试补全
+			cleaned = cleaned[idx:]
+			cleaned = completeTruncatedJSON(cleaned)
 		}
 	}
 	return cleaned
 }
 
+// completeTruncatedJSON 尝试补全被截断的JSON
+func completeTruncatedJSON(s string) string {
+	openBraces := 0
+	openBrackets := 0
+	inString := false
+	escaped := false
+	
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if c == '{' {
+			openBraces++
+		} else if c == '}' {
+			openBraces--
+		} else if c == '[' {
+			openBrackets++
+		} else if c == ']' {
+			openBrackets--
+		}
+	}
+	
+	if inString {
+		s += "\""
+	}
+	
+	for i := 0; i < openBrackets; i++ {
+		s += "]"
+	}
+	
+	for i := 0; i < openBraces; i++ {
+		s += "}"
+	}
+	
+	var test interface{}
+	if json.Unmarshal([]byte(s), &test) == nil {
+		return s
+	}
+	
+	return aggressiveJSONFix(s)
+}
+
+// aggressiveJSONFix 更激进的JSON修复
+func aggressiveJSONFix(s string) string {
+	lastComma := strings.LastIndex(s, ",")
+	if lastComma > 0 {
+		s = s[:lastComma]
+	}
+	
+	lastQuote := strings.LastIndex(s, "\"")
+	if lastQuote > 0 {
+		beforeQuote := s[:lastQuote]
+		if strings.HasSuffix(beforeQuote, ": ") || strings.HasSuffix(beforeQuote, ":") {
+			s = beforeQuote
+			lastComma = strings.LastIndex(s, ",")
+			if lastComma > 0 {
+				s = s[:lastComma]
+			}
+		}
+	}
+	
+	openBraces := 0
+	openBrackets := 0
+	inString := false
+	escaped := false
+	
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if c == '\\' && inString {
+			escaped = true
+			continue
+		}
+		if c == '"' {
+			inString = !inString
+			continue
+		}
+		if inString {
+			continue
+		}
+		if c == '{' {
+			openBraces++
+		} else if c == '}' {
+			openBraces--
+		} else if c == '[' {
+			openBrackets++
+		} else if c == ']' {
+			openBrackets--
+		}
+	}
+	
+	if inString {
+		s += "\""
+	}
+	
+	for i := 0; i < openBrackets; i++ {
+		s += "]"
+	}
+	for i := 0; i < openBraces; i++ {
+		s += "}"
+	}
+	
+	return s
+}
 func genreIDsToNames(ids []int) []string {
 	m := map[int]string{
 		28: "动作", 12: "冒险", 16: "动画", 35: "喜剧", 80: "犯罪",
