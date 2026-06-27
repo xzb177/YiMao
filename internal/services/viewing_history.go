@@ -75,8 +75,7 @@ func (s *ViewingHistoryService) FindEmbyUserByName(name string) (string, error) 
 		return "", fmt.Errorf("Emby 未配置")
 	}
 
-	url := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", s.embyURL, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, "/Users?IsDisabled=false")
 	if err != nil {
 		return "", err
 	}
@@ -187,10 +186,10 @@ func (s *ViewingHistoryService) fetchFromEmby(userID, userName string) (*UserVie
 
 // fetchLatest 从 Emby API 获取最近观看
 func (s *ViewingHistoryService) fetchLatest(userID, itemType string, limit int) ([]ViewingRecord, error) {
-	url := fmt.Sprintf("%s/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating,UserData&api_key=%s",
-		s.embyURL, userID, itemType, limit, s.embyAPIKey)
+	path := fmt.Sprintf("/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating,UserData",
+		userID, itemType, limit)
 
-	resp, err := s.httpClient.Get(url)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, path)
 	if err != nil {
 		return nil, err
 	}

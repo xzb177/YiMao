@@ -110,8 +110,8 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("TMDB API error: status %d", resp.StatusCode)
 	}
 
 	var media TMDBMediaInfo
@@ -139,8 +139,8 @@ func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("TMDB API error: status %d", resp.StatusCode)
 	}
 
 	var media TMDBMediaInfo
@@ -336,9 +336,9 @@ func SetAPIKeyFromEnv(apiKey string) string {
 	if apiKey != "" {
 		return apiKey
 	}
-	// Use a demo/read-access API key for basic functionality
-	// Note: For production, you should get your own API key from https://www.themoviedb.org/settings/api
-	return "2cafac5b00b310f21cf8ada8ef02760f"
+	// No default key — TMDB requires a valid API key from https://www.themoviedb.org/settings/api
+	logger.Warn("[TMDB] No API key configured, TMDB features will be disabled")
+	return ""
 }
 
 // NewTMDBClientWithDefaultKey creates a TMDB client with default or provided API key
@@ -692,8 +692,8 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("TMDB API error: status %d, body: %s", resp.StatusCode, string(body))
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("TMDB API error: status %d", resp.StatusCode)
 	}
 
 	var details TVDetailsWithSeasons

@@ -823,8 +823,8 @@ func (h *ResourceHandler) getEnglishTitle(originalTitle string, tmdbID int, medi
 	// For simplicity, we'll use the configured API key from environment
 	apiKey := os.Getenv("TMDB_API_KEY")
 	if apiKey == "" {
-		// Fallback to a common key
-		apiKey = "2cafac5b00b310f21cf8ada8ef02760f"
+		logger.Warn("[Resource] TMDB_API_KEY not set, resource image lookup disabled")
+		return originalTitle
 	}
 	req.URL.RawQuery = "api_key=" + apiKey
 

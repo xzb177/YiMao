@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -717,8 +718,27 @@ func (h *GameHandler) handleAdventureRank(ctx *callback.Context) (*callback.Resp
 // --- 每日挑战 ---
 
 func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Response, error) {
-	// 个性化挑战：根据用户偏好类型推荐电影
-	challengeMovie := h.getPersonalizedChallenge(ctx.UserID)
+	// 社交攀比模式：优先推昨天有别人通关的电影
+	var socialProof string
+	var challengerName string
+	movie := h.getPersonalizedChallenge(ctx.UserID)
+
+	if h.socialDB != nil {
+		since := time.Now().Add(-24 * time.Hour)
+		wins, err := h.socialDB.GetRecentWins(ctx.UserID, since, 10)
+		if err == nil && len(wins) > 0 {
+			// 随机选一个别人的通关记录
+			pick := wins[rand.Intn(len(wins))]
+			challengerName = pick.UserName
+			movie = challengeMovie{
+				Title: pick.MovieName,
+				Year:  pick.MovieYear,
+				Genre: pick.BestGrade,
+				Hint:  fmt.Sprintf("昨天 %s 通关了这部电影", pick.UserName),
+			}
+			socialProof = fmt.Sprintf("🔥 昨天 %s 通关了《%s》，你敢挑战同一部吗？", pick.UserName, pick.MovieName)
+		}
+	}
 
 	// 检查今天是否已挑战
 	alreadyChallenged := false
@@ -727,12 +747,14 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	}
 
 	card := richmessage.BuildDailyChallengeCard(richmessage.DailyChallengeCardData{
-		MovieTitle: challengeMovie.Title,
-		MovieYear:  challengeMovie.Year,
-		Genre:      challengeMovie.Genre,
-		Hint:       challengeMovie.Hint,
-		Completed:  alreadyChallenged,
-		DayStreak:  0,
+		MovieTitle:     movie.Title,
+		MovieYear:      movie.Year,
+		Genre:          movie.Genre,
+		Hint:           movie.Hint,
+		Completed:      alreadyChallenged,
+		DayStreak:      0,
+		SocialProof:    socialProof,
+		ChallengerName: challengerName,
 	})
 
 	kb := services.NewKeyboardBuilder()

@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/xzb177/yimao/internal/api"
@@ -92,7 +93,7 @@ func New(
 		fmt.Fprintf(w, `{"status":"%s"}`, status)
 	}))
 
-	// Debug endpoint (protected with API auth if enabled)
+	// Debug endpoint — always requires API auth (no public fallback)
 	var debugHandler http.HandlerFunc = func(w http.ResponseWriter, r *http.Request) {
 		stats := deps.SessionMgr.Stats()
 		w.Header().Set("Content-Type", "application/json")
@@ -102,7 +103,16 @@ func New(
 	if cfg.EnableAPIAuth {
 		mux.HandleFunc("/debug", securityService.Middleware(debugHandler))
 	} else {
-		mux.HandleFunc("/debug", securityService.PublicMiddleware(debugHandler))
+		// When API auth is disabled, restrict to localhost only
+		localOnly := func(w http.ResponseWriter, r *http.Request) {
+			host, _, _ := strings.Cut(r.RemoteAddr, ":")
+			if host != "127.0.0.1" && host != "::1" {
+				http.Error(w, "Forbidden", http.StatusForbidden)
+				return
+			}
+			debugHandler(w, r)
+		}
+		mux.HandleFunc("/debug", securityService.PublicMiddleware(localOnly))
 	}
 
 	// Webhook endpoints (for Telegram bot updates) - public with rate limiting
@@ -127,8 +137,8 @@ func New(
 		deps.WebhookService,
 	)
 
-	// Register webhook endpoint for external services (Emby, Jellyseerr, MoviePilot)
-	mux.HandleFunc("/api/summary", securityService.PublicMiddleware(apiRouter.HandleWebhook))
+	// Register summary endpoint (public, handler validates admin internally)
+	mux.HandleFunc("/api/summary", securityService.PublicMiddleware(apiRouter.HandleSummary))
 	mux.HandleFunc("/webhook/emby", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))

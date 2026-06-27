@@ -81,7 +81,7 @@ func (s *DataBackupService) doBackup() {
 		}
 
 		dst := filepath.Join(backupDir, fmt.Sprintf("%s.%s.bak", filename, timestamp))
-		if err := os.WriteFile(dst, data, 0644); err != nil {
+		if err := os.WriteFile(dst, data, 0600); err != nil {
 			logger.Info("[Backup] 写入 %s 失败: %v", dst, err)
 			continue
 		}

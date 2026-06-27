@@ -257,12 +257,14 @@ func BuildAdventureRankCard(data AdventureRankCardData) RichMessage {
 
 // DailyChallengeCardData 每日挑战卡片数据
 type DailyChallengeCardData struct {
-	MovieTitle string
-	MovieYear  int
-	Genre      string
-	Hint       string
-	Completed  bool
-	DayStreak  int
+	MovieTitle     string
+	MovieYear      int
+	Genre          string
+	Hint           string
+	Completed      bool
+	DayStreak      int
+	SocialProof    string // 社交证明文本（如"昨天 张三 通关了这部电影"）
+	ChallengerName string // 挑战者名字
 }
 
 // BuildDailyChallengeCard 构建每日挑战卡片
@@ -272,6 +274,12 @@ func BuildDailyChallengeCard(data DailyChallengeCardData) RichMessage {
 	b.Heading("🎯 今日挑战", 2)
 	b.Italic("每天一部电影，通关有额外奖励")
 	b.Divider()
+
+	// 社交攀比提示
+	if data.SocialProof != "" {
+		b.Italic(fmt.Sprintf("🔥 %s", data.SocialProof))
+		b.Divider()
+	}
 
 	b.BoldParagraph(fmt.Sprintf("🎬 《%s》(%d)", data.MovieTitle, data.MovieYear))
 	b.Paragraph(fmt.Sprintf("📂 类型：%s", data.Genre))

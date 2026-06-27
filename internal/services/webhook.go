@@ -35,6 +35,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		fileInfoCache:        make(map[string]*cachedFileInfo),
 		fileInfoCacheTTL:     1 * time.Hour, // 缓存1小时
 		playbackPushThrottle: make(map[int64]time.Time),
+		stopCleanup:         make(chan struct{}),
 	}
 
 	// Auto-discover Emby user ID if not configured
@@ -103,20 +104,30 @@ func (s *WebhookService) discoverEmbyUserID() (string, error) {
 
 // cleanupFileInfoCache 定期清理过期的文件信息缓存
 func (s *WebhookService) cleanupFileInfoCache() {
-	ticker := time.NewTicker(30 * time.Minute) // 每30分钟清理一次
+	ticker := time.NewTicker(30 * time.Minute)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		s.fileInfoCacheMu.Lock()
-		now := time.Now()
-		for itemID, cached := range s.fileInfoCache {
-			if now.Sub(cached.cachedAt) > s.fileInfoCacheTTL {
-				delete(s.fileInfoCache, itemID)
-				logger.Info("[EmbyAPI] Cleaned expired cache for %s", itemID)
+	for {
+		select {
+		case <-s.stopCleanup:
+			return
+		case <-ticker.C:
+			s.fileInfoCacheMu.Lock()
+			now := time.Now()
+			for itemID, cached := range s.fileInfoCache {
+				if now.Sub(cached.cachedAt) > s.fileInfoCacheTTL {
+					delete(s.fileInfoCache, itemID)
+					logger.Debug("[EmbyAPI] Cleaned expired cache for %s", itemID)
+				}
 			}
+			s.fileInfoCacheMu.Unlock()
 		}
-		s.fileInfoCacheMu.Unlock()
 	}
+}
+
+// Stop gracefully stops background goroutines
+func (s *WebhookService) Stop() {
+	close(s.stopCleanup)
 }
 
 // HandleEmbyWebhook handles an incoming Emby webhook

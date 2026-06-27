@@ -270,6 +270,11 @@ func (r *Router) removeAdmin(w http.ResponseWriter, req *http.Request, userID in
 	})
 }
 
+// HandleSummary sends daily summary (public method for server routing)
+func (r *Router) HandleSummary(w http.ResponseWriter, req *http.Request) {
+	r.handleSummary(w, req)
+}
+
 // handleSummary sends daily summary
 func (r *Router) handleSummary(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodPost {
@@ -391,7 +396,7 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		if !verifyWebhookAuth(req, body, secret) {
-			logger.Warn("[API] Rejected webhook: invalid signature/token from %s", req.RemoteAddr)
+			logger.Warn("[API] Rejected webhook: invalid signature/token from %s", strings.Split(req.RemoteAddr, ":")[0])
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -520,10 +525,10 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 		return
 	}
 	if len(body) > 200 {
-	logger.Info("[API] Auto-detect webhook - Content-Type: %s, Size: %d bytes (body truncated)", req.Header.Get("Content-Type"), len(body))
-} else {
-	logger.Info("[API] Auto-detect webhook - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
-}
+		logger.Debug("[API] Auto-detect webhook - Content-Type: %s, Size: %d bytes", req.Header.Get("Content-Type"), len(body))
+	} else {
+		logger.Debug("[API] Auto-detect webhook - Content-Type: %s, Size: %d bytes", req.Header.Get("Content-Type"), len(body))
+	}
 
 	// Try to decode as Emby first
 	var embyPayload services.EmbyWebhookPayload
@@ -560,7 +565,7 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 		return
 	}
 
-	logger.Info("[API] Unknown webhook type, Body: %s", string(body))
+	logger.Debug("[API] Unknown webhook type, Size: %d bytes", len(body))
 	http.Error(w, "Unknown webhook type", http.StatusBadRequest)
 }
 

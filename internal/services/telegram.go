@@ -336,7 +336,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 			logger.Info("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
 		} else {
-			logger.Info("[Telegram] Adding keyboard to photo: %s", string(keyboardJSON))
+			logger.Debug("[Telegram] Adding keyboard: %d buttons", len(keyboard.InlineKeyboard))
 			writer.WriteField("reply_markup", string(keyboardJSON))
 		}
 	} else {
@@ -479,7 +479,7 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 			logger.Info("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
 		} else {
-			logger.Info("[Telegram] Adding keyboard to photo: %s", string(keyboardJSON))
+			logger.Debug("[Telegram] Adding keyboard: %d buttons", len(keyboard.InlineKeyboard))
 			writer.WriteField("reply_markup", string(keyboardJSON))
 		}
 	} else {

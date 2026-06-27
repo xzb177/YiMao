@@ -350,9 +350,9 @@ func (s *AdventureService) enrichMovieDetails(info *MovieInfo, mediaType string)
 }
 
 func (s *AdventureService) searchEmby(query string) (*MovieInfo, error) {
-	url := fmt.Sprintf("%s/emby/Items?SearchTerm=%s&IncludeItemTypes=Movie,Series&Limit=5&Fields=Genres,CommunityRating&api_key=%s",
-		s.embyURL, query, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
+	path := fmt.Sprintf("/emby/Items?SearchTerm=%s&IncludeItemTypes=Movie,Series&Limit=5&Fields=Genres,CommunityRating",
+		query)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, path)
 	if err != nil {
 		return nil, err
 	}

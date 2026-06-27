@@ -93,7 +93,9 @@ func (m *Manager) GetOrCreate(userID int64) *Session {
 	defer m.mu.Unlock()
 
 	if sess, exists := m.sessions[userID]; exists {
+		sess.mu.Lock()
 		sess.LastActivity = time.Now()
+		sess.mu.Unlock()
 		return sess
 	}
 
@@ -156,7 +158,9 @@ func (m *Manager) Get(userID int64) *Session {
 	defer m.mu.RUnlock()
 
 	if sess, exists := m.sessions[userID]; exists {
+		sess.mu.Lock()
 		sess.LastActivity = time.Now()
+		sess.mu.Unlock()
 		return sess
 	}
 

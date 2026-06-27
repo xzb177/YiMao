@@ -266,12 +266,12 @@ func (s *EmotionTimelineService) fetchViewRecords(userID string, limit int) ([]V
 
 // fetchPlayedItems 获取有播放记录的项目
 func (s *EmotionTimelineService) fetchPlayedItems(userID string, limit int) []ViewRecord {
-	apiURL := fmt.Sprintf(
-		"%s/Users/%s/Items?Recursive=true&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&Limit=%d&Fields=Genres,CommunityRating,UserData,ProductionYear&api_key=%s",
-		s.embyURL, userID, limit, s.embyAPIKey,
+	path := fmt.Sprintf(
+		"/Users/%s/Items?Recursive=true&SortBy=DatePlayed&SortOrder=Descending&Filters=IsPlayed&Limit=%d&Fields=Genres,CommunityRating,UserData,ProductionYear",
+		userID, limit,
 	)
 
-	resp, err := s.httpClient.Get(apiURL)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, path)
 	if err != nil {
 		return nil
 	}
@@ -328,14 +328,14 @@ func (s *EmotionTimelineService) fetchPlayedItems(userID string, limit int) []Vi
 // fetchLibraryItems 获取库内项目（按入库时间倒序，假设入库≈看过）
 func (s *EmotionTimelineService) fetchLibraryItems(userID string, limit int) []ViewRecord {
 	// 获取电影
-	movieURL := fmt.Sprintf(
-		"%s/Users/%s/Items?Recursive=true&IncludeItemTypes=Movie&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear&api_key=%s",
-		s.embyURL, userID, limit, s.embyAPIKey,
+	moviePath := fmt.Sprintf(
+		"/Users/%s/Items?Recursive=true&IncludeItemTypes=Movie&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear",
+		userID, limit,
 	)
 	// 获取剧集
-	seriesURL := fmt.Sprintf(
-		"%s/Users/%s/Items?Recursive=true&IncludeItemTypes=Series&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear&api_key=%s",
-		s.embyURL, userID, limit/2, s.embyAPIKey,
+	seriesPath := fmt.Sprintf(
+		"/Users/%s/Items?Recursive=true&IncludeItemTypes=Series&SortBy=DateCreated&SortOrder=Descending&Limit=%d&Fields=Genres,CommunityRating,ProductionYear",
+		userID, limit/2,
 	)
 
 	type fetchResult struct {
@@ -344,9 +344,9 @@ func (s *EmotionTimelineService) fetchLibraryItems(userID string, limit int) []V
 	}
 	ch := make(chan fetchResult, 2)
 
-	for _, u := range []string{movieURL, seriesURL} {
-		go func(apiURL string) {
-			resp, err := s.httpClient.Get(apiURL)
+	for _, p := range []string{moviePath, seriesPath} {
+		go func(apiPath string) {
+			resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, apiPath)
 			if err != nil {
 				ch <- fetchResult{}
 				return
@@ -385,7 +385,7 @@ func (s *EmotionTimelineService) fetchLibraryItems(userID string, limit int) []V
 				})
 			}
 			ch <- fetchResult{items: records}
-		}(u)
+		}(p)
 	}
 
 	var allRecords []ViewRecord

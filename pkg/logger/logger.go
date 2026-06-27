@@ -24,8 +24,9 @@ const (
 
 // Sensitive patterns that should be masked in logs
 var sensitivePatterns = []*regexp.Regexp{
-	// API keys
+	// API keys — matches JSON, KV, and URL query-string formats
 	regexp.MustCompile(`(["']?api_?key["']?\s*[:=]\s*["']?)([^"'\s,}]+)(["']?)`),
+	regexp.MustCompile(`(api_?key=)([^&\s]+)`),
 	regexp.MustCompile(`(Authorization\s*:\s*Bearer\s+)([^\s]+)`),
 	regexp.MustCompile(`(token["']?\s*[:=]\s*["']?)([^"'\s,}]+)(["']?)`),
 

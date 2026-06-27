@@ -714,6 +714,9 @@ func (s *WebhookService) convertToSearchResult(item map[string]interface{}) (*Em
 	if itemID, ok := item["Id"].(string); ok {
 		if tags, ok := item["ImageTags"].([]interface{}); ok && len(tags) > 0 {
 			if tag, ok := tags[0].(string); ok {
+				// NOTE: PosterURL uses api_key in query string because Telegram
+				// fetches images directly and cannot set X-Emby-Token header.
+				// Always use logger.Sanitizef when logging this URL.
 				result.PosterURL = fmt.Sprintf("%s/Items/%s/Images/Primary/%s?fillWidth=400&quality=90&api_key=%s", s.embyURL, itemID, tag, s.embyAPIKey)
 			}
 		}

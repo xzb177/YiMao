@@ -1043,6 +1043,52 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
 				result.Score, state.HP, state.MaxCombo, state.MaxCombo)
+
+		// 低门槛触发：新人首通（优先级低于SSS/SS/无伤/x4+）
+		case h.socialDB != nil && h.socialDB.IsFirstSuccess(userID):
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf(`🌟━━━━━━━━━━━━━━━━━━━━━━━━━━🌟
+
+⚡ 新星降临 ⚡
+
+🌟 %s
+🌟 《%s》(%d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ %d%%  🔥 x%d 连击
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎬 首次通关，敲响求片之门
+从此，冒险世界多了一位勇者
+
+🌟━━━━━━━━━━━━━━━━━━━━━━━━━━🌟`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year,
+				result.Score, state.HP, state.MaxCombo)
+
+		// 低门槛触发：本周首通（优先级低于新人首通）
+		case h.socialDB != nil && h.socialDB.IsFirstSuccessThisWeek(userID):
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf(`🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅
+
+⚡ 本周第一道曙光 ⚡
+
+🌅 %s
+🌅 《%s》(%d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🎯 %d分  ❤️ %d%%  🔥 x%d 连击
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+打破沉默，这周的第一场胜利
+冒险的火种重新点燃
+
+🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year,
+				result.Score, state.HP, state.MaxCombo)
 		}
 		if shouldNotify {
 			h.notifyGroup(userName, notifyMsg)

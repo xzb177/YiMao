@@ -710,6 +710,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
 	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
+	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
 	logger.Info("[initRegistry] Game callbacks registered (22+5 actions)")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)

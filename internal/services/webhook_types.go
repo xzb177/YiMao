@@ -158,6 +158,8 @@ type WebhookService struct {
 	// 播放结束推送频率限制：userID → lastPushTime
 	playbackPushThrottle   map[int64]time.Time
 	playbackPushThrottleMu sync.Mutex
+	// goroutine lifecycle
+	stopCleanup chan struct{}
 }
 
 // SetCarpoolService 注入拼车服务（#3 拼车 +1）。采用 setter 注入避免改动构造函数签名。

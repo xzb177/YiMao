@@ -78,8 +78,7 @@ func findEmbyUserByName(client *http.Client, embyURL, embyAPIKey, name string) (
 		return "", fmt.Errorf("Emby 未配置")
 	}
 	embyURL = strings.TrimRight(embyURL, "/")
-	u := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", embyURL, embyAPIKey)
-	resp, err := client.Get(u)
+	resp, err := embydoGet(client, embyURL, embyAPIKey, "/Users?IsDisabled=false")
 	if err != nil {
 		return "", err
 	}
@@ -114,9 +113,9 @@ func fetchEmbyItems(client *http.Client, embyURL, embyAPIKey, userID, itemType s
 		return nil, fmt.Errorf("Emby 未配置")
 	}
 	embyURL = strings.TrimRight(embyURL, "/")
-	u := fmt.Sprintf("%s/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating&api_key=%s",
-		embyURL, userID, itemType, limit, embyAPIKey)
-	resp, err := client.Get(u)
+	path := fmt.Sprintf("/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating",
+		userID, itemType, limit)
+	resp, err := embydoGet(client, embyURL, embyAPIKey, path)
 	if err != nil {
 		return nil, err
 	}
@@ -708,9 +707,9 @@ func (s *NarratorService) SearchMovie(query string) (string, int, []string, floa
 		return "", 0, nil, 0, fmt.Errorf("Emby 未配置")
 	}
 
-	url := fmt.Sprintf("%s/Items?SearchTerm=%s&IncludeItemTypes=Movie&Limit=5&Fields=Genres,CommunityRating&api_key=%s",
-		s.embyURL, url.QueryEscape(query), s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
+	path := fmt.Sprintf("/Items?SearchTerm=%s&IncludeItemTypes=Movie&Limit=5&Fields=Genres,CommunityRating",
+		url.QueryEscape(query))
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, path)
 	if err != nil {
 		return "", 0, nil, 0, err
 	}
@@ -1593,6 +1592,8 @@ type AdventureUserStats struct {
 type AdventureRankEntry struct {
 	Rank         int
 	UserName     string
+	MovieName    string
+	MovieYear    int
 	BestScore    int
 	BestGrade    string
 	BestCombo    int
@@ -1919,4 +1920,76 @@ func (s *SocialDB) GetAdventureStreak(userID int64) (*AdventureStreak, error) {
 	}
 
 	return streak, nil
+}
+
+// GetRecentWins 获取最近的冒险通关记录（排除指定用户）
+func (s *SocialDB) GetRecentWins(excludeUserID int64, since time.Time, limit int) ([]*AdventureRankEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if limit <= 0 {
+		limit = 5
+	}
+	rows, err := s.db.Query(`
+		SELECT user_name, movie_name, movie_year, score, grade, max_combo, perfect_run
+		FROM adventure_stats
+		WHERE success = 1 AND user_id != ? AND created_at >= ?
+		ORDER BY created_at DESC
+		LIMIT ?
+	`, excludeUserID, since, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []*AdventureRankEntry
+	for rows.Next() {
+		var e AdventureRankEntry
+		var perfectInt int
+		err := rows.Scan(&e.UserName, &e.MovieName, &e.MovieYear, &e.BestScore, &e.BestGrade, &e.BestCombo, &perfectInt)
+		if err != nil {
+			continue
+		}
+		e.PerfectRuns = perfectInt
+		entries = append(entries, &e)
+	}
+	return entries, nil
+}
+
+// IsFirstSuccess 检查用户是否是首次通关（adventure_stats表中只有一条success=1的记录）
+func (s *SocialDB) IsFirstSuccess(userID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM adventure_stats WHERE user_id = ? AND success = 1",
+		userID,
+	).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count == 1
+}
+
+// IsFirstSuccessThisWeek 检查是否是本周首次通关
+func (s *SocialDB) IsFirstSuccessThisWeek(userID int64) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// 获取本周一日期
+	now := time.Now()
+	weekday := now.Weekday()
+	daysSinceMonday := int(weekday) - 1
+	if weekday == time.Sunday {
+		daysSinceMonday = 6
+	}
+	monday := now.AddDate(0, 0, -daysSinceMonday).Format("2006-01-02")
+
+	var count int
+	err := s.db.QueryRow(
+		"SELECT COUNT(*) FROM adventure_stats WHERE user_id = ? AND success = 1 AND date(created_at) >= ?",
+		userID, monday,
+	).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count == 1
 }

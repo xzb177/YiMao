@@ -104,8 +104,7 @@ func NewPortraitService(embyURL, embyAPIKey string) *PortraitService {
 
 // FindEmbyUserByName 通过用户名查找 Emby 用户 ID
 func (s *PortraitService) FindEmbyUserByName(name string) (string, error) {
-	url := fmt.Sprintf("%s/Users?IsDisabled=false&api_key=%s", s.embyURL, s.embyAPIKey)
-	resp, err := s.httpClient.Get(url)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, "/Users?IsDisabled=false")
 	if err != nil {
 		return "", err
 	}
@@ -202,10 +201,9 @@ func (s *PortraitService) collectData(userID string) (*PortraitData, error) {
 
 // fetchLatest 从 Emby API 获取最近观看
 func (s *PortraitService) fetchLatest(userID, itemType string, limit int) ([]PortraitItem, error) {
-	url := fmt.Sprintf("%s/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating,UserData&api_key=%s",
-		s.embyURL, userID, itemType, limit, s.embyAPIKey)
-
-	resp, err := s.httpClient.Get(url)
+	path := fmt.Sprintf("/Users/%s/Items/Latest?IncludeItemTypes=%s&Limit=%d&Fields=Genres,CommunityRating,UserData",
+		userID, itemType, limit)
+	resp, err := embydoGet(s.httpClient, s.embyURL, s.embyAPIKey, path)
 	if err != nil {
 		return nil, err
 	}
