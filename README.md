@@ -2,9 +2,9 @@
 
 <div align="center">
 
-**Telegram Media Request Bot — Dual-Core System: Search & Subscribe / Challenge & Conquer**
+**Telegram Media Request Bot — Dual-Core Architecture: Subscription Mode (AI Search → One-Click Subscribe) / Adventure Mode (5-Level Hell Challenge → Priority Request). Deep MoviePilot + Emby/Jellyfin integration.**
 
-**求片也能闯关⚔️ 通关才给下载 | Hell-Mode Movie Adventure**
+**双核心 Telegram 影视求片机器人 — 订阅模式：TMDB 智能搜索一键订阅 / 趣味求片模式：AI 生成五层地狱闯关，通关解锁优先求片。深度集成 MoviePilot + Emby/Jellyfin。**
 
 [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org)
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com)

@@ -1,3 +1,15 @@
+# ========================================
+# YiMao · 云海求片助手
+# Dual-Core Media Request Bot for Telegram
+# ========================================
+# Subscription: AI search → one-click subscribe via MoviePilot
+# Adventure: 5-level hell challenge → priority request
+# Deeply integrated with MoviePilot + Emby/Jellyfin
+# ========================================
+# 快速启动: cp .env.example .env && docker compose up -d
+# Quick Start: cp .env.example .env && docker compose up -d
+# ========================================
+
 services:
   yimao:
     build: .

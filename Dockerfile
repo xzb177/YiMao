@@ -1,5 +1,10 @@
-# Multi-stage build for YiMao · 云海求片助手
-# Telegram Media Request Bot — Dual-Core: Search & Adventure
+# ========================================
+# YiMao · 云海求片助手
+# Dual-Core Media Request Bot for Telegram
+# ========================================
+# Multi-stage build: Go 1.24 → Alpine
+# Subscription Mode / Adventure Mode
+# ========================================
 FROM golang:1.24-alpine AS builder
 
 # Install build dependencies
