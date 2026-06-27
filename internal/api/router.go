@@ -519,7 +519,11 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 		http.Error(w, "Failed to read body", http.StatusBadRequest)
 		return
 	}
+	if len(body) > 200 {
+	logger.Info("[API] Auto-detect webhook - Content-Type: %s, Size: %d bytes (body truncated)", req.Header.Get("Content-Type"), len(body))
+} else {
 	logger.Info("[API] Auto-detect webhook - Content-Type: %s, Body: %s", req.Header.Get("Content-Type"), string(body))
+}
 
 	// Try to decode as Emby first
 	var embyPayload services.EmbyWebhookPayload
