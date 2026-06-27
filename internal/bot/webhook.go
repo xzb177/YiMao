@@ -228,7 +228,9 @@ func HandleWebhookMessage(
 					if err != nil {
 						logger.Info("[Webhook] HandleAdminAddMessage error: %v", err)
 					}
-					if resp.Text != "" {
+					if resp.RichMessage != "" {
+						deps.Telegram.SendRichMessage(msg.Chat.ID, resp.RichMessage, ConvertKeyboard(resp.Keyboard))
+					} else if resp.Text != "" {
 						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", ConvertKeyboard(resp.Keyboard))
 					}
 				}

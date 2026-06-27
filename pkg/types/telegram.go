@@ -17,6 +17,8 @@ type TelegramMessage struct {
 	Text           string               `json:"text,omitempty"`
 	Photo          []*TelegramPhotoSize `json:"photo,omitempty"`
 	ReplyToMessage *TelegramMessage     `json:"reply_to_message,omitempty"`
+	ForwardFrom    *TelegramUser        `json:"forward_from,omitempty"`     // 转发自用户
+	ForwardOrigin  *TelegramUser        `json:"forward_origin,omitempty"`  // TG API 7.0+ sender_user
 }
 
 // TelegramCallbackQuery represents a callback query

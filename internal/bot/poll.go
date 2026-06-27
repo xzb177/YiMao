@@ -205,9 +205,10 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 					if err != nil {
 						logger.Info("[Poll] HandleAdminAddMessage error: %v", err)
 					}
-					// Send the response as a new message
 					keyboard := ConvertKeyboard(resp.Keyboard)
-					if resp.Text != "" {
+					if resp.RichMessage != "" {
+						deps.Telegram.SendRichMessage(msg.Chat.ID, resp.RichMessage, keyboard)
+					} else if resp.Text != "" {
 						deps.Telegram.SendMessage(msg.Chat.ID, resp.Text, "", keyboard)
 					}
 				}

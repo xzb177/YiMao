@@ -1105,36 +1105,58 @@ func (h *AdminHandler) handleAdminMgmt(ctx *callback.Context) (*callback.Respons
 		}, nil
 	}
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("🛡️ 管理员设置").Newline()
-	msg.Newline()
-	msg.Text("管理机器人管理员权限").Newline()
-	msg.Newline()
-	msg.Italic("💡 提示：超级管理员（👑）无法被移除").Newline()
+	admins := h.adminService.GetAllAdminInfo()
+	adminCount := len(admins)
+
+	builder := richmessage.NewBuilder()
+	builder.Heading("🛡️ 管理员设置", 2)
+	builder.Divider()
+
+	// Root admin info
+	for _, a := range admins {
+		if a.Role == services.AdminRoleRoot {
+			builder.BoldParagraph(fmt.Sprintf("👑 超级管理员：%s (%d)", a.Name, a.UserID))
+			break
+		}
+	}
+	builder.Paragraph(fmt.Sprintf("共 %d 位管理员", adminCount))
+
+	// List all admins compactly
+	if adminCount > 0 {
+		builder.Divider()
+		for _, a := range admins {
+			roleIcon := "  "
+			roleLabel := "普通"
+			if a.Role == services.AdminRoleRoot {
+				roleIcon = "👑"
+				roleLabel = "超级"
+			}
+			name := a.Name
+			if name == "" {
+				name = "未命名"
+			}
+			builder.Paragraph(fmt.Sprintf("%s [%s] %s — %d", roleIcon, roleLabel, name, a.UserID))
+		}
+	}
+	builder.Divider()
+	builder.Italic("超级管理员（👑）不可被移除")
 
 	kb := services.NewKeyboardBuilder()
-
-	// 第一行：查看列表
-	kb.AddButton("📋 查看管理员列表", "admin_list")
+	kb.AddButton("📋 管理员列表", "admin_list")
 	kb.NewRow()
-
-	// 第二行：添加和移除
 	kb.AddButton("➕ 添加管理员", "admin_add_start")
 	kb.AddButton("➖ 移除管理员", "admin_remove_list")
 	kb.NewRow()
-
-	// 第三行：返回
-	kb.AddButton("⬅️ 返回管理员菜单", "admin_menu")
+	kb.AddButton("⬅️ 返回管理中心", "admin_menu")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: builder.Build().Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 
-// handleAdminList displays all admins
+// handleAdminList displays all admins with role badges
 func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Response, error) {
 	// Only root admin can access this
 	if !h.adminService.IsRootAdmin(ctx.UserID) {
@@ -1146,42 +1168,44 @@ func (h *AdminHandler) handleAdminList(ctx *callback.Context) (*callback.Respons
 
 	admins := h.adminService.GetAllAdminInfo()
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("📋 管理员列表").Newline()
-	msg.Newline()
+	builder := richmessage.NewBuilder()
+	builder.Heading("📋 管理员列表", 2)
+	builder.Divider()
 
 	if len(admins) == 0 {
-		msg.Text("暂无管理员").Newline()
+		builder.Paragraph("暂无管理员")
 	} else {
-		for i, admin := range admins {
-			roleMark := "👑 "
-			if admin.Role != services.AdminRoleRoot {
-				roleMark = "  "
+		for _, admin := range admins {
+			roleIcon := "🔹"
+			roleLabel := "普通管理员"
+			if admin.Role == services.AdminRoleRoot {
+				roleIcon = "👑"
+				roleLabel = "超级管理员"
 			}
 			name := admin.Name
 			if name == "" {
 				name = "未命名"
 			}
-			msg.Code(fmt.Sprintf("%d. %s%s (%d)", i+1, roleMark, name, admin.UserID)).Newline()
+			builder.BoldParagraph(fmt.Sprintf("%s %s", roleIcon, roleLabel))
+			builder.Paragraph(fmt.Sprintf("  名称：%s", name))
+			builder.Paragraph(fmt.Sprintf("  ID：%d", admin.UserID))
 		}
-		msg.Newline()
-		msg.Italic(fmt.Sprintf("共 %d 位管理员", len(admins))).Newline()
+		builder.Divider()
+		builder.Italic(fmt.Sprintf("共 %d 位管理员", len(admins)))
 	}
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: builder.Build().Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 
-// handleAdminAddStart starts the add admin flow
+// handleAdminAddStart starts the add admin flow — supports forward or manual ID
 func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Response, error) {
-	// Only root admin can access this
 	if !h.adminService.IsRootAdmin(ctx.UserID) {
 		return &callback.Response{
 			CallbackMsg: "此功能仅限超级管理员使用",
@@ -1189,35 +1213,33 @@ func (h *AdminHandler) handleAdminAddStart(ctx *callback.Context) (*callback.Res
 		}, nil
 	}
 
-	// Set session state
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	sess.Set("waiting_for_add_admin", true)
 	sess.Set("previous_menu", "admin_mgmt")
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("➕ 添加管理员").Newline()
-	msg.Newline()
-	msg.Text("请输入新管理员的 Telegram ID：").Newline()
-	msg.Newline()
-	msg.Text("• 直接发送数字 ID").Newline()
-	msg.Text("• 转发 TA 的一条消息给我").Newline()
-	msg.Newline()
-	msg.Italic("💡 发送 /cancel 返回上级菜单").Newline()
+	builder := richmessage.NewBuilder()
+	builder.Heading("➕ 添加管理员", 2)
+	builder.Divider()
+	builder.BoldParagraph("📤 方式一：转发消息")
+	builder.Paragraph("转发目标用户的一条消息给我，自动提取 ID 和昵称")
+	builder.Divider()
+	builder.BoldParagraph("🔢 方式二：手动输入")
+	builder.Paragraph("直接发送对方的 Telegram 数字 ID")
+	builder.Divider()
+	builder.Italic("💡 发送 /cancel 取消操作")
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 取消", "admin_mgmt")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: builder.Build().Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 
 // handleAdminRemoveList displays list of admins that can be removed
 func (h *AdminHandler) handleAdminRemoveList(ctx *callback.Context) (*callback.Response, error) {
-	// Only root admin can access this
 	if !h.adminService.IsRootAdmin(ctx.UserID) {
 		return &callback.Response{
 			CallbackMsg: "此功能仅限超级管理员使用",
@@ -1227,47 +1249,42 @@ func (h *AdminHandler) handleAdminRemoveList(ctx *callback.Context) (*callback.R
 
 	admins := h.adminService.GetAllAdminInfo()
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("➖ 移除管理员").Newline()
-	msg.Newline()
+	builder := richmessage.NewBuilder()
+	builder.Heading("➖ 移除管理员", 2)
+	builder.Divider()
 
 	kb := services.NewKeyboardBuilder()
 
 	removableCount := 0
 	for _, admin := range admins {
-		// Skip root admin
 		if admin.Role == services.AdminRoleRoot {
 			continue
 		}
-
 		removableCount++
 		name := admin.Name
 		if name == "" {
 			name = "未命名"
 		}
-
-		// Create remove button for each admin
-		btnText := fmt.Sprintf("❌ %s (%d)", name, admin.UserID)
+		builder.Paragraph(fmt.Sprintf("🔹 %s — %d", name, admin.UserID))
+		btnText := fmt.Sprintf("❌ 移除 %s", name)
 		callbackData := fmt.Sprintf("admin_remove_confirm:id:%d", admin.UserID)
 		kb.AddButton(btnText, callbackData)
 		kb.NewRow()
 	}
 
 	if removableCount == 0 {
-		msg.Text("当前没有可移除的管理员").Newline()
-		msg.Newline()
+		builder.Paragraph("当前没有可移除的管理员")
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 	} else {
-		msg.Textf("选择要移除的管理员（共 %d 位）:", removableCount).Newline()
-		msg.Newline()
+		builder.Divider()
+		builder.Italic(fmt.Sprintf("共 %d 位可移除，点击下方按钮确认", removableCount))
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 	}
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: builder.Build().Markdown,
+		Edit:        true,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 
@@ -1321,15 +1338,14 @@ func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callbac
 	// Refresh the remove list
 	admins := h.adminService.GetAllAdminInfo()
 
-	msg := services.NewMessageBuilder()
-	msg.Bold("➕ 移除成功").Newline()
-	msg.Newline()
-	msg.Textf("已移除管理员: %s (%d)", name, adminID).Newline()
-	msg.Newline()
+	builder := richmessage.NewBuilder()
+	builder.Heading("✅ 移除成功", 2)
+	builder.Divider()
+	builder.Paragraph(fmt.Sprintf("已移除：%s (%d)", name, adminID))
+	builder.Divider()
 
 	kb := services.NewKeyboardBuilder()
 
-	// Show remaining removable admins
 	removableCount := 0
 	for _, admin := range admins {
 		if admin.Role == services.AdminRoleRoot {
@@ -1340,127 +1356,152 @@ func (h *AdminHandler) handleAdminRemoveConfirm(ctx *callback.Context) (*callbac
 		if adminName == "" {
 			adminName = "未命名"
 		}
-		btnText := fmt.Sprintf("❌ %s (%d)", adminName, admin.UserID)
+		builder.Paragraph(fmt.Sprintf("🔹 %s — %d", adminName, admin.UserID))
+		btnText := fmt.Sprintf("❌ 移除 %s", adminName)
 		callbackData := fmt.Sprintf("admin_remove_confirm:id:%d", admin.UserID)
 		kb.AddButton(btnText, callbackData)
 		kb.NewRow()
 	}
 
 	if removableCount == 0 {
-		msg.Text("当前没有可移除的管理员").Newline()
+		builder.Italic("当前没有其他可移除的管理员")
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 	} else {
-		msg.Textf("剩余可移除: %d 位", removableCount).Newline()
+		builder.Italic(fmt.Sprintf("剩余 %d 位可移除", removableCount))
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 	}
 
 	return &callback.Response{
-		Text:        msg.Build(),
-		ParseMode:   msg.ParseMode(),
+		RichMessage: builder.Build().Markdown,
 		Edit:        true,
 		Keyboard:    convertKeyboard(kb.Build()),
 		CallbackMsg: fmt.Sprintf("已移除 %s", name),
 	}, nil
 }
 
-// HandleAdminAddMessage handles incoming message when waiting for admin ID
-// This is called from the poll handler when in "waiting_for_add_admin" state
+// HandleAdminAddMessage handles incoming message when waiting for admin ID.
+// Supports: forwarded messages (auto-extract ID + name) and manual ID input.
 func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message *types.TelegramMessage) (*callback.Response, error) {
-	// Verify user is in the correct state
 	sess := h.sessMgr.GetOrCreate(userID)
 	if sess == nil || !h.sessMgr.IsValid(userID) {
-		return nil, nil // Invalid session
+		return nil, nil
 	}
-
-	// Check if we have the state flag
 	if _, exists := sess.Get("waiting_for_add_admin"); !exists {
-		return nil, nil // Not in add admin state
+		return nil, nil
 	}
 
 	var targetID int64
 	var targetName string
 	var source string
 
-	// Currently only support manual ID input
-	// (Forward message support requires extending TelegramMessage structure)
-	trimmed := strings.TrimSpace(message.Text)
-	parsedID, err := strconv.ParseInt(trimmed, 10, 64)
-	if err != nil {
-		msg := services.NewMessageBuilder()
-		msg.Bold("❌ 无效的 ID").Newline()
-		msg.Newline()
-		msg.Text("请输入有效的 Telegram 数字 ID").Newline()
-		msg.Newline()
-		msg.Italic("💡 提示：ID 是一串纯数字").Newline()
+	// Priority 1: Forwarded message — extract user info directly
+	fwdUser := message.ForwardFrom
+	if fwdUser == nil {
+		fwdUser = message.ForwardOrigin // TG API 7.0+ format
+	}
+	if fwdUser != nil && fwdUser.ID > 0 {
+		targetID = fwdUser.ID
+		targetName = strings.TrimSpace(fwdUser.FirstName + " " + fwdUser.LastName)
+		source = "转发消息提取"
+	} else {
+		// Priority 2: Manual ID input
+		trimmed := strings.TrimSpace(message.Text)
+		parsedID, err := strconv.ParseInt(trimmed, 10, 64)
+		if err != nil || parsedID <= 0 {
+			builder := richmessage.NewBuilder()
+			builder.Heading("❌ 无效输入", 2)
+			builder.Paragraph("请转发目标用户的消息，或输入有效的数字 ID")
+			builder.Italic("💡 ID 是一串纯数字，例如 123456789")
+			kb := services.NewKeyboardBuilder()
+			kb.AddButton("⬅️ 取消", "admin_mgmt")
+			return &callback.Response{
+				RichMessage: builder.Build().Markdown,
+				Keyboard:    convertKeyboard(kb.Build()),
+			}, nil
+		}
+		targetID = parsedID
+		source = "手动输入"
 
+		// Try to look up display name via Telegram API
+		if h.telegram != nil {
+			if name, err := h.telegram.GetUserDisplayName(targetID); err == nil && name != "" {
+				targetName = name
+			}
+		}
+	}
+
+	// Clear waiting state
+	sess.Delete("waiting_for_add_admin")
+
+	// Self-check
+	if targetID == userID {
+		builder := richmessage.NewBuilder()
+		builder.Heading("⚠️ 不能添加自己", 2)
+		builder.Paragraph("你已经是管理员了")
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⬅️ 取消", "admin_mgmt")
-
+		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 		return &callback.Response{
-			Text:      msg.Build(),
-			ParseMode: msg.ParseMode(),
-			Keyboard:  convertKeyboard(kb.Build()),
+			RichMessage: builder.Build().Markdown,
+			Keyboard:    convertKeyboard(kb.Build()),
 		}, nil
 	}
 
-	targetID = parsedID
-	source = "手动输入"
-
-	// Clear the waiting state
-	sess.Delete("waiting_for_add_admin")
-
-	// Check if already an admin
+	// Already admin?
 	if h.adminService.IsAdmin(targetID) {
 		role := "普通管理员"
 		if h.adminService.IsRootAdmin(targetID) {
 			role = "超级管理员"
 		}
-
-		msg := services.NewMessageBuilder()
-		msg.Bold("⚠️ 已是管理员").Newline()
-		msg.Newline()
-		msg.Textf("用户 ").Code(fmt.Sprintf("%d", targetID)).Textf(" 已经是 %s", role).Newline()
-		msg.Newline()
-		msg.Italic("如需修改权限，请联系开发者").Newline()
-
+		builder := richmessage.NewBuilder()
+		builder.Heading("⚠️ 已是管理员", 2)
+		builder.Paragraph(fmt.Sprintf("用户 %d 已经是 %s", targetID, role))
+		if targetName != "" {
+			builder.Italic(fmt.Sprintf("名称：%s", targetName))
+		}
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
-
 		return &callback.Response{
-			Text:      msg.Build(),
-			ParseMode: msg.ParseMode(),
-			Keyboard:  convertKeyboard(kb.Build()),
+			RichMessage: builder.Build().Markdown,
+			Keyboard:    convertKeyboard(kb.Build()),
 		}, nil
 	}
 
-	// Add the admin
+	// Fallback name
 	if targetName == "" {
 		targetName = fmt.Sprintf("Admin_%d", targetID)
 	}
+
+	// Add
 	if err := h.adminService.AddAdmin(targetID, targetName); err != nil {
 		logger.Info("[AdminHandler] Failed to add admin: %v", err)
 		return &callback.Response{
-			Text: "❌ 添加失败，请稍后再试",
+			Text:        "❌ 添加失败，请稍后再试",
+			CallbackMsg: "添加失败",
+			ShowAlert:   true,
 		}, nil
 	}
 
-	// Success message
-	msg := services.NewMessageBuilder()
-	msg.Bold("✅ 添加成功").Newline()
-	msg.Newline()
-	msg.Textf("来源: %s", source).Newline()
-	msg.Textf("ID: ").Code(fmt.Sprintf("%d", targetID)).Newline()
-	msg.Textf("昵称: %s", targetName).Newline()
-	msg.Newline()
-	msg.Italic("新管理员可以访问管理员菜单进行审批操作").Newline()
+	// Success — rich card
+	builder := richmessage.NewBuilder()
+	builder.Heading("✅ 添加成功", 2)
+	builder.Divider()
+	builder.BoldParagraph(fmt.Sprintf("👤 %s", targetName))
+	builder.Paragraph(fmt.Sprintf("ID：%d", targetID))
+	builder.Paragraph(fmt.Sprintf("来源：%s", source))
+	builder.Paragraph(fmt.Sprintf("角色：普通管理员"))
+	builder.Divider()
+	builder.Italic("新管理员访问机器人即可看到管理菜单")
 
 	kb := services.NewKeyboardBuilder()
+	kb.AddButton("📋 管理员列表", "admin_list")
+	kb.NewRow()
+	kb.AddButton("➕ 继续添加", "admin_add_start")
+	kb.NewRow()
 	kb.AddButton("⬅️ 返回管理员设置", "admin_mgmt")
 
 	return &callback.Response{
-		Text:      msg.Build(),
-		ParseMode: msg.ParseMode(),
-		Keyboard:  convertKeyboard(kb.Build()),
+		RichMessage: builder.Build().Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
 }
 
