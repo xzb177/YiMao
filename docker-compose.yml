@@ -1,13 +1,12 @@
 # ========================================
 # YiMao · 云海求片助手
-# Dual-Core Media Request Bot for Telegram
+# 双核心 Telegram 影视求片机器人
 # ========================================
-# Subscription: AI search → one-click subscribe via MoviePilot
-# Adventure: 5-level hell challenge → priority request
-# Deeply integrated with MoviePilot + Emby/Jellyfin
+# 订阅模式：AI 智能搜索 → 一键订阅
+# 趣味求片：五层地狱闯关 → 优先求片
+# 深度集成 MoviePilot + Emby/Jellyfin
 # ========================================
-# 快速启动: cp .env.example .env && docker compose up -d
-# Quick Start: cp .env.example .env && docker compose up -d
+# 快速启动：cp .env.example .env && docker compose up -d
 # ========================================
 
 services:

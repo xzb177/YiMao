@@ -1,9 +1,9 @@
 # ========================================
 # YiMao · 云海求片助手
-# Dual-Core Media Request Bot for Telegram
+# 双核心 Telegram 影视求片机器人
 # ========================================
-# Multi-stage build: Go 1.24 → Alpine
-# Subscription Mode / Adventure Mode
+# 多阶段构建：Go 1.24 → Alpine
+# 订阅模式 / 趣味求片模式
 # ========================================
 FROM golang:1.24-alpine AS builder
 
