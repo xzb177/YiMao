@@ -448,12 +448,12 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	case "/game", "/游戏", "/游戏中心":
 		// 群聊中发送游戏中心菜单
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("🎰 盲盒", "game_blindbox")
-		kb.AddButton("🎡 轮盘", "game_roulette")
-		kb.AddButton("🎬 AI解说", "game_narrator")
-		kb.AddButton("👥 关系对比", "game_compare")
-		kb.AddButton("🎯 今日挑战", "game_daily_challenge")
-		kb.AddButton("🏆 成就系统", "game_achievements")
+		kb.AddButton("⚔️ 求片大冒险", "adventure_start")
+		kb.AddButton("🎰 通关盲盒", "game_blindbox")
+		kb.AddButton("📊 冒险排行", "game_adventure_rank")
+		kb.NewRow()
+		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
+		kb.AddButton("📖 情报站", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 		case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		// 群聊中直接解说：/解说 电影名
@@ -510,12 +510,12 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 	for _, kw := range gameKeywords {
 		if input == kw {
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("🎰 盲盒", "game_blindbox")
-			kb.AddButton("🎡 轮盘", "game_roulette")
-			kb.AddButton("🎬 AI解说", "game_narrator")
-			kb.AddButton("👥 关系对比", "game_compare")
-			kb.AddButton("🎯 今日挑战", "game_daily_challenge")
-			kb.AddButton("🏆 成就系统", "game_achievements")
+			kb.AddButton("⚔️ 求片大冒险", "adventure_start")
+			kb.AddButton("🎰 通关盲盒", "game_blindbox")
+			kb.AddButton("📊 冒险排行", "game_adventure_rank")
+			kb.NewRow()
+			kb.AddButton("🎯 每日挑战", "game_daily_challenge")
+			kb.AddButton("📖 情报站", "game_narrator")
 			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 			return true
 		}

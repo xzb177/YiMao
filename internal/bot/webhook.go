@@ -414,12 +414,12 @@ func HandleWebhookGroupChat(
 		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
 	case "/game", "/游戏", "/游戏中心":
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("🎰 盲盒", "game_blindbox")
-		kb.AddButton("🎡 轮盘", "game_roulette")
-		kb.AddButton("🎬 AI解说", "game_narrator")
-		kb.AddButton("👥 关系对比", "game_compare")
-		kb.AddButton("🎯 今日挑战", "game_daily_challenge")
-		kb.AddButton("🏆 成就系统", "game_achievements")
+		kb.AddButton("⚔️ 求片大冒险", "adventure_start")
+		kb.AddButton("🎰 通关盲盒", "game_blindbox")
+		kb.AddButton("📊 冒险排行", "game_adventure_rank")
+		kb.NewRow()
+		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
+		kb.AddButton("📖 情报站", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
 		case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		movieName := extractMovieName(text, cmd)
