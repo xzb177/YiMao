@@ -101,8 +101,10 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleCompareTaste(ctx)
 	case "game_achievements":
 		return h.handleAchievements(ctx)
+	case "game_emotion":
+		return h.handleEmotionProfile(ctx)
 	// 以下功能已废弃，返回友好提示
-	case "game_rank", "game_social", "game_emotion",
+	case "game_rank", "game_social",
 		"game_contract", "game_prescription", "game_time_machine",
 		"game_roulette", "game_review":
 		return &callback.Response{CallbackMsg: "🚧 该功能已升级，请从游戏中心进入", ShowAlert: true}, nil
