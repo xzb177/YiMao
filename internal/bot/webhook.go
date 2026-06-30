@@ -505,6 +505,22 @@ func PerformSearch(
 		}
 	}
 
+	// Filter out items with TMDB ID = 0 (invalid, can't create subscriptions)
+	filtered := make([]services.SearchResult, 0, len(results.Results))
+	for _, item := range results.Results {
+		if item.ID > 0 {
+			filtered = append(filtered, item)
+		} else {
+			logger.Info("[Search] Skipping result with ID=0: %s", item.Title)
+		}
+	}
+	results.Results = filtered
+	if len(results.Results) == 0 {
+		text := "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索"
+		telegram.SendMessage(msg.Chat.ID, text, "", nil)
+		return
+	}
+
 	// Build search results message
 	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n",
 		query, len(results.Results))

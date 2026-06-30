@@ -1993,3 +1993,55 @@ func (s *SocialDB) IsFirstSuccessThisWeek(userID int64) bool {
 	}
 	return count == 1
 }
+
+// GetLastFailedLevel 获取用户在指定电影上最后一次失败的关卡数（用于复仇模式）
+func (s *SocialDB) GetLastFailedLevel(userID int64, movieName string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var level int
+	err := s.db.QueryRow(
+		`SELECT COALESCE(levels_completed, 0) FROM adventure_stats
+		 WHERE user_id = ? AND movie_name = ? AND success = 0
+		 ORDER BY created_at DESC LIMIT 1`,
+		userID, movieName,
+	).Scan(&level)
+	if err != nil {
+		return 0
+	}
+	return level
+}
+
+// GetNemesisCount 获取用户被某部电影击败的次数（用于宿敌墙）
+func (s *SocialDB) GetNemesisCount(userID int64, movieName string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var count int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM adventure_stats
+		 WHERE user_id = ? AND movie_name = ? AND success = 0`,
+		userID, movieName,
+	).Scan(&count)
+	if err != nil {
+		return 0
+	}
+	return count
+}
+
+// GetMoviePassRate 获取某部电影的全球通关率（总挑战次数, 通关次数, 通关率%）
+func (s *SocialDB) GetMoviePassRate(movieName string) (int, int, float64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var total, success int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(SUM(success), 0) FROM adventure_stats WHERE movie_name = ?`,
+		movieName,
+	).Scan(&total, &success)
+	if err != nil || total == 0 {
+		return 0, 0, 0
+	}
+	rate := float64(success) / float64(total) * 100
+	return total, success, rate
+}

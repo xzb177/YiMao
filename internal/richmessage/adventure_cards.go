@@ -210,11 +210,12 @@ func BuildAdventureShareCard(data AdventureShareCardData) RichMessage {
 // ============================================================
 
 type AdventureEntryCardData struct {
-	MovieTitle string
-	MovieYear  int
-	Genres     []string
-	Overview   string
-	Rating     float64
+	MovieTitle   string
+	MovieYear    int
+	Genres       []string
+	Overview     string
+	Rating       float64
+	NemesisCount int // ☠️ 被这部电影击败的次数
 }
 
 func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
@@ -243,6 +244,16 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 		b.Paragraph(overview)
 	}
 	b.Divider()
+
+	// ☠️ 宿敌标记
+	if data.NemesisCount > 0 {
+		if data.NemesisCount == 1 {
+			b.BoldParagraph("☠️ 宿敌！这部电影击败过你 1 次")
+		} else {
+			b.BoldParagraph(fmt.Sprintf("☠️ 宿敌！这部电影已经击败你 %d 次", data.NemesisCount))
+		}
+		b.Divider()
+	}
 
 	// 游戏规则 — 带上心理学钩子
 	b.BoldParagraph("📜 冒险规则")
@@ -377,18 +388,19 @@ func buildAdventureHPBar(hp int) string {
 // ============================================================
 
 type AdventureSuccessCardData struct {
-	MovieTitle  string
-	MovieYear   int
-	Genres      []string
-	Score       int
-	Grade       string
-	FinalScene  string
-	EasterEgg   string
-	Stats       string
-	HP          int
-	MaxCombo    int
-	BonusEffect string // 随机彩蛋效果
+	MovieTitle     string
+	MovieYear      int
+	Genres         []string
+	Score          int
+	Grade          string
+	FinalScene     string
+	EasterEgg      string
+	Stats          string
+	HP             int
+	MaxCombo       int
+	BonusEffect    string // 随机彩蛋效果
 	Recommendation string // 基于观影历史的推荐
+	GlobalPassRate string // 🌍 全球通关率
 }
 
 func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
@@ -433,6 +445,13 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 		b.Divider()
 	}
 
+	// 🌍 全球通关率
+	if data.GlobalPassRate != "" {
+		b.BoldParagraph("🌍 全球通关率")
+		b.Paragraph(data.GlobalPassRate)
+		b.Divider()
+	}
+
 	// 个性化推荐（基于观影历史）
 	if data.Recommendation != "" {
 		b.BoldParagraph("🎬 推荐下一部")
@@ -450,19 +469,20 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 // ============================================================
 
 type AdventureFailCardData struct {
-	MovieTitle  string
-	MovieYear   int
-	Genres      []string
-	Level       int
-	TotalLevels int
-	FinalScene  string
-	DeathReason string
-	Tips        string
-	Score       int
-	Grade       string
-	Stats       string
-	MaxCombo    int
-	HP          int
+	MovieTitle     string
+	MovieYear      int
+	Genres         []string
+	Level          int
+	TotalLevels    int
+	FinalScene     string
+	DeathReason    string
+	Tips           string
+	Score          int
+	Grade          string
+	Stats          string
+	MaxCombo       int
+	HP             int
+	GlobalPassRate string // 🌍 全球通关率
 }
 
 func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
@@ -493,6 +513,13 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 	// 提示
 	if data.Tips != "" {
 		b.Italic(fmt.Sprintf("💡 %s", data.Tips))
+		b.Divider()
+	}
+
+	// 🌍 全球通关率
+	if data.GlobalPassRate != "" {
+		b.BoldParagraph("🌍 全球通关率")
+		b.Paragraph(data.GlobalPassRate)
 		b.Divider()
 	}
 
@@ -579,6 +606,123 @@ func BuildAdventureComboCard(data AdventureComboCardData) RichMessage {
 	} else {
 		b.Divider()
 		b.BoldParagraph("⚔️ 最终决战即将开始...")
+	}
+
+	return b.Build()
+}
+
+// ============================================================
+//  🩸 每日免费复活卡片
+// ============================================================
+
+type AdventureReviveCardData struct {
+	MovieTitle    string
+	Level         int
+	TotalLevels   int
+	HP            int
+	Damage        int
+	CorrectAnswer string
+}
+
+func BuildAdventureReviveCard(data AdventureReviveCardData) RichMessage {
+	b := NewBuilder()
+
+	b.Heading("🩸 命悬一线", 2)
+	b.BoldParagraph(fmt.Sprintf("🎬 %s · 第 %d/%d 关", data.MovieTitle, data.Level, data.TotalLevels))
+	b.Divider()
+
+	b.Paragraph(fmt.Sprintf("💀 你受到了 %d 点伤害，生命值归零", data.Damage))
+	if data.CorrectAnswer != "" {
+		b.Italic(fmt.Sprintf("正确答案是：%s", data.CorrectAnswer))
+	}
+	b.Divider()
+
+	b.BoldParagraph("🩸 死神今天放你一马")
+	b.Paragraph("  每天第1次在第1-3关死亡时")
+	b.Paragraph("  可以免费复活 · HP恢复到 30")
+	b.Paragraph("  这是你唯一的机会——仔细看选项")
+	b.Divider()
+
+	b.Italic("⚠️ 今天的免费复活仅此一次")
+
+	return b.Build()
+}
+
+// ============================================================
+//  🎰 双倍或归零 — 下注卡片
+// ============================================================
+
+type GambleOfferCardData struct {
+	Grade      string
+	ItemCount  int
+	MovieTitle string
+}
+
+func BuildGambleOfferCard(data GambleOfferCardData) RichMessage {
+	b := NewBuilder()
+
+	b.Heading("🎰 双倍或归零", 2)
+	b.BoldParagraph(fmt.Sprintf("🏆 %s 评级通关 · 《%s》", data.Grade, data.MovieTitle))
+	b.Divider()
+
+	b.Paragraph(fmt.Sprintf("🎁 你获得了 %d 个通关盲盒", data.ItemCount))
+	b.Divider()
+
+	b.BoldParagraph("🎰 要赌一把吗？")
+	b.Paragraph("  50% 概率：盲盒数量翻倍")
+	b.Paragraph("  50% 概率：全部归零")
+	b.Paragraph("  ⚠️ 一旦选择就无法回头")
+	b.Divider()
+
+	b.Italic("贪心的人要么得到一切，要么一无所有")
+
+	return b.Build()
+}
+
+// ============================================================
+//  🎰 双倍或归零 — 结果卡片
+// ============================================================
+
+type GambleResultCardData struct {
+	Grade      string
+	Items      []BlindBoxItemView
+	Won        bool
+	MovieTitle string
+}
+
+func BuildGambleResultCard(data GambleResultCardData) RichMessage {
+	b := NewBuilder()
+
+	if data.Won {
+		b.Heading("🎉 赌赢了！", 2)
+		b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
+		b.Divider()
+		b.BoldParagraph(fmt.Sprintf("🎁 奖励翻倍！获得 %d 个盲盒", len(data.Items)))
+		b.Divider()
+
+		for _, item := range data.Items {
+			rarityEmoji := map[string]string{
+				"SSR": "🌈", "SR": "💎", "R": "⭐", "N": "📀",
+			}[item.Rarity]
+			if rarityEmoji == "" {
+				rarityEmoji = "📀"
+			}
+			b.BoldParagraph(fmt.Sprintf("%s %s · %s (%d)", rarityEmoji, item.Rarity, item.Title, item.Year))
+			if item.Genres != "" && item.Genres != "/" {
+				b.Italic(fmt.Sprintf("  %s  ⭐ %.1f", item.Genres, item.Rating))
+			}
+		}
+
+		b.Divider()
+		b.Italic("命运眷顾勇者——你敢赌，它就敢给你")
+	} else {
+		b.Heading("💸 归零！", 2)
+		b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
+		b.Divider()
+		b.Paragraph("🎰 赌局结果：归零")
+		b.Paragraph("  所有的盲盒化为乌有...")
+		b.Divider()
+		b.Italic("贪心的人总会付出代价——但下次，你敢再赌吗？")
 	}
 
 	return b.Build()

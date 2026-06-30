@@ -646,6 +646,21 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 			return
 		}
 	}
+	// Filter out items with TMDB ID = 0 (invalid, can't create subscriptions)
+	filtered := make([]services.SearchResult, 0, len(results.Results))
+	for _, item := range results.Results {
+		if item.ID > 0 {
+			filtered = append(filtered, item)
+		} else {
+			logger.Info("[Poll] Skipping result with ID=0: %s", item.Title)
+		}
+	}
+	results.Results = filtered
+	if len(results.Results) == 0 {
+		telegram.SendMessage(msg.Chat.ID, "😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", "", nil)
+		return
+	}
+
 	// Store search results in session
 	sess := sessMgr.GetOrCreate(msg.From.ID)
 	searchItems := make([]session.SearchItem, len(results.Results))

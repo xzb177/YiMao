@@ -707,11 +707,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// 求片大冒险回调
 	registry.RegisterFunc("adventure_start", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
+	registry.RegisterFunc("adventure_hint", adventureHandler.Handle)      // 🎬 问导演
 	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
+	registry.RegisterFunc("adventure_share", adventureHandler.Handle)     // 📢 分享战绩
+	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)    // 🩸 每日免费复活
+	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)    // 🎰 双倍或归零
+	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle) // 📦 安全领取
 	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
 	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
-	logger.Info("[initRegistry] Game callbacks registered (22+5 actions)")
+	logger.Info("[initRegistry] Game callbacks registered (27+5 actions)")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"math/rand"
+	"net/url"
 	"strings"
 	"time"
 
@@ -96,10 +97,14 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleAdventureStats(ctx)
 	case "game_daily_challenge":
 		return h.handleDailyChallenge(ctx)
+	case "game_compare":
+		return h.handleCompareTaste(ctx)
+	case "game_achievements":
+		return h.handleAchievements(ctx)
 	// 以下功能已废弃，返回友好提示
-	case "game_rank", "game_social", "game_emotion", "game_achievements",
+	case "game_rank", "game_social", "game_emotion",
 		"game_contract", "game_prescription", "game_time_machine",
-		"game_roulette", "game_review", "game_compare":
+		"game_roulette", "game_review":
 		return &callback.Response{CallbackMsg: "🚧 该功能已升级，请从游戏中心进入", ShowAlert: true}, nil
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
@@ -109,7 +114,18 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 // --- 游戏中心主菜单 ---
 
 func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, error) {
-	card := richmessage.BuildGameCenterCard()
+	// 🔥 获取连胜数据
+	streakCurrent := 0
+	streakBest := 0
+	if h.socialDB != nil {
+		streak, err := h.socialDB.GetAdventureStreak(ctx.UserID)
+		if err == nil && streak != nil {
+			streakCurrent = streak.CurrentStreak
+			streakBest = streak.BestStreak
+		}
+	}
+
+	card := richmessage.BuildGameCenterCard(streakCurrent, streakBest)
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
 	kb.AddButton("📖 情报站", "game_narrator")
@@ -604,6 +620,50 @@ func formatTimeAgo(t time.Time) string {
 
 
 // handleCompareTaste 处理观影关系对比
+func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Response, error) {
+	if h.viewingSvc == nil {
+		return &callback.Response{Text: "❌ 观影历史服务未就绪", CallbackMsg: "服务未就绪", ShowAlert: true}, nil
+	}
+
+	userName := h.getUserName(ctx.UserID)
+	profile, err := h.viewingSvc.GetProfile(fmt.Sprintf("%d", ctx.UserID), userName)
+	if err != nil || profile == nil {
+		return &callback.Response{Text: "📊 还没有观影数据，先看几部电影再来吧~", CallbackMsg: "暂无数据", ShowAlert: true}, nil
+	}
+
+	total := len(profile.Records)
+	if total == 0 {
+		return &callback.Response{Text: "📊 还没有观影数据，先看几部电影再来吧~", CallbackMsg: "暂无数据", ShowAlert: true}, nil
+	}
+
+	// 转换类型
+	var genres []richmessage.ViewingGenreCount
+	for _, g := range profile.TopGenres {
+		if len(genres) >= 6 {
+			break
+		}
+		genres = append(genres, richmessage.ViewingGenreCount{
+			Genre: g.Genre,
+			Count: g.Count,
+		})
+	}
+
+	// 构建品味分析卡片
+	card := richmessage.BuildTasteCard(richmessage.TasteCardData{
+		UserName:   userName,
+		TotalViews: total,
+		TopGenres:  genres,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎮 游戏中心", "game_menu")
+	kb.AddButton("🧠 性格分析", "game_personality")
+
+	return &callback.Response{
+		RichMessage: card.Markdown,
+		Keyboard:    convertKeyboard(kb.Build()),
+	}, nil
+}
 
 // handleDailyChallenge 处理每日挑战
 
@@ -666,7 +726,51 @@ func (h *GameHandler) handleAdventureStats(ctx *callback.Context) (*callback.Res
 
 // handleAchievements 处理成就系统
 func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Response, error) {
-	return &callback.Response{CallbackMsg: "🚧 成就系统升级中，请从游戏中心进入新功能", ShowAlert: true}, nil
+	achievements := services.AllAchievements
+
+	var lines []string
+	lines = append(lines, "🏆 **成就殿堂**")
+	lines = append(lines, "")
+	
+	// 按分类分组展示
+	categories := map[string]string{
+		"watch":     "🎬 观影之路",
+		"social":    "👥 社交达人",
+		"explore":   "🔍 探索发现",
+		"challenge": "⚔️ 挑战极限",
+	}
+	
+	displayed := 0
+	for cat, label := range categories {
+		lines = append(lines, label)
+		count := 0
+		for _, a := range achievements {
+			if a.Category == cat {
+				lines = append(lines, fmt.Sprintf("  %s %s — %s", a.Icon, a.Name, a.Description))
+				count++
+				displayed++
+				if count >= 3 {
+					break
+				}
+			}
+		}
+		lines = append(lines, "")
+		if displayed >= 12 {
+			break
+		}
+	}
+	
+	lines = append(lines, fmt.Sprintf("共 %d 个成就等待解锁", len(achievements)))
+	
+	text := strings.Join(lines, "\n")
+	
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	return &callback.Response{
+		Text:     text,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
 }
 
 // --- 冒险排行榜 ---
@@ -759,9 +863,9 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 	if !alreadyChallenged {
-		kb.AddButton("⚔️ 接受挑战", "adventure_start")
+		kb.AddButton("⚔️ 接受挑战", fmt.Sprintf("adventure_start:movie=%s", url.QueryEscape(movie.Title)))
 	} else {
-		kb.AddButton("🎲 换一部挑战", "adventure_start")
+		kb.AddButton("🎲 换一部挑战", fmt.Sprintf("adventure_start:movie=%s", url.QueryEscape(movie.Title)))
 	}
 	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()

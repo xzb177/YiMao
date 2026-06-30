@@ -248,6 +248,18 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 
 	logger.Info("[SearchHandler] handleSelect: id=%s, type=%s", tmdbIDStr, mediaType)
 
+	// Parse TMDB ID for validation
+	tmdbID := 0
+	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
+	if tmdbID == 0 {
+		return &callback.Response{
+			Text:        "⚠️ 该条目缺少 TMDB ID，无法获取详情\n\n💡 建议：尝试其他搜索结果",
+			CallbackMsg: "条目无效",
+			ShowAlert:   true,
+			Edit:        true,
+		}, nil
+	}
+
 	detailCallback := fmt.Sprintf("detail:id:%s:type:%s", tmdbIDStr, mediaType)
 	parser := callback.NewParser()
 	cb, err := parser.Parse(detailCallback)

@@ -482,11 +482,25 @@ func BuildBlindBoxRewardCard(data BlindBoxRewardCardData) RichMessage {
 // ============================================================
 
 // BuildGameCenterCard 构建游戏中心入口卡片
-func BuildGameCenterCard() RichMessage {
+func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 云海游戏中心", 2)
-	builder.Italic("闯关 · 竞技 · 奖励 — 三位一体")
+
+	// 🔥 连胜火焰
+	if streakCurrent > 0 {
+		fireEmoji := "🔥"
+		if streakCurrent >= 30 {
+			fireEmoji = "🌈🔥" // 彩虹焰
+		} else if streakCurrent >= 7 {
+			fireEmoji = "🔱🔥" // 金焰
+		} else if streakCurrent >= 3 {
+			fireEmoji = "⚡🔥" // 银焰
+		}
+		builder.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天 （最佳：%d 天）", fireEmoji, streakCurrent, streakBest))
+	} else {
+		builder.Italic("今天还没有通关，来打破沉默？")
+	}
 	builder.Divider()
 
 	builder.BoldParagraph("⚔️ 双核心")
@@ -504,6 +518,47 @@ func BuildGameCenterCard() RichMessage {
 	builder.Divider()
 
 	builder.Italic("闯关是手段，求片是目的，排行是动力")
+
+	return builder.Build()
+}
+
+// TasteCardData 品味分析卡片数据
+type TasteCardData struct {
+	UserName   string
+	TotalViews int
+	TopGenres  []ViewingGenreCount
+}
+
+// ViewingGenreCount 观影类型统计
+type ViewingGenreCount struct {
+	Genre string
+	Count int
+}
+
+// BuildTasteCard 构建品味分析卡片
+func BuildTasteCard(data TasteCardData) RichMessage {
+	builder := NewBuilder()
+
+	builder.Heading(fmt.Sprintf("👅 %s 的观影品味", data.UserName), 2)
+	builder.Divider()
+
+	builder.BoldParagraph(fmt.Sprintf("📊 观影统计"))
+	builder.Paragraph(fmt.Sprintf("  累计观影：%d 部", data.TotalViews))
+
+	if len(data.TopGenres) > 0 {
+		builder.Divider()
+		builder.BoldParagraph("🎯 偏好类型")
+		for i, g := range data.TopGenres {
+			if i >= 6 {
+				break
+			}
+			bar := strings.Repeat("█", g.Count/2+1)
+			builder.Paragraph(fmt.Sprintf("  %s %s ×%d", bar, g.Genre, g.Count))
+		}
+	}
+
+	builder.Divider()
+	builder.Italic("你的品味，就是你的影迷身份证")
 
 	return builder.Build()
 }

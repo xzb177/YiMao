@@ -652,7 +652,7 @@ var (
 
 // HandleGameCommand 处理 /game 命令 — 游戏中心入口
 func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
-	card := richmessage.BuildGameCenterCard()
+	card := richmessage.BuildGameCenterCard(0, 0) // /game 命令无法获取 userID，默认无连胜
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🏆 段位", "game_rank")
 	kb.AddButton("🧠 性格", "game_personality")
@@ -662,7 +662,7 @@ func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	kb.AddButton("📢 影友圈", "game_social")
 	kb.AddButton("🎡 轮盘", "game_roulette")
 	kb.NewRow()
-	kb.AddButton("👥 关系对比", "game_compare")
+	kb.AddButton("👅 品味分析", "game_compare")
 	kb.AddButton("🎯 今日挑战", "game_daily_challenge")
 	kb.AddButton("🏆 成就系统", "game_achievements")
 	kb.AddButton("⬅️ 返回", "start")
