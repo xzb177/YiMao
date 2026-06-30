@@ -130,12 +130,16 @@ func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, err
 	card := richmessage.BuildGameCenterCard(streakCurrent, streakBest)
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-	kb.AddButton("📖 情报站", "game_narrator")
+	kb.AddButton("🎬 AI解说", "game_narrator")
+	kb.AddButton("🎰 通关盲盒", "game_blindbox")
 	kb.NewRow()
 	kb.AddButton("📊 冒险排行", "game_adventure_rank")
 	kb.AddButton("🎯 每日挑战", "game_daily_challenge")
+	kb.AddButton("🏆 成就", "game_achievements")
 	kb.NewRow()
-	kb.AddButton("🎰 通关盲盒", "game_blindbox")
+	kb.AddButton("🧠 性格分析", "game_emotion")
+	kb.AddButton("👅 品味分析", "game_compare")
+	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
