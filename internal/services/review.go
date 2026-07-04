@@ -946,7 +946,7 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	}
 	seenSubID := make(map[int]string)
 	for _, review := range s.reviews {
-		if review.Status == "approved" && review.SubscriptionID > 0 {
+		if review.Status == "approved" && review.SubscriptionID > 0 && review.SubscriptionState != "X" {
 			if existedReqID, dup := seenSubID[review.SubscriptionID]; dup {
 				logger.Info("[ReviewService] Skip duplicate subscription tracker: subID=%d, request=%s, existed=%s", review.SubscriptionID, review.RequestID, existedReqID)
 				continue

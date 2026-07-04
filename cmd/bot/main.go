@@ -600,6 +600,30 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 				}
 			}
 		}()
+		// 回归钩子：每小时检查失效用户并推送召回
+		if deps.Telegram != nil {
+			go func() {
+				ticker := time.NewTicker(1 * time.Hour)
+				defer ticker.Stop()
+				for range ticker.C {
+					inactiveUsers, err := socialDB.GetInactiveUsersWithNemesis()
+					if err != nil || len(inactiveUsers) == 0 {
+						continue
+					}
+					for _, uid := range inactiveUsers {
+						userName := "冒险者"
+						if deps.UserMapping != nil {
+							if name, err2 := deps.UserMapping.GetMoviePilotUsername(uid); err2 == nil && name != "" {
+								userName = name
+							}
+						}
+						msg := fmt.Sprintf("⚔️ 你的宿敌还在等你…\n\n%s，自从上次冒险已经过去许久了。\n你的宿敌还在周榜上——不来复仇吗？\n\n/go 一键开战", userName)
+						deps.Telegram.SendMessage(uid, msg, "", nil)
+					}
+					logger.Info("[ReturnHook] 推送召回 %d 位冒险者", len(inactiveUsers))
+				}
+			}()
+		}
 	}
 	// 注入盲盒服务（用于通关奖励）
 	if blindBoxSvc != nil {
