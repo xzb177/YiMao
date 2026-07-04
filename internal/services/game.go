@@ -2151,7 +2151,7 @@ func GetStreakRewards(streakDays int) *StreakRewards {
 	case streakDays >= 7:
 		r.FlameLevel = "业火焚天"
 		r.FlameIcon = "☄️👹💥🔥🔥🔥🔥"
-		r.BonusHP = 15
+		r.BonusHP = 10
 		r.FreeSkipTraps = 1
 		r.BossDR = 30
 		r.ExtraBlindBox = true
@@ -2159,20 +2159,20 @@ func GetStreakRewards(streakDays int) *StreakRewards {
 	case streakDays >= 5:
 		r.FlameLevel = "地狱火"
 		r.FlameIcon = "👹💥🔥🔥🔥"
-		r.BonusHP = 10
+		r.BonusHP = 7
 		r.FreeSkipTraps = 1
 		r.BossDR = 20
 		r.NextLevelDays = 7 - streakDays
 	case streakDays >= 3:
 		r.FlameLevel = "烈焰"
 		r.FlameIcon = "💥🔥🔥"
-		r.BonusHP = 5
+		r.BonusHP = 3
 		r.FreeSkipTraps = 1
 		r.NextLevelDays = 5 - streakDays
 	case streakDays >= 2:
 		r.FlameLevel = "小火苗"
 		r.FlameIcon = "🔥🔥"
-		r.BonusHP = 2
+		r.BonusHP = 1
 		r.NextLevelDays = 3 - streakDays
 	default:
 		r.FlameLevel = "火星"

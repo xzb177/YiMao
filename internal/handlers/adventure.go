@@ -27,7 +27,7 @@ const (
 	adventureBaseDmg   = 45  // 基础扣血（两次必死）
 	adventureTrapDmg   = 60  // 陷阱扣血（一次半残）
 	adventureBossDmg   = 70  // Boss关扣血（基本一击毙命）
-	adventureComboHeal = 3   // 连击回血（微乎其微）
+	adventureComboHeal = 1   // 连击回血（微乎其微）
 )
 
 // AdventureState 冒险状态
@@ -432,10 +432,10 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 				advState.HP = adventureMaxHP
 			}
 		}
-		// 背水一战：HP≤20时选对，额外回血+5
+		// 背水一战：HP≤20时选对，额外回血+2
 		lastStandBonus := 0
 		if advState.HP <= 20+lastStandBonus {
-			advState.HP += 5
+			advState.HP += 2
 			lastStandBonus = 5
 			if advState.HP > adventureMaxHP {
 				advState.HP = adventureMaxHP
