@@ -174,7 +174,7 @@ func HandleWebhookMessage(
 			}
 		}
 		// 其它命令(如 /start /requests)：已清除 pending 态，直接落到下方命令处理。
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests, deps.RankHandler, deps.StatsHandler, deps.DreamHandler, deps.AdventureHandler)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 		return

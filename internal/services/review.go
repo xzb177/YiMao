@@ -48,6 +48,9 @@ type ReviewRequest struct {
 	LastError  string `json:"last_error,omitempty"`  // 最近一次提交 MP 的错误
 	Stuck      bool   `json:"stuck,omitempty"`       // 审核通过但提交 MP 失败，卡住待处理
 
+	// OrphanRetryCount 订阅在 MP 中找不到时的重试次数（最多 3 次后标记取消）
+	OrphanRetryCount int `json:"orphan_retry_count,omitempty"`
+
 	// 求片路径追踪
 	RequestOrigin  string `json:"request_origin,omitempty"`  // "normal" | "adventure"
 	AdventureScore int    `json:"adventure_score,omitempty"` // 冒险得分
@@ -1040,10 +1043,23 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 			if review, ok := s.reviews[item.requestID]; ok {
 				if review.SubscriptionState != "" {
 					oldState := review.SubscriptionState
-					// Mark as cancelled/removed
-					review.SubscriptionState = "X"
-					logger.Info("[ReviewService] Subscription %d not found in MoviePilot, marked as cancelled: %s (was: %s)",
-						item.subID, item.requestID, oldState)
+
+					// If subscription is more than 7 days old, cancel silently
+					if time.Since(review.CreatedAt) > 7*24*time.Hour {
+						review.SubscriptionState = "X"
+						logger.Info("[ReviewService] Subscription %d not found in MP (age > 7 days), silently cancelled: %s (was: %s)",
+							item.subID, item.requestID, oldState)
+					} else if review.OrphanRetryCount >= 3 {
+						// Retried 3 times, give up and mark as cancelled
+						review.SubscriptionState = "X"
+						logger.Info("[ReviewService] Subscription %d not found in MP (retry %d exhausted), marked as cancelled: %s (was: %s)",
+							item.subID, review.OrphanRetryCount, item.requestID, oldState)
+					} else {
+						// Younger than 7 days, retry - bump counter and skip cancellation
+						review.OrphanRetryCount++
+						logger.Info("[ReviewService] Subscription %d not found in MP (retry %d/3): %s (was: %s)",
+							item.subID, review.OrphanRetryCount, item.requestID, oldState)
+					}
 				}
 			}
 		}

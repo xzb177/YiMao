@@ -1050,13 +1050,54 @@ func NewSocialDB(dataDir string) (*SocialDB, error) {
 			hp INTEGER NOT NULL DEFAULT 100,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
+
+		CREATE TABLE IF NOT EXISTS gamble_stash (
+			user_id INTEGER PRIMARY KEY,
+			items_json TEXT NOT NULL,
+			grade TEXT DEFAULT '',
+			movie_name TEXT DEFAULT '',
+			movie_year INTEGER DEFAULT 0,
+			tmdb_id INTEGER DEFAULT 0,
+			genres_json TEXT DEFAULT '[]',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS weekly_leaderboard (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			week_start TEXT NOT NULL,
+			user_id INTEGER NOT NULL,
+			category TEXT NOT NULL,
+			value INTEGER NOT NULL DEFAULT 0,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(week_start, user_id, category)
+		);
+
+		CREATE TABLE IF NOT EXISTS weekly_boss (
+			week_start TEXT PRIMARY KEY,
+			movie_name TEXT NOT NULL,
+			movie_year INTEGER NOT NULL,
+			tmdb_id INTEGER NOT NULL,
+			genres_json TEXT DEFAULT '[]',
+			poster_url TEXT DEFAULT '',
+			difficulty_mod REAL DEFAULT 1.3,
+			first_clear_user_id INTEGER DEFAULT 0,
+			total_attempts INTEGER DEFAULT 0,
+			total_clears INTEGER DEFAULT 0,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create social tables: %w", err)
 	}
 
+	// Migration: add poster_url column if not exists (for existing DBs)
+	socialDB := &SocialDB{db: db}
+	if err := socialDB.migrateWeeklyBossPosterURL(); err != nil {
+		logger.Info("[SocialDB] weekly_boss migration warning: %v", err)
+	}
+
 	logger.Info("[SocialDB] Initialized database at %s", dbPath)
-	return &SocialDB{db: db}, nil
+	return socialDB, nil
 }
 
 // Close 关闭数据库
@@ -1850,68 +1891,49 @@ func (s *SocialDB) GetAdventureStreak(userID int64) (*AdventureStreak, error) {
 		TodayPlayed:  dates[0] == today,
 	}
 
-	// 计算当前连胜和最佳连胜（一次遍历）
+	// 计算当前连胜和最佳连胜（简化：单次遍历）
 	currentStreak := 0
 	bestStreak := 0
-	tempStreak := 0
+
+	// 从今天/昨天开始算连续日期
 	expectedDate := today
+	if !streak.TodayPlayed && len(dates) > 0 && dates[0] == yesterday {
+		expectedDate = yesterday
+	}
 
 	for _, d := range dates {
 		if d == expectedDate {
-			tempStreak++
-			// 更新当前连胜（从最近日期开始连续的）
-			if currentStreak == 0 || d == expectedDate {
-				if currentStreak == 0 {
-					currentStreak = tempStreak
-				} else {
-					currentStreak = tempStreak
-				}
-			}
-			// 往前推一天
+			currentStreak++
 			t, _ := time.Parse("2006-01-02", expectedDate)
 			expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
-		} else if d == yesterday && expectedDate == today && !streak.TodayPlayed {
-			// 今天没玩，从昨天开始算
-			expectedDate = yesterday
-			tempStreak = 0
-			// 重新匹配
-			if d == expectedDate {
-				tempStreak = 1
-				t, _ := time.Parse("2006-01-02", expectedDate)
-				expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
-			}
 		} else {
-			// 断签
+			break // 断签
+		}
+	}
+
+	// 最佳连胜 = max(当前连胜, 从历史中断点计算的最大值)
+	tempStreak := 0
+	expDate := today
+	for _, d := range dates {
+		if d == expDate {
+			tempStreak++
+			t, _ := time.Parse("2006-01-02", expDate)
+			expDate = t.AddDate(0, 0, -1).Format("2006-01-02")
+		} else if d == yesterday && expDate == today && !streak.TodayPlayed {
+			expDate = yesterday
+			tempStreak = 1
+			t, _ := time.Parse("2006-01-02", expDate)
+			expDate = t.AddDate(0, 0, -1).Format("2006-01-02")
+		} else {
 			if tempStreak > bestStreak {
 				bestStreak = tempStreak
 			}
 			tempStreak = 0
-			expectedDate = "" // 停止匹配
+			expDate = ""
 		}
 	}
 	if tempStreak > bestStreak {
 		bestStreak = tempStreak
-	}
-
-	// 如果今天没玩，当前连胜为0（从昨天开始的连续天数）
-	if !streak.TodayPlayed {
-		// 检查昨天是否玩了
-		if len(dates) > 0 && dates[0] == yesterday {
-			// 从昨天开始算连胜
-			currentStreak = 0
-			expectedDate = yesterday
-			for _, d := range dates {
-				if d == expectedDate {
-					currentStreak++
-					t, _ := time.Parse("2006-01-02", expectedDate)
-					expectedDate = t.AddDate(0, 0, -1).Format("2006-01-02")
-				} else {
-					break
-				}
-			}
-		} else {
-			currentStreak = 0
-		}
 	}
 	streak.CurrentStreak = currentStreak
 	streak.BestStreak = bestStreak
@@ -2001,7 +2023,7 @@ func (s *SocialDB) GetLastFailedLevel(userID int64, movieName string) int {
 
 	var level int
 	err := s.db.QueryRow(
-		`SELECT COALESCE(levels_completed, 0) FROM adventure_stats
+		`SELECT COALESCE(levels_completed + 1, 0) FROM adventure_stats
 		 WHERE user_id = ? AND movie_name = ? AND success = 0
 		 ORDER BY created_at DESC LIMIT 1`,
 		userID, movieName,
@@ -2044,4 +2066,118 @@ func (s *SocialDB) GetMoviePassRate(movieName string) (int, int, float64) {
 	}
 	rate := float64(success) / float64(total) * 100
 	return total, success, rate
+}
+
+// GetAdventureGlobalPassRate 获取冒险全局通关率
+func (s *SocialDB) GetAdventureGlobalPassRate() (int, int, float64) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var total, success int
+	err := s.db.QueryRow(
+		`SELECT COUNT(*), COALESCE(SUM(success), 0) FROM adventure_stats`,
+	).Scan(&total, &success)
+	if err != nil || total == 0 {
+		return 0, 0, 0
+	}
+	rate := float64(success) / float64(total) * 100
+	return total, success, rate
+}
+
+// ============================================================
+//  Gamble Stash 持久化
+// ============================================================
+
+// SaveGambleStash 保存赌博暂存（通关后双倍/三倍选择前的等待期）
+func (s *SocialDB) SaveGambleStash(userID int64, itemsJSON, grade, movieName string, movieYear, tmdbID int, genresJSON string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(
+		`INSERT OR REPLACE INTO gamble_stash (user_id, items_json, grade, movie_name, movie_year, tmdb_id, genres_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		userID, itemsJSON, grade, movieName, movieYear, tmdbID, genresJSON,
+	)
+	return err
+}
+
+// LoadGambleStash 加载赌博暂存
+func (s *SocialDB) LoadGambleStash(userID int64) (itemsJSON, grade, movieName string, movieYear, tmdbID int, genresJSON string, createdAt time.Time, err error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var t string
+	err = s.db.QueryRow(
+		`SELECT items_json, grade, movie_name, movie_year, tmdb_id, genres_json, created_at
+		 FROM gamble_stash WHERE user_id = ?`, userID,
+	).Scan(&itemsJSON, &grade, &movieName, &movieYear, &tmdbID, &genresJSON, &t)
+	if err != nil {
+		return
+	}
+	createdAt, _ = time.Parse("2006-01-02 15:04:05", t)
+	// 过期检查：超过1小时自动作废
+	if time.Since(createdAt) > time.Hour {
+		s.DeleteGambleStash(userID)
+		return "", "", "", 0, 0, "", time.Time{}, sql.ErrNoRows
+	}
+	return
+}
+
+// DeleteGambleStash 删除赌博暂存
+func (s *SocialDB) DeleteGambleStash(userID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, err := s.db.Exec(`DELETE FROM gamble_stash WHERE user_id = ?`, userID)
+	return err
+}
+
+// ============================================================
+//  连胜烈焰之路 (Streak Rewards)
+// ============================================================
+
+// StreakRewards 连胜奖励
+type StreakRewards struct {
+	FlameLevel     string // 火焰等级名称
+	FlameIcon      string // 火焰图标
+	BonusHP        int    // 额外初始HP
+	FreeSkipTraps  int    // 免费跳过陷阱次数
+	BossDR         int    // Boss伤害减免%
+	ExtraBlindBox  bool   // 通关后额外盲盒
+	NextLevelDays  int    // 距离下一级还需天数
+}
+
+// GetStreakRewards 根据连胜天数计算奖励
+func GetStreakRewards(streakDays int) *StreakRewards {
+	r := &StreakRewards{}
+	switch {
+	case streakDays >= 7:
+		r.FlameLevel = "业火焚天"
+		r.FlameIcon = "☄️👹💥🔥🔥🔥🔥"
+		r.BonusHP = 15
+		r.FreeSkipTraps = 1
+		r.BossDR = 30
+		r.ExtraBlindBox = true
+		r.NextLevelDays = 0
+	case streakDays >= 5:
+		r.FlameLevel = "地狱火"
+		r.FlameIcon = "👹💥🔥🔥🔥"
+		r.BonusHP = 10
+		r.FreeSkipTraps = 1
+		r.BossDR = 20
+		r.NextLevelDays = 7 - streakDays
+	case streakDays >= 3:
+		r.FlameLevel = "烈焰"
+		r.FlameIcon = "💥🔥🔥"
+		r.BonusHP = 5
+		r.FreeSkipTraps = 1
+		r.NextLevelDays = 5 - streakDays
+	case streakDays >= 2:
+		r.FlameLevel = "小火苗"
+		r.FlameIcon = "🔥🔥"
+		r.BonusHP = 2
+		r.NextLevelDays = 3 - streakDays
+	default:
+		r.FlameLevel = "火星"
+		r.FlameIcon = "🔥"
+		r.NextLevelDays = 2 - streakDays
+	}
+	return r
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // ============================================================
@@ -34,6 +35,7 @@ type AdventureState struct {
 	MovieInfo          *services.MovieInfo         `json:"movie_info"`
 	Level              int                         `json:"level"`
 	HP                 int                         `json:"hp"`
+	MaxHP              int                         `json:"max_hp"`             // 最大HP（含连胜加成）
 	Combo              int                         `json:"combo"`
 	MaxCombo           int                         `json:"max_combo"`
 	Score              int                         `json:"score"`
@@ -46,6 +48,10 @@ type AdventureState struct {
 	HintUsed           bool                        `json:"hint_used"`
 	LastFreeReviveDate string                      `json:"last_free_revive_date"` // 上次免费复活日期 (YYYY-MM-DD)
 	VengeanceActive    bool                        `json:"vengeance_active"`      // 复仇模式（跳过第1关）
+	StreakDays         int                         `json:"streak_days"`            // 连胜天数
+	StreakRewards      *services.StreakRewards     `json:"-"`                      // 连胜奖励（不序列化）
+	FreeSkipsUsed      int                         `json:"free_skips_used"`        // 已使用的免费跳过次数
+	IsWeeklyBoss       bool                        `json:"is_weekly_boss"`         // 是否是本周梦魇
 	ChoiceLock         sync.Mutex                  `json:"-"` // 不序列化
 }
 
@@ -104,6 +110,54 @@ func (h *AdventureHandler) SetSocialDB(db *services.SocialDB) {
 // SetOnAdventureSuccess 注入冒险成功回调
 func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)) {
 	h.onAdventureSuccess = fn
+}
+
+// HandleGoCommand 处理 /go 快捷命令（自动选片）
+func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
+	userID := msg.From.ID
+	chatID := msg.Chat.ID
+
+	// 1. 优先：最近失败的宿敌
+	movieName := ""
+	if h.socialDB != nil {
+		movieName, _ = h.socialDB.GetTopNemesis(userID)
+	}
+
+	// 2. 其次：本周梦魇
+	if movieName == "" && h.socialDB != nil {
+		if wb, err := h.socialDB.GetWeeklyBoss(); err == nil && wb != nil {
+			movieName = wb.MovieName
+		}
+	}
+
+	// 3. 最后：让用户输入
+	if movieName == "" {
+		if h.sessionMgr != nil {
+			sess := h.sessionMgr.GetOrCreate(userID)
+			if sess != nil {
+				sess.Delete("adventure_state")
+				sess.Set("pending_adventure_input", true)
+			}
+		}
+		h.removeState(userID)
+		telegram.SendMessage(chatID, "⚔️ 没有发现宿敌或梦魇\n\n请发送你想挑战的电影名：", "", nil)
+		return
+	}
+
+	go h.startAdventureAsync(userID, chatID, movieName)
+}
+
+// startWeeklyBossAsync 发起梦魇挑战
+func (h *AdventureHandler) startWeeklyBossAsync(userID int64, chatID int64, wb *services.WeeklyBoss) {
+	if wb == nil {
+		h.telegram.SendMessage(chatID, "🎪 本周暂无梦魇", "", nil)
+		return
+	}
+	// 以梦魇模式启动冒险
+	go func() {
+		h.startAdventureAsyncLevel(userID, chatID, wb.MovieName, 1, "")
+		// 标记为梦魇模式（需要修改 state 的 IsWeeklyBoss）
+	}()
 }
 
 // SetBlindBoxService 注入盲盒服务（用于通关奖励）
@@ -218,6 +272,8 @@ func (h *AdventureHandler) Handle(ctx *callback.Context) (*callback.Response, er
 		return h.handleGamble(ctx)
 	case "adventure_gamble_safe":
 		return h.handleGambleSafe(ctx)
+	case "adventure_gamble_triple":
+		return h.handleGambleTriple(ctx)
 	default:
 		return nil, fmt.Errorf("unknown adventure action: %s", action)
 	}
@@ -300,8 +356,17 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 		}
 	}
 	h.removeState(ctx.UserID) // 清除持久化
+	// 动态获取真实通关率
+	passRateText := "通关率不到 10%"
+	if h.socialDB != nil {
+		total, successCount, rate := h.socialDB.GetAdventureGlobalPassRate()
+		if total >= 5 {
+			passRateText = fmt.Sprintf("全球通关率 %.0f%%（%d/%d）", rate, successCount, total)
+		}
+	}
+
 	return &callback.Response{
-		Text: "⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n每关4个选项，两次失误即死\n通关率不到 10%",
+		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n每关4个选项，两次失误即死\n%s", passRateText),
 	}, nil
 }
 
@@ -744,12 +809,34 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 
 // handleGamble 🎰 双倍或归零 — 用户选择赌一把
 func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Response, error) {
-	h.gambleStashMu.Lock()
-	stash := h.gambleStash[ctx.UserID]
-	delete(h.gambleStash, ctx.UserID) // 无论结果如何，消耗掉
-	h.gambleStashMu.Unlock()
+	var items []richmessage.BlindBoxItemView
+	var grade, movieTitle string
 
-	if stash == nil {
+	// 优先从 DB 加载
+	if h.socialDB != nil {
+		itemsJSON, dbGrade, dbMovieName, _, _, _, _, err := h.socialDB.LoadGambleStash(ctx.UserID)
+		if err == nil && itemsJSON != "" {
+			json.Unmarshal([]byte(itemsJSON), &items)
+			grade = dbGrade
+			movieTitle = dbMovieName
+			h.socialDB.DeleteGambleStash(ctx.UserID)
+		}
+	}
+
+	// 回退到内存
+	if len(items) == 0 {
+		h.gambleStashMu.Lock()
+		stash := h.gambleStash[ctx.UserID]
+		delete(h.gambleStash, ctx.UserID)
+		h.gambleStashMu.Unlock()
+		if stash != nil {
+			items = stash.Items
+			grade = stash.Grade
+			movieTitle = stash.MovieInfo.Title
+		}
+	}
+
+	if len(items) == 0 {
 		return &callback.Response{CallbackMsg: "🎰 赌局已过期，请重新通关获取盲盒", ShowAlert: true}, nil
 	}
 
@@ -757,16 +844,15 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	won := rand.Intn(2) == 1
 
 	if won {
-		// 双倍：克隆所有物品
-		doubled := make([]richmessage.BlindBoxItemView, 0, len(stash.Items)*2)
-		doubled = append(doubled, stash.Items...)
-		doubled = append(doubled, stash.Items...)
+		doubled := make([]richmessage.BlindBoxItemView, 0, len(items)*2)
+		doubled = append(doubled, items...)
+		doubled = append(doubled, items...)
 
 		card := richmessage.BuildGambleResultCard(richmessage.GambleResultCardData{
-			Grade:      stash.Grade,
+			Grade:      grade,
 			Items:      doubled,
 			Won:        true,
-			MovieTitle: stash.MovieInfo.Title,
+			MovieTitle: movieTitle,
 		})
 
 		kb := services.NewKeyboardBuilder()
@@ -777,12 +863,11 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 		return &callback.Response{CallbackMsg: "🎉 赌赢了！奖励翻倍！", ShowAlert: false}, nil
 	}
 
-	// 归零 — 发个安慰卡片
 	card := richmessage.BuildGambleResultCard(richmessage.GambleResultCardData{
-		Grade:      stash.Grade,
+		Grade:      grade,
 		Items:      nil,
 		Won:        false,
-		MovieTitle: stash.MovieInfo.Title,
+		MovieTitle: movieTitle,
 	})
 
 	kb := services.NewKeyboardBuilder()
@@ -795,19 +880,39 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 
 // handleGambleSafe 📦 安全领取 — 用户放弃赌博
 func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Response, error) {
-	h.gambleStashMu.Lock()
-	stash := h.gambleStash[ctx.UserID]
-	delete(h.gambleStash, ctx.UserID)
-	h.gambleStashMu.Unlock()
+	var items []richmessage.BlindBoxItemView
+	var grade string
 
-	if stash == nil {
+	// 优先从 DB 加载
+	if h.socialDB != nil {
+		itemsJSON, dbGrade, _, _, _, _, _, err := h.socialDB.LoadGambleStash(ctx.UserID)
+		if err == nil && itemsJSON != "" {
+			json.Unmarshal([]byte(itemsJSON), &items)
+			grade = dbGrade
+			h.socialDB.DeleteGambleStash(ctx.UserID)
+		}
+	}
+
+	// 回退到内存
+	if len(items) == 0 {
+		h.gambleStashMu.Lock()
+		stash := h.gambleStash[ctx.UserID]
+		delete(h.gambleStash, ctx.UserID)
+		h.gambleStashMu.Unlock()
+		if stash != nil {
+			items = stash.Items
+			grade = stash.Grade
+		}
+	}
+
+	if len(items) == 0 {
 		return &callback.Response{CallbackMsg: "📦 奖励已领取或过期", ShowAlert: true}, nil
 	}
 
 	// 正常展示盲盒奖励
 	rewardCard := richmessage.BuildBlindBoxRewardCard(richmessage.BlindBoxRewardCardData{
-		Grade: stash.Grade,
-		Items: stash.Items,
+		Grade: grade,
+		Items: items,
 	})
 
 	kb := services.NewKeyboardBuilder()
@@ -816,6 +921,87 @@ func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Re
 
 	h.telegram.SendMessage(ctx.ChatID, rewardCard.Markdown, "Markdown", kb.Build())
 	return &callback.Response{CallbackMsg: "📦 奖励已安全入袋", ShowAlert: false}, nil
+}
+
+// handleGambleTriple 💀 三倍豪赌 — 30%三倍 / 70%腰斩
+func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.Response, error) {
+	var items []richmessage.BlindBoxItemView
+	var grade, movieTitle string
+
+	// 优先从 DB 加载
+	if h.socialDB != nil {
+		itemsJSON, dbGrade, dbMovieName, _, _, _, _, err := h.socialDB.LoadGambleStash(ctx.UserID)
+		if err == nil && itemsJSON != "" {
+			json.Unmarshal([]byte(itemsJSON), &items)
+			grade = dbGrade
+			movieTitle = dbMovieName
+			h.socialDB.DeleteGambleStash(ctx.UserID)
+		}
+	}
+
+	// 回退到内存
+	if len(items) == 0 {
+		h.gambleStashMu.Lock()
+		stash := h.gambleStash[ctx.UserID]
+		delete(h.gambleStash, ctx.UserID)
+		h.gambleStashMu.Unlock()
+		if stash != nil {
+			items = stash.Items
+			grade = stash.Grade
+			movieTitle = stash.MovieInfo.Title
+		}
+	}
+
+	if len(items) == 0 {
+		return &callback.Response{CallbackMsg: "💀 赌局已过期", ShowAlert: true}, nil
+	}
+
+	// 30% 概率三倍
+	won := rand.Intn(100) < 30
+
+	if won {
+		tripled := make([]richmessage.BlindBoxItemView, 0, len(items)*3)
+		for i := 0; i < 3; i++ {
+			tripled = append(tripled, items...)
+		}
+
+		card := richmessage.BuildGambleResultCard(richmessage.GambleResultCardData{
+			Grade:      grade,
+			Items:      tripled,
+			Won:        true,
+			MovieTitle: movieTitle,
+		})
+
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🎰 再开一个", "game_blindbox")
+		kb.AddButton("🎮 游戏中心", "game_menu")
+
+		h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+		// 三倍成功 → 群通知
+		userName := h.getUserName(ctx.UserID)
+		h.notifyGroup(userName, fmt.Sprintf("💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀\n\n⚡ 三倍豪赌 ⚡\n\n💀 %s\n💀 《%s》\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n30%% 的概率，他押中了\n三倍收益 · 一念天堂\n\n💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀", userName, movieTitle))
+		return &callback.Response{CallbackMsg: "💀 三倍豪赌成功！天堂之门开启！", ShowAlert: false}, nil
+	}
+
+	// 腰斩：只保留一半
+	halved := items[:len(items)/2]
+	if len(halved) == 0 {
+		halved = nil
+	}
+
+	card := richmessage.BuildGambleResultCard(richmessage.GambleResultCardData{
+		Grade:      grade,
+		Items:      halved,
+		Won:        false,
+		MovieTitle: movieTitle,
+	})
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
+	kb.AddButton("🎮 游戏中心", "game_menu")
+
+	h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+	return &callback.Response{CallbackMsg: "💀 腰斩了...30% 可不是好赌的", ShowAlert: false}, nil
 }
 
 // ============================================================
@@ -933,20 +1119,40 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	}
 
 	vengeanceActive := startLevel > 1
+
+	// 🔥 连胜加成
+	streakDays := 0
+	var streakRewards *services.StreakRewards
+	if h.socialDB != nil {
+		streak, _ := h.socialDB.GetAdventureStreak(userID)
+		if streak != nil {
+			streakDays = streak.CurrentStreak
+			streakRewards = services.GetStreakRewards(streakDays)
+		}
+	}
+
+	initialHP := adventureMaxHP
+	if streakRewards != nil {
+		initialHP = adventureMaxHP + streakRewards.BonusHP
+	}
+
 	state := &AdventureState{
-		MovieInfo:     movieInfo,
-		Level:         startLevel,
-		HP:            adventureMaxHP,
-		Combo:         0,
-		MaxCombo:      0,
-		Score:         0,
-		History:       []string{},
-		Scene:         scene,
-		InProgress:    true,
-		TotalLevels:   adventureMaxLevels,
-		PerfectRun:    !vengeanceActive, // 复仇模式不算完美
-		TriedChoices:  make(map[int]bool),
+		MovieInfo:       movieInfo,
+		Level:           startLevel,
+		HP:              initialHP,
+		MaxHP:           initialHP,
+		Combo:           0,
+		MaxCombo:        0,
+		Score:           0,
+		History:         []string{},
+		Scene:           scene,
+		InProgress:      true,
+		TotalLevels:     adventureMaxLevels,
+		PerfectRun:      !vengeanceActive,
+		TriedChoices:    make(map[int]bool),
 		VengeanceActive: vengeanceActive,
+		StreakDays:      streakDays,
+		StreakRewards:   streakRewards,
 	}
 
 	if h.sessionMgr != nil {
@@ -1156,6 +1362,14 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		)
 	}
 
+	// Update weekly leaderboard
+	if success && h.socialDB != nil {
+		if result.Grade == "SSS" {
+			_ = h.socialDB.UpdateWeeklyLeaderboard(userID, "sss", 1)
+		}
+		_ = h.socialDB.UpdateWeeklyLeaderboard(userID, "score", result.Score)
+	}
+
 	// 通关 → 自动提交求片请求
 	if success && h.onAdventureSuccess != nil {
 		go h.onAdventureSuccess(
@@ -1327,6 +1541,24 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
 				result.Score, state.HP, state.MaxCombo)
+
+		// 🔥 7天连胜达成
+		case state.StreakDays >= 7:
+			shouldNotify = true
+			notifyMsg = fmt.Sprintf(`🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥
+
+⚡ 业火焚天 ⚡
+
+🔥 %s
+🔥 《%s》(%d)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+7天连胜 · 业火焚天
+烈焰之路的尽头，他是火焰本身
+
+🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
+				userName, state.MovieInfo.Title, state.MovieInfo.Year)
 		}
 		if shouldNotify {
 			h.notifyGroup(userName, notifyMsg)
@@ -1359,8 +1591,10 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 	globalPassRate := ""
 	if h.socialDB != nil {
 		total, successCount, rate := h.socialDB.GetMoviePassRate(state.MovieInfo.Title)
-		if total >= 3 {
-			if success {
+		if total >= 1 {
+			if total < 5 {
+				globalPassRate = "冒险者寥寥，暂无足够数据统计通关率——你的成败，正在书写历史"
+			} else if success {
 				globalPassRate = fmt.Sprintf("全球仅 %.0f%% 的玩家通关了《%s》（%d/%d）", rate, state.MovieInfo.Title, successCount, total)
 			} else {
 				globalPassRate = fmt.Sprintf("你不是一个人——%.0f%% 的人也倒在了《%s》面前", 100-rate, state.MovieInfo.Title)
@@ -1761,27 +1995,29 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 		})
 	}
 
-	// 🎰 双倍或归零：S评级以上才有资格赌
+	// 🎰 赌注升级：S评级以上才有资格赌（改为DB持久化）
 	if grade == "SSS" || grade == "SS" || grade == "S" {
-		// 暂存盲盒物品
-		h.gambleStashMu.Lock()
-		if h.gambleStash == nil {
-			h.gambleStash = make(map[int64]*gambleStashEntry)
-		}
-		h.gambleStash[chatID] = &gambleStashEntry{
-			Items:     views,
-			Grade:     grade,
-			MovieInfo: state.MovieInfo,
-		}
-		h.gambleStashMu.Unlock()
-
-		// 60秒后自动清理过期暂存
-		go func(cid int64) {
-			time.Sleep(60 * time.Second)
+		// 暂存盲盒物品到 DB
+		if h.socialDB != nil {
+			itemsJSON, _ := json.Marshal(views)
+			genresJSON, _ := json.Marshal(state.MovieInfo.Genres)
+			_ = h.socialDB.SaveGambleStash(chatID, string(itemsJSON), grade,
+				state.MovieInfo.Title, state.MovieInfo.Year, state.MovieInfo.TMDBID, string(genresJSON))
+		} else {
+			// 回退到内存（socialDB未初始化时）
 			h.gambleStashMu.Lock()
-			delete(h.gambleStash, cid)
+			if h.gambleStash == nil {
+				h.gambleStash = make(map[int64]*gambleStashEntry)
+			}
+			h.gambleStash[chatID] = &gambleStashEntry{Items: views, Grade: grade, MovieInfo: state.MovieInfo}
 			h.gambleStashMu.Unlock()
-		}(chatID)
+			go func(cid int64) {
+				time.Sleep(60 * time.Second)
+				h.gambleStashMu.Lock()
+				delete(h.gambleStash, cid)
+				h.gambleStashMu.Unlock()
+			}(chatID)
+		}
 
 		// 发送赌博卡片
 		gambleCard := richmessage.BuildGambleOfferCard(richmessage.GambleOfferCardData{
@@ -1791,9 +2027,11 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 		})
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("🎰 赌一把！双倍或归零", "adventure_gamble")
+		kb.AddButton("📦 稳妥收下", "adventure_gamble_safe")
 		kb.NewRow()
-		kb.AddButton("📦 安全领取", "adventure_gamble_safe")
+		kb.AddButton("🎰 双倍或归零 (50%)", "adventure_gamble")
+		kb.NewRow()
+		kb.AddButton("💀 三倍豪赌 (30%)", "adventure_gamble_triple")
 
 		h.telegram.SendMessage(chatID, gambleCard.Markdown, "Markdown", kb.Build())
 		return

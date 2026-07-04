@@ -31,6 +31,10 @@ func HandleCommand(
 	sessMgr *session.Manager,
 	wishHandler *handlers.WishHandler,
 	myRequestsHandler *handlers.MyRequestsHandler,
+	rankHandler *handlers.RankHandler,
+	statsHandler *handlers.StatsHandler,
+	dreamHandler *handlers.DreamHandler,
+	adventureHandler *handlers.AdventureHandler,
 ) {
 	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
 
@@ -125,6 +129,23 @@ func HandleCommand(
 		HandleNarrateCommand(telegram, msg, cfg)
 	case "/review":
 		HandleReviewCommand(telegram, msg, cfg, userMapping)
+		// New adventure commands
+	case "/go":
+		if adventureHandler != nil {
+			adventureHandler.HandleGoCommand(telegram, msg)
+		}
+	case "/rank", "/排行":
+		if rankHandler != nil {
+			rankHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		}
+	case "/mystats":
+		if statsHandler != nil {
+			statsHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		}
+	case "/dream":
+		if dreamHandler != nil {
+			dreamHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		}
 		// Unknown commands are silently ignored
 	}
 }

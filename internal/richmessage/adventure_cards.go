@@ -661,20 +661,20 @@ type GambleOfferCardData struct {
 func BuildGambleOfferCard(data GambleOfferCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("🎰 双倍或归零", 2)
+	b.Heading("🎰 战利品时间", 2)
 	b.BoldParagraph(fmt.Sprintf("🏆 %s 评级通关 · 《%s》", data.Grade, data.MovieTitle))
 	b.Divider()
 
 	b.Paragraph(fmt.Sprintf("🎁 你获得了 %d 个通关盲盒", data.ItemCount))
 	b.Divider()
 
-	b.BoldParagraph("🎰 要赌一把吗？")
-	b.Paragraph("  50% 概率：盲盒数量翻倍")
-	b.Paragraph("  50% 概率：全部归零")
-	b.Paragraph("  ⚠️ 一旦选择就无法回头")
+	b.BoldParagraph("你怎么选？")
+	b.Paragraph("  📦 稳妥收下 — 落袋为安，零风险")
+	b.Paragraph("  🎰 双倍或归零 — 50% 翻倍 / 50% 归零")
+	b.Paragraph("  💀 三倍豪赌 — 30% 三倍 / 70% 腰斩")
 	b.Divider()
 
-	b.Italic("贪心的人要么得到一切，要么一无所有")
+	b.Italic("要么稳稳地走，要么玩命地赌")
 
 	return b.Build()
 }

@@ -189,6 +189,9 @@ type Dependencies struct {
 	MyRequestsHandler *handlers.MyRequestsHandler // 「我的请求」聚合视图（/requests 命令复用）
 	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
 	AdventureHandler  *handlers.AdventureHandler  // 求片大冒险
+	RankHandler       *handlers.RankHandler       // 冒险者公会排行
+	StatsHandler      *handlers.StatsHandler      // 个人冒险面板
+	DreamHandler      *handlers.DreamHandler      // 本周梦魇挑战
 }
 
 // initServices initializes all services
@@ -583,6 +586,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
 	if socialDB != nil {
 		adventureHandler.SetSocialDB(socialDB)
+		// 自动生成本周梦魇（如果没有的话）
+		if deps.Cfg.TMDBAPIKey != "" {
+			go socialDB.AutoGenerateWeeklyBoss(deps.Cfg.TMDBAPIKey)
+		}
 		// 定期清理过期的冒险会话（每30分钟）
 		go func() {
 			ticker := time.NewTicker(30 * time.Minute)
@@ -639,6 +646,11 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, adventureHandler, groupChatID)
 	gameHandler.SetViewingHistoryService(viewingSvc)
 	logger.Info("[initRegistry] Game services initialized")
+
+	// 新冒险功能 handlers
+	rankHandler := handlers.NewRankHandler(socialDB, deps.Telegram, deps.UserMapping, groupChatID)
+	statsHandler := handlers.NewStatsHandler(socialDB, deps.Telegram, deps.UserMapping)
+	dreamHandler := handlers.NewDreamHandler(socialDB, deps.Telegram, adventureHandler, deps.UserMapping)
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
@@ -714,6 +726,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)    // 🩸 每日免费复活
 	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)    // 🎰 双倍或归零
 	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle) // 📦 安全领取
+	registry.RegisterFunc("adventure_gamble_triple", adventureHandler.Handle) // 💀 三倍豪赌
 	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
 	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
 	logger.Info("[initRegistry] Game callbacks registered (27+5 actions)")
@@ -862,6 +875,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,
 		AdventureHandler:  adventureHandler,
+		RankHandler:       rankHandler,
+		StatsHandler:      statsHandler,
+		DreamHandler:      dreamHandler,
 	}
 
 	return registry, resultDeps
@@ -882,6 +898,10 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "game", Description: "🎮 游戏中心"},
 		{Command: "narrate", Description: "🎬 AI 电影解说"},
 		{Command: "review", Description: "✍️ 写影评"},
+		{Command: "rank", Description: "🏆 冒险排行"},
+		{Command: "mystats", Description: "📜 我的冒险档案"},
+		{Command: "go", Description: "⚡ 一键开启冒险"},
+		{Command: "dream", Description: "🎪 本周梦魇"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommands(commands, ""); err != nil {
@@ -925,5 +945,8 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		MyRequests:      deps.MyRequestsHandler,
 		GameHandler:     deps.GameHandler,
 		AdventureHandler: deps.AdventureHandler,
+		RankHandler:      deps.RankHandler,
+		StatsHandler:     deps.StatsHandler,
+		DreamHandler:     deps.DreamHandler,
 	}
 }

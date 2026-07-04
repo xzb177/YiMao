@@ -195,6 +195,7 @@ var validActions = map[Action]bool{
 	"adventure_revive": true, // 🩸 每日免费复活
 	"adventure_gamble": true, // 🎰 双倍或归零 - 赌
 	"adventure_gamble_safe": true, // 📦 双倍或归零 - 安全领
+	"adventure_gamble_triple": true, // 💀 三倍豪赌
 	"game_adventure_stats":    true, // 冒险统计
 	"game_adventure_rank":     true, // 冒险排行榜
 	"game_daily_challenge":    true, // 每日挑战

@@ -35,6 +35,9 @@ type Dependencies struct {
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 	AdventureHandler *handlers.AdventureHandler // 求片大冒险
+	RankHandler      *handlers.RankHandler      // 冒险者公会排行
+	StatsHandler     *handlers.StatsHandler     // 个人冒险面板
+	DreamHandler     *handlers.DreamHandler     // 本周梦魇挑战
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -57,6 +60,9 @@ type PollDeps struct {
 	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
 	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 	AdventureHandler *handlers.AdventureHandler // 求片大冒险
+	RankHandler      *handlers.RankHandler      // 冒险者公会排行
+	StatsHandler     *handlers.StatsHandler     // 个人冒险面板
+	DreamHandler     *handlers.DreamHandler     // 本周梦魇挑战
 }
 
 // StartPolling starts the Telegram update polling
@@ -90,6 +96,9 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		MyRequests:      deps.MyRequests,
 		GameHandler:     deps.GameHandler,
 		AdventureHandler: deps.AdventureHandler,
+		RankHandler:      deps.RankHandler,
+		StatsHandler:     deps.StatsHandler,
+		DreamHandler:     deps.DreamHandler,
 	}
 
 	for {
@@ -140,7 +149,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
+		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler, deps.RankHandler, deps.StatsHandler, deps.DreamHandler)
 		return
 	}
 
@@ -157,7 +166,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		}
 		// 其它命令(如 /start /requests)：已清除 pending 态，直接执行命令。
 		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests, deps.RankHandler, deps.StatsHandler, deps.DreamHandler, deps.AdventureHandler)
 		return
 	}
 
@@ -422,7 +431,7 @@ func allDigits(s string) bool {
 
 // HandleGroupChatMessage handles messages in group chats
 // 群组只做轻量引导和通知，不在群里展开搜索结果/求片进度，避免暴露观影隐私。
-func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler, rankHandler *handlers.RankHandler, statsHandler *handlers.StatsHandler, dreamHandler *handlers.DreamHandler) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
@@ -472,6 +481,24 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		}
 	case "/review", "/评价", "/影评":
 		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
+	case "/rank", "/排行":
+		if rankHandler != nil {
+			rankHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "📊 排行服务未就绪", "", nil)
+		}
+	case "/dream":
+		if dreamHandler != nil {
+			dreamHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "👾 梦魇挑战未就绪", "", nil)
+		}
+	case "/mystats":
+		if statsHandler != nil {
+			statsHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
+		} else {
+			telegram.SendMessage(msg.Chat.ID, "📈 个人面板未就绪", "", nil)
+		}
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
