@@ -428,15 +428,19 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		if advState.Combo >= 3 {
 			heal := adventureComboHeal * (advState.Combo - 2)
 			advState.HP += heal
-			if advState.HP > adventureMaxHP {
-				advState.HP = adventureMaxHP
+			maxHp := adventureMaxHP
+			if advState.MaxHP > maxHp {
+				maxHp = advState.MaxHP
+			}
+			if advState.HP > maxHp {
+				advState.HP = maxHp
 			}
 		}
 		// 背水一战：HP≤20时选对，额外回血+2
 		lastStandBonus := 0
 		if advState.HP <= 20+lastStandBonus {
 			advState.HP += 2
-			lastStandBonus = 5
+			lastStandBonus = 2
 			if advState.HP > adventureMaxHP {
 				advState.HP = adventureMaxHP
 			}
@@ -809,6 +813,7 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 
 // handleGamble 🎰 双倍或归零 — 用户选择赌一把
 func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Response, error) {
+	logger.Info("[Adventure] 🎰 Gamble callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
 	var grade, movieTitle string
 
@@ -880,6 +885,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 
 // handleGambleSafe 📦 安全领取 — 用户放弃赌博
 func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Response, error) {
+	logger.Info("[Adventure] 📦 GambleSafe callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
 	var grade string
 
@@ -925,6 +931,7 @@ func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Re
 
 // handleGambleTriple 💀 三倍豪赌 — 30%三倍 / 70%腰斩
 func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.Response, error) {
+	logger.Info("[Adventure] 💀 GambleTriple callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
 	var grade, movieTitle string
 
@@ -1383,6 +1390,14 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 	// 群通知：荣耀播报（稀缺性 = 更有面子）
 	userName := h.getUserName(userID)
 	if success {
+		// HP 安全钳：防止显示异常值
+		displayHP := state.HP
+		if displayHP > state.MaxHP && state.MaxHP > 0 {
+			displayHP = state.MaxHP
+		} else if displayHP > 100 {
+			displayHP = 100
+		}
+		
 		shouldNotify := false
 		notifyMsg := ""
 		switch {
@@ -1428,7 +1443,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑`,
 					userName, state.MovieInfo.Title, state.MovieInfo.Year,
-					result.Score, state.HP, state.MaxCombo)
+					result.Score, displayHP, state.MaxCombo)
 			}
 
 		case result.Grade == "SS":
@@ -1451,7 +1466,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 💎━━━━━━━━━━━━━━━━━━━━━━━━━━💎`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, state.HP, state.MaxCombo)
+				result.Score, displayHP, state.MaxCombo)
 
 		case state.PerfectRun:
 			shouldNotify = true
@@ -1494,7 +1509,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, state.HP, state.MaxCombo, state.MaxCombo)
+				result.Score, displayHP, state.MaxCombo, state.MaxCombo)
 
 		// 低门槛触发：新人首通（优先级低于SSS/SS/无伤/x4+）
 		case h.socialDB != nil && h.socialDB.IsFirstSuccess(userID):
@@ -1517,7 +1532,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 🌟━━━━━━━━━━━━━━━━━━━━━━━━━━🌟`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, state.HP, state.MaxCombo)
+				result.Score, displayHP, state.MaxCombo)
 
 		// 低门槛触发：本周首通（优先级低于新人首通）
 		case h.socialDB != nil && h.socialDB.IsFirstSuccessThisWeek(userID):
@@ -1540,7 +1555,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, state.HP, state.MaxCombo)
+				result.Score, displayHP, state.MaxCombo)
 
 		// 🔥 7天连胜达成
 		case state.StreakDays >= 7:
