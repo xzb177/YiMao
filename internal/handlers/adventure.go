@@ -121,7 +121,19 @@ func canFreeRevive(s *AdventureState, today string) bool {
 }
 
 func canShareAdventure(s *AdventureState, runID string) bool {
-	return s != nil && s.Success && !s.InProgress && s.HP > 0 && runID != "" && s.RunID == runID
+	return s != nil && !s.InProgress && runID != "" && s.RunID == runID &&
+		shouldBroadcastAdventure(s.Success, adventureGrade(s.Score), s.PerfectRun, s.MaxCombo, s.Level-1, s.TotalLevels)
+}
+
+func adventureGrade(score int) string {
+	switch {
+	case score >= 90:
+		return "SSS"
+	case score >= 80:
+		return "SS"
+	default:
+		return ""
+	}
 }
 
 func shouldBroadcastAdventure(success bool, grade string, perfect bool, combo, failedLevel, total int) bool {
@@ -405,7 +417,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	}
 	h.removeState(ctx.UserID) // 清除持久化
 	// 动态获取真实通关率
-	passRateText := "通关率不到 10%"
+	passRateText := ""
 	if h.socialDB != nil {
 		total, successCount, rate := h.socialDB.GetAdventureGlobalPassRate()
 		if total >= 5 {
@@ -414,7 +426,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	}
 
 	return &callback.Response{
-		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n⚠️ 只有通关才能提交求片请求\n每关4个选项，两次失误即死\n%s", passRateText),
+		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n只有通关才能提交求片请求\n每关4个选项，两次失误结束挑战\n%s", passRateText),
 	}, nil
 }
 
@@ -765,7 +777,7 @@ func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Respons
 		runID = ctx.Callback.Params["run"]
 	}
 	if !canShareAdventure(advState, runID) {
-		return &callback.Response{CallbackMsg: "❌ 只有本次成功通关的战绩可以分享", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "这局战绩保持静默；仅 SSS、SS、无伤、x4+ 连击或终局惜败可分享", ShowAlert: true}, nil
 	}
 	if !h.claimAdventureShare(runID, ctx.CallbackID) {
 		return &callback.Response{CallbackMsg: "✅ 这份战绩已经分享过了", ShowAlert: false}, nil
@@ -942,7 +954,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
-	return &callback.Response{CallbackMsg: "💸 归零了...下次一定赢！", ShowAlert: false}, nil
+	return &callback.Response{CallbackMsg: "💸 本局归零，赌局结束", ShowAlert: false}, nil
 }
 
 // handleGambleSafe 📦 安全领取 — 用户放弃赌博
@@ -1130,7 +1142,10 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		if loadingMsg != nil {
 			h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
 		}
-		h.telegram.SendMessage(chatID, fmt.Sprintf("❌ 找不到这部电影\n%s\n\n试试其他名字？", err.Error()), "", nil)
+		logger.Info("[冒险] 搜索电影失败: query=%q err=%v", movieName, err)
+		if _, sendErr := h.telegram.SendMessage(chatID, fmt.Sprintf("没搜到《%s》。换个中文名、英文名，或者带上年份再试。", movieName), "", nil); sendErr != nil {
+			logger.Info("[冒险] 发送搜索失败提示失败: %v", sendErr)
+		}
 		return
 	}
 
@@ -1304,7 +1319,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 				CorrectAnswer: correctAnswer,
 			})
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("🩸 接受复活 (+30HP)", "adventure_revive")
+			kb.AddButton("🩸 恢复30HP并重试本关", "adventure_revive")
 			kb.NewRow()
 			kb.AddButton("💀 拒绝（再来一次）", "adventure_retry")
 			kb.AddButton("🎮 游戏中心", "game_menu")
@@ -1582,69 +1597,6 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 				userName, state.MovieInfo.Title, state.MovieInfo.Year,
 				result.Score, displayHP, state.MaxCombo, state.MaxCombo)
 
-		// 低门槛触发：新人首通（优先级低于SSS/SS/无伤/x4+）
-		case h.socialDB != nil && h.socialDB.IsFirstSuccess(userID):
-			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🌟━━━━━━━━━━━━━━━━━━━━━━━━━━🌟
-
-⚡ 新星降临 ⚡
-
-🌟 %s
-🌟 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ %d%%  🔥 x%d 连击
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎬 首次通关，敲响求片之门
-从此，冒险世界多了一位勇者
-
-🌟━━━━━━━━━━━━━━━━━━━━━━━━━━🌟`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, displayHP, state.MaxCombo)
-
-		// 低门槛触发：本周首通（优先级低于新人首通）
-		case h.socialDB != nil && h.socialDB.IsFirstSuccessThisWeek(userID):
-			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅
-
-⚡ 本周第一道曙光 ⚡
-
-🌅 %s
-🌅 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ %d%%  🔥 x%d 连击
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-打破沉默，这周的第一场胜利
-冒险的火种重新点燃
-
-🌅━━━━━━━━━━━━━━━━━━━━━━━━━━🌅`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, displayHP, state.MaxCombo)
-
-		// 🔥 7天连胜达成
-		case state.StreakDays >= 7:
-			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥
-
-⚡ 业火焚天 ⚡
-
-🔥 %s
-🔥 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-7天连胜 · 业火焚天
-烈焰之路的尽头，他是火焰本身
-
-🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year)
 		}
 		if shouldNotify && shouldBroadcastAdventure(true, result.Grade, state.PerfectRun, state.MaxCombo, 0, state.TotalLevels) {
 			h.notifyGroup(userName, notifyMsg)
@@ -1712,7 +1664,9 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		})
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📢 分享战绩", fmt.Sprintf("adventure_share:run:%s", state.RunID))
+		if shouldBroadcastAdventure(true, result.Grade, state.PerfectRun, state.MaxCombo, 0, state.TotalLevels) {
+			kb.AddButton("📢 分享战绩", fmt.Sprintf("adventure_share:run:%s", state.RunID))
+		}
 		kb.AddButton("🔄 再挑战一次", "adventure_retry")
 		kb.NewRow()
 		kb.AddButton("🎰 通关盲盒", "game_blindbox")
@@ -1780,8 +1734,8 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		}
 	}
 
-	// 生成心理学数据（社交证明 + 时间压力）
-	deathRate, optionStats, timeUrgency := generatePsychoData(state.Level, state.TotalLevels, len(scene.Choices))
+	// 仅保留明确标注为建议的节奏提示，不伪造玩家统计。
+	_, _, timeUrgency := generatePsychoData(state.Level, state.TotalLevels, len(scene.Choices))
 
 	card := richmessage.BuildAdventureSceneCard(richmessage.AdventureSceneCardData{
 		MovieTitle:  state.MovieInfo.Title,
@@ -1800,8 +1754,8 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		Score:       state.Score,
 		IsBoss:      state.Level == state.TotalLevels,
 		LastResult:  lastResult,
-		DeathRate:   deathRate,
-		OptionStats: optionStats,
+		DeathRate:   "",
+		OptionStats: "",
 		TimeUrgency: timeUrgency,
 	})
 
@@ -1955,7 +1909,7 @@ func generateBonusEffect(grade string, perfectRun bool) string {
 	// 完美通关有额外彩蛋
 	if perfectRun {
 		perfectPool := []string{
-			"🛡️ 完美通关专属：解锁「无伤战神」称号！",
+			"🛡️ 完美通关专属：解锁「无伤行者」称号！",
 			"🛡️ 完美通关专属：获得「金手指」——下次冒险可跳过一关！",
 		}
 		bonusPool = append(bonusPool, perfectPool...)

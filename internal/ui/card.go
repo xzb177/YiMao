@@ -62,10 +62,7 @@ func (b *DashBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString(fmt.Sprintf("%s\n", sep))
 
 	if len(results) == 0 {
-		sb.WriteString("\n😢 暂时没有找到可用源\n\n")
-		sb.WriteString("💡 可以试试：\n")
-		sb.WriteString("  换个片名搜搜\n")
-		sb.WriteString("  去许愿池许愿，有源了第一时间通知你\n")
+		sb.WriteString("\n" + emptySearchCopy + "\n")
 		return sb.String()
 	}
 
@@ -136,7 +133,7 @@ func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
 		sb.WriteString(fmt.Sprintf("│ %s %.1f/10\n", stars, result.Rating))
 	}
 
-	sb.WriteString(fmt.Sprintf("│ %s · %s\n", getMediaTypeLabel(result.Type), fmt.Sprintf("TMDB #%d", result.ID)))
+	sb.WriteString(fmt.Sprintf("│ %s\n", getMediaTypeLabel(result.Type)))
 	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
 
 	// 简介
@@ -188,8 +185,7 @@ func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	sb.WriteString(fmt.Sprintf("%s\n", sep))
 
 	if total == 0 {
-		sb.WriteString("\n还没有求过片～\n\n")
-		sb.WriteString("💡 搜片名 → 选一部 → 求片\n")
+		sb.WriteString("\n" + emptyRequestCopy + "\n")
 		return sb.String()
 	}
 

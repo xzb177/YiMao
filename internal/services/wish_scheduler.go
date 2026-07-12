@@ -503,14 +503,14 @@ func (s *WishScheduler) announceWishFoundToGroup(item *WishItem) {
 	}
 	var b strings.Builder
 	if n > 1 {
-		b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了，%d 人在等到了！", title, n))
+		b.WriteString(fmt.Sprintf("🎉 《%s》发现可用资源，已有 %d 人关注！", title, n))
 	} else {
-		b.WriteString(fmt.Sprintf("🎉 有人许愿的《%s》到货了！", title))
+		b.WriteString(fmt.Sprintf("🎉 《%s》发现可用资源！", title))
 	}
 	if item.MediaType == "tv" && item.Season > 0 {
 		b.WriteString(fmt.Sprintf("（第%d季）", item.Season))
 	}
-	b.WriteString("\n已私信通知许愿的小伙伴，点「立即求片」即可入库～")
+	b.WriteString("\n可通过搜索发起求片，最终结果以审核和入库通知为准。")
 
 	if _, err := s.telegram.SendMessage(s.groupChatID, b.String(), "", nil); err != nil {
 		// 公示失败：撤销去重标记，下次同片 FOUND 可再试；不影响个人 PM 主流程。

@@ -620,7 +620,7 @@ func sendRecommendationMenu(telegram *services.TelegramClient, chatID int64, use
 	kb.NewRow()
 	kb.AddButton("🎲 随机探索", "search:type:random")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	telegram.SendMessage(chatID, msg.Build(), msg.ParseMode(), kb.Build())
 }
@@ -808,7 +808,7 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 	}
 
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{

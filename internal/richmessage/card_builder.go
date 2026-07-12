@@ -919,7 +919,7 @@ type PsychTraitData struct {
 // BuildPortraitCard builds the soul portrait Rich Message card.
 func BuildPortraitCard(data PortraitCardData) RichMessage {
 	builder := NewBuilder()
-	builder.Heading("🧠 灵魂画像", 3)
+	builder.Heading("🧠 观影画像", 3)
 
 	nameText := "匿名用户"
 	if data.UserName != "" {

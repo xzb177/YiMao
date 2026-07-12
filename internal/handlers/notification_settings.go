@@ -31,7 +31,7 @@ func (h *NotificationSettingsHandler) Handle(ctx *callback.Context) (*callback.R
 	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
 	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -74,7 +74,7 @@ func (h *NotificationSettingsHandler) HandleToggle(ctx *callback.Context) (*call
 	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
 	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -128,7 +128,7 @@ func SettingsPageWithNotify() *callback.Response {
 	kb.AddButton("📊 观影周报", "weekly_report")
 	kb.NewRow()
 	kb.AddButton("❓ 帮助", "help")
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

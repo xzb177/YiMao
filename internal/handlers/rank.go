@@ -60,7 +60,7 @@ func (h *RankHandler) HandleCommand(chatID, userID int64) {
 		}
 	}
 
-	sb.WriteString("\n⚔️ 积分战神榜\n")
+	sb.WriteString("\n⚔️ 本周积分榜\n")
 	if len(scoreEntries) == 0 {
 		sb.WriteString("  暂无记录\n")
 	} else {
@@ -85,7 +85,7 @@ func (h *RankHandler) HandleCommand(chatID, userID int64) {
 	}
 
 	sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
-	sb.WriteString("📅 每周一凌晨重置")
+	sb.WriteString("📅 每周一凌晨重置 · 下一局见")
 
 	h.telegram.SendMessage(chatID, sb.String(), "", nil)
 }

@@ -491,7 +491,7 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	confirmMsg.Italic("💡 管理员已收到通知，会尽快处理").Newline()
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", kb.Build())
 
@@ -617,7 +617,7 @@ func (h *FeedbackHandler) handleViewList(ctx *callback.Context) (*callback.Respo
 		msg.Italic("💡 在影片详情页点击「🐛 反馈」按钮提交问题")
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 
 		return &callback.Response{
 			Text:     msg.Build(),
@@ -676,7 +676,7 @@ func (h *FeedbackHandler) handleViewList(ctx *callback.Context) (*callback.Respo
 	}
 
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -1010,8 +1010,9 @@ func (h *FeedbackHandler) handleCloseByUser(ctx *callback.Context) (*callback.Re
 	// Close the issue (will verify ownership)
 	err := h.issueService.CloseByUser(issueID, ctx.UserID)
 	if err != nil {
+		logger.Info("[反馈] 用户关闭反馈失败: issue=%d user=%d err=%v", issueID, ctx.UserID, err)
 		return &callback.Response{
-			CallbackMsg: err.Error(),
+			CallbackMsg: "这条反馈暂时关不了，请稍后再试",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -1208,7 +1209,7 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📷 添加图片", fmt.Sprintf("feedback:add_photo:id:%d", issue.ID))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	// Send confirmation message
 	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())

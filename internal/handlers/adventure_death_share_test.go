@@ -13,18 +13,21 @@ func TestCanFreeRevive_DeadEarlyRunIsReachable(t *testing.T) {
 	}
 }
 
-func TestCanShareAdventure_OnlyMatchingSuccessfulRun(t *testing.T) {
-	state := &AdventureState{RunID: "run-1", Success: false, InProgress: false, HP: 0}
+func TestCanShareAdventure_OnlyWhitelistedResults(t *testing.T) {
+	state := &AdventureState{RunID: "run-1", Success: true, InProgress: false, HP: 20, Score: 70, Level: 6, TotalLevels: 5}
 	if canShareAdventure(state, "run-1") {
-		t.Fatal("failed adventure must not be shareable")
+		t.Fatal("ordinary successful adventure must stay private")
 	}
-	state.Success = true
-	state.HP = 20
+	state.Score = 80
 	if !canShareAdventure(state, "run-1") {
-		t.Fatal("successful matching run must be shareable")
+		t.Fatal("SS matching run must be shareable")
 	}
 	if canShareAdventure(state, "run-old") || canShareAdventure(state, "") {
 		t.Fatal("share callback must identify the exact run/request")
+	}
+	state = &AdventureState{RunID: "run-2", Success: false, InProgress: false, Level: 6, TotalLevels: 5}
+	if !canShareAdventure(state, "run-2") {
+		t.Fatal("final-level near miss must be shareable")
 	}
 }
 
@@ -40,6 +43,7 @@ func TestAdventureBroadcastThresholds(t *testing.T) {
 	}{
 		{"SSS", true, "SSS", false, 0, 0, 5, true},
 		{"SS", true, "SS", false, 0, 0, 5, true},
+		{"SR is private", true, "SR", false, 0, 0, 5, false},
 		{"perfect", true, "A", true, 0, 0, 5, true},
 		{"x4", true, "A", false, 4, 0, 5, true},
 		{"ordinary success", true, "A", false, 3, 0, 5, false},

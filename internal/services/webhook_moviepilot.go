@@ -56,7 +56,7 @@ func (s *WebhookService) handleMoviePilotSubscribe(payload MoviePilotWebhookPayl
 	// Send confirmation to the requesting user
 	if userTelegramID != 0 {
 		userMessage := message
-		userMessage += fmt.Sprintf("\n\n✅ 您的请求已提交，等待管理员处理")
+		userMessage += "\n\n求片已提交，正在等待审核"
 		s.telegram.SendMessage(userTelegramID, userMessage, "", nil)
 	}
 

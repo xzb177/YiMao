@@ -404,7 +404,7 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 			msg.Italic("💡 感谢您的反馈，帮助我们改进服务").Newline()
 
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("⬅️ 返回主菜单", "start")
+			kb.AddButton("🏠 主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			logger.Info("[AdminHandler] Notified user %d about issue #%d being fixed", issue.UserID, issue.ID)
@@ -466,7 +466,7 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 			msg.Italic("💡 管理员正在处理您的问题，请耐心等待").Newline()
 
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("⬅️ 返回主菜单", "start")
+			kb.AddButton("🏠 主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			logger.Info("[AdminHandler] Notified user %d about issue #%d being processed", issue.UserID, issue.ID)
@@ -528,7 +528,7 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 			msg.Italic("💡 如仍有问题，请重新提交反馈").Newline()
 
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("⬅️ 返回主菜单", "start")
+			kb.AddButton("🏠 主菜单", "start")
 
 			h.telegram.SendMessage(issue.UserID, msg.Build(), "HTML", kb.Build())
 			logger.Info("[AdminHandler] Notified user %d about issue #%d being closed", issue.UserID, issue.ID)
@@ -643,7 +643,7 @@ func (h *AdminHandler) handleAdminMenu(ctx *callback.Context) (*callback.Respons
 	}
 
 	// Return button
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	richMsg := builder.Build()
 	logger.Info("[AdminHandler] Returning admin menu with %d chars rich text, isRoot=%v", len(richMsg.Markdown), isRoot)
@@ -2174,7 +2174,7 @@ func (h *AdminHandler) handleFeedbackTemplate(ctx *callback.Context) (*callback.
 		userSess.Set("feedback_conversation_issue_id", float64(issueID))
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 
 		h.telegram.SendMessage(issue.UserID, notifyMsg.Build(), "HTML", kb.Build())
 	}

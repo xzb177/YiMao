@@ -143,8 +143,8 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 		text += "\n\n⚠️ 配额返还异常，管理员会根据审核记录补偿处理"
 	}
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📊 求片进度", "requests")
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("📋 我的请求", "requests")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     text,
@@ -178,8 +178,8 @@ func (h *MyRequestsHandler) HandleItemAction(ctx *callback.Context) (*callback.R
 
 	if !hasAction || !hasID {
 		return &callback.Response{
-			Text:        "❌ 参数无效",
-			CallbackMsg: "参数错误",
+			Text:        "❌ 这次操作没有成功，请返回后重试",
+			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -739,7 +739,7 @@ func (h *MyRequestsHandler) buildRequestsKeyboard(requests []services.SubscribeI
 
 	// Row 4: Back button
 	rows = append(rows, []callback.Button{{
-		Text:         "返回主菜单",
+		Text:         "🏠 主菜单",
 		CallbackData: "start",
 	}})
 
@@ -873,7 +873,7 @@ func (h *MyRequestsHandler) handleReshare(ctx *callback.Context, itemID string, 
 func (h *MyRequestsHandler) handleCancel(ctx *callback.Context, itemID string, page int) (*callback.Response, error) {
 	if h.moviepilot == nil {
 		return &callback.Response{
-			Text:        "❌ MoviePilot 服务未就绪",
+			Text:        "❌ 现在暂时不能取消，请稍后再试",
 			CallbackMsg: "服务未就绪",
 			ShowAlert:   true,
 		}, nil

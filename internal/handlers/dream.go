@@ -42,7 +42,7 @@ func (h *DreamHandler) HandleCommand(chatID, userID int64) {
 		return
 	}
 
-	text := fmt.Sprintf("🎪 本周梦魇：你逃不掉的\n━━━━━━━━━━━━━━━━━━━\n这周，有部片子等着你\n《%s》 (%d)\n\n难度 +30%% · 奖励翻倍\n敢来？通关双倍，失败……你知道后果\n━━━━━━━━━━━━━━━━━━━\n/dream 开始挑战", wb.MovieName, wb.MovieYear)
+	text := fmt.Sprintf("🎪 本周梦魇\n━━━━━━━━━━━━━━━━━━━\n本周片单：《%s》 (%d)\n\n难度 +30%% · 奖励翻倍\n准备好就入场，看看能走到哪一幕\n━━━━━━━━━━━━━━━━━━━\n/dream 开始挑战", wb.MovieName, wb.MovieYear)
 	h.telegram.SendMessage(chatID, text, "", nil)
 
 	// 直接发起冒险（梦魇模式）

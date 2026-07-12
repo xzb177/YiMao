@@ -53,14 +53,7 @@ func (b *CinemaBuilder) BuildSearchResults(query string, results []services.Sear
 	sb.WriteString(cinemaSeparator + "\n\n")
 
 	if len(results) == 0 {
-		sb.WriteString("❌ 未找到结果\n\n")
-		sb.WriteString(cinemaLine + "\n\n")
-		sb.WriteString("有些故事，\n")
-		sb.WriteString("注定只存在于想象之中。\n\n")
-		sb.WriteString("💡 建议：\n")
-		sb.WriteString("• 检查拼写\n")
-		sb.WriteString("• 尝试简短关键词\n")
-		sb.WriteString("• 使用英文搜索\n")
+		sb.WriteString(emptySearchCopy + "\n")
 		return sb.String()
 	}
 
@@ -137,8 +130,6 @@ func (b *CinemaBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	sb.WriteString(cinemaLine + "\n\n")
 
-	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n\n", result.ID))
-
 	return sb.String()
 }
 
@@ -211,12 +202,7 @@ func (b *CinemaBuilder) BuildRequestList(requests []services.SubscribeItem, page
 	sb.WriteString(cinemaSeparator + "\n\n")
 
 	if total == 0 {
-		sb.WriteString("✦ 暂无请求记录\n\n")
-		sb.WriteString(cinemaLine + "\n\n")
-		sb.WriteString("每一部影片，\n")
-		sb.WriteString("都是一次期待的开始。\n\n")
-		sb.WriteString("搜索并添加，\n")
-		sb.WriteString("让等待变成一种美好。\n\n")
+		sb.WriteString(emptyRequestCopy + "\n")
 		return sb.String()
 	}
 
@@ -251,7 +237,7 @@ func (b *CinemaBuilder) BuildRequestList(requests []services.SubscribeItem, page
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s%s%s\n", i+1, statusEmoji, title, extra, typeIcon))
-		sb.WriteString(fmt.Sprintf("   %s\n", req.State))
+		sb.WriteString(fmt.Sprintf("   %s\n", getRequestStatusLabel(req.State)))
 
 		if req.Date != "" {
 			sb.WriteString(fmt.Sprintf("   📅 %s\n", req.Date[:10]))

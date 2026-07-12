@@ -296,7 +296,7 @@ func BuildDailyChallengeCard(data DailyChallengeCardData) RichMessage {
 		b.BoldParagraph("⚔️ 你敢接受挑战吗？")
 		b.Paragraph("  • 通关双倍冒险积分")
 		b.Paragraph("  • SSS评级额外奖励盲盒")
-		b.Italic("  大多数人会在第3关倒下")
+		b.Italic("  五关电影情境，通关即可领取奖励")
 	}
 
 	return b.Build()

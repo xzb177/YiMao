@@ -50,12 +50,7 @@ func (b *PopBuilder) BuildSearchResults(query string, results []services.SearchR
 	sb.WriteString(popSeparator + "\n\n")
 
 	if len(results) == 0 {
-		sb.WriteString("😕 哎呀，没有找到！\n\n")
-		sb.WriteString("💡 试试这些：\n")
-		sb.WriteString("• 换个关键词\n")
-		sb.WriteString("• 用英文搜索\n")
-		sb.WriteString("• 少打几个字\n\n")
-		sb.WriteString("🎲 要不要随机推荐一个？\n")
+		sb.WriteString(emptySearchCopy + "\n")
 		return sb.String()
 	}
 
@@ -131,8 +126,6 @@ func (b *PopBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	sb.WriteString(popLine + "\n\n")
 
-	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
-
 	return sb.String()
 }
 
@@ -198,9 +191,7 @@ func (b *PopBuilder) BuildRequestList(requests []services.SubscribeItem, page, t
 	sb.WriteString(popSeparator + "\n\n")
 
 	if total == 0 {
-		sb.WriteString("😅 暂无请求！\n\n")
-		sb.WriteString("💡 去搜索添加吧，\n")
-		sb.WriteString("有好片子在等你！\n")
+		sb.WriteString(emptyRequestCopy + "\n")
 		return sb.String()
 	}
 
@@ -241,7 +232,7 @@ func (b *PopBuilder) BuildRequestList(requests []services.SubscribeItem, page, t
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s%s%s\n",
 			i+1, statusEmoji, title, extra, typeEmoji))
-		sb.WriteString(fmt.Sprintf("   %s\n", req.State))
+		sb.WriteString(fmt.Sprintf("   %s\n", getRequestStatusLabel(req.State)))
 
 		if req.Date != "" {
 			sb.WriteString(fmt.Sprintf("   📅 %s\n", req.Date[:10]))

@@ -256,7 +256,9 @@ func (s *WebhookService) notifyAdminsAboutIssue(issueID int64, payload Jellyseer
 
 	if telegramID != 0 {
 		tgUsername := s.userMapping.GetTelegramUsername(telegramID)
-		message += fmt.Sprintf(" (@%s, tg_id:%d)", tgUsername, telegramID)
+		if tgUsername != "" {
+			message += fmt.Sprintf(" (@%s)", tgUsername)
+		}
 	}
 
 	if payload.Issue != nil && payload.Issue.Problem != "" {

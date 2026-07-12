@@ -2,6 +2,8 @@ package services
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,7 +26,7 @@ type AlertService struct {
 // adminID: 管理员 Telegram 用户 ID。
 // cooldown: 同一告警的最小发送间隔（默认 30 分钟）。
 func NewAlertService(telegram *TelegramClient, adminID int64, cooldown time.Duration) *AlertService {
-	if cooldown == 0 {
+	if cooldown <= 0 {
 		cooldown = 30 * time.Minute
 	}
 	return &AlertService{
@@ -49,12 +51,23 @@ func (s *AlertService) Warn(key, title, detail string) {
 	s.lastSent[key] = time.Now()
 	s.mu.Unlock()
 
-	text := fmt.Sprintf("⚠️ 系统告警\n\n📌 %s\n\n%s", title, detail)
+	// Telegram 只接收稳定、无技术细节的提示；原始 detail 仅写入脱敏日志。
+	text := fmt.Sprintf("⚠️ 系统告警\n\n📌 %s\n\n系统检测到异常，请查看服务日志。", title)
 	if _, err := s.telegram.SendMessage(s.adminID, text, "", nil); err != nil {
-		logger.Info("[Alert] 发送告警失败: key=%s, err=%v", key, err)
+		logger.Info("[Alert] 发送告警失败: key=%s, err=%v, detail=%s", key, err, sanitizeAlertDetail(detail))
 	} else {
-		logger.Info("[Alert] 已通知管理员: key=%s", key)
+		logger.Info("[Alert] 已通知管理员: key=%s, detail=%s", key, sanitizeAlertDetail(detail))
 	}
+}
+
+func sanitizeAlertDetail(detail string) string {
+	detail = strings.ReplaceAll(detail, "\n", " ")
+	if len(detail) > 500 {
+		detail = detail[:500] + "…"
+	}
+	// 遮盖 URL query，避免 token/api_key 等凭据落日志。
+	re := regexp.MustCompile(`([?&][^=\s]+)=([^&\s]+)`)
+	return re.ReplaceAllString(detail, "$1=<redacted>")
 }
 
 // Warnf 格式化发送告警（兼容旧调用方式）。

@@ -141,7 +141,7 @@ func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, err
 	kb.AddButton("🎯 每日挑战", "game_daily_challenge")
 	kb.AddButton("🏆 成就", "game_achievements")
 	kb.NewRow()
-	kb.AddButton("🧠 性格分析", "game_emotion")
+	kb.AddButton("🧠 观影画像", "game_emotion")
 	kb.AddButton("👅 品味分析", "game_compare")
 	kb.AddButton("⬅️ 返回", "start")
 
@@ -193,10 +193,6 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🪞 情绪画像", "game_emotion")
-	kb.AddButton("💊 情绪处方", "game_prescription")
-	kb.NewRow()
-	kb.AddButton("📜 签契约", "game_contract")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
@@ -421,8 +417,6 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 	for _, item := range items {
 		if item.Rarity == "SSR" {
 			h.notifyGroup(userName, fmt.Sprintf("开出了🟡SSR盲盒：《%s》！恭喜！", item.Title))
-		} else if item.Rarity == "SR" {
-			h.notifyGroup(userName, fmt.Sprintf("开出了🟣SR盲盒：《%s》", item.Title))
 		}
 	}
 
@@ -511,14 +505,14 @@ func (h *GameHandler) handleSocialFeed(ctx *callback.Context) (*callback.Respons
 
 // --- 工具函数 ---
 
-// --- 情绪画像 ---
+// --- 观影画像 ---
 
 func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Response, error) {
 	if h.emotionSvc == nil || h.userMapping == nil || h.rankSvc == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
 	if !requirePrivate(ctx) {
-		return &callback.Response{CallbackMsg: "🔒 情绪画像是你的私人数据，请私聊查看", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "🔒 观影画像是你的私人数据，请私聊查看", ShowAlert: true}, nil
 	}
 
 	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
@@ -572,14 +566,7 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 		RecentMovies:   profile.RecentMovies,
 	})
 
-	// 群通知：首次查看情绪画像时通知
-	h.notifyGroup(mpUsername, fmt.Sprintf("解锁了观影人格：「%s」🪞", profile.PersonalityTag))
-
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📽️ 时光放映机", "game_time_machine")
-	kb.AddButton("💊 情绪处方", "game_prescription")
-	kb.NewRow()
-	kb.AddButton("📜 签一份契约", "game_contract")
 	kb.AddButton("🎰 开盲盒", "game_blindbox")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
@@ -682,7 +669,7 @@ func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Respo
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("🧠 性格分析", "game_personality")
+	kb.AddButton("🧠 观影画像", "game_personality")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -835,7 +822,7 @@ func (h *GameHandler) handleAdventureRank(ctx *callback.Context) (*callback.Resp
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⚔️ 挑战霸榜", "adventure_start")
+	kb.AddButton("⚔️ 发起挑战", "adventure_start")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	return &callback.Response{
@@ -890,7 +877,7 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	if !alreadyChallenged {
 		kb.AddButton("⚔️ 接受挑战", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
 	} else {
-		kb.AddButton("🎲 换一部挑战", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
+		kb.AddButton("🔄 再挑战一次", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
 	}
 	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()

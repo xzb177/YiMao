@@ -1153,7 +1153,7 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 		kb.AddButton("✨ 许愿池", "start_wish")
 	}
 	kb.NewRow()
-	kb.AddButton("🧠 灵魂画像", "start_portrait")
+	kb.AddButton("🧠 观影画像", "start_portrait")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
 	kb.AddButton("⚙️ 设置", "start_settings")

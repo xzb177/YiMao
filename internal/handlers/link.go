@@ -70,13 +70,13 @@ func (h *LinkHandler) getLinkInstructions() string {
 • 收取完成通知
 • 查看下载进度
 
-📝 怎么绑定：
-/link 用户名
+怎么绑定：
+/link 用户名 密码
 
 📌 示例：
-/link cabbeenpoom
+/link cabbeenpoom 你的密码
 
-💡 不需要密码，首次会自动创建账号`
+没有账号也没关系，首次绑定会自动创建`
 }
 
 // HandleWithCredentials handles linking with username and password
@@ -152,7 +152,7 @@ func (h *LinkHandler) HandleResetPW(ctx *callback.Context) (*callback.Response, 
 	// Check if DB path is configured
 	if h.cfg.MoviePilotDBPath == "" {
 		return &callback.Response{
-			Text: "❌ 密码重置功能未配置，请联系管理员",
+			Text: "❌ 暂时不能重置密码，请联系管理员",
 			Edit: true,
 		}, nil
 	}
@@ -171,7 +171,7 @@ func (h *LinkHandler) HandleResetPW(ctx *callback.Context) (*callback.Response, 
 	if err != nil {
 		logger.Info("[ResetPW Callback] Failed for %s: %v", mpUsername, err)
 		return &callback.Response{
-			Text: "❌ 密码重置失败：" + err.Error(),
+			Text: "❌ 密码重置失败，请稍后再试或联系管理员",
 			Edit: true,
 		}, nil
 	}

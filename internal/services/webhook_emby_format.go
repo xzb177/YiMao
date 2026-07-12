@@ -162,17 +162,12 @@ func (s *WebhookService) formatAggregatedEpisodeSimple(agg *EpisodeAggregation, 
 		builder.WriteString(fmt.Sprintf("💎 %s", agg.Quality))
 	}
 
-	// File size (using decimal GB, show "未知" if 0)
+	// File size：仅展示 Emby 返回的有效大小。
 	if agg.FileSize > 0 {
 		if agg.Quality != "" {
 			builder.WriteString(" · ")
 		}
 		builder.WriteString(fmt.Sprintf("📦 %s", s.formatFileSizeDecimal(agg.FileSize)))
-	} else {
-		if agg.Quality != "" {
-			builder.WriteString(" · ")
-		}
-		builder.WriteString("📦 未知")
 	}
 
 	builder.WriteString("\n")
@@ -193,6 +188,9 @@ func (s *WebhookService) formatEmbyNotificationSimple(payload EmbyWebhookPayload
 	}
 	if enhanced != nil && enhanced.Title != "" {
 		title = enhanced.Title
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "新入库媒体"
 	}
 
 	// Get item type
@@ -340,6 +338,9 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 	if enhanced != nil && enhanced.Title != "" {
 		title = enhanced.Title
 	}
+	if strings.TrimSpace(title) == "" {
+		title = "新入库媒体"
+	}
 
 	// Get item type
 	itemType := payload.ItemType
@@ -438,18 +439,13 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		builder.WriteString(fmt.Sprintf("💎 质量：%s\n", quality))
 	}
 
-	// File size line - UNCONDITIONALLY display, no if conditions
-	if enhanced != nil {
-		if enhanced.FileSize > 1024*1024 {
-			builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		} else {
-			// Small file size or .strm files - always show
-			builder.WriteString(fmt.Sprintf("📄 引用文件：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
-		}
+	// 仅展示有效大小；不向用户暴露 0B 或底层“引用文件”实现。
+	if enhanced != nil && enhanced.FileSize > 0 {
+		builder.WriteString(fmt.Sprintf("📦 总大小：%s\n", s.formatFileSizeDecimal(enhanced.FileSize)))
 	}
 
-	// File count line - UNCONDITIONALLY display, no if conditions
-	if enhanced != nil {
+	// File count line - only display an actual positive count
+	if enhanced != nil && enhanced.FileCount > 0 {
 		builder.WriteString(fmt.Sprintf("📁 文件数量：%d个\n", enhanced.FileCount))
 	}
 
@@ -550,6 +546,9 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	}
 	if enhanced != nil && enhanced.Title != "" {
 		title = enhanced.Title
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "新入库媒体"
 	}
 
 	// Get item type
@@ -899,7 +898,7 @@ func (s *WebhookService) addAggregatedEpisodeToSummary(agg *EpisodeAggregation, 
 	logger.Info("[汇总] 已添加到每日汇总: %s S%02d %s", agg.SeriesName, agg.Season, epRange)
 }
 
-func (s *WebhookService) handleTestNotification(payload EmbyWebhookPayload) error {
+func (s *WebhookService) handleTestNotification() error {
 	message := "🔔 测试通知\n\nEmby 连接正常！"
 
 	if s.chatID != 0 {

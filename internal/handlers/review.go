@@ -187,15 +187,15 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		stateText := services.GetStateText(sub.State)
 		blockedCard := richmessage.BuildReviewBlockedCard(
 			sub.Name,
-			"⚠️ MoviePilot 已有相同订阅",
-			fmt.Sprintf("订阅 #%d · 状态：%s", sub.ID, stateText),
+			"⚠️ 已有相同求片正在处理",
+			fmt.Sprintf("当前进度：%s", stateText),
 		)
 		h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
 		// Sync review with existing subscription info when possible
 		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
 		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 已拦截：MoviePilot 已有相同订阅 #%d", sub.ID),
+			Text:        "⚠️ 已有相同求片正在处理，无需重复提交",
 			CallbackMsg: "已有订阅",
 			ShowAlert:   true,
 			Edit:        true,
@@ -230,8 +230,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		stuckCard := richmessage.BuildReviewStuckCard(review.MediaTitle, review.MediaYear, mediaIcon)
 		h.telegram.SendRichMessage(review.TelegramID, stuckCard.Markdown, nil)
 		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 审核已通过 · 同步待重试\n\n📺 %s\n\n已记录为 stuck，请到待办中心查看自动重试结果。", review.MediaTitle),
-			CallbackMsg: "已批准·待重试",
+			Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n📺 %s\n\n系统会继续自动处理，请稍后查看求片进度。", review.MediaTitle),
+			CallbackMsg: "审核已通过",
 			ShowAlert:   true,
 			Edit:        true,
 		}, nil
@@ -295,7 +295,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 已进入下载队列\n\n%s\n\n审核已通过，已提交 MoviePilot 下载。\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),
+		Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n%s\n\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),
 		CallbackMsg: "已批准",
 		ShowAlert:   true,
 		Edit:        true,

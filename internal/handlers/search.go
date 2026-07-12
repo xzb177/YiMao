@@ -124,7 +124,7 @@ func (h *SearchHandler) Handle(ctx *callback.Context) (*callback.Response, error
 			}
 		}
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 		return &callback.Response{
 			Text:     "🗑️ 搜索历史已清空",
 			Edit:     true,
@@ -230,7 +230,7 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📊 历史记录", "search_history_menu")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:      msg.Build(),
@@ -253,7 +253,7 @@ func (h *SearchHandler) handleSelect(ctx *callback.Context, tmdbIDStr string) (*
 	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
 	if tmdbID == 0 {
 		return &callback.Response{
-			Text:        "⚠️ 该条目缺少 TMDB ID，无法获取详情\n\n💡 建议：尝试其他搜索结果",
+			Text:        "⚠️ 这条结果暂时打不开，请换一条试试",
 			CallbackMsg: "条目无效",
 			ShowAlert:   true,
 			Edit:        true,
@@ -323,7 +323,7 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 		msg.Italic("💡 稍后再试或使用搜索功能")
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 
 		return &callback.Response{
 			Text:     msg.Build(),
@@ -366,7 +366,7 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 		kb.NewRow()
 		kb.AddButton("🎲 随机发现", "search:type:random")
 		kb.NewRow()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 
 		return &callback.Response{
 			Text:     msg.Build(),
@@ -432,7 +432,7 @@ func (h *SearchHandler) buildRecommendationResponse(results []services.SearchRes
 	}
 
 	kb.AddButton("🔄 换一批", fmt.Sprintf("search:type:%s", recType))
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	isReturningFromDetail := cb != nil && cb.Action == "search" && cb.Params["type"] != ""
 
@@ -477,7 +477,7 @@ func (h *SearchHandler) getRecommendationTitle(recType string) (title, subtitle 
 }
 
 func (h *SearchHandler) sendNoResultsMessage(userID int64, chatID int64, query string) {
-	msg := fmt.Sprintf("🔍 搜索结果「%s」\n\n😕 未找到相关内容\n\n💡 建议：\n• 检查拼写是否正确\n• 尝试使用更简短的关键词\n• 尝试使用英文搜索", query)
+	msg := fmt.Sprintf("🔍 没找到「%s」\n\n可以检查片名，或换个更短的名字再搜。\n\n也可以点「许愿」：片源以后出现时，会继续帮你留意。", query)
 	kb := services.NewKeyboardBuilder()
 	// #1 搜索无结果 → 弹「🌟 加入许愿池」按钮。
 	// 片名可能超长 / 含特殊字符，直接塞 callback_data 会撞 TG 64 字节上限，
@@ -487,10 +487,10 @@ func (h *SearchHandler) sendNoResultsMessage(userID int64, chatID int64, query s
 	if h.sessMgr != nil && strings.TrimSpace(query) != "" {
 		sess := h.sessMgr.GetOrCreate(userID)
 		sess.Set("pending_wish_query", query)
-		kb.AddButton("🌟 加入许愿池", "wish_add")
+		kb.AddButton("✨ 许愿", "wish_add")
 		kb.NewRow()
 	}
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 	h.telegram.SendMessage(chatID, msg, "", kb.Build())
 }
 
@@ -573,7 +573,7 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 	sess.SetSearchResults(searchItems, 1, query)
 
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 	if len(results.Results) >= 20 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
@@ -614,7 +614,7 @@ func (h *SearchHandler) showSearchHistory(userID int64, chatID int64) error {
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🗑️ 清空历史", "search:clear_history:1")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	h.telegram.SendMessage(chatID, msg.Build(), "", kb.Build())
 	return nil

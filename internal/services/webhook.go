@@ -145,7 +145,7 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	}
 
 	// 只对非入库事件打印日志
-	event := strings.ToLower(eventType)
+	event := strings.ToLower(strings.TrimSpace(eventType))
 	isItemAdded := event == "item.added" || event == "itemadded" || event == "library.new" || event == "librarynew"
 	if !isItemAdded {
 		logger.Info("[Webhook] Emby event: %s, item: %s", eventType, itemName)
@@ -158,15 +158,11 @@ func (s *WebhookService) HandleEmbyWebhook(payload EmbyWebhookPayload) error {
 	case "item.updated", "itemupdated", "library.updated", "libraryupdated":
 		// Skip update events to reduce noise
 		return nil
-	case "system.notificationtest", "system.test", "test", "playback.start", "playback.pause", "playback.resume":
-		// For test/playback events, send a simple notification
-		if itemName != "" {
-			message := fmt.Sprintf("🎬 Emby 通知\n\n事件: %s\n内容: %s", eventType, itemName)
-			if s.chatID != 0 {
-				s.telegram.SendMessage(s.chatID, message, "", nil)
-			}
-		}
-		return s.handleTestNotification(payload)
+	case "system.notificationtest", "system.test", "test":
+		return s.handleTestNotification()
+	case "playback.start", "playback.pause", "playback.resume":
+		// 播放过程事件不是 webhook 测试，避免误发“连接正常”通知。
+		return nil
 	case "playback.stop":
 		// 播放结束 → 推送冒险挑战
 		go s.handlePlaybackStop(payload)

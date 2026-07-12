@@ -606,7 +606,7 @@ func PerformSearch(
 	sess.SetSearchResults(searchItems, 1, query)
 
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 
 	if len(results.Results) >= 20 {

@@ -212,7 +212,7 @@ func (b *HistoryBuilder) buildCardHistoryKeyboard(history []services.SearchEntry
 
 	// 返回按钮
 	rows = append(rows, []callback.Button{
-		{Text: "⬅️ 返回", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	})
 
 	return &callback.Keyboard{InlineKeyboard: rows}
@@ -269,7 +269,7 @@ func (b *HistoryBuilder) buildNeonHistoryKeyboard(history []services.SearchEntry
 
 	// 返回按钮
 	rows = append(rows, []callback.Button{
-		{Text: "⬅️ 返回", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	})
 
 	return &callback.Keyboard{InlineKeyboard: rows}

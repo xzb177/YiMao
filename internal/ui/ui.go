@@ -39,6 +39,30 @@ type MessageBuilder interface {
 	BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string
 }
 
+const (
+	emptySearchCopy  = "没搜到相关内容。试试简称、英文名或年份；还没有可加入许愿。"
+	emptyRequestCopy = "还没有请求。搜索影片后点击「求片」即可添加。"
+)
+
+func getRequestStatusLabel(state string) string {
+	switch strings.ToLower(state) {
+	case "p", "pending", "wish", "reviewing":
+		return "待审核"
+	case "r", "s", "recycled", "searching", "stuck":
+		return "正在找资源"
+	case "d", "downloading":
+		return "下载中"
+	case "c", "completed":
+		return "已入库"
+	case "failed", "f", "error":
+		return "处理失败"
+	case "cancelled", "canceled", "cancel": //nolint:misspell // cancelled is a persisted legacy state
+		return "已取消"
+	default:
+		return "处理失败"
+	}
+}
+
 // NewBuilder 根据风格类型创建对应的构建器
 func NewBuilder(style UIStyle) MessageBuilder {
 	switch style {

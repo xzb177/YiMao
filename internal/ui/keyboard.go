@@ -41,7 +41,7 @@ func (b *KeyboardBuilder) BuildSearchKeyboard(itemCount int, query string, curre
 		totalPages = 1
 	}
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 	if currentPage > 1 {
 		navRow = append(navRow, types.TelegramInlineKeyboardButton{
@@ -74,7 +74,7 @@ func (b *KeyboardBuilder) BuildMoodKeyboard() *types.TelegramInlineKeyboard {
 			{Text: "🧘 治愈慢节奏", CallbackData: "search:type:new:mood:healing"},
 		},
 		{
-			{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+			{Text: "🏠 主菜单", CallbackData: "start"},
 		},
 	}
 
@@ -95,7 +95,7 @@ func (b *KeyboardBuilder) BuildEmptyMoodKeyboard() *types.TelegramInlineKeyboard
 			{Text: "🧘 治愈慢节奏", CallbackData: "search:type:new:mood:healing"},
 		},
 		{
-			{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+			{Text: "🏠 主菜单", CallbackData: "start"},
 		},
 	}
 
@@ -108,7 +108,7 @@ func (b *KeyboardBuilder) BuildEmptyMoodKeyboard() *types.TelegramInlineKeyboard
 func (b *KeyboardBuilder) BuildSearchHistoryKeyboard(hasHistory bool) *types.TelegramInlineKeyboard {
 	rows := [][]types.TelegramInlineKeyboardButton{
 		{
-			{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+			{Text: "🏠 主菜单", CallbackData: "start"},
 		},
 	}
 
@@ -132,7 +132,7 @@ func (b *KeyboardBuilder) BuildNoResultsKeyboard() *types.TelegramInlineKeyboard
 			},
 			{
 
-				{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+				{Text: "🏠 主菜单", CallbackData: "start"},
 			},
 		},
 	}

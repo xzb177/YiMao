@@ -265,10 +265,7 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 	b.Paragraph("  • 陷阱选项看起来最正确——这正是它的危险之处")
 	b.Divider()
 
-	// 心理学钩子
-	b.BoldParagraph("⚠️ 你确定你了解这部电影吗？")
-	b.Paragraph("  大多数人在第2关就会倒下")
-	b.Paragraph("  通关率不到 10%")
+	b.BoldParagraph("🎬 你对这部电影记得多深？")
 	b.Italic("  只有通关才能提交求片请求")
 
 	return b.Build()
@@ -324,9 +321,9 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 		damageText := fmt.Sprintf("❤️ -%d HP → %s %d%%", data.Damage, hpBar, data.HP)
 		b.Paragraph(damageText)
 
-		// 连击归零提示（心理学：损失厌恶）
+		// 连击归零提示
 		if data.Combo == 0 {
-			b.Italic("🔥 连击中断！之前的努力白费了...")
+			b.Italic("🔥 连击中断，下一题重新起势")
 		}
 
 		// 状态
@@ -336,9 +333,9 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 		}
 		b.Paragraph(statusLine)
 
-		// 低血量警告（心理学：紧迫感）
+		// 低血量提示
 		if data.HP <= 30 {
-			b.BoldParagraph("⚠️ 生命值危险！下一次失误可能是最后一次...")
+			b.BoldParagraph("💡 生命值较低，先看清线索再选择")
 		} else if data.HP <= 60 {
 			b.Italic("💡 仔细想想，别急着选")
 		}
@@ -529,7 +526,7 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 	case data.Level >= 4:
 		nearMiss = "你已经看到了终点的光... 就差这一步"
 	case data.Level >= 3:
-		nearMiss = "你比73%的人走得都远了，再来一次就能过"
+		nearMiss = "已经走进后半场，线索也更清楚了"
 	default:
 		nearMiss = "这部电影比你想象的要复杂，但你已经学到了关键线索"
 	}
@@ -637,13 +634,13 @@ func BuildAdventureReviveCard(data AdventureReviveCardData) RichMessage {
 	}
 	b.Divider()
 
-	b.BoldParagraph("🩸 死神今天放你一马")
+	b.BoldParagraph("🩸 今日免费复活可用")
 	b.Paragraph("  每天第1次在第1-3关死亡时")
 	b.Paragraph("  可以免费复活 · HP恢复到 30")
-	b.Paragraph("  这是你唯一的机会——仔细看选项")
+	b.Paragraph("  点击后恢复 30 HP，并重新挑战当前关卡")
 	b.Divider()
 
-	b.Italic("⚠️ 今天的免费复活仅此一次")
+	b.Italic("今天可使用一次免费复活")
 
 	return b.Build()
 }
@@ -722,7 +719,7 @@ func BuildGambleResultCard(data GambleResultCardData) RichMessage {
 		b.Paragraph("🎰 赌局结果：归零")
 		b.Paragraph("  所有的盲盒化为乌有...")
 		b.Divider()
-		b.Italic("贪心的人总会付出代价——但下次，你敢再赌吗？")
+		b.Italic("本局赌注已结算")
 	}
 
 	return b.Build()

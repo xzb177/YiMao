@@ -127,9 +127,6 @@ func buildPlainCaption(tmdbID int, title, firstAirDate string, voteAverage float
 		caption.WriteString(fmt.Sprintf("📖 剧情简介\n%s\n\n", overview))
 	}
 
-	// TMDB ID
-	caption.WriteString(fmt.Sprintf("🆔 TMDB ID: %d", tmdbID))
-
 	// Warning if MoviePilot doesn't have this media
 	if mpNotAvailable {
 		caption.WriteString("\n\n⚠️ 资源库暂无\n当前资源库中暂无此剧集，求片后将尝试自动搜索")
@@ -195,8 +192,6 @@ func buildPlainCaptionFromItem(item session.SearchItem, mpNotAvailable bool) str
 		}
 		caption.WriteString(fmt.Sprintf("📖 剧情简介\n%s\n\n", overview))
 	}
-
-	caption.WriteString(fmt.Sprintf("🆔 TMDB ID: %s", item.ID))
 
 	// Warning if MoviePilot doesn't have this media
 	if mpNotAvailable {
@@ -359,7 +354,7 @@ func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response
 	kb.AddButton("📊 观影周报", "weekly_report")
 	kb.NewRow()
 	kb.AddButton("❓ 帮助", "help")
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -396,10 +391,10 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 		msg.Bold("🔗 怎么绑定").Newline()
 		msg.Newline()
 		msg.Text("1. 点「绑定账号」").Newline()
-		msg.Text("2. 输入你的 MoviePilot 用户名").Newline()
-		msg.Text("3. 首次使用会自动创建账号").Newline()
+		msg.Text("2. 按提示输入用户名和密码").Newline()
+		msg.Text("3. 没有账号会自动创建").Newline()
 		msg.Newline()
-		msg.Italic("不需要密码，也不需要提前注册 👌")
+		msg.Italic("绑定命令是 /link 用户名 密码")
 
 	case "failed":
 		msg.Bold("❌ 请求失败").Newline()
@@ -434,7 +429,7 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 	}
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回帮助", "help")
+	kb.AddButton("⬅️ 返回", "help")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -473,7 +468,7 @@ func (h *StartHandler) HandleWeeklyReport(ctx *callback.Context) (*callback.Resp
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📬 推送到私聊", "weekly_report_send")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:      reportText,
@@ -499,7 +494,7 @@ func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.
 	h.telegram.SendMessage(ctx.UserID, reportText, "HTML", nil)
 
 	return &callback.Response{
-		CallbackMsg: "📬 报告已推送到您的私聊！",
+		CallbackMsg: "报告已发到你的私聊",
 		ShowAlert:   true,
 	}, nil
 }
@@ -513,7 +508,7 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 	// 群组隐私保护
 	if ctx.ChatType != "private" {
 		return &callback.Response{
-			CallbackMsg: "🔒 灵魂画像是你的私人观影密码，请私聊机器人查看 🧠",
+			CallbackMsg: "观影画像只支持私聊查看",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -532,7 +527,7 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 	embyUserID, err := h.portraitSvc.FindEmbyUserByName(mpUsername)
 	if err != nil {
 		return &callback.Response{
-			Text:        "❌ 未找到你的 Emby 观影记录\n\n需要你的 Emby 用户名与 MoviePilot 用户名一致",
+			Text:        "❌ 还没找到你的观影记录\n\n请确认绑定账号与观影账号使用同一个用户名",
 			CallbackMsg: "未找到观影记录",
 			ShowAlert:   true,
 		}, nil
@@ -542,7 +537,7 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 	result, err := h.portraitSvc.GeneratePortrait(embyUserID, mpUsername)
 	if err != nil {
 		return &callback.Response{
-			Text:        "❌ 画像生成失败：" + err.Error(),
+			Text:        "❌ 画像生成失败，请稍后再试",
 			CallbackMsg: "生成失败",
 			ShowAlert:   true,
 		}, nil
@@ -580,7 +575,7 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 	card := richmessage.BuildPortraitCard(cardData)
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔄 重新生成", "portrait")
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -841,9 +836,9 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 
 	// Season grid (buttons)
 	kb := services.NewKeyboardBuilder()
-	requestButtonText := "✅ 订阅全季"
+	requestButtonText := "📺 求整季"
 	if mpNotAvailable {
-		requestButtonText = "🔄 尝试求片"
+		requestButtonText = "📺 求整季"
 	}
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
 	kb.AddButton(h.carpoolButtonText(tvDetails.ID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tvDetails.ID))
@@ -864,7 +859,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		if i >= displayCount {
 			break
 		}
-		seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+		seasonName := fmt.Sprintf("求第%d季", s.SeasonNumber)
 		if s.SeasonNumber == 0 {
 			seasonName = "特别篇"
 		}
@@ -891,9 +886,9 @@ func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *sess
 	}
 
 	kb := services.NewKeyboardBuilder()
-	requestButtonText := "✅ 订阅全季"
+	requestButtonText := "📺 求整季"
 	if mpNotAvailable {
-		requestButtonText = "🔄 尝试求片"
+		requestButtonText = "📺 求整季"
 	}
 	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
 	kb.AddButton(h.carpoolButtonText(tmdbID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
@@ -927,7 +922,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 
 	kb := services.NewKeyboardBuilder()
 	if isTV {
-		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", media.ID))
+		kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%d:type:tv:season:0", media.ID))
 	} else {
 		kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
 	}
@@ -1026,7 +1021,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 	// Keyboard
 	kb := services.NewKeyboardBuilder()
 	if isTV {
-		kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
+		kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
 		kb.AddButton(h.carpoolButtonText(info.ID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", info.ID))
 		kb.NewRow()
 		if h.tmdb != nil {
@@ -1040,7 +1035,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 					if i >= displayCount {
 						break
 					}
-					seasonName := fmt.Sprintf("S%d", s.SeasonNumber)
+					seasonName := fmt.Sprintf("求第%d季", s.SeasonNumber)
 					if s.SeasonNumber == 0 {
 						seasonName = "特别篇"
 					}
@@ -1176,7 +1171,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		msg.Text(fmt.Sprintf("%d. %s (%d集)", i+1, seasonName, season.EpisodeCount)).Newline()
 
 		// Add button for each season
-		buttonLabel := fmt.Sprintf("📺 S%d", season.SeasonNumber)
+		buttonLabel := fmt.Sprintf("📺 求第%d季", season.SeasonNumber)
 		if season.SeasonNumber == 0 {
 			buttonLabel = "📺 特别篇"
 		}
@@ -1193,7 +1188,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	}
 
 	// Action row: subscribe + feedback
-	kb.AddButton("✅ 订阅全季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
+	kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
 	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", targetItem.ID, targetItem.Title))
 	kb.NewRow()
 
@@ -1202,8 +1197,8 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	kb.NewRow()
 
 	// Navigation row
-	kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv", targetItem.ID))
-	kb.AddButton("🏠 返回主菜单", "start")
+	kb.AddButton("⬅️ 返回", fmt.Sprintf("detail:id:%s:type:tv", targetItem.ID))
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:      msg.Build(),
@@ -1308,7 +1303,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔄 重新加载", fmt.Sprintf("search:type:%s", tType))
 		kb.NewRow()
-		kb.AddButton("⬅️ 返回主菜单", "start")
+		kb.AddButton("🏠 主菜单", "start")
 		kb.NewRow()
 		kb.AddButton("🔥 热门电影", "search:type:trending")
 		kb.AddButton("📺 热播剧集", "search:type:hot")
@@ -1422,7 +1417,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 
 	// Navigation row
 	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 	keyboardRows = append(keyboardRows, navRow)
 
@@ -1528,7 +1523,7 @@ func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType 
 	// Add navigation row
 	navRow := []types.TelegramInlineKeyboardButton{
 		{Text: "🔄 换一批", CallbackData: fmt.Sprintf("search:type:%s", tType)},
-		{Text: "⬅️ 返回主菜单", CallbackData: "start"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
 	}
 	keyboardRows = append(keyboardRows, navRow)
 

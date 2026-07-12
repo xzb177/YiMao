@@ -46,11 +46,7 @@ func (b *NeonBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString(neonLine + "\n\n")
 
 	if len(results) == 0 {
-		sb.WriteString("😕 未找到相关内容\n\n")
-		sb.WriteString("💡 建议：\n")
-		sb.WriteString("• 检查拼写是否正确\n")
-		sb.WriteString("• 尝试使用更简短的关键词\n")
-		sb.WriteString("• 尝试使用英文搜索\n")
+		sb.WriteString(emptySearchCopy + "\n")
 		return sb.String()
 	}
 
@@ -123,9 +119,6 @@ func (b *NeonBuilder) BuildMediaDetail(result *services.SearchResult) string {
 
 	sb.WriteString(neonLine + "\n")
 
-	// TMDB ID
-	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
-
 	return sb.String()
 }
 
@@ -189,8 +182,7 @@ func (b *NeonBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	sb.WriteString(neonLine + "\n\n")
 
 	if total == 0 {
-		sb.WriteString("暂无记录\n\n")
-		sb.WriteString("搜索后点击「求片」即可添加\n")
+		sb.WriteString(emptyRequestCopy + "\n")
 		return sb.String()
 	}
 
@@ -230,7 +222,7 @@ func (b *NeonBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 		}
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s%s%s · %s\n",
-			i+1, statusEmoji, title, extra, typeEmoji, req.State))
+			i+1, statusEmoji, title, extra, typeEmoji, getRequestStatusLabel(req.State)))
 
 		if req.Date != "" {
 			sb.WriteString(fmt.Sprintf("   📅 %s\n", req.Date[:10]))

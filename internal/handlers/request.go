@@ -75,24 +75,24 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if h.userMapping == nil {
 		logger.Info("[RequestHandler] ERROR: userMapping service is nil!")
 		return &callback.Response{
-			Text:        "❌ 服务配置错误",
-			CallbackMsg: "配置错误",
+			Text:        "❌ 现在暂时不能求片，请稍后再试",
+			CallbackMsg: "暂时不可用",
 			ShowAlert:   true,
 		}, nil
 	}
 	if h.sessMgr == nil {
 		logger.Info("[RequestHandler] ERROR: sessMgr service is nil!")
 		return &callback.Response{
-			Text:        "❌ 服务配置错误",
-			CallbackMsg: "配置错误",
+			Text:        "❌ 现在暂时不能求片，请稍后再试",
+			CallbackMsg: "暂时不可用",
 			ShowAlert:   true,
 		}, nil
 	}
 	if h.reviewService == nil {
 		logger.Info("[RequestHandler] ERROR: reviewService is nil!")
 		return &callback.Response{
-			Text:        "❌ 服务配置错误",
-			CallbackMsg: "配置错误",
+			Text:        "❌ 现在暂时不能求片，请稍后再试",
+			CallbackMsg: "暂时不可用",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -134,14 +134,14 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		msg.Newline()
 		msg.Text("求片功能需要绑定账号后才能使用哦").Newline()
 		msg.Newline()
-		msg.Text("📝 绑定方法：").Newline()
-		msg.Code("/link 用户名").Newline()
+		msg.Text("绑定方法：").Newline()
+		msg.Code("/link 用户名 密码").Newline()
 		msg.Newline()
-		msg.Italic("💡 不需要密码，首次会自动创建账号").Newline()
+		msg.Italic("没有账号也没关系，首次绑定会自动创建").Newline()
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔗 立即绑定", "link")
-		kb.AddButton("⬅️ 返回", "start")
+		kb.AddButton("🏠 主菜单", "start")
 
 		return &callback.Response{
 			Text:     msg.Build(),
@@ -309,14 +309,14 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	// 发送求片回执消息
 	receiptMsg := fmt.Sprintf(
-		"✅ 求片已提交\n\n🎬 《%s}", review.MediaTitle)
+		"✅ 求片已提交\n\n🎬 《%s》", review.MediaTitle)
 	if review.MediaYear > 0 {
 		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
 	receiptMsg += fmt.Sprintf(
 		"\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你")
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📋 查看进度", "requests")
+	kb.AddButton("📋 我的请求", "requests")
 	kb.AddButton("⬅️ 继续搜片", "start")
 	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", kb.Build())
 
@@ -335,7 +335,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		return
 	}
 
-	logger.Info("[审核] 通知 %d 位管理员: %s, 令牌: %s", len(adminIDs), review.MediaTitle, review.ApproveToken)
+	logger.Info("[审核] 通知 %d 位管理员: %s", len(adminIDs), review.MediaTitle)
 
 	mediaTypeLabel := "电影"
 	if review.MediaType == services.MediaTypeTV {
@@ -388,7 +388,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		}
 		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
 			logger.Info("[审核] Rich Message 通知管理员 %d 失败，回退到普通消息: %v", adminID, err)
-			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s}", review.MediaTitle)
+			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s》", review.MediaTitle)
 			if review.MediaYear > 0 {
 				plainText += fmt.Sprintf(" (%d)", review.MediaYear)
 			}
@@ -446,7 +446,7 @@ func (h *RequestHandler) notifyAdmins(req *services.Request, mediaType string) {
 		}
 		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
 			logger.Info("[RequestHandler] Rich Message 通知管理员 %d 失败: %v", adminID, err)
-			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s}", title)
+			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s》", title)
 			if _, msgErr := h.telegram.SendMessage(adminID, plainText, "", keyboard); msgErr != nil {
 				logger.Info("[RequestHandler] 普通消息通知管理员 %d 也失败: %v", adminID, msgErr)
 			}
@@ -462,8 +462,8 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	if h.userMapping == nil || h.sessMgr == nil || h.reviewService == nil || h.submissionService == nil {
 		logger.Info("[HandleForceSubscribe] ERROR: required service is nil!")
 		return &callback.Response{
-			Text:        "❌ 服务配置错误",
-			CallbackMsg: "配置错误",
+			Text:        "❌ 现在暂时不能求片，请稍后再试",
+			CallbackMsg: "暂时不可用",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -473,8 +473,8 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	if !hasID || !hasType {
 		return &callback.Response{
-			Text:        "❌ 参数无效",
-			CallbackMsg: "错误",
+			Text:        "❌ 这次操作没有成功，请重新打开详情页",
+			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -485,15 +485,15 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	if seasonStr, ok := ctx.Callback.Params["season"]; ok {
 		parsedSeason, err := strconv.Atoi(seasonStr)
 		if err != nil || parsedSeason < 0 {
-			return &callback.Response{Text: "❌ 无效的季数", CallbackMsg: "错误", ShowAlert: true}, nil
+			return &callback.Response{Text: "❌ 没找到这一季，请重新选择", CallbackMsg: "操作失败", ShowAlert: true}, nil
 		}
 		season = parsedSeason
 	}
 
 	if tmdbID == 0 {
 		return &callback.Response{
-			Text:        "❌ 无效的 TMDB ID",
-			CallbackMsg: "错误",
+			Text:        "❌ 这部片的信息已失效，请重新搜索",
+			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil
 	}
@@ -618,7 +618,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	// 发送求片回执消息
 	receiptMsg := fmt.Sprintf(
-		"✅ 求片已提交\n\n🎬 《%s}", review.MediaTitle)
+		"✅ 求片已提交\n\n🎬 《%s》", review.MediaTitle)
 	if review.MediaYear > 0 {
 		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
@@ -627,7 +627,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	}
 	receiptMsg += "\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你"
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📋 查看进度", "requests")
+	kb.AddButton("📋 我的请求", "requests")
 	kb.AddButton("⬅️ 继续搜片", "start")
 	h.telegram.SendMessage(ctx.ChatID, receiptMsg, "", kb.Build())
 
@@ -639,11 +639,11 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 }
 
 func serviceConfigurationError() *callback.Response {
-	return &callback.Response{Text: "❌ 服务配置错误", CallbackMsg: "配置错误", ShowAlert: true}
+	return &callback.Response{Text: "❌ 现在暂时不能求片，请稍后再试", CallbackMsg: "暂时不可用", ShowAlert: true}
 }
 
 func operationFailedResponse() *callback.Response {
-	return &callback.Response{Text: "❌ 配额操作失败，请稍后再试", CallbackMsg: "操作失败", ShowAlert: true}
+	return &callback.Response{Text: "❌ 求片没有提交成功，请稍后再试", CallbackMsg: "操作失败", ShowAlert: true}
 }
 
 func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, userID int64, tmdbID int, mediaType string, force bool) *callback.Response {
@@ -676,7 +676,7 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 		if h.quotaService != nil {
 			quotaText = h.quotaService.GetQuotaText(userID)
 		}
-		return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText), CallbackMsg: "配额已用完", ShowAlert: true}
+		return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦\n\n%s\n\n明天 00:00 会恢复", quotaText), CallbackMsg: "今日求片次数已用完", ShowAlert: true}
 	default:
 		return operationFailedResponse()
 	}

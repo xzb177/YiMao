@@ -517,12 +517,6 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 	var text strings.Builder
 	text.WriteString(fmt.Sprintf("🔍 候选资源\n\n"))
 	text.WriteString(fmt.Sprintf("📺 《%s》 (%d)\n", rl.Title, rl.Year))
-	text.WriteString(fmt.Sprintf("🔑 搜索词: %s\n", rl.Keyword))
-
-	if len(sitesSearched) > 0 {
-		text.WriteString(fmt.Sprintf("🌐 已搜索 %d 个站点\n", len(sitesSearched)))
-	}
-
 	text.WriteString(fmt.Sprintf("📊 找到 %d 条资源\n", len(rl.Resources)))
 
 	// Batch B #1：状态灯牌（不承诺具体时间）。
@@ -537,11 +531,8 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 
 	// Show resources for current page
 	if len(rl.Resources) == 0 {
-		text.WriteString("❌ 未找到可用资源\n\n")
-		text.WriteString("💡 可能原因:\n")
-		text.WriteString("   • 站点未配置或未启用\n")
-		text.WriteString("   • 搜索关键词不匹配\n")
-		text.WriteString("   • 站点 RSS 需要认证\n")
+		text.WriteString("暂时没找到可用片源\n\n")
+		text.WriteString("可以稍后再刷新看看。\n")
 	} else {
 		for i := startIdx; i < endIdx; i++ {
 			res := rl.Resources[i]
@@ -600,7 +591,7 @@ func (h *ResourceHandler) buildResourceListMessage(ctx *callback.Context, rl Res
 	// Add navigation buttons
 	kb.AddButton("🔄 刷新", callback.BuildCallback(callback.ActionResourceList,
 		map[string]string{"id": fmt.Sprintf("%d", rl.TMDBID), "type": rl.MediaType}))
-	kb.AddButton("⬅️ 返回详情", callback.BuildDetailCallback(fmt.Sprintf("%d", rl.TMDBID), rl.MediaType))
+	kb.AddButton("⬅️ 返回", callback.BuildDetailCallback(fmt.Sprintf("%d", rl.TMDBID), rl.MediaType))
 
 	return &callback.Response{
 		Text:          text.String(),
@@ -619,7 +610,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	idxStr := ctx.Callback.Params["idx"]
 	if idxStr == "" {
 		return &callback.Response{
-			Text:          "❌ 参数错误",
+			Text:          "❌ 这次操作没有成功，请返回后重试",
 			Edit:          false,
 			DeleteMessage: true,
 		}, nil
@@ -628,7 +619,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	idx, err := strconv.Atoi(idxStr)
 	if err != nil {
 		return &callback.Response{
-			Text:          "❌ 无效的索引",
+			Text:          "❌ 这个选择已失效，请返回后重试",
 			Edit:          false,
 			DeleteMessage: true,
 		}, nil
@@ -648,7 +639,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	rl, ok := rlInterface.(ResourceList)
 	if !ok {
 		return &callback.Response{
-			Text:          "❌ 数据格式错误",
+			Text:          "❌ 页面加载失败，请重新打开",
 			Edit:          false,
 			DeleteMessage: true,
 		}, nil
@@ -657,7 +648,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	// Check index bounds
 	if idx < 0 || idx >= len(rl.Resources) {
 		return &callback.Response{
-			Text:          fmt.Sprintf("❌ 无效的选择: %d", idx+1),
+			Text:          fmt.Sprintf("❌ 第 %d 项已经失效，请返回后重试", idx+1),
 			Edit:          false,
 			DeleteMessage: true,
 		}, nil
@@ -668,7 +659,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	// 历史遗留按钮兜底：旧消息里可能还残留「选择 #N」按钮（此前是假动作，
 	// 并未真正下发 MoviePilot）。现在统一引导到「求片」，
 	// 不再制造「已选源」的错觉。
-	subscribeResult := fmt.Sprintf("ℹ️ 手动选源已下线\n\n📦 %s\n\nMoviePilot 会自动挑选最佳源，点下方「求片」即可。",
+	subscribeResult := fmt.Sprintf("ℹ️ 不用手动选片源\n\n📦 %s\n\n点下方「求片」，会自动挑选合适的版本。",
 		truncateTitle(res.Title, 40))
 
 	// Build keyboard
@@ -676,7 +667,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	kb.AddButton("🎬 求片", callback.BuildRequestCallback(
 		fmt.Sprintf("%d", rl.TMDBID), rl.MediaType, 0))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回详情", callback.BuildDetailCallback(
+	kb.AddButton("⬅️ 返回", callback.BuildDetailCallback(
 		fmt.Sprintf("%d", rl.TMDBID), rl.MediaType))
 	kb.AddButton("🔍 返回列表", callback.BuildCallback(callback.ActionResourceList,
 		map[string]string{"id": fmt.Sprintf("%d", rl.TMDBID), "type": rl.MediaType}))
@@ -885,7 +876,7 @@ func (h *ResourceHandler) buildBackKeyboard(mediaID, mediaType, seasonStr string
 	kb.AddButton("🔍 搜索", "search:menu")
 	kb.AddButton("📋 我的请求", string(callback.ActionRequests))
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return kb.Build()
 }

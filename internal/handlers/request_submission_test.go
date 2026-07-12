@@ -31,8 +31,8 @@ func TestRequestHandlerSubmissionResultMapping(t *testing.T) {
 		{"duplicate own", services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: review}, "请勿重复提交", "已通过审核"},
 		{"duplicate other", services.SubmissionResult{Status: services.SubmissionDuplicateOther, Review: review}, "已加入拼车", "不重复扣配额"},
 		{"not bound", services.SubmissionResult{Status: services.SubmissionNotBound}, "需要绑定账号", "请先绑定账号"},
-		{"quota", services.SubmissionResult{Status: services.SubmissionQuotaExceeded}, "配额已用完", "求片次数用完"},
-		{"unknown", services.SubmissionResult{}, "操作失败", "配额操作失败"},
+		{"quota", services.SubmissionResult{Status: services.SubmissionQuotaExceeded}, "今日求片次数已用完", "求片次数用完"},
+		{"unknown", services.SubmissionResult{}, "操作失败", "求片没有提交成功"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -79,7 +79,7 @@ func TestSubmissionServiceMissingFailsClosed(t *testing.T) {
 		t.Fatal("unexpected submitter")
 	}
 	got := serviceConfigurationError()
-	if got.CallbackMsg != "配置错误" || !got.ShowAlert {
+	if got.CallbackMsg != "暂时不可用" || !got.ShowAlert {
 		t.Fatalf("response=%+v", got)
 	}
 }

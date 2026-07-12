@@ -17,12 +17,7 @@ const (
 
 // 伤感文案库
 var filmQuotes = []string{
-	"有些故事，像深夜里的一杯热茶，不惊艳，但温暖人心。",
-	"我们终其一生，都在寻找一个愿意停下来的人。",
-	"有些电影，不是为了让你哭，而是为了让你在泪光里，看清那个倔强的自己。",
-	"生活不是电影，没有那么多意外和惊喜，但你可以选择，在平凡中，发现不平凡的美好。",
-	"每一帧画面，都是时光的标本，收藏着那些无法重来的瞬间。",
-	"有些情绪，只有在你独自一人的时候，才会悄悄浮现，像春天的雨，不张扬，却很真实。",
+	"按片名、英文名或年份搜索。",
 }
 
 // BuildMenu 构建主菜单（文艺胶片风格）
@@ -51,12 +46,7 @@ func (b *FilmBuilder) BuildSearchResults(query string, results []services.Search
 	sb.WriteString(filmSeparator + "\n\n")
 
 	if len(results) == 0 {
-		sb.WriteString("💫 未找到匹配的影片\n\n")
-		sb.WriteString("也许有些故事，\n")
-		sb.WriteString("注定只存在于想象之中。\n\n")
-		sb.WriteString("💡 建议：\n")
-		sb.WriteString("换个关键词，或许就能找到\n")
-		sb.WriteString("那部一直在等你发现的电影。\n")
+		sb.WriteString(emptySearchCopy + "\n")
 		return sb.String()
 	}
 
@@ -136,9 +126,6 @@ func (b *FilmBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	sb.WriteString("♪ 推荐理由\n")
 	sb.WriteString(fmt.Sprintf("   %s\n\n", getRecommendationReason(result)))
 
-	// TMDB ID
-	sb.WriteString(fmt.Sprintf("🆔 TMDB ID: %d\n", result.ID))
-
 	return sb.String()
 }
 
@@ -203,11 +190,7 @@ func (b *FilmBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	sb.WriteString(filmSeparator + "\n\n")
 
 	if total == 0 {
-		sb.WriteString("✦ 暂无请求记录\n\n")
-		sb.WriteString("每一部影片，\n")
-		sb.WriteString("都是一次期待的开始。\n\n")
-		sb.WriteString("搜索并添加，\n")
-		sb.WriteString("让等待变成一种美好。\n")
+		sb.WriteString(emptyRequestCopy + "\n")
 		return sb.String()
 	}
 
@@ -238,7 +221,7 @@ func (b *FilmBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 		}
 
 		// 状态描述
-		statusDesc := getStatusDescription(req.State)
+		statusDesc := getRequestStatusLabel(req.State)
 
 		sb.WriteString(fmt.Sprintf("%d. %s %s %s\n", i+1, statusEmoji, title, typeEmoji))
 		sb.WriteString(fmt.Sprintf("   %s\n\n", statusDesc))
@@ -313,13 +296,13 @@ func getFilmQuoteForMood(mood string) string {
 // 辅助函数：获取状态描述
 func getStatusDescription(state string) string {
 	descriptions := map[string]string{
-		"pending":     "等待中...",
-		"recycled":    "重新搜索中...",
-		"searching":   "正在寻找...",
-		"downloading": "下载中...",
-		"completed":   "已完成，可以观看了。",
-		"failed":      "遇到了一些问题。",
-		"cancelled":   "已取消。",
+		"pending":     "待审核",
+		"recycled":    "正在找资源",
+		"searching":   "正在找资源",
+		"downloading": "下载中",
+		"completed":   "已入库",
+		"failed":      "处理失败",
+		"cancelled":   "已取消", //nolint:misspell // cancelled is a persisted legacy state
 	}
 	if desc, ok := descriptions[state]; ok {
 		return desc

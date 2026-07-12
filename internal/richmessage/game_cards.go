@@ -219,22 +219,7 @@ func BuildBlindBoxCard(data BlindBoxCardData) RichMessage {
 	}
 
 	if !allRevealed {
-		// 未揭晓 - 更有悬念
-		builder.Italic("三个神秘盒子摆在你面前...")
-		builder.Divider()
-		for i, item := range data.Items {
-			rarityIcon := map[string]string{
-				"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
-			}[item.Rarity]
-			if rarityIcon == "" {
-				rarityIcon = "⚪"
-			}
-			builder.Paragraph(fmt.Sprintf("%s **盲盒 #%d** [%s %s]", rarityIcon, i+1, item.Rarity, rarityIcon))
-			builder.Paragraph("❓ 未揭晓 — 点击揭晓按钮看看是什么！")
-			if i < len(data.Items)-1 {
-				builder.Divider()
-			}
-		}
+		builder.Italic(fmt.Sprintf("🎁 %d 个盲盒待揭晓 · 点击开盒", len(data.Items)))
 	} else {
 		// 已揭晓 - 更有仪式感
 		maxRarity := "N"
