@@ -427,29 +427,32 @@ func (h *ReviewHandler) handleCancel(ctx *callback.Context) (*callback.Response,
 		}, nil
 	}
 
-	// Restore quota since the user is cancelling their own pending request
-	mediaType := "movie"
-	if review.MediaType == services.MediaTypeTV {
-		mediaType = "tv"
-	}
-	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
-		logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
-		// Don't fail the cancellation, just log the error
-	} else {
-		logger.Info("[ReviewHandler] Quota restored for user %d on cancel, media type: %s", review.TelegramID, mediaType)
-	}
-
-	// Delete the review
-	if err := h.reviewService.DeleteRequest(requestID); err != nil {
+	// 服务层原子校验所有者与 pending 状态，并保留 cancelled 审计记录。
+	if err := h.reviewService.CancelByUser(requestID, ctx.UserID); err != nil {
 		return &callback.Response{
-			Text:        "❌ 操作失败，请稍后再试",
-			CallbackMsg: "失败",
+			Text:        "❌ 只能撤回本人尚未审核的请求",
+			CallbackMsg: "无法撤回",
 			ShowAlert:   true,
-		}, err
+		}, nil
 	}
 
+	quotaRestored := false
+	if h.quotaService != nil {
+		_, err := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService)
+		quotaRestored = err == nil
+		if err != nil {
+			logger.Info("[ReviewHandler] 请求已撤回但配额返还失败: %v", err)
+		}
+	}
+
+	text := "✅ 请求已取消"
+	if quotaRestored {
+		text += "，配额已恢复"
+	} else {
+		text += "\n\n⚠️ 配额返还异常，管理员会根据审核记录补偿处理"
+	}
 	return &callback.Response{
-		Text:        "✅ 请求已取消，配额已恢复",
+		Text:        text,
 		CallbackMsg: "已取消",
 		ShowAlert:   true,
 		Edit:        true,

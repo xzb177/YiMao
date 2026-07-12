@@ -180,6 +180,59 @@ func TestHandleCancelReview_NilReviewSvc(t *testing.T) {
 	}
 }
 
+func TestHandleCancelReview_NilQuotaDoesNotClaimRefund(t *testing.T) {
+	dir := t.TempDir()
+	rs := services.NewReviewService(dir, false)
+	if err := rs.CreateRequest(&services.ReviewRequest{
+		RequestID: "cancel-no-quota", TelegramID: 123, MediaType: services.MediaTypeMovie,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &MyRequestsHandler{reviewSvc: rs, quotaSvc: nil}
+	resp, err := h.HandleCancelReview(&callback.Context{UserID: 123, Callback: &callback.Callback{Action: "myreq_cancel"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if containsStr(resp.Text, "配额已退还") {
+		t.Fatalf("response falsely claimed refund: %q", resp.Text)
+	}
+	r, _ := rs.GetRequest("cancel-no-quota")
+	if r.Status != "cancelled" {
+		t.Fatalf("status=%q, want cancelled", r.Status)
+	}
+}
+
+func TestHandleCancelReview_RestoresTVQuotaOnce(t *testing.T) {
+	dir := t.TempDir()
+	rs := services.NewReviewService(dir, false)
+	quota := services.NewQuotaService(dir, nil)
+	if err := quota.UseQuota(123, "tv"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.CreateRequest(&services.ReviewRequest{
+		RequestID: "cancel-tv", TelegramID: 123, MediaType: services.MediaTypeTV, QuotaCost: 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h := &MyRequestsHandler{reviewSvc: rs, quotaSvc: quota}
+	resp, err := h.HandleCancelReview(&callback.Context{UserID: 123, Callback: &callback.Callback{Action: "myreq_cancel"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsStr(resp.Text, "配额已退还") {
+		t.Fatalf("response=%q", resp.Text)
+	}
+	if got := quota.GetQuotaInfo(123).TVUsed; got != 0 {
+		t.Fatalf("TVUsed=%d, want 0", got)
+	}
+	if _, err := h.HandleCancelReview(&callback.Context{UserID: 123, Callback: &callback.Callback{Action: "myreq_cancel"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := quota.GetQuotaInfo(123).TVUsed; got != 0 {
+		t.Fatalf("second cancel changed TVUsed=%d", got)
+	}
+}
+
 // ─── buildRequestsMessage 测试 ───
 
 func TestBuildRequestsMessage_Empty(t *testing.T) {

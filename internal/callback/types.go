@@ -77,6 +77,7 @@ var validActions = map[Action]bool{
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
 	"wish_cancel":       true, // 许愿撤回
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
+	"my_requests":       true, // 历史消息中的求片进度按钮
 
 	"notify_settings": true, // 通知设置页
 	"notify_toggle":   true, // 通知开关切换
@@ -176,28 +177,28 @@ var validActions = map[Action]bool{
 	"portrait": true, // 灵魂画像
 
 	// Game center actions
-	"game_menu":           true, // 游戏中心主菜单
-	"game_rank":           true, // 段位系统
-	"game_narrator":       true, // AI解说入口
+	"game_menu":                 true, // 游戏中心主菜单
+	"game_rank":                 true, // 段位系统
+	"game_narrator":             true, // AI解说入口
 	"game_blindbox":             true, // 盲盒入口
 	"game_blindbox_open":        true, // 盲盒开盒
 	"game_blindbox_horror":      true, // 恐怖盲盒
 	"game_blindbox_personality": true, // 盲盒性格分析
 	"game_social":               true, // 社交动态
-	"game_emotion":        true, // 情绪画像
-	"game_achievements":     true, // 成就系统
-	"game_compare":          true, // 品味对比
+	"game_emotion":              true, // 情绪画像
+	"game_achievements":         true, // 成就系统
+	"game_compare":              true, // 品味对比
 
 	// Adventure game actions
-	"adventure_start":  true, // 求片大冒险入口
-	"adventure_choice": true, // 选择选项
-	"adventure_hint":   true, // 问导演（花HP换线索）
-	"adventure_retry":  true, // 重试冒险
-	"adventure_quit":   true, // 退出冒险
-	"adventure_share":  true, // 分享战绩到群
-	"adventure_revive": true, // 🩸 每日免费复活
-	"adventure_gamble": true, // 🎰 双倍或归零 - 赌
-	"adventure_gamble_safe": true, // 📦 双倍或归零 - 安全领
+	"adventure_start":         true, // 求片大冒险入口
+	"adventure_choice":        true, // 选择选项
+	"adventure_hint":          true, // 问导演（花HP换线索）
+	"adventure_retry":         true, // 重试冒险
+	"adventure_quit":          true, // 退出冒险
+	"adventure_share":         true, // 分享战绩到群
+	"adventure_revive":        true, // 🩸 每日免费复活
+	"adventure_gamble":        true, // 🎰 双倍或归零 - 赌
+	"adventure_gamble_safe":   true, // 📦 双倍或归零 - 安全领
 	"adventure_gamble_triple": true, // 💀 三倍豪赌
 	"game_adventure_stats":    true, // 冒险统计
 	"game_adventure_rank":     true, // 冒险排行榜

@@ -13,6 +13,7 @@ func TestGeneratedCallbacksParseAndReachRegistry(t *testing.T) {
 		{"popular period", "search_popular", map[string]string{"period": "all"}},
 		{"blindbox horror", "game_blindbox_horror", nil},
 		{"blindbox personality", "game_blindbox_personality", nil},
+		{"my requests legacy button", "my_requests", nil},
 	}
 
 	parser := NewParser()

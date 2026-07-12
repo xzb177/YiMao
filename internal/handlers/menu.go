@@ -108,9 +108,17 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 		}, nil
 	}
 
-	// 退配额
-	if h.quotaSvc != nil {
-		_, _ = h.reviewSvc.RestoreQuotaOnce(target.RequestID, h.quotaSvc)
+	// 退配额；撤回状态已持久化，但返还失败时不能谎报成功。
+	quotaRestored := false
+	quotaErr := error(nil)
+	if h.quotaSvc == nil {
+		quotaErr = fmt.Errorf("quota service not configured")
+	} else {
+		_, quotaErr = h.reviewSvc.RestoreQuotaOnce(target.RequestID, h.quotaSvc)
+		quotaRestored = quotaErr == nil
+	}
+	if quotaErr != nil {
+		logger.Info("[MyRequestsHandler] 请求已撤回但配额返还失败: %v", quotaErr)
 	}
 
 	// 通知管理员：用户主动撤回了求片申请
@@ -128,7 +136,12 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 	}
 
 	// 通知用户
-	text := fmt.Sprintf("✅ 已撤回「%s」的求片申请\n\n配额已退还，可以重新使用", target.MediaTitle)
+	text := fmt.Sprintf("✅ 已撤回「%s」的求片申请", target.MediaTitle)
+	if quotaRestored {
+		text += "\n\n配额已退还，可以重新使用"
+	} else {
+		text += "\n\n⚠️ 配额返还异常，管理员会根据审核记录补偿处理"
+	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("⬅️ 返回主菜单", "start")

@@ -362,6 +362,7 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	// Generate approve token - one-time use token to prevent duplicate approvals
 	review.ApproveToken = generateApproveToken()
 
+	previous, hadPrevious := s.reviews[review.RequestID]
 	s.reviews[review.RequestID] = review
 
 	// Map priority to Chinese for logging
@@ -378,7 +379,15 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	logger.Info("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s",
 		review.RequestID, review.TelegramID, priorityText, review.MediaTitle)
 
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		if hadPrevious {
+			s.reviews[review.RequestID] = previous
+		} else {
+			delete(s.reviews, review.RequestID)
+		}
+		return err
+	}
+	return nil
 }
 
 // RestoreQuotaOnce 按请求记录的实际成本返还，持久化标记保证重试及重启后幂等。
@@ -761,6 +770,9 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 	review, exists := s.reviews[requestID]
 	if !exists {
 		return nil, fmt.Errorf("review request not found: %s", requestID)
+	}
+	if review.Status != "pending" {
+		return nil, fmt.Errorf("请求状态为 %s, 无法拒绝", review.Status)
 	}
 
 	review.Status = "rejected"

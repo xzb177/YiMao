@@ -719,6 +719,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionBack, backHandler.Handle)
 	registry.RegisterFunc(callback.ActionCancel, cancelHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
+	registry.RegisterFunc("my_requests", myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
 	registry.RegisterFunc("resetpw", linkHandler.HandleResetPW)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
@@ -755,13 +756,13 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// 求片大冒险回调
 	registry.RegisterFunc("adventure_start", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_hint", adventureHandler.Handle)      // 🎬 问导演
+	registry.RegisterFunc("adventure_hint", adventureHandler.Handle) // 🎬 问导演
 	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_share", adventureHandler.Handle)     // 📢 分享战绩
-	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)    // 🩸 每日免费复活
-	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)    // 🎰 双倍或归零
-	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle) // 📦 安全领取
+	registry.RegisterFunc("adventure_share", adventureHandler.Handle)         // 📢 分享战绩
+	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)        // 🩸 每日免费复活
+	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)        // 🎰 双倍或归零
+	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle)   // 📦 安全领取
 	registry.RegisterFunc("adventure_gamble_triple", adventureHandler.Handle) // 💀 三倍豪赌
 	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
 	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
@@ -968,22 +969,22 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:        deps.Telegram,
-		MoviePilot:      deps.MoviePilot,
-		SessionMgr:      deps.SessionMgr,
-		UserMapping:     deps.UserMapping,
-		BindingRequest:  deps.BindingRequest,
-		AdminService:    deps.AdminService,
-		AdminHandler:    deps.AdminHandler,
-		QuotaService:    deps.QuotaService,
-		SearchHistory:   deps.SearchHistory,
-		SearchHistoryDB: deps.SearchHistoryDB,
-		TMDB:            deps.TMDBClient,
-		IssueService:    deps.IssueService,
-		FeedbackHandler: deps.FeedbackHandler,
-		WishHandler:     deps.WishHandler,
-		MyRequests:      deps.MyRequestsHandler,
-		GameHandler:     deps.GameHandler,
+		Telegram:         deps.Telegram,
+		MoviePilot:       deps.MoviePilot,
+		SessionMgr:       deps.SessionMgr,
+		UserMapping:      deps.UserMapping,
+		BindingRequest:   deps.BindingRequest,
+		AdminService:     deps.AdminService,
+		AdminHandler:     deps.AdminHandler,
+		QuotaService:     deps.QuotaService,
+		SearchHistory:    deps.SearchHistory,
+		SearchHistoryDB:  deps.SearchHistoryDB,
+		TMDB:             deps.TMDBClient,
+		IssueService:     deps.IssueService,
+		FeedbackHandler:  deps.FeedbackHandler,
+		WishHandler:      deps.WishHandler,
+		MyRequests:       deps.MyRequestsHandler,
+		GameHandler:      deps.GameHandler,
 		AdventureHandler: deps.AdventureHandler,
 		RankHandler:      deps.RankHandler,
 		StatsHandler:     deps.StatsHandler,
