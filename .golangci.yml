@@ -12,7 +12,6 @@ linters:
     - misspell        # 拼写检查
     - gocritic        # 代码质量检查
     - bodyclose       # HTTP response body 未关闭
-    - exportloopref   # 循环变量引用陷阱（Go 1.22 以下适用）
     - unconvert       # 无用类型转换
     - wastedassign    # 浪费的赋值
 
@@ -21,8 +20,6 @@ linters-settings:
     enabled-tags:
       - diagnostic
       - style
-    disabled-checks:
-      - hugeParam       # 大结构体传值在 bot 场景影响不大
 
   misspell:
     locale: US
