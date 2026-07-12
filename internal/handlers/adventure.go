@@ -55,7 +55,74 @@ type AdventureState struct {
 	StreakRewards      *services.StreakRewards  `json:"-"`                     // 连胜奖励（不序列化）
 	FreeSkipsUsed      int                      `json:"free_skips_used"`       // 已使用的免费跳过次数
 	IsWeeklyBoss       bool                     `json:"is_weekly_boss"`        // 是否是本周梦魇
-	ChoiceLock         sync.Mutex               `json:"-"`                     // 不序列化
+	Phase              AdventurePhase           `json:"phase,omitempty"`
+	Turn               int                      `json:"turn,omitempty"`
+	ResolvedTurn       int                      `json:"resolved_turn,omitempty"`
+	Mistakes           int                      `json:"mistakes,omitempty"`
+	HintsUsed          int                      `json:"hints_used,omitempty"`
+	ReviveCount        int                      `json:"revive_count,omitempty"`
+	FinishClaimed      bool                     `json:"finish_claimed,omitempty"`
+	ChoiceLock         sync.Mutex               `json:"-"` // 不序列化
+}
+
+func normalizeAdventureState(s *AdventureState) {
+	if s == nil {
+		return
+	}
+	if s.TriedChoices == nil {
+		s.TriedChoices = make(map[int]bool)
+	}
+	if s.Turn <= 0 {
+		s.Turn = s.Level
+	}
+	if s.Phase == "" {
+		switch {
+		case !s.InProgress:
+			s.Phase = AdventurePhaseFinished
+		case s.HP <= 0:
+			s.Phase = AdventurePhaseRevive
+		default:
+			s.Phase = AdventurePhasePlaying
+		}
+	}
+	s.InProgress = s.Phase == AdventurePhasePlaying || s.Phase == AdventurePhaseGenerating || s.Phase == AdventurePhaseRevive
+}
+
+func validateAdventureCallback(s *AdventureState, params map[string]string, phase AdventurePhase) bool {
+	if s == nil || params == nil || params["run"] == "" || params["turn"] == "" || params["run"] != s.RunID || s.Phase != phase {
+		return false
+	}
+	var turn int
+	if _, err := fmt.Sscanf(params["turn"], "%d", &turn); err != nil {
+		return false
+	}
+	return turn == s.Turn
+}
+
+func expiredAdventureCallback() *callback.Response {
+	return &callback.Response{CallbackMsg: "这一幕已经结束", ShowAlert: true}
+}
+
+func finalizeAdventureResult(state *AdventureState, success bool, result *services.AdventureResult) *services.AdventureResult {
+	if result == nil {
+		result = &services.AdventureResult{}
+	}
+	result.Success = success
+	result.Score = AdventureScore(success, state.PerfectRun, state.HP, state.TotalLevels, state.Mistakes, state.HintsUsed, state.ReviveCount, state.MaxCombo)
+	result.Grade = AdventureGrade(result.Score)
+	state.Score = result.Score
+	return result
+}
+
+func claimAdventureFinish(state *AdventureState, success bool) bool {
+	if state == nil || state.FinishClaimed {
+		return false
+	}
+	state.FinishClaimed = true
+	state.Success = success
+	state.Phase = AdventurePhaseFinishing
+	state.InProgress = false
+	return true
 }
 
 // AdventureHandler 冒险处理器
@@ -273,6 +340,7 @@ func (h *AdventureHandler) loadState(userID int64) *AdventureState {
 	if state.TriedChoices == nil {
 		state.TriedChoices = make(map[int]bool)
 	}
+	normalizeAdventureState(&state)
 	return &state
 }
 
@@ -426,7 +494,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	}
 
 	return &callback.Response{
-		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n只有通关才能提交求片请求\n每关4个选项，两次失误结束挑战\n%s", passRateText),
+		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n只有通关才能提交求片请求\n每关 4 个选项；普通失误重伤，陷阱和 Boss 会更致命。读懂线索再出手。\n%s", passRateText),
 	}, nil
 }
 
@@ -459,6 +527,9 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	// 防并发刷分
 	advState.ChoiceLock.Lock()
 	defer advState.ChoiceLock.Unlock()
+	if ctx.Callback == nil || !validateAdventureCallback(advState, ctx.Callback.Params, AdventurePhasePlaying) {
+		return expiredAdventureCallback(), nil
+	}
 
 	scene := advState.Scene
 	if scene == nil || choiceIdx >= len(scene.Choices) {
@@ -513,21 +584,14 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 			advState.Score = 100
 		}
 
-		advState.Level++
-
-		// 新关卡重置已试选项和提示状态
-		advState.TriedChoices = make(map[int]bool)
-		advState.HintUsed = false
-
-		if advState.Level > advState.TotalLevels {
-			// 🏆 通关！
-			advState.InProgress = false
-			advState.Score += advState.HP // 剩余HP作为额外分
-			if advState.Score > 100 {
-				advState.Score = 100
+		advState.ResolvedTurn = advState.Turn
+		if advState.Level >= advState.TotalLevels {
+			// 🏆 通关！先原子认领结算并持久化。
+			if !claimAdventureFinish(advState, true) {
+				return expiredAdventureCallback(), nil
 			}
 			sess.Set("adventure_state", advState)
-			h.removeState(ctx.UserID) // 通关，清除持久化
+			h.saveState(ctx.UserID, advState)
 			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, true)
 
 			return &callback.Response{
@@ -536,10 +600,9 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 			}, nil
 		}
 
+		advState.Phase = AdventurePhaseGenerating
 		sess.Set("adventure_state", advState)
-		h.saveState(ctx.UserID, advState) // 持久化
-
-		// 显示连击卡片 + 生成下一关
+		h.saveState(ctx.UserID, advState)
 		go h.handleCorrectChoice(ctx.UserID, ctx.ChatID, advState, choice.Result)
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("✅ %s\n🔥 连击 x%d", choice.Result, advState.Combo),
@@ -547,27 +610,10 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		}, nil
 	}
 
-	// ❌ 选择错误
-	// 计算扣血（陷阱扣更多）
-	damage := adventureBaseDmg
-	if choice.IsTrap {
-		damage = adventureTrapDmg
-		advState.PerfectRun = false
-	} else {
-		advState.PerfectRun = false
-	}
-	// Boss关扣血更多
-	if advState.Level == advState.TotalLevels {
-		damage = adventureBossDmg
-	}
-	// 自定义扣血
-	if choice.HPChange != 0 {
-		damage = choice.HPChange
-	}
-	// 背水一战：HP≤20时选错，直接毙命（不给苟延残喘的机会）
-	if advState.HP <= 20 && damage < advState.HP {
-		damage = advState.HP // 确保一击毙命
-	}
+	// ❌ 选择错误：伤害完全由服务端规则决定，忽略 AI HPChange。
+	damage := AdventureDamage(advState.Level, advState.TotalLevels, choice.IsTrap)
+	advState.PerfectRun = false
+	advState.Mistakes++
 
 	advState.HP -= damage
 	advState.Combo = 0 // 连击归零
@@ -579,11 +625,14 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		advState.InProgress = canFreeRevive(advState, time.Now().Format("2006-01-02"))
 		sess.Set("adventure_state", advState)
 		if advState.InProgress {
+			advState.Phase = AdventurePhaseRevive
 			h.saveState(ctx.UserID, advState)
 			go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result)
 		} else {
-			h.removeState(ctx.UserID)
-			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
+			if claimAdventureFinish(advState, false) {
+				h.saveState(ctx.UserID, advState)
+				go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
+			}
 		}
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("💀 %s\n生命耗尽...", choice.Result),
@@ -602,8 +651,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	}, nil
 }
 
-// handleHint 「问导演」— 花10HP换一条精准线索
-const hintCost = 10
+// handleHint 「问导演」— 用服务端动态成本换一条精准线索
 
 func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response, error) {
 	if h.sessionMgr == nil {
@@ -622,20 +670,25 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 
 	advState.ChoiceLock.Lock()
 	defer advState.ChoiceLock.Unlock()
+	if ctx.Callback == nil || !validateAdventureCallback(advState, ctx.Callback.Params, AdventurePhasePlaying) {
+		return expiredAdventureCallback(), nil
+	}
 
 	// 检查是否已用过提示
 	if advState.HintUsed {
 		return &callback.Response{CallbackMsg: "🎬 导演已经给过你提示了，这关只能靠自己", ShowAlert: true}, nil
 	}
 
-	// 检查HP是否够
-	if advState.HP <= hintCost {
-		return &callback.Response{CallbackMsg: fmt.Sprintf("💔 生命值不足（需要%dHP），导演不敢再消耗你了", hintCost), ShowAlert: true}, nil
+	// 检查HP是否够；提示永不致死。
+	cost := AdventureHintCost(advState.Level)
+	newHP, ok := ApplyAdventureHint(advState.HP, advState.Level)
+	if !ok {
+		return &callback.Response{CallbackMsg: fmt.Sprintf("💔 生命值不足（需要%dHP），导演不敢再消耗你了", cost), ShowAlert: true}, nil
 	}
 
-	// 扣HP
-	advState.HP -= hintCost
+	advState.HP = newHP
 	advState.HintUsed = true
+	advState.HintsUsed++
 	advState.PerfectRun = false // 用提示不算完美
 	advState.Score -= 5         // 扣分
 	if advState.Score < 0 {
@@ -674,9 +727,9 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 			excludeMsg = fmt.Sprintf("\n\n❌ 导演说：%s 可以排除", numbers[excludeIdx])
 		}
 
-		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s%s", hintCost, scene.Hint, excludeMsg)
+		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s%s", cost, scene.Hint, excludeMsg)
 	} else {
-		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s", hintCost, scene.Hint)
+		hintMsg = fmt.Sprintf("🎬 导演的耳语（-%dHP）\n\n💡 %s", cost, scene.Hint)
 	}
 
 	sess.Set("adventure_state", advState)
@@ -690,7 +743,7 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 	}()
 
 	return &callback.Response{
-		CallbackMsg: fmt.Sprintf("🎬 导演给了提示\n❤️ -%dHP（剩余 %d%%）", hintCost, advState.HP),
+		CallbackMsg: fmt.Sprintf("🎬 导演给了提示\n❤️ -%dHP（剩余 %d%%）", cost, advState.HP),
 		ShowAlert:   false,
 	}, nil
 }
@@ -855,19 +908,24 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	if advState == nil {
 		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险", ShowAlert: true}, nil
 	}
+	advState.ChoiceLock.Lock()
+	defer advState.ChoiceLock.Unlock()
+	if ctx.Callback == nil || !validateAdventureCallback(advState, ctx.Callback.Params, AdventurePhaseRevive) {
+		return expiredAdventureCallback(), nil
+	}
 	if !canFreeRevive(advState, time.Now().Format("2006-01-02")) {
 		return &callback.Response{CallbackMsg: "❌ 当前没有可用的免费复活", ShowAlert: true}, nil
 	}
 
 	// 复活：HP = 30，标记今日已复活
 	today := time.Now().Format("2006-01-02")
-	advState.HP = 30
+	advState.HP = adventureReviveHP
+	advState.ReviveCount++
+	advState.Combo = 0
+	advState.Phase = AdventurePhasePlaying
+	advState.InProgress = true
 	advState.LastFreeReviveDate = today
 	advState.PerfectRun = false // 受伤害了，不算完美
-	// 重置当前关卡已试选项，让用户重新选择
-	advState.TriedChoices = make(map[int]bool)
-	// 重置HintUsed，让用户可以用"问导演"
-	advState.HintUsed = false
 
 	if h.sessionMgr != nil {
 		sess.Set("adventure_state", advState)
@@ -1237,6 +1295,8 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		TriedChoices:    make(map[int]bool),
 		VengeanceActive: vengeanceActive,
 		StreakDays:      streakDays,
+		Phase:           AdventurePhasePlaying,
+		Turn:            startLevel,
 		StreakRewards:   streakRewards,
 	}
 
@@ -1263,19 +1323,39 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 	tip := randomMovieTip()
 	loadingMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
 
-	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level, state.TotalLevels, state.History, state.HP)
+	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level+1, state.TotalLevels, state.History, state.HP)
 	if err != nil {
-		logger.Info("[Adventure] AI scene gen failed for level %d: %v", state.Level, err)
-		scene = h.adventureSvc.GenerateFallbackScene(state.MovieInfo, state.Level, state.TotalLevels)
+		logger.Info("[Adventure] AI scene gen failed for level %d: %v", state.Level+1, err)
+		scene = h.adventureSvc.GenerateFallbackScene(state.MovieInfo, state.Level+1, state.TotalLevels)
 	}
 	scene.TotalLevels = state.TotalLevels
+	state.ChoiceLock.Lock()
+	if state.Phase != AdventurePhaseGenerating || state.ResolvedTurn != state.Turn {
+		state.ChoiceLock.Unlock()
+		return
+	}
+	// 生成场景期间可能已退出或开启新局。重新读取当前状态，防止旧
+	// goroutine 把上一局写回 session/DB。
+	if h.sessionMgr == nil {
+		state.ChoiceLock.Unlock()
+		return
+	}
+	sess := h.sessionMgr.GetOrCreate(userID)
+	current := h.getOrRestoreState(userID, sess)
+	if current == nil || current.RunID != state.RunID || current.Turn != state.Turn || current.Phase != AdventurePhaseGenerating {
+		state.ChoiceLock.Unlock()
+		return
+	}
+	state.Level++
+	state.Turn++
 	state.Scene = scene
+	state.TriedChoices = make(map[int]bool)
+	state.HintUsed = false
+	state.Phase = AdventurePhasePlaying
+	state.ChoiceLock.Unlock()
 
-	if h.sessionMgr != nil {
-		sess := h.sessionMgr.GetOrCreate(userID)
-		if sess != nil {
-			sess.Set("adventure_state", state)
-		}
+	if sess != nil {
+		sess.Set("adventure_state", state)
 	}
 	h.saveState(userID, state) // 持久化
 
@@ -1301,25 +1381,16 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		today := time.Now().Format("2006-01-02")
 		if state.LastFreeReviveDate != today {
 			// 还没用过今天的免费复活 → 展示复活卡片
-			correctAnswer := ""
-			if state.Scene != nil {
-				for _, c := range state.Scene.Choices {
-					if c.Correct {
-						correctAnswer = c.Text
-						break
-					}
-				}
-			}
 			card := richmessage.BuildAdventureReviveCard(richmessage.AdventureReviveCardData{
 				MovieTitle:    state.MovieInfo.Title,
 				Level:         state.Level,
 				TotalLevels:   state.TotalLevels,
 				HP:            state.HP,
 				Damage:        damage,
-				CorrectAnswer: correctAnswer,
+				CorrectAnswer: "",
 			})
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("🩸 恢复30HP并重试本关", "adventure_revive")
+			kb.AddButton("🩸 恢复30HP并重试本关", fmt.Sprintf("adventure_revive:run:%s:turn:%d", state.RunID, state.Turn))
 			kb.NewRow()
 			kb.AddButton("💀 拒绝（再来一次）", "adventure_retry")
 			kb.AddButton("🎮 游戏中心", "game_menu")
@@ -1397,7 +1468,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		if i < len(numbers) {
 			num = numbers[i]
 		}
-		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
+		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d:run:%s:turn:%d", i, state.RunID, state.Turn))
 		hasRemaining = true
 	}
 	kb.NewRow()
@@ -1437,6 +1508,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		logger.Info("[Adventure] End scene AI failed: %v", err)
 		result = h.adventureSvc.GenerateFallbackResult(state.MovieInfo, success, state.HP, state.Level-1, state.TotalLevels)
 	}
+	result = finalizeAdventureResult(state, success, result)
 
 	if loadingMsg != nil {
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
@@ -1701,6 +1773,16 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 	}
+	state.ChoiceLock.Lock()
+	state.Phase = AdventurePhaseFinished
+	state.InProgress = false
+	state.ChoiceLock.Unlock()
+	if h.sessionMgr != nil {
+		if sess := h.sessionMgr.GetOrCreate(userID); sess != nil {
+			sess.Set("adventure_state", state)
+		}
+	}
+	h.saveState(userID, state)
 }
 
 // sendSceneCard 发送场景卡片
@@ -1748,7 +1830,7 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		Description: scene.Description,
 		Atmosphere:  scene.Atmosphere,
 		Choices:     choices,
-		Hint:        scene.Hint,
+		Hint:        "",
 		HP:          state.HP,
 		Combo:       state.Combo,
 		Score:       state.Score,
@@ -1766,12 +1848,13 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 		if i < len(numbers) {
 			num = numbers[i]
 		}
-		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d", i))
+		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d:run:%s:turn:%d", i, state.RunID, state.Turn))
 	}
 	kb.NewRow()
 	// 问导演按钮（每关限用一次，花10HP）
-	if !state.HintUsed && state.HP > hintCost {
-		kb.AddButton("🎬 问导演 (-10HP)", "adventure_hint")
+	cost := AdventureHintCost(state.Level)
+	if !state.HintUsed && state.HP > cost {
+		kb.AddButton(fmt.Sprintf("🎬 问导演 (-%dHP)", cost), fmt.Sprintf("adventure_hint:run:%s:turn:%d", state.RunID, state.Turn))
 	}
 	kb.AddButton("🚪 退出", "adventure_quit")
 

@@ -51,6 +51,40 @@ type AdventureResult struct {
 	Stats       string `json:"stats"` // 结算统计
 }
 
+// ValidateAdventureScene enforces server invariants. HPChange is accepted for
+// wire compatibility but handlers deliberately ignore it when applying damage.
+func ValidateAdventureScene(scene *AdventureScene) error {
+	if scene == nil {
+		return fmt.Errorf("scene is nil")
+	}
+	if len(scene.Choices) != 4 {
+		return fmt.Errorf("adventure scene must have exactly 4 choices")
+	}
+	correct := 0
+	seen := make(map[string]struct{}, 4)
+	for i, c := range scene.Choices {
+		text := strings.TrimSpace(c.Text)
+		if text == "" {
+			return fmt.Errorf("choice %d is empty", i)
+		}
+		key := strings.ToLower(text)
+		if _, ok := seen[key]; ok {
+			return fmt.Errorf("choice %d is duplicated", i)
+		}
+		seen[key] = struct{}{}
+		if c.Correct {
+			correct++
+			if c.IsTrap {
+				return fmt.Errorf("correct choice cannot be a trap")
+			}
+		}
+	}
+	if correct != 1 {
+		return fmt.Errorf("adventure scene must have exactly one correct choice")
+	}
+	return nil
+}
+
 // AdventureService 求片大冒险服务
 type AdventureService struct {
 	embyURL    string
@@ -646,16 +680,8 @@ func (s *AdventureService) callAIForScene(prompt string) (*AdventureScene, error
 		logger.Info("[Adventure] Scene JSON parse failed: %s", truncate(resp, 200))
 		return nil, fmt.Errorf("AI返回格式错误: %w", err)
 	}
-	// 验证
-	hasCorrect := false
-	for _, c := range scene.Choices {
-		if c.Correct {
-			hasCorrect = true
-			break
-		}
-	}
-	if !hasCorrect && len(scene.Choices) > 0 {
-		scene.Choices[0].Correct = true
+	if err := ValidateAdventureScene(&scene); err != nil {
+		return nil, err
 	}
 	return &scene, nil
 }
