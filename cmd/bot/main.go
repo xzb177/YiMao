@@ -61,6 +61,9 @@ func main() {
 	// Initialize services
 	logger.Info("🔧 Initializing services...")
 	deps := initServices(cfg, chatID)
+	if deps.Notification != nil {
+		deps.Notification.StartNotificationWorker()
+	}
 	logger.Info("✅ Services initialized")
 
 	// Initialize Security Service
@@ -131,6 +134,9 @@ func main() {
 	logger.Info("✅ HTTP server stopped")
 
 	// 第二步：停止后台任务
+	if depsWithHandlers.Notification != nil {
+		depsWithHandlers.Notification.StopNotificationWorker()
+	}
 	securityService.Stop()
 
 	// 第三步：关闭底层资源（DB 等）

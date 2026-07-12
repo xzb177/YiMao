@@ -12,14 +12,21 @@ import (
 
 // NotificationService handles user notifications for request status updates
 type NotificationService struct {
-	telegram    *TelegramClient
-	moviepilot  *MoviePilotClient
-	userMapping UserMappingStore
-	notifyFile  string
-	knownUsers  map[int64]int64 // telegramID -> moviepilotID
-	review      *ReviewService  // optional: resolve MoviePilot subscription/request ID back to Telegram user
-	mu          sync.RWMutex
-	processMu   sync.Mutex // serializes notification read-modify-write and delivery
+	telegram       *TelegramClient
+	moviepilot     *MoviePilotClient
+	userMapping    UserMappingStore
+	notifyFile     string
+	knownUsers     map[int64]int64 // telegramID -> moviepilotID
+	review         *ReviewService  // optional: resolve MoviePilot subscription/request ID back to Telegram user
+	mu             sync.RWMutex
+	processMu      sync.Mutex // serializes notification read-modify-write operations
+	workerMu       sync.Mutex
+	workerStop     chan struct{}
+	workerDone     chan struct{}
+	workerSignal   chan struct{}
+	workerStopping bool
+	sendStatus     func(int64, string) error
+	resolveUser    func(int) int64
 	// NotifyEnabled 检查用户是否开启了某类通知（由 main 注入）。
 	// 参数：userID, notifyKey。返回 true 表示允许发送。
 	NotifyEnabled func(userID int64, notifyKey string) bool
@@ -55,6 +62,7 @@ type StatusUpdate struct {
 	ErrorMessage string    `json:"error_message,omitempty"`
 	Timestamp    time.Time `json:"timestamp"`
 	Notified     bool      `json:"notified"`
+	Revision     uint64    `json:"revision"`
 }
 
 // LoadStatusUpdates loads pending notifications from file
@@ -91,100 +99,80 @@ func (s *NotificationService) SaveStatusUpdates(updates []StatusUpdate) error {
 	return atomicWriteFile(s.notifyFile, data, 0600)
 }
 
-// NotifyStatusUpdate notifies a user about request status change
+// NotifyStatusUpdate persists a pending update and wakes the single worker.
 func (s *NotificationService) NotifyStatusUpdate(requestID int, status *SubscribeStatus) error {
 	s.processMu.Lock()
-	defer s.processMu.Unlock()
-
-	// Find all users who should be notified (admin who submitted or the request owner)
-	// Store notifications and process them asynchronously so webhook/API callers are not blocked by Telegram delivery.
-
-	update := &StatusUpdate{
-		RequestID:  status.ID,
-		MediaTitle: status.Name,
-		MediaYear:  status.Year,
-		OldState:   "",
-		NewState:   status.State,
-		SavePath:   status.SavePath,
-		Percent:    status.Percent,
-		CurrentEp:  status.CurrentEpisode,
-		TotalEp:    status.TotalEpisode,
-		Timestamp:  time.Now(),
-		Notified:   false,
-	}
-
-	// Load existing updates
 	updates, err := s.LoadStatusUpdates()
 	if err != nil {
-		updates = []StatusUpdate{}
+		s.processMu.Unlock()
+		return fmt.Errorf("load status updates: %w", err)
 	}
 
-	// Check if this is a new state change
-	for i, u := range updates {
-		if u.RequestID == requestID {
-			if u.NewState != status.State {
-				u.OldState = u.NewState
-				u.NewState = status.State
-				u.Timestamp = time.Now()
-				u.Notified = false
-			}
-			updates[i] = u
-			return s.saveAndNotify(updates)
+	now := time.Now()
+	update := StatusUpdate{
+		RequestID:    requestID,
+		MediaTitle:   status.Name,
+		MediaYear:    status.Year,
+		MediaType:    status.Type,
+		NewState:     status.State,
+		SavePath:     status.SavePath,
+		Percent:      status.Percent,
+		CurrentEp:    status.CurrentEpisode,
+		TotalEp:      status.TotalEpisode,
+		ErrorMessage: status.ErrorMessage,
+		Timestamp:    now,
+		Revision:     1,
+	}
+	found := false
+	for i, current := range updates {
+		if current.RequestID != requestID {
+			continue
 		}
+		if sameStatusUpdate(current, update) {
+			s.processMu.Unlock()
+			s.signalWorker()
+			return nil
+		}
+		update.OldState = current.NewState
+		update.Revision = current.Revision + 1
+		updates[i] = update
+		found = true
+		break
 	}
-
-	// New request
-	updates = append(updates, *update)
-	return s.saveAndNotify(updates)
-}
-
-// saveAndNotify saves and sends notifications
-func (s *NotificationService) saveAndNotify(updates []StatusUpdate) error {
-	// Save to file
+	if !found {
+		updates = append(updates, update)
+	}
 	if err := s.SaveStatusUpdates(updates); err != nil {
-		logger.Info("[Notification] Failed to save notifications: %v", err)
-		return err
+		s.processMu.Unlock()
+		return fmt.Errorf("save status updates: %w", err)
 	}
-
-	// Process synchronously while processMu is held, preventing stale snapshots
-	// from overwriting newer state.
-	s.processNotifications(updates)
-
+	s.processMu.Unlock()
+	s.signalWorker()
 	return nil
 }
 
-// processNotifications sends pending notifications to users
-func (s *NotificationService) processNotifications(updates []StatusUpdate) {
-	for i, update := range updates {
-		if update.Notified {
-			continue
-		}
+func sameStatusUpdate(current, next StatusUpdate) bool {
+	return current.MediaTitle == next.MediaTitle &&
+		current.MediaYear == next.MediaYear &&
+		current.MediaType == next.MediaType &&
+		current.NewState == next.NewState &&
+		current.SavePath == next.SavePath &&
+		current.Percent == next.Percent &&
+		current.CurrentEp == next.CurrentEp &&
+		current.TotalEp == next.TotalEp &&
+		current.ErrorMessage == next.ErrorMessage
+}
 
-		// Find the user to notify
-		telegramID := s.findUserForRequest(update.RequestID)
-		if telegramID == 0 {
-			continue
+func (s *NotificationService) signalWorker() {
+	s.workerMu.Lock()
+	signal := s.workerSignal
+	s.workerMu.Unlock()
+	if signal != nil {
+		select {
+		case signal <- struct{}{}:
+		default:
 		}
-
-		// 检查用户是否开启了下载通知
-		if s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyDownload) {
-			updates[i].Notified = true
-			continue
-		}
-
-		// Send notification
-		message := s.formatStatusMessage(update)
-		_, err := s.telegram.SendMessage(telegramID, message, "", nil)
-		if err != nil {
-			logger.Info("[Notification] Failed to send notification to user %d: %v", telegramID, err)
-			continue
-		}
-
-		// Mark as notified
-		updates[i].Notified = true
 	}
-
-	s.SaveStatusUpdates(updates)
 }
 
 // findUserForRequest finds the Telegram user ID for a request
@@ -346,28 +334,142 @@ type TrendingResultItem struct {
 	Poster string `json:"poster_path"`
 }
 
-// StartNotificationWorker starts the background worker to check for status updates
+// StartNotificationWorker starts the single background delivery worker.
 func (s *NotificationService) StartNotificationWorker() {
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Info("[NotificationService] Panic in notification worker: %v", r)
-			}
-		}()
-		ticker := time.NewTicker(5 * time.Minute)
-		defer ticker.Stop()
+	s.workerMu.Lock()
+	if s.workerStop != nil {
+		s.workerMu.Unlock()
+		return
+	}
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	signal := make(chan struct{}, 1)
+	s.workerStop, s.workerDone, s.workerSignal = stop, done, signal
+	s.workerMu.Unlock()
 
-		for range ticker.C {
-			s.checkStatusUpdates()
+	go s.notificationWorker(stop, done, signal)
+	s.signalWorker()
+}
+
+// StopNotificationWorker stops the worker and may be called repeatedly.
+func (s *NotificationService) StopNotificationWorker() {
+	s.workerMu.Lock()
+	stop, done := s.workerStop, s.workerDone
+	if stop == nil {
+		s.workerMu.Unlock()
+		return
+	}
+	if !s.workerStopping {
+		close(stop)
+		s.workerStopping = true
+	}
+	s.workerMu.Unlock()
+	<-done
+	s.workerMu.Lock()
+	if s.workerDone == done {
+		s.workerStop, s.workerDone, s.workerSignal = nil, nil, nil
+		s.workerStopping = false
+	}
+	s.workerMu.Unlock()
+}
+
+func (s *NotificationService) notificationWorker(stop <-chan struct{}, done chan<- struct{}, signal <-chan struct{}) {
+	defer close(done)
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Info("[NotificationService] Panic in notification worker: %v", r)
 		}
 	}()
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-signal:
+			s.processPendingNotifications()
+		case <-ticker.C:
+			s.checkStatusUpdates()
+			s.processPendingNotifications()
+		}
+	}
+}
+
+func (s *NotificationService) processPendingNotifications() {
+	for {
+		s.processMu.Lock()
+		updates, err := s.LoadStatusUpdates()
+		if err != nil {
+			s.processMu.Unlock()
+			logger.Info("[Notification] Failed to load status updates: %v", err)
+			return
+		}
+		var pending *StatusUpdate
+		for i := range updates {
+			if !updates[i].Notified {
+				pendingUpdate := updates[i]
+				pending = &pendingUpdate
+				break
+			}
+		}
+		s.processMu.Unlock()
+		if pending == nil {
+			return
+		}
+
+		var telegramID int64
+		if s.resolveUser != nil {
+			telegramID = s.resolveUser(pending.RequestID)
+		} else {
+			telegramID = s.findUserForRequest(pending.RequestID)
+		}
+		if telegramID == 0 {
+			return
+		}
+		shouldMark := s.NotifyEnabled != nil && !s.NotifyEnabled(telegramID, NotifyDownload)
+		if !shouldMark {
+			message := s.formatStatusMessage(*pending)
+			switch {
+			case s.sendStatus != nil:
+				err = s.sendStatus(telegramID, message)
+			case s.telegram == nil:
+				err = fmt.Errorf("telegram client is nil")
+			default:
+				_, err = s.telegram.SendMessage(telegramID, message, "", nil)
+			}
+			if err != nil {
+				logger.Info("[Notification] Failed to send notification to user %d: %v", telegramID, err)
+				return
+			}
+		}
+		if err := s.markNotified(pending.RequestID, pending.Revision); err != nil {
+			logger.Info("[Notification] Failed to mark notification: %v", err)
+			return
+		}
+	}
+}
+
+func (s *NotificationService) markNotified(requestID int, revision uint64) error {
+	s.processMu.Lock()
+	defer s.processMu.Unlock()
+	updates, err := s.LoadStatusUpdates()
+	if err != nil {
+		return err
+	}
+	for i := range updates {
+		if updates[i].RequestID == requestID && updates[i].Revision == revision {
+			updates[i].Notified = true
+			return s.SaveStatusUpdates(updates)
+		}
+	}
+	return nil
 }
 
 // checkStatusUpdates polls for status changes on tracked subscribed items.
 func (s *NotificationService) checkStatusUpdates() {
 	s.processMu.Lock()
-	defer s.processMu.Unlock()
 	updates, err := s.LoadStatusUpdates()
+	s.processMu.Unlock()
 	if err != nil {
 		logger.Info("[Notification] Failed to load status updates: %v", err)
 		return
@@ -375,8 +477,6 @@ func (s *NotificationService) checkStatusUpdates() {
 	if len(updates) == 0 || s.moviepilot == nil {
 		return
 	}
-
-	changed := false
 	for i := range updates {
 		requestID := updates[i].RequestID
 		if requestID <= 0 {
@@ -390,28 +490,8 @@ func (s *NotificationService) checkStatusUpdates() {
 		if status == nil || status.State == "" || status.State == updates[i].NewState {
 			continue
 		}
-
-		updates[i].OldState = updates[i].NewState
-		updates[i].NewState = status.State
-		updates[i].MediaTitle = status.Name
-		updates[i].MediaYear = status.Year
-		updates[i].MediaType = status.Type
-		updates[i].SavePath = status.SavePath
-		updates[i].Percent = status.Percent
-		updates[i].CurrentEp = status.CurrentEpisode
-		updates[i].TotalEp = status.TotalEpisode
-		updates[i].ErrorMessage = status.ErrorMessage
-		updates[i].Timestamp = time.Now()
-		updates[i].Notified = false
-		changed = true
+		if err := s.NotifyStatusUpdate(requestID, status); err != nil {
+			logger.Info("[Notification] Failed to save polled status update %d: %v", requestID, err)
+		}
 	}
-
-	if !changed {
-		return
-	}
-	if err := s.SaveStatusUpdates(updates); err != nil {
-		logger.Info("[Notification] Failed to save polled status updates: %v", err)
-		return
-	}
-	s.processNotifications(updates)
 }
