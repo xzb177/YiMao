@@ -578,6 +578,25 @@ func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, me
 	return nil, false
 }
 
+// HasActiveSimilarContent checks active requests across users. Callers that need
+// check+create atomicity provide their own transaction lock; no external I/O occurs here.
+func (s *ReviewService) HasActiveSimilarContent(tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, review := range s.reviews {
+		if review == nil || review.TmdbID != tmdbID || review.MediaType != mediaType {
+			continue
+		}
+		if mediaType == MediaTypeTV && review.Season != season {
+			continue
+		}
+		if review.Status == "pending" || review.Status == "approved" {
+			return review, true
+		}
+	}
+	return nil, false
+}
+
 // Approve approves a review request with token verification
 func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string) (*ReviewRequest, error) {
 	s.mu.Lock()

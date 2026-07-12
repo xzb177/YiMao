@@ -513,6 +513,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		wishHandler = handlers.NewWishHandler(
 			deps.WishService, deps.TMDBClient, deps.MoviePilot, deps.Telegram, deps.SessionMgr, requestHandler,
 		)
+		wishHandler.SetRequestSubmissionService(submissionService)
+		wishHandler.SetCarpoolService(deps.CarpoolService)
 	}
 
 	// Initialize site adapter registry for resource candidates

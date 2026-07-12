@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -26,8 +26,12 @@ type RequestHandler struct {
 	quotaService      *services.QuotaService
 	reviewService     *services.ReviewService
 	carpoolService    *services.CarpoolService
-	submissionService *services.RequestSubmissionService
+	submissionService requestSubmitter
 	enableReview      bool // Enable review system
+}
+
+type requestSubmitter interface {
+	SubmitResult(services.RequestSubmission) (services.SubmissionResult, error)
 }
 
 func (h *RequestHandler) SetRequestSubmissionService(s *services.RequestSubmissionService) {
@@ -91,6 +95,9 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			CallbackMsg: "配置错误",
 			ShowAlert:   true,
 		}, nil
+	}
+	if h.submissionService == nil {
+		return serviceConfigurationError(), nil
 	}
 
 	// Get media ID and type from params
@@ -265,7 +272,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 			InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 				{
 					{Text: "❌ 取消", CallbackData: "cancel_request"},
-					{Text: "👍 仍要订阅", CallbackData: fmt.Sprintf("force_subscribe:tmdb:%d:type:%s", tmdbID, mediaType)},
+					{Text: "👍 仍要订阅", CallbackData: fmt.Sprintf("force_subscribe:tmdb:%d:type:%s:season:%d", tmdbID, mediaType, season)},
 				},
 			},
 		}
@@ -279,98 +286,26 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
-	// Check duplicate active requests before quota deduction
 	reqMediaType := services.MediaTypeMovie
 	if mediaType == "tv" {
 		reqMediaType = services.MediaTypeTV
 	}
-	if existingReview, dup := h.reviewService.HasActiveSimilarRequest(ctx.UserID, tmdbID, reqMediaType, season); dup {
-		statusText := "处理中"
-		if existingReview.Status == "approved" {
-			statusText = "已通过审核"
-		}
-		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“我的请求”查看进度。", existingReview.MediaTitle, statusText),
-			CallbackMsg: "请勿重复提交",
-			ShowAlert:   true,
-		}, nil
+	result, submitErr := h.submissionService.SubmitResult(services.RequestSubmission{
+		TelegramID: ctx.UserID, TelegramName: userName, TmdbID: tmdbID,
+		MediaTitle: mediaTitle, MediaYear: mediaYear, MediaType: reqMediaType, Season: season,
+		PosterPath: posterPath, Overview: overview, Origin: "normal", UseQuota: true,
+	})
+	if submitErr != nil && result.Status != services.SubmissionQuotaExceeded {
+		logger.Info("[求片] 提交请求失败: %v", submitErr)
+		return operationFailedResponse(), nil
 	}
-	if existingReview, people := h.reviewService.FindActiveSimilarRequest(tmdbID, reqMediaType, season); existingReview != nil {
-		if h.carpoolService != nil {
-			people = h.carpoolService.Add(tmdbID, mediaType, ctx.UserID)
-		}
-		if people < 1 {
-			people = 1
-		}
-		return &callback.Response{
-			Text:        fmt.Sprintf("🙋 已加入拼车\n\n《%s》已有用户提交求片，当前共 %d 人想看。\n审核和下载进度会跟随原请求推进，不重复扣配额。", existingReview.MediaTitle, people),
-			CallbackMsg: "已加入拼车",
-			ShowAlert:   true,
-		}, nil
+	if result.Status != services.SubmissionCreated {
+		return h.mapSubmissionResult(result, ctx.UserID, tmdbID, mediaType, false), nil
 	}
-
-	// Media doesn't exist in library (or check timed out), deduct quota before creating request
-	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		logger.Info("[RequestHandler] Quota check failed for user %d: %v", ctx.UserID, err)
-
-		// Check if it's a quota exceeded error
-		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
-			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
-			return &callback.Response{
-				Text:        fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText),
-				CallbackMsg: "配额已用完",
-				ShowAlert:   true,
-			}, nil
-		}
-
-		// Other errors
-		return &callback.Response{
-			Text:        "❌ 配额操作失败，请稍后再试",
-			CallbackMsg: "操作失败",
-			ShowAlert:   true,
-		}, nil
+	review := result.Review
+	if review == nil {
+		return operationFailedResponse(), nil
 	}
-	logger.Info("[RequestHandler] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
-
-	logger.Info("[RequestHandler] Creating review request...")
-	// Create review request
-	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
-
-	quotaMediaType := mediaType // Save for rollback
-	_ = quotaMediaType
-
-	review := &services.ReviewRequest{
-		RequestID:     reviewID,
-		TelegramID:    ctx.UserID,
-		TelegramName:  userName,
-		MoviePilotID:  moviepilotID,
-		TmdbID:        tmdbID,
-		MediaTitle:    mediaTitle,
-		MediaYear:     mediaYear,
-		MediaType:     services.MediaTypeMovie,
-		Season:        season,
-		PosterPath:    posterPath,
-		Overview:      overview,
-		RequestOrigin: "normal",
-		QuotaCost:     map[bool]int{true: 3, false: 1}[mediaType == "tv"],
-	}
-
-	if mediaType == "tv" {
-		review.MediaType = services.MediaTypeTV
-	}
-
-	if err := h.reviewService.CreateRequest(review); err != nil {
-		logger.Info("[求片] 创建请求失败: %v", err)
-		h.quotaService.RestoreQuota(ctx.UserID, quotaMediaType)
-		return &callback.Response{
-			Text:        "❌ 提交失败",
-			CallbackMsg: "失败",
-			ShowAlert:   true,
-		}, err
-	}
-
-	// Notify admins about the review request
-	go h.notifyAdminsForReview(review)
 
 	// 发送求片回执消息
 	receiptMsg := fmt.Sprintf(
@@ -524,7 +459,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	logger.Info("[HandleForceSubscribe] Called: userID=%d, params=%v", ctx.UserID, ctx.Callback.Params)
 
 	// Defensive checks
-	if h.userMapping == nil || h.sessMgr == nil || h.reviewService == nil {
+	if h.userMapping == nil || h.sessMgr == nil || h.reviewService == nil || h.submissionService == nil {
 		logger.Info("[HandleForceSubscribe] ERROR: required service is nil!")
 		return &callback.Response{
 			Text:        "❌ 服务配置错误",
@@ -546,6 +481,14 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	tmdbID := 0
 	fmt.Sscanf(tmdbIDStr, "%d", &tmdbID)
+	season := 0
+	if seasonStr, ok := ctx.Callback.Params["season"]; ok {
+		parsedSeason, err := strconv.Atoi(seasonStr)
+		if err != nil || parsedSeason < 0 {
+			return &callback.Response{Text: "❌ 无效的季数", CallbackMsg: "错误", ShowAlert: true}, nil
+		}
+		season = parsedSeason
+	}
 
 	if tmdbID == 0 {
 		return &callback.Response{
@@ -652,62 +595,26 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		logger.Info("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)
 	}
 
-	// Prevent duplicate active requests before creating review
 	reqMediaType := services.MediaTypeMovie
 	if mediaType == "tv" {
 		reqMediaType = services.MediaTypeTV
 	}
-	if existingReview, dup := h.reviewService.HasActiveSimilarRequest(ctx.UserID, tmdbID, reqMediaType, 0); dup {
-		statusText := "处理中"
-		if existingReview.Status == "approved" {
-			statusText = "已通过审核"
-		}
-		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“我的请求”查看。", existingReview.MediaTitle, statusText),
-			CallbackMsg: "请勿重复提交",
-			ShowAlert:   true,
-		}, nil
+	result, submitErr := h.submissionService.SubmitResult(services.RequestSubmission{
+		TelegramID: ctx.UserID, TelegramName: userName, TmdbID: tmdbID,
+		MediaTitle: mediaTitle, MediaYear: mediaYear, MediaType: reqMediaType, Season: season,
+		EmbyInfo: embyInfo, Origin: "normal", UseQuota: true,
+	})
+	if submitErr != nil && result.Status != services.SubmissionQuotaExceeded {
+		logger.Info("[HandleForceSubscribe] Submit failed: %v", submitErr)
+		return operationFailedResponse(), nil
 	}
-
-	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
-			return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦～\n\n%s", h.quotaService.GetQuotaText(ctx.UserID)), CallbackMsg: "配额已用完", ShowAlert: true}, nil
-		}
-		return &callback.Response{Text: "❌ 配额操作失败，请稍后再试", CallbackMsg: "操作失败", ShowAlert: true}, nil
+	if result.Status != services.SubmissionCreated {
+		return h.mapSubmissionResult(result, ctx.UserID, tmdbID, mediaType, true), nil
 	}
-
-	// Create review request
-	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
-
-	review := &services.ReviewRequest{
-		RequestID:     reviewID,
-		TelegramID:    ctx.UserID,
-		TelegramName:  userName,
-		MoviePilotID:  moviepilotID,
-		TmdbID:        tmdbID,
-		MediaTitle:    mediaTitle,
-		MediaYear:     mediaYear,
-		MediaType:     services.MediaTypeMovie,
-		EmbyExists:    embyInfo != nil,
-		EmbyInfo:      embyInfo,
-		RequestOrigin: "normal",
-		QuotaCost:     map[bool]int{true: 3, false: 1}[mediaType == "tv"],
+	review := result.Review
+	if review == nil {
+		return operationFailedResponse(), nil
 	}
-
-	if mediaType == "tv" {
-		review.MediaType = services.MediaTypeTV
-	}
-
-	if err := h.reviewService.CreateRequest(review); err != nil {
-		h.quotaService.RestoreQuota(ctx.UserID, mediaType)
-		return &callback.Response{
-			Text:        "❌ 提交失败",
-			CallbackMsg: "失败",
-			ShowAlert:   true,
-		}, err
-	}
-
-	go h.notifyAdminsForReview(review)
 
 	// 发送求片回执消息
 	receiptMsg := fmt.Sprintf(
@@ -729,6 +636,50 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		CallbackMsg: "请求已提交",
 		ShowAlert:   false,
 	}, nil
+}
+
+func serviceConfigurationError() *callback.Response {
+	return &callback.Response{Text: "❌ 服务配置错误", CallbackMsg: "配置错误", ShowAlert: true}
+}
+
+func operationFailedResponse() *callback.Response {
+	return &callback.Response{Text: "❌ 配额操作失败，请稍后再试", CallbackMsg: "操作失败", ShowAlert: true}
+}
+
+func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, userID int64, tmdbID int, mediaType string, force bool) *callback.Response {
+	title, statusText := "", "处理中"
+	if result.Review != nil {
+		title = result.Review.MediaTitle
+		if result.Review.Status == "approved" {
+			statusText = "已通过审核"
+		}
+	}
+	switch result.Status {
+	case services.SubmissionDuplicateOwn:
+		if force {
+			return &callback.Response{Text: fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“我的请求”查看。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+		}
+		return &callback.Response{Text: fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“我的请求”查看进度。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+	case services.SubmissionDuplicateOther:
+		people := 1
+		if h.carpoolService != nil {
+			people = h.carpoolService.Add(tmdbID, mediaType, userID)
+		}
+		if people < 1 {
+			people = 1
+		}
+		return &callback.Response{Text: fmt.Sprintf("🙋 已加入拼车\n\n《%s》已有用户提交求片，当前共 %d 人想看。\n审核和下载进度会跟随原请求推进，不重复扣配额。", title, people), CallbackMsg: "已加入拼车", ShowAlert: true}
+	case services.SubmissionNotBound:
+		return &callback.Response{Text: "🔗 请先绑定账号", CallbackMsg: "需要绑定账号", ShowAlert: true}
+	case services.SubmissionQuotaExceeded:
+		quotaText := ""
+		if h.quotaService != nil {
+			quotaText = h.quotaService.GetQuotaText(userID)
+		}
+		return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText), CallbackMsg: "配额已用完", ShowAlert: true}
+	default:
+		return operationFailedResponse()
+	}
 }
 
 // HandleCancelRequest handles cancel button

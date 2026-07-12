@@ -24,7 +24,12 @@ type WishHandler struct {
 	moviepilot *services.MoviePilotClient
 	telegram   *services.TelegramClient
 	sessMgr    *session.Manager
-	reqHandler *RequestHandler // 复用现有求片流程（FULFILLED 时走它）
+	submission wishRequestSubmitter
+	carpool    *services.CarpoolService
+}
+
+type wishRequestSubmitter interface {
+	SubmitResult(services.RequestSubmission) (services.SubmissionResult, error)
 }
 
 // NewWishHandler 创建许愿池处理器。
@@ -42,9 +47,14 @@ func NewWishHandler(
 		moviepilot: moviepilot,
 		telegram:   telegram,
 		sessMgr:    sessMgr,
-		reqHandler: reqHandler,
 	}
 }
+
+// SetRequestSubmissionService 注入 typed 求片提交服务。
+func (h *WishHandler) SetRequestSubmissionService(s wishRequestSubmitter) { h.submission = s }
+
+// SetCarpoolService 注入拼车服务。
+func (h *WishHandler) SetCarpoolService(c *services.CarpoolService) { h.carpool = c }
 
 // BuildWishRequestButton 构造出源喜报「立即求片」按钮的回调串（注入给 WishScheduler）。
 // 格式沿用项目 colon 编码：wish_request:id:<wishItemID>
@@ -411,7 +421,7 @@ func (h *WishHandler) HandleCancel(ctx *callback.Context) (*callback.Response, e
 
 // Handle 处理 wish_request 回调（出源喜报「立即求片」按钮）。
 func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	if h.wish == nil || h.reqHandler == nil {
+	if h.wish == nil || h.submission == nil {
 		return &callback.Response{CallbackMsg: "服务未就绪", ShowAlert: true}, nil
 	}
 
@@ -429,56 +439,53 @@ func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	if err != nil || item == nil {
 		return &callback.Response{CallbackMsg: "许愿记录不存在", ShowAlert: true}, nil
 	}
-	// 仅发起人可点。
 	if item.UserID != ctx.UserID {
 		return &callback.Response{CallbackMsg: "这不是你的许愿哦", ShowAlert: true}, nil
 	}
-	// 状态须为 NOTIFIED/FOUND（已通知待求片）；其它状态视为已处理。
 	if item.State != services.WishStateNotified && item.State != services.WishStateFound {
 		return &callback.Response{CallbackMsg: "该许愿已处理过啦", ShowAlert: true}, nil
 	}
 
-	// 复用现有 request 流程：确保会话存在（RequestHandler 依赖 session，TMDB 兜底取标题）。
-	if h.sessMgr != nil {
-		h.sessMgr.GetOrCreate(ctx.UserID)
-	}
-
-	// 构造一个 request 动作的 Context，交给现有 RequestHandler（含用户绑定校验、配额、Emby 检查、管理员审核）。
-	reqCtx := &callback.Context{
-		UserID:     ctx.UserID,
-		ChatID:     ctx.ChatID,
-		ChatType:   ctx.ChatType,
-		MessageID:  ctx.MessageID,
-		CallbackID: ctx.CallbackID,
-		Callback: &callback.Callback{
-			Action: callback.ActionRequest,
-			Params: map[string]string{
-				"id":   fmt.Sprintf("%d", item.TmdbID),
-				"type": item.MediaType,
-			},
-		},
-	}
-	if item.MediaType == "tv" && item.Season > 0 {
-		reqCtx.Callback.Params["season"] = fmt.Sprintf("%d", item.Season)
-	}
-
-	resp, err := h.reqHandler.Handle(reqCtx)
+	result, err := h.submission.SubmitResult(services.RequestSubmission{
+		TelegramID: item.UserID,
+		TmdbID:     item.TmdbID,
+		MediaTitle: item.Title,
+		MediaYear:  item.Year,
+		MediaType:  services.MediaType(item.MediaType),
+		Season:     item.Season,
+		Origin:     "wish",
+		UseQuota:   true,
+	})
 	if err != nil {
-		logger.Info("[wish] id=%d 走 request 流程失败: %v", wishID, err)
+		logger.Info("[wish] id=%d 提交求片失败: %v", wishID, err)
 		return &callback.Response{CallbackMsg: "求片失败，请稍后再试", ShowAlert: true}, err
 	}
 
-	// request 已成功提交（进入审核）→ NOTIFIED→FULFILLED。
-	// 注意：只有 request 真正提交成功（resp 不是错误提示）才置 FULFILLED。
-	// RequestHandler 在配额/绑定缺失等情况下返回的是带提示的 Response（无 err），
-	// 这些情况下不应置 FULFILLED，让用户绑定/等配额后可再点。
-	if isWishRequestSubmitted(resp) {
+	markFulfilled := func() {
 		if _, ferr := h.wish.MarkFulfilled(wishID); ferr != nil {
 			logger.Info("[wish] id=%d MarkFulfilled 失败: %v", wishID, ferr)
 		}
 	}
-
-	return resp, nil
+	switch result.Status {
+	case services.SubmissionCreated:
+		markFulfilled()
+		return &callback.Response{CallbackMsg: "请求已提交"}, nil
+	case services.SubmissionDuplicateOwn:
+		return &callback.Response{CallbackMsg: "你已有相同求片请求，请等待处理", ShowAlert: true}, nil
+	case services.SubmissionDuplicateOther:
+		if h.carpool == nil {
+			return &callback.Response{CallbackMsg: "已有其他用户提交相同请求，请稍后再试", ShowAlert: true}, nil
+		}
+		people := h.carpool.Add(item.TmdbID, item.MediaType, item.UserID)
+		markFulfilled()
+		return &callback.Response{CallbackMsg: fmt.Sprintf("已加入拼车，共 %d 人想看", people)}, nil
+	case services.SubmissionNotBound:
+		return &callback.Response{CallbackMsg: "请先绑定账号后再求片", ShowAlert: true}, nil
+	case services.SubmissionQuotaExceeded:
+		return &callback.Response{CallbackMsg: "求片额度不足，请稍后再试", ShowAlert: true}, nil
+	default:
+		return &callback.Response{CallbackMsg: "求片失败，请稍后再试", ShowAlert: true}, nil
+	}
 }
 
 // isConfidentTitleMatch 判断查询词与候选标题是否高置信匹配（B6）。
@@ -495,14 +502,4 @@ func isConfidentTitleMatch(query, title string) bool {
 	}
 	// 互相包含（如查询「沙丘」匹配标题「沙丘」或「沙丘 2」）。
 	return strings.Contains(t, q) || strings.Contains(q, t)
-}
-
-// isWishRequestSubmitted 判断 RequestHandler 返回是否为「已成功提交求片」。
-// 提交成功的两种返回：审核提交成功 / 媒体已存在等确认场景仍算进入流程。
-// 这里以「CallbackMsg == 请求已提交」为成功信号（与 RequestHandler 文案一致）。
-func isWishRequestSubmitted(resp *callback.Response) bool {
-	if resp == nil {
-		return false
-	}
-	return strings.Contains(resp.CallbackMsg, "请求已提交")
 }
