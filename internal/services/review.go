@@ -55,6 +55,9 @@ type ReviewRequest struct {
 	RequestOrigin  string `json:"request_origin,omitempty"`  // "normal" | "adventure"
 	AdventureScore int    `json:"adventure_score,omitempty"` // 冒险得分
 	AdventureGrade string `json:"adventure_grade,omitempty"` // 冒险评级 SSS-SS-S-A-B-C-D
+
+	QuotaCost     int  `json:"quota_cost,omitempty"`     // 创建时实际扣除配额；0 表示旧 JSON
+	QuotaRestored bool `json:"quota_restored,omitempty"` // 已返还，持久化保证幂等
 }
 
 // ReviewService manages review requests
@@ -343,6 +346,13 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 
 	review.CreatedAt = time.Now()
 	review.Status = "pending"
+	// 冒险通关不消耗配额；普通/旧入口缺失成本时按媒体类型补齐。
+	if review.QuotaCost <= 0 && review.RequestOrigin != "adventure" {
+		review.QuotaCost = 1
+		if review.MediaType == MediaTypeTV {
+			review.QuotaCost = 3
+		}
+	}
 
 	// Set default priority if not specified
 	if review.Priority == "" {
@@ -365,10 +375,52 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 		priorityText = review.Priority
 	}
 
-	logger.Info("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s, 令牌: %s",
-		review.RequestID, review.TelegramID, priorityText, review.MediaTitle, review.ApproveToken)
+	logger.Info("[审核] 创建请求: %s, 用户: %d, 优先级: %s, 影片: %s",
+		review.RequestID, review.TelegramID, priorityText, review.MediaTitle)
 
 	return s.saveLocked()
+}
+
+// RestoreQuotaOnce 按请求记录的实际成本返还，持久化标记保证重试及重启后幂等。
+// 旧 JSON 缺少 quota_cost 时按历史规则推断：电影 1、剧集 3。
+func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok {
+		return false, fmt.Errorf("review request not found: %s", requestID)
+	}
+	if review.QuotaRestored {
+		return false, nil
+	}
+	cost := review.QuotaCost
+	if cost == 0 && review.RequestOrigin == "adventure" {
+		review.QuotaRestored = true
+		if err := s.saveLocked(); err != nil {
+			review.QuotaRestored = false
+			return false, err
+		}
+		return false, nil
+	}
+	if cost <= 0 {
+		cost = 1
+		if review.MediaType == MediaTypeTV {
+			cost = 3
+		}
+	}
+	if quota == nil {
+		return false, fmt.Errorf("quota service not configured")
+	}
+	if err := quota.RestoreQuotaN(review.TelegramID, string(review.MediaType), cost); err != nil {
+		return false, err
+	}
+	review.QuotaCost = cost
+	review.QuotaRestored = true
+	if err := s.saveLocked(); err != nil {
+		review.QuotaRestored = false
+		return false, err
+	}
+	return true, nil
 }
 
 // generateApproveToken generates a unique token for approve action

@@ -131,7 +131,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
 					HandlePollMessage(update.Message, pollDeps, cfg)
 				} else if update.CallbackQuery != nil {
-					logger.Info("[Poll] Update %d: Callback from %d: %s", update.UpdateID, update.CallbackQuery.From.ID, update.CallbackQuery.Data)
+					logger.Info("[Poll] Update %d: Callback from %d", update.UpdateID, update.CallbackQuery.From.ID)
 					HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
 				} else {
 					logger.Info("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
@@ -829,7 +829,7 @@ func HandlePollSearchQuery(msg *types.TelegramMessage, telegram *services.Telegr
 func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Registry, telegram *services.TelegramClient) {
 	// Sanitize callback data
 	sanitizedData := validation.SanitizeCallbackData(cb.Data)
-	logger.Info("[Poll] Callback from user %d: %s", cb.From.ID, sanitizedData)
+	logger.Info("[Poll] Callback from user %d", cb.From.ID)
 
 	// Parse callback
 	parsed, err := registry.Parser().Parse(sanitizedData)

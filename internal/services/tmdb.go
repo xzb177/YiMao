@@ -344,7 +344,7 @@ func SetAPIKeyFromEnv(apiKey string) string {
 // NewTMDBClientWithDefaultKey creates a TMDB client with default or provided API key
 func NewTMDBClientWithDefaultKey(apiKey string) *TMDBClient {
 	key := SetAPIKeyFromEnv(apiKey)
-	logger.Info("[TMDB] Client initialized with API key: %s", logger.Sanitizef("api_key=%s", key))
+	logger.Info("[TMDB] Client initialized")
 	return NewTMDBClient(key)
 }
 

@@ -382,14 +382,23 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if r.cfg.WebhookSecret == "" {
+		http.Error(w, "External webhook disabled", http.StatusServiceUnavailable)
+		return
+	}
+	if req.Body == nil {
+		http.Error(w, "Invalid payload", http.StatusBadRequest)
+		return
+	}
+	req.Body = http.MaxBytesReader(w, req.Body, 1<<20)
 
-	// Optional webhook authentication: when WEBHOOK_SECRET is configured, every
+	// Webhook authentication is mandatory for external webhooks.
 	// inbound webhook must carry a valid HMAC-SHA256 signature over the raw body
 	// (header "X-Webhook-Signature: sha256=<hex>"). A "?token=" / "X-Webhook-Token"
 	// shared-secret fallback is also accepted. Without a secret configured this
 	// check is skipped for backward compatibility.
 	if secret := r.cfg.WebhookSecret; secret != "" {
-		body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20)) // cap at 1MB
+		body, err := io.ReadAll(req.Body)
 		req.Body.Close()
 		if err != nil {
 			http.Error(w, "Failed to read request", http.StatusBadRequest)

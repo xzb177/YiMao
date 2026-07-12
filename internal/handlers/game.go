@@ -91,6 +91,10 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleBlindBox(ctx)
 	case "game_blindbox_open":
 		return h.handleBlindBoxOpen(ctx)
+	case "game_blindbox_horror":
+		return h.handleBlindBoxHorror(ctx)
+	case "game_blindbox_personality":
+		return h.handleEmotionProfile(ctx)
 	case "game_adventure_rank":
 		return h.handleAdventureRank(ctx)
 	case "game_adventure_stats":
@@ -437,6 +441,30 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 
 // --- 恐怖盲盒 ---
 
+func (h *GameHandler) handleBlindBoxHorror(ctx *callback.Context) (*callback.Response, error) {
+	if h.blindBoxSvc == nil {
+		return &callback.Response{CallbackMsg: "❌ 盲盒服务未就绪", ShowAlert: true}, nil
+	}
+	items, err := h.blindBoxSvc.OpenBlindBox("恐怖", 3)
+	if err != nil {
+		logger.Info("[Game] Horror BlindBox open failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{Text: "❌ 开盒失败，请稍后再试", CallbackMsg: "开盒失败", ShowAlert: true}, nil
+	}
+	views := make([]richmessage.BlindBoxItemView, 0, len(items))
+	for _, item := range items {
+		views = append(views, richmessage.BlindBoxItemView{
+			Title: item.Title, Year: item.Year, Rating: item.Rating, Rarity: item.Rarity,
+			Genres: strings.Join(item.Genres, "/"), Overview: item.Overview, Revealed: true,
+		})
+	}
+	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{Items: views})
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎲 再来一组恐怖片", "game_blindbox_horror")
+	kb.AddButton("🎰 普通盲盒", "game_blindbox_open")
+	kb.NewRow()
+	kb.AddButton("🎮 游戏中心", "game_menu")
+	return &callback.Response{RichMessage: card.Markdown, Keyboard: convertKeyboard(kb.Build())}, nil
+}
 
 // --- 社交动态 ---
 
@@ -869,9 +897,9 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 
 	kb := services.NewKeyboardBuilder()
 	if !alreadyChallenged {
-		kb.AddButton("⚔️ 接受挑战", fmt.Sprintf("adventure_start:movie=%s", url.QueryEscape(movie.Title)))
+		kb.AddButton("⚔️ 接受挑战", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
 	} else {
-		kb.AddButton("🎲 换一部挑战", fmt.Sprintf("adventure_start:movie=%s", url.QueryEscape(movie.Title)))
+		kb.AddButton("🎲 换一部挑战", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
 	}
 	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()

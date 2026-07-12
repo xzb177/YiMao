@@ -72,10 +72,8 @@ func main() {
 		cfg.MaxFailedAttempts,
 		cfg.BlockDuration,
 	)
-	if cfg.EnableAPIAuth && len(cfg.APIKeys) > 0 {
-		securityService.SetAPIKeys(cfg.APIKeys)
-		securityService.EnableAPIAuth(true)
-	}
+	securityService.SetAPIKeys(cfg.APIKeys)
+	securityService.EnableAPIAuth(cfg.EnableAPIAuth)
 	securityService.Start()
 	logger.Info("✅ Security service initialized: rate_limit=%v, ip_blocking=%v",
 		cfg.EnableRateLimit, cfg.EnableIPBlocking)
@@ -474,6 +472,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	backHandler := handlers.NewBackHandler(deps.SessionMgr)
 	cancelHandler := handlers.NewCancelHandler()
 	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
+	submissionService := services.NewRequestSubmissionService(deps.UserMapping, deps.ReviewService, deps.QuotaService, requestHandler.NotifyAdminsForReview)
+	requestHandler.SetRequestSubmissionService(submissionService)
 	requestHandler.SetCarpoolService(deps.CarpoolService)
 	searchHandler := handlers.NewSearchHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
 	if deps.SearchHistoryDB != nil {
@@ -600,27 +600,43 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 				}
 			}
 		}()
-		// 回归钩子：每小时检查失效用户并推送召回
+		// 回归钩子：每 6 小时检查超 48h 未冒险的用户，带 per-user 24h 冷却
 		if deps.Telegram != nil {
 			go func() {
-				ticker := time.NewTicker(1 * time.Hour)
+				ticker := time.NewTicker(6 * time.Hour)
 				defer ticker.Stop()
+				lastReminded := make(map[int64]time.Time) // per-user 冷却
 				for range ticker.C {
 					inactiveUsers, err := socialDB.GetInactiveUsersWithNemesis()
 					if err != nil || len(inactiveUsers) == 0 {
 						continue
 					}
+					var reminded int
 					for _, uid := range inactiveUsers {
+						// 24h 冷却：同用户不重复推送
+						if last, ok := lastReminded[uid]; ok && time.Since(last) < 24*time.Hour {
+							continue
+						}
 						userName := "冒险者"
 						if deps.UserMapping != nil {
 							if name, err2 := deps.UserMapping.GetMoviePilotUsername(uid); err2 == nil && name != "" {
 								userName = name
 							}
 						}
-						msg := fmt.Sprintf("⚔️ 你的宿敌还在等你…\n\n%s，自从上次冒险已经过去许久了。\n你的宿敌还在周榜上——不来复仇吗？\n\n/go 一键开战", userName)
+						// 文案变化：根据冷却状态调整语气
+						var msg string
+						if _, remindedBefore := lastReminded[uid]; remindedBefore {
+							msg = fmt.Sprintf("⚔️ %s，宿敌还在周榜上等你…\n\n有空就回来复仇吧，你的记录还在。\n\n/go 一键开战", userName)
+						} else {
+							msg = fmt.Sprintf("⚔️ 你的宿敌还在等你…\n\n%s，自从上次冒险已经过去许久了。\n你的宿敌还在周榜上——不来复仇吗？\n\n/go 一键开战", userName)
+						}
 						deps.Telegram.SendMessage(uid, msg, "", nil)
+						lastReminded[uid] = time.Now()
+						reminded++
 					}
-					logger.Info("[ReturnHook] 推送召回 %d 位冒险者", len(inactiveUsers))
+					if reminded > 0 {
+						logger.Info("[ReturnHook] 推送召回 %d 位冒险者 (跳过 %d 位冷却中)", reminded, len(inactiveUsers)-reminded)
+					}
 				}
 			}()
 		}
@@ -633,7 +649,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	viewingSvc := services.NewViewingHistoryService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
 	adventureHandler.SetViewingHistoryService(viewingSvc)
 	// 冒险通关 → 自动提交求片请求（不消耗配额，冒险本身就是代价）
-	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string) {
+	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, mediaType string, genres []string, score int, grade string) {
 		if deps.ReviewService == nil {
 			return
 		}
@@ -646,21 +662,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		if userName == "" {
 			userName = fmt.Sprintf("用户%d", userID)
 		}
-		reviewID := fmt.Sprintf("adv_%d_%d", userID, time.Now().UnixNano())
-		review := &services.ReviewRequest{
-			RequestID:      reviewID,
-			TelegramID:     userID,
-			TelegramName:   userName,
-			TmdbID:         tmdbID,
-			MediaTitle:     movieName,
-			MediaYear:      movieYear,
-			MediaType:      services.MediaTypeMovie,
-			Priority:       "high", // 冒险通关用户优先处理
-			RequestOrigin:  "adventure",
-			AdventureScore: score,
-			AdventureGrade: grade,
+		requestMediaType := services.MediaTypeMovie
+		if mediaType == "tv" {
+			requestMediaType = services.MediaTypeTV
 		}
-		if err := deps.ReviewService.CreateRequest(review); err != nil {
+		_, err := submissionService.Submit(services.RequestSubmission{
+			TelegramID: userID, TelegramName: userName, TmdbID: tmdbID, MediaTitle: movieName,
+			MediaYear: movieYear, MediaType: requestMediaType, Priority: "high",
+			Origin: "adventure", AdventureScore: score, AdventureGrade: grade, UseQuota: false,
+		})
+		if err != nil {
 			logger.Info("[Adventure] 求片提交失败: %v", err)
 			deps.Telegram.SendMessage(chatID, "❌ 求片自动提交失败，请使用普通求片重试", "", nil)
 			return
@@ -735,6 +746,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("game_prescription", gameHandler.Handle)
 	registry.RegisterFunc("game_contract", gameHandler.Handle)
 	registry.RegisterFunc("game_blindbox_horror", gameHandler.Handle)
+	registry.RegisterFunc("game_blindbox_personality", gameHandler.Handle)
 	registry.RegisterFunc("game_contract_complete", gameHandler.Handle)
 	registry.RegisterFunc("game_compare", gameHandler.Handle)
 	registry.RegisterFunc("game_daily_challenge", gameHandler.Handle)
@@ -938,7 +950,11 @@ func setupBotCommands(telegram *services.TelegramClient) {
 // setupWebhook configures the Telegram webhook
 func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 	if cfg.WebhookURL != "" {
-		if err := telegram.SetWebhook(cfg.WebhookURL); err != nil {
+		if cfg.TelegramWebhookSecret == "" {
+			logger.Warn("⚠️  TELEGRAM_WEBHOOK_SECRET is empty; Telegram webhook disabled (polling unaffected)")
+			return
+		}
+		if err := telegram.SetWebhookWithSecret(cfg.WebhookURL, cfg.TelegramWebhookSecret); err != nil {
 			logger.Info("⚠️  Failed to set webhook: %v", err)
 		} else {
 			logger.Info("✅ Webhook set: %s", cfg.WebhookURL)

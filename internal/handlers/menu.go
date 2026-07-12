@@ -110,7 +110,7 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 
 	// 退配额
 	if h.quotaSvc != nil {
-		h.quotaSvc.RestoreQuota(ctx.UserID, string(target.MediaType))
+		_, _ = h.reviewSvc.RestoreQuotaOnce(target.RequestID, h.quotaSvc)
 	}
 
 	// 通知管理员：用户主动撤回了求片申请

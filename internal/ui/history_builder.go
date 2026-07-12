@@ -301,8 +301,8 @@ func (b *HistoryBuilder) BuildPopularSearchesKeyboard(popular []services.Popular
 
 	// 切换按钮
 	toggleRow := []callback.Button{
-		{Text: "🔥 本周热门", CallbackData: "popular_week"},
-		{Text: "🏆 历史热门", CallbackData: "popular_all"},
+		{Text: "🔥 本周热门", CallbackData: callback.BuildCallback("search_popular", map[string]string{"period": "week"})},
+		{Text: "🏆 历史热门", CallbackData: callback.BuildCallback("search_popular", map[string]string{"period": "all"})},
 	}
 	rows = append(rows, toggleRow)
 
@@ -377,9 +377,9 @@ func (b *HistoryBuilder) BuildTrendsKeyboard(days int) *callback.Keyboard {
 
 	// 时间范围选择
 	timeRow := []callback.Button{
-		{Text: "3天", CallbackData: "search_trends:3"},
-		{Text: "7天", CallbackData: "search_trends:7"},
-		{Text: "30天", CallbackData: "search_trends:30"},
+		{Text: "3天", CallbackData: callback.BuildCallback("search_trends", map[string]string{"days": "3"})},
+		{Text: "7天", CallbackData: callback.BuildCallback("search_trends", map[string]string{"days": "7"})},
+		{Text: "30天", CallbackData: callback.BuildCallback("search_trends", map[string]string{"days": "30"})},
 	}
 	rows = append(rows, timeRow)
 

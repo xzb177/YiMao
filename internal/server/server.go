@@ -90,7 +90,14 @@ func New(
 			code = http.StatusServiceUnavailable
 		}
 		w.WriteHeader(code)
-		fmt.Fprintf(w, `{"status":"%s"}`, status)
+		fmt.Fprintf(w, `{"status":"%s","dependencies":{`, status)
+		first := true
+		for name, dependencyStatus := range checks {
+			if !first { fmt.Fprint(w, ",") }
+			fmt.Fprintf(w, `%q:%q`, name, dependencyStatus)
+			first = false
+		}
+		fmt.Fprint(w, `}}`)
 	}))
 
 	// Debug endpoint — always requires API auth (no public fallback)
@@ -137,8 +144,12 @@ func New(
 		deps.WebhookService,
 	)
 
-	// Register summary endpoint (public, handler validates admin internally)
-	mux.HandleFunc("/api/summary", securityService.PublicMiddleware(apiRouter.HandleSummary))
+	// Summary requires API authentication when configured; otherwise it is localhost-only.
+	if cfg.EnableAPIAuth {
+		mux.HandleFunc("/api/summary", securityService.Middleware(apiRouter.HandleSummary))
+	} else {
+		mux.HandleFunc("/api/summary", securityService.PublicMiddleware(localOnlyHandler(apiRouter.HandleSummary)))
+	}
 	mux.HandleFunc("/webhook/emby", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
@@ -159,9 +170,21 @@ func New(
 	return &http.Server{
 		Addr:         cfg.ServerHost + ":" + cfg.ServerPort,
 		Handler:      mux,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      15 * time.Second,
 		IdleTimeout:  60 * time.Second,
+	}
+}
+
+func localOnlyHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := strings.Cut(r.RemoteAddr, ":")
+		if err || (host != "127.0.0.1" && host != "::1") {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		next(w, r)
 	}
 }
 

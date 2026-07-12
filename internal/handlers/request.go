@@ -26,8 +26,12 @@ type RequestHandler struct {
 	quotaService   *services.QuotaService
 	reviewService  *services.ReviewService
 	carpoolService *services.CarpoolService
+	submissionService *services.RequestSubmissionService
 	enableReview   bool // Enable review system
 }
+
+func (h *RequestHandler) SetRequestSubmissionService(s *services.RequestSubmissionService) { h.submissionService = s }
+func (h *RequestHandler) NotifyAdminsForReview(r *services.ReviewRequest) { h.notifyAdminsForReview(r) }
 
 func NewRequestHandler(
 	sessMgr *session.Manager,
@@ -334,18 +338,19 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	_ = quotaMediaType
 
 	review := &services.ReviewRequest{
-		RequestID:    reviewID,
-		TelegramID:   ctx.UserID,
-		TelegramName: userName,
-		MoviePilotID: moviepilotID,
-		TmdbID:       tmdbID,
-		MediaTitle:   mediaTitle,
-		MediaYear:    mediaYear,
-		MediaType:    services.MediaTypeMovie,
-		Season:       season,
-		PosterPath:   posterPath,
-		Overview:     overview,
+		RequestID:     reviewID,
+		TelegramID:    ctx.UserID,
+		TelegramName:  userName,
+		MoviePilotID:  moviepilotID,
+		TmdbID:        tmdbID,
+		MediaTitle:    mediaTitle,
+		MediaYear:     mediaYear,
+		MediaType:     services.MediaTypeMovie,
+		Season:        season,
+		PosterPath:    posterPath,
+		Overview:      overview,
 		RequestOrigin: "normal",
+		QuotaCost:     map[bool]int{true: 3, false: 1}[mediaType == "tv"],
 	}
 
 	if mediaType == "tv" {
@@ -561,28 +566,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
-	// Deduct quota for force subscribe (user confirmed they want to subscribe despite existing media)
-	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
-		logger.Info("[HandleForceSubscribe] Quota check failed for user %d: %v", ctx.UserID, err)
-
-		// Check if it's a quota exceeded error
-		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
-			quotaText := h.quotaService.GetQuotaText(ctx.UserID)
-			return &callback.Response{
-				Text:        fmt.Sprintf("今天的求片次数用完啦～\n\n%s\n\n🎬 好好享受已入库的片子吧\n🕛 配额明天 00:00 刷新", quotaText),
-				CallbackMsg: "配额已用完",
-				ShowAlert:   true,
-			}, nil
-		}
-
-		// Other errors
-		return &callback.Response{
-			Text:        "❌ 配额操作失败，请稍后再试",
-			CallbackMsg: "操作失败",
-			ShowAlert:   true,
-		}, nil
-	}
-	logger.Info("[HandleForceSubscribe] Quota deducted for user %d, media type: %s", ctx.UserID, mediaType)
+	// Quota is consumed only after session/media/duplicate validation below.
 
 	// Get session info
 	sess := h.sessMgr.Get(ctx.UserID)
@@ -683,21 +667,29 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		}, nil
 	}
 
+	if err := h.quotaService.UseQuota(ctx.UserID, mediaType); err != nil {
+		if err.Error() == "TV quota exceeded" || err.Error() == "movie quota exceeded" {
+			return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦～\n\n%s", h.quotaService.GetQuotaText(ctx.UserID)), CallbackMsg: "配额已用完", ShowAlert: true}, nil
+		}
+		return &callback.Response{Text: "❌ 配额操作失败，请稍后再试", CallbackMsg: "操作失败", ShowAlert: true}, nil
+	}
+
 	// Create review request
 	reviewID := fmt.Sprintf("review_%d_%d", ctx.UserID, time.Now().UnixNano())
 
 	review := &services.ReviewRequest{
-		RequestID:    reviewID,
-		TelegramID:   ctx.UserID,
-		TelegramName: userName,
-		MoviePilotID: moviepilotID,
-		TmdbID:       tmdbID,
-		MediaTitle:   mediaTitle,
-		MediaYear:    mediaYear,
-		MediaType:    services.MediaTypeMovie,
-		EmbyExists:   embyInfo != nil,
-		EmbyInfo:     embyInfo,
+		RequestID:     reviewID,
+		TelegramID:    ctx.UserID,
+		TelegramName:  userName,
+		MoviePilotID:  moviepilotID,
+		TmdbID:        tmdbID,
+		MediaTitle:    mediaTitle,
+		MediaYear:     mediaYear,
+		MediaType:     services.MediaTypeMovie,
+		EmbyExists:    embyInfo != nil,
+		EmbyInfo:      embyInfo,
 		RequestOrigin: "normal",
+		QuotaCost:     map[bool]int{true: 3, false: 1}[mediaType == "tv"],
 	}
 
 	if mediaType == "tv" {

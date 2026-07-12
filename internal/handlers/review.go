@@ -216,6 +216,12 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if merrr := h.reviewService.MarkStuck(requestID, err.Error()); merrr != nil {
 			logger.Info("[ReviewHandler] MarkStuck 失败: %v", merrr)
 		}
+		// 最终/不可重试的审核提交失败不应消耗用户配额。
+		if latest, ok := h.reviewService.GetRequest(requestID); ok && latest.RetryCount >= services.MaxApproveRetry {
+			if _, rerr := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); rerr != nil {
+				logger.Info("[ReviewHandler] 最终失败返还配额失败: %v", rerr)
+			}
+		}
 		// Notify user about approval but submission failed
 		mediaIcon := "🎬"
 		if review.MediaType == services.MediaTypeTV {
@@ -364,16 +370,12 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		}, err
 	}
 
-	// Restore quota since the request was rejected
-	mediaType := "movie"
-	if review.MediaType == services.MediaTypeTV {
-		mediaType = "tv"
-	}
-	if err := h.quotaService.RestoreQuota(review.TelegramID, mediaType); err != nil {
+	// Restore quota since the request was rejected (persisted and idempotent).
+	if _, err := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); err != nil {
 		logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
 		// Don't fail the rejection, just log the error
 	} else {
-		logger.Info("[ReviewHandler] Quota restored for user %d, media type: %s", review.TelegramID, mediaType)
+		logger.Info("[ReviewHandler] Quota restored for user %d, cost: %d", review.TelegramID, review.QuotaCost)
 	}
 
 	// Notify user about rejection

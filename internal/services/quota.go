@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -34,7 +36,10 @@ type QuotaService struct {
 
 // NewQuotaService creates a new quota service
 func NewQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService {
-	quotasFile := fmt.Sprintf("%s/user_quotas.json", dataDir)
+	quotasFile := filepath.Join(dataDir, "user_quotas.json")
+	if strings.HasSuffix(strings.ToLower(dataDir), ".json") {
+		quotasFile = dataDir
+	}
 
 	service := &QuotaService{
 		quotasFile: quotasFile,
@@ -119,6 +124,15 @@ func (s *QuotaService) save() error {
 	return atomicWriteFile(s.quotasFile, data, 0644)
 }
 
+func (s *QuotaService) snapshotLocked() map[int64]*UserQuota {
+	result := make(map[int64]*UserQuota, len(s.quotas))
+	for k, v := range s.quotas {
+		q := *v
+		result[k] = &q
+	}
+	return result
+}
+
 // saveAsync saves quotas to file asynchronously (without locking)
 func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
 	data, err := json.MarshalIndent(map[string]interface{}{
@@ -138,10 +152,7 @@ func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
 // Creates a copy of quotas to avoid deadlock
 func (s *QuotaService) saveLocked() error {
 	// Create a copy of quotas map while holding lock
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 
 	// Release lock before saving
 	data, err := json.MarshalIndent(map[string]interface{}{
@@ -196,10 +207,7 @@ func (s *QuotaService) GetOrCreateQuota(telegramID int64) *UserQuota {
 	s.quotas[telegramID] = quota
 
 	// Save without holding lock - make a copy to avoid race
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	go s.saveAsync(quotasCopy)
 
 	return quota
@@ -219,10 +227,7 @@ func (s *QuotaService) SyncFromJellyseerr(telegramID, jellyseerrID int64) error 
 	userQuota.LastSync = time.Now()
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)
@@ -241,10 +246,7 @@ func (s *QuotaService) SyncFromMoviePilot(telegramID, moviepilotID int64) error 
 	userQuota.LastSync = time.Now()
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)
@@ -311,10 +313,7 @@ func (s *QuotaService) UseMovieQuota(telegramID int64) error {
 	quota.MovieUsed++
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)
@@ -343,10 +342,7 @@ func (s *QuotaService) UseTVQuotaN(telegramID int64, n int) error {
 	quota.TVUsed += n
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)
@@ -355,6 +351,15 @@ func (s *QuotaService) UseTVQuotaN(telegramID int64, n int) error {
 
 // RestoreQuota restores quota (e.g., when request is declined)
 func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
+	cost := 1
+	if mediaType == "tv" {
+		cost = 3
+	}
+	return s.RestoreQuotaN(telegramID, mediaType, cost)
+}
+
+// RestoreQuotaN restores an exact persisted request cost.
+func (s *QuotaService) RestoreQuotaN(telegramID int64, mediaType string, cost int) error {
 	s.mu.Lock()
 
 	// Use unsafe version to avoid recursive locking
@@ -362,20 +367,19 @@ func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
 
 	switch mediaType {
 	case "movie":
-		if quota.MovieUsed > 0 {
-			quota.MovieUsed--
+		quota.MovieUsed -= cost
+		if quota.MovieUsed < 0 {
+			quota.MovieUsed = 0
 		}
 	case "tv":
-		if quota.TVUsed > 0 {
-			quota.TVUsed--
+		quota.TVUsed -= cost
+		if quota.TVUsed < 0 {
+			quota.TVUsed = 0
 		}
 	}
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)
@@ -612,10 +616,7 @@ func (s *QuotaService) SetFollowupDisabled(telegramID int64, disabled bool) erro
 	quota.FollowupDisabled = disabled
 
 	// Make a copy for async save
-	quotasCopy := make(map[int64]*UserQuota)
-	for k, v := range s.quotas {
-		quotasCopy[k] = v
-	}
+	quotasCopy := s.snapshotLocked()
 	s.mu.Unlock()
 
 	s.saveAsync(quotasCopy)

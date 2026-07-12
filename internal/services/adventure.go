@@ -94,6 +94,7 @@ func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase,
 // MovieInfo 电影基本信息
 type MovieInfo struct {
 	Title      string   `json:"title"`
+	MediaType  string   `json:"media_type,omitempty"`
 	Year       int      `json:"year"`
 	Genres     []string `json:"genres"`
 	Overview   string   `json:"overview"`
@@ -243,6 +244,7 @@ func (s *AdventureService) searchTMDB(query string) (*MovieInfo, error) {
 
 	info := &MovieInfo{
 		Title:     picked.Title,
+		MediaType: picked.MediaType,
 		Year:      year,
 		Genres:    genreIDsToNames(picked.GenreIDs),
 		Overview:  picked.Overview,
@@ -374,7 +376,7 @@ func (s *AdventureService) searchEmby(query string) (*MovieInfo, error) {
 	}
 	item := result.Items[0]
 	return &MovieInfo{
-		Title: item.Name, Year: item.ProductionYear, Genres: item.Genres,
+		Title: item.Name, MediaType: "movie", Year: item.ProductionYear, Genres: item.Genres,
 		Overview: item.Overview, Rating: item.CommunityRating,
 	}, nil
 }

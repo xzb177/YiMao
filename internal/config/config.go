@@ -13,8 +13,9 @@ import (
 // Config holds application configuration
 type Config struct {
 	// Telegram
-	TelegramBotToken string
-	TelegramChatID   string
+	TelegramBotToken      string
+	TelegramChatID        string
+	TelegramWebhookSecret string
 
 	// MoviePilot
 	MoviePilotURL    string
@@ -113,8 +114,9 @@ type Config struct {
 // Load loads configuration from environment variables and files
 func Load() (*Config, error) {
 	cfg := &Config{
-		TelegramBotToken:  getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:    getEnv("TELEGRAM_CHAT_ID", ""),
+		TelegramBotToken:      getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:        getEnv("TELEGRAM_CHAT_ID", ""),
+		TelegramWebhookSecret: getEnv("TELEGRAM_WEBHOOK_SECRET", ""),
 		MoviePilotURL:     getEnv("MOVIEPILOT_URL", ""),
 		MoviePilotAPIKey:  getEnv("MOVIEPILOT_API_KEY", ""),
 		MoviePilotDBPath:  getEnv("MOVIEPILOT_DB_PATH", ""),
@@ -171,6 +173,12 @@ func Load() (*Config, error) {
 		WishMinSeeders:            getEnvInt("WISH_MIN_SEEDERS", 1),
 		WishSearchLockTTLMinutes:  getEnvInt("WISH_SEARCH_LOCK_TTL_MINUTES", 60),
 	}
+
+	apiKeys, err := parseAPIKeys(getEnv("API_KEYS", ""))
+	if err != nil {
+		return nil, fmt.Errorf("invalid API_KEYS: %w", err)
+	}
+	cfg.APIKeys = apiKeys
 
 	// Set file paths
 	cfg.QuotaFile = filepath.Join(cfg.DataDir, "user_quotas.json")
@@ -232,6 +240,9 @@ func (c *Config) validate() error {
 	if len(c.MoviePilotAPIKey) < 10 {
 		return fmt.Errorf("MOVIEPILOT_API_KEY appears invalid (too short)")
 	}
+	if c.EnableAPIAuth && len(c.APIKeys) == 0 {
+		return fmt.Errorf("API_KEYS is required when ENABLE_API_AUTH=true")
+	}
 
 	// If Emby is configured, validate both URL and key
 	if c.EmbyURL != "" && c.EmbyAPIKey == "" {
@@ -247,6 +258,26 @@ func (c *Config) validate() error {
 	}
 
 	return nil
+}
+
+// parseAPIKeys accepts a JSON object mapping high-entropy keys to descriptions.
+func parseAPIKeys(raw string) (map[string]string, error) {
+	keys := make(map[string]string)
+	if strings.TrimSpace(raw) == "" {
+		return keys, nil
+	}
+	if err := json.Unmarshal([]byte(raw), &keys); err != nil {
+		return nil, fmt.Errorf("must be a JSON object: %w", err)
+	}
+	for key, description := range keys {
+		if key != strings.TrimSpace(key) || len(key) < 16 {
+			return nil, fmt.Errorf("each key must be at least 16 characters with no surrounding whitespace")
+		}
+		if strings.TrimSpace(description) == "" {
+			return nil, fmt.Errorf("description for each key is required")
+		}
+	}
+	return keys, nil
 }
 
 // loadAdmins loads admin configuration from file

@@ -702,6 +702,26 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 	return builder.String()
 }
 
+func resolveSummaryTitle(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) string {
+	if title := strings.TrimSpace(payload.ItemName); title != "" {
+		return title
+	}
+	if payload.Item != nil {
+		if title := strings.TrimSpace(payload.Item.Name); title != "" {
+			return title
+		}
+	}
+	if enhanced != nil {
+		if title := strings.TrimSpace(enhanced.Title); title != "" {
+			return title
+		}
+	}
+	if title := strings.TrimSpace(payload.SeriesName); title != "" {
+		return title
+	}
+	return ""
+}
+
 func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhanced *EmbyEnhancedInfo) {
 	if s.mediaNotificationSvc == nil {
 		return
@@ -810,9 +830,13 @@ func (s *WebhookService) addMediaItemToSummary(payload EmbyWebhookPayload, enhan
 		episode = payload.Episode
 	}
 
-	// Create media item
+	// Create media item. Empty titles are not useful in a summary.
+	title := resolveSummaryTitle(payload, enhanced)
+	if title == "" {
+		return
+	}
 	item := &MediaItem{
-		Title:        payload.ItemName,
+		Title:        title,
 		Year:         year,
 		LibraryName:  libraryName,
 		MediaType:    mediaType,

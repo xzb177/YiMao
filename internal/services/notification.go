@@ -19,6 +19,7 @@ type NotificationService struct {
 	knownUsers  map[int64]int64 // telegramID -> moviepilotID
 	review      *ReviewService  // optional: resolve MoviePilot subscription/request ID back to Telegram user
 	mu          sync.RWMutex
+	processMu   sync.Mutex // serializes notification read-modify-write and delivery
 	// NotifyEnabled 检查用户是否开启了某类通知（由 main 注入）。
 	// 参数：userID, notifyKey。返回 true 表示允许发送。
 	NotifyEnabled func(userID int64, notifyKey string) bool
@@ -92,8 +93,8 @@ func (s *NotificationService) SaveStatusUpdates(updates []StatusUpdate) error {
 
 // NotifyStatusUpdate notifies a user about request status change
 func (s *NotificationService) NotifyStatusUpdate(requestID int, status *SubscribeStatus) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.processMu.Lock()
+	defer s.processMu.Unlock()
 
 	// Find all users who should be notified (admin who submitted or the request owner)
 	// Store notifications and process them asynchronously so webhook/API callers are not blocked by Telegram delivery.
@@ -145,8 +146,9 @@ func (s *NotificationService) saveAndNotify(updates []StatusUpdate) error {
 		return err
 	}
 
-	// Send pending notifications
-	go s.processNotifications(updates)
+	// Process synchronously while processMu is held, preventing stale snapshots
+	// from overwriting newer state.
+	s.processNotifications(updates)
 
 	return nil
 }
@@ -363,6 +365,8 @@ func (s *NotificationService) StartNotificationWorker() {
 
 // checkStatusUpdates polls for status changes on tracked subscribed items.
 func (s *NotificationService) checkStatusUpdates() {
+	s.processMu.Lock()
+	defer s.processMu.Unlock()
 	updates, err := s.LoadStatusUpdates()
 	if err != nil {
 		logger.Info("[Notification] Failed to load status updates: %v", err)
@@ -409,5 +413,5 @@ func (s *NotificationService) checkStatusUpdates() {
 		logger.Info("[Notification] Failed to save polled status updates: %v", err)
 		return
 	}
-	go s.processNotifications(updates)
+	s.processNotifications(updates)
 }

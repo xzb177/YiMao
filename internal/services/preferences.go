@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -61,7 +63,10 @@ type PreferencesService struct {
 
 // NewPreferencesService creates a new preferences service
 func NewPreferencesService(dataDir string) *PreferencesService {
-	prefsFile := fmt.Sprintf("%s/preferences.json", dataDir)
+	prefsFile := filepath.Join(dataDir, "preferences.json")
+	if strings.HasSuffix(strings.ToLower(dataDir), ".json") {
+		prefsFile = dataDir
+	}
 
 	service := &PreferencesService{
 		prefsFile: prefsFile,
@@ -107,10 +112,44 @@ func (s *PreferencesService) load() error {
 }
 
 // save saves preferences to file
-func (s *PreferencesService) save() error {
-	// Convert int64 keys to strings for JSON
+func clonePreferences(p *UserPreferences) *UserPreferences {
+	if p == nil {
+		return nil
+	}
+	c := *p
+	c.Whitelist = append([]string(nil), p.Whitelist...)
+	c.Blacklist = append([]string(nil), p.Blacklist...)
+	if p.NotifyDownload != nil {
+		v := *p.NotifyDownload
+		c.NotifyDownload = &v
+	}
+	if p.NotifyRecommend != nil {
+		v := *p.NotifyRecommend
+		c.NotifyRecommend = &v
+	}
+	if p.NotifyWeekly != nil {
+		v := *p.NotifyWeekly
+		c.NotifyWeekly = &v
+	}
+	if p.NotifyAnnounce != nil {
+		v := *p.NotifyAnnounce
+		c.NotifyAnnounce = &v
+	}
+	return &c
+}
+func defaultPreferences(id int64) *UserPreferences {
+	return &UserPreferences{TelegramID: id, Movies: true, TV: true, Issues: true, Approved: true, Available: true, Whitelist: []string{}, Blacklist: []string{}}
+}
+func (s *PreferencesService) snapshotLocked() map[int64]*UserPreferences {
+	r := make(map[int64]*UserPreferences, len(s.prefs))
+	for id, p := range s.prefs {
+		r[id] = clonePreferences(p)
+	}
+	return r
+}
+func (s *PreferencesService) saveSnapshot(snapshot map[int64]*UserPreferences) error {
 	filePrefs := make(map[string]*UserPreferences)
-	for id, pref := range s.prefs {
+	for id, pref := range snapshot {
 		filePrefs[fmt.Sprintf("%d", id)] = pref
 	}
 
@@ -128,7 +167,7 @@ func (s *PreferencesService) GetPreferences(telegramID int64) *UserPreferences {
 	defer s.mu.RUnlock()
 
 	if pref, exists := s.prefs[telegramID]; exists {
-		return pref
+		return clonePreferences(pref)
 	}
 
 	// Return default preferences
@@ -148,9 +187,10 @@ func (s *PreferencesService) GetPreferences(telegramID int64) *UserPreferences {
 // SetPreference sets a preference for a user
 func (s *PreferencesService) SetPreference(telegramID int64, prefType PreferenceType, value interface{}) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	pref := s.GetPreferences(telegramID)
+	pref := clonePreferences(s.prefs[telegramID])
+	if pref == nil {
+		pref = defaultPreferences(telegramID)
+	}
 
 	switch prefType {
 	case PrefMovieNotification:
@@ -192,12 +232,18 @@ func (s *PreferencesService) SetPreference(telegramID int64, prefType Preference
 	}
 
 	s.prefs[telegramID] = pref
-	return s.save()
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.saveSnapshot(snapshot)
 }
 
 // TogglePreference toggles a boolean preference
 func (s *PreferencesService) TogglePreference(telegramID int64, prefType PreferenceType) (bool, error) {
-	pref := s.GetPreferences(telegramID)
+	s.mu.Lock()
+	pref := clonePreferences(s.prefs[telegramID])
+	if pref == nil {
+		pref = defaultPreferences(telegramID)
+	}
 
 	var newValue bool
 	switch prefType {
@@ -220,11 +266,14 @@ func (s *PreferencesService) TogglePreference(telegramID int64, prefType Prefere
 		newValue = !pref.QuietMode
 		pref.QuietMode = newValue
 	default:
+		s.mu.Unlock()
 		return false, fmt.Errorf("unknown preference type: %s", prefType)
 	}
 
 	s.prefs[telegramID] = pref
-	return newValue, s.save()
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return newValue, s.saveSnapshot(snapshot)
 }
 
 // ShouldNotify checks if a notification should be sent based on preferences
@@ -333,12 +382,10 @@ func (s *PreferencesService) IsNotifyEnabled(userID int64, notifyKey string) boo
 // SetNotify 设置用户的某类通知开关。
 func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled bool) error {
 	s.mu.Lock()
-	prefs, exists := s.prefs[userID]
-	if !exists {
-		prefs = &UserPreferences{TelegramID: userID}
-		s.prefs[userID] = prefs
+	prefs := clonePreferences(s.prefs[userID])
+	if prefs == nil {
+		prefs = defaultPreferences(userID)
 	}
-	s.mu.Unlock()
 	switch notifyKey {
 	case NotifyDownload:
 		prefs.NotifyDownload = &enabled
@@ -349,9 +396,13 @@ func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled b
 	case NotifyAnnounce:
 		prefs.NotifyAnnounce = &enabled
 	default:
+		s.mu.Unlock()
 		return fmt.Errorf("unknown notify key: %s", notifyKey)
 	}
-	return s.save()
+	s.prefs[userID] = prefs
+	snapshot := s.snapshotLocked()
+	s.mu.Unlock()
+	return s.saveSnapshot(snapshot)
 }
 
 // GetNotifyStatus 返回所有通知类别的开关状态。

@@ -73,6 +73,7 @@ var validActions = map[Action]bool{
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page
 	"start_ai":          true, // Reserved
+	"ai":                true, // start_ai 剥前缀后的实际 action
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
 	"wish_cancel":       true, // 许愿撤回
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
@@ -178,9 +179,11 @@ var validActions = map[Action]bool{
 	"game_menu":           true, // 游戏中心主菜单
 	"game_rank":           true, // 段位系统
 	"game_narrator":       true, // AI解说入口
-	"game_blindbox":       true, // 盲盒入口
-	"game_blindbox_open":  true, // 盲盒开盒
-	"game_social":         true, // 社交动态
+	"game_blindbox":             true, // 盲盒入口
+	"game_blindbox_open":        true, // 盲盒开盒
+	"game_blindbox_horror":      true, // 恐怖盲盒
+	"game_blindbox_personality": true, // 盲盒性格分析
+	"game_social":               true, // 社交动态
 	"game_emotion":        true, // 情绪画像
 	"game_achievements":     true, // 成就系统
 	"game_compare":          true, // 品味对比

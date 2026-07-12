@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -28,6 +29,20 @@ func HandleWebhook(
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if cfg.TelegramWebhookSecret == "" {
+		http.Error(w, "Telegram webhook disabled", http.StatusServiceUnavailable)
+		return
+	}
+	provided := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(cfg.TelegramWebhookSecret)) != 1 {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Body == nil {
+		http.Error(w, "Bad request", http.StatusBadRequest)
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 
 	// Parse update
 	var update types.TelegramUpdate
@@ -39,8 +54,16 @@ func HandleWebhook(
 
 	// Route update
 	if update.CallbackQuery != nil {
+		if update.CallbackQuery.From == nil || update.CallbackQuery.Message == nil || update.CallbackQuery.Message.Chat == nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
 		HandleWebhookCallback(w, &update, registry, deps.Telegram, deps.SessionMgr, cfg, deps.AdminService)
 	} else if update.Message != nil {
+		if update.Message.From == nil || update.Message.Chat == nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
 		HandleWebhookMessage(w, &update, deps, cfg, registry)
 	} else {
 		w.WriteHeader(http.StatusOK)
@@ -59,7 +82,7 @@ func HandleWebhookCallback(
 	adminService *services.AdminService,
 ) {
 	cb := update.CallbackQuery
-	logger.Info("[Webhook] Callback from user %d: %s", cb.From.ID, cb.Data)
+	logger.Info("[Webhook] Callback from user %d", cb.From.ID)
 
 	// Parse callback
 	parsed, err := registry.Parser().Parse(cb.Data)

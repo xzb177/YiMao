@@ -176,7 +176,7 @@ func (a *SkyIslandAdapter) Search(keyword string, page int) ([]TorrentResource, 
 	// Build RSS URL with search parameter
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	logger.Info("[HD-Sky] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[HD-Sky] RSS search requested")
 
 	// Fetch RSS feed
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -328,7 +328,7 @@ func (a *ZhuQueAdapter) Search(keyword string, page int) ([]TorrentResource, err
 		return nil, fmt.Errorf("no RSS credentials configured")
 	}
 
-	logger.Info("[ZhuQue] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+	logger.Info("[ZhuQue] RSS search requested")
 
 	// Make HTTP request
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -456,7 +456,7 @@ func (a *ZhuQueAdapter) searchAPI(keyword string, page int) ([]TorrentResource, 
 func (a *ZhuQueAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	logger.Info("[ZhuQue] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[ZhuQue] RSS search requested")
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -586,7 +586,7 @@ func (a *MTeamAdapter) Search(keyword string, page int) ([]TorrentResource, erro
 		return nil, fmt.Errorf("no RSS credentials configured")
 	}
 
-	logger.Info("[M-Team] Searching: %s\n", rssURL[:min(80, len(rssURL))]+"...")
+	logger.Info("[M-Team] RSS search requested")
 
 	// Make HTTP request
 	req, err := http.NewRequest("GET", rssURL, nil)
@@ -714,7 +714,7 @@ func (a *MTeamAdapter) searchAPI(keyword string, page int) ([]TorrentResource, e
 func (a *MTeamAdapter) searchRSS(keyword string, page int) ([]TorrentResource, error) {
 	rssURL := fmt.Sprintf("%s?passkey=%s&rows=50&search=%s",
 		a.rssURL, a.passkey, url.QueryEscape(keyword))
-	logger.Info("[M-Team] Searching: %s\n", rssURL[:50]+"...") // Log first 50 chars
+	logger.Info("[M-Team] RSS search requested")
 
 	req, err := http.NewRequest("GET", rssURL, nil)
 	if err != nil {
@@ -805,8 +805,7 @@ func parseRSSItems(data string) ([]RSSItem, error) {
 		if strings.Contains(data, "<item>") {
 			itemStart := strings.Index(data, "<item>")
 			if itemStart > 0 && len(data) > itemStart+800 {
-				itemSample := data[itemStart : itemStart+800]
-				logger.Info("[RSS] Sample item structure:\n%s\n", itemSample)
+				logger.Debug("[RSS] sample item present (content redacted)")
 			}
 		}
 	}

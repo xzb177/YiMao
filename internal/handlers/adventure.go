@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	cryptorand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -24,35 +25,37 @@ import (
 const (
 	adventureMaxLevels = 5
 	adventureMaxHP     = 100
-	adventureBaseDmg   = 45  // 基础扣血（两次必死）
-	adventureTrapDmg   = 60  // 陷阱扣血（一次半残）
-	adventureBossDmg   = 70  // Boss关扣血（基本一击毙命）
-	adventureComboHeal = 1   // 连击回血（微乎其微）
+	adventureBaseDmg   = 45 // 基础扣血（两次必死）
+	adventureTrapDmg   = 60 // 陷阱扣血（一次半残）
+	adventureBossDmg   = 70 // Boss关扣血（基本一击毙命）
+	adventureComboHeal = 1  // 连击回血（微乎其微）
 )
 
 // AdventureState 冒险状态
 type AdventureState struct {
-	MovieInfo          *services.MovieInfo         `json:"movie_info"`
-	Level              int                         `json:"level"`
-	HP                 int                         `json:"hp"`
-	MaxHP              int                         `json:"max_hp"`             // 最大HP（含连胜加成）
-	Combo              int                         `json:"combo"`
-	MaxCombo           int                         `json:"max_combo"`
-	Score              int                         `json:"score"`
-	History            []string                    `json:"history"`
-	Scene              *services.AdventureScene    `json:"scene"`
-	InProgress         bool                        `json:"in_progress"`
-	TotalLevels        int                         `json:"total_levels"`
-	PerfectRun         bool                        `json:"perfect_run"`
-	TriedChoices       map[int]bool                `json:"tried_choices"`
-	HintUsed           bool                        `json:"hint_used"`
-	LastFreeReviveDate string                      `json:"last_free_revive_date"` // 上次免费复活日期 (YYYY-MM-DD)
-	VengeanceActive    bool                        `json:"vengeance_active"`      // 复仇模式（跳过第1关）
-	StreakDays         int                         `json:"streak_days"`            // 连胜天数
-	StreakRewards      *services.StreakRewards     `json:"-"`                      // 连胜奖励（不序列化）
-	FreeSkipsUsed      int                         `json:"free_skips_used"`        // 已使用的免费跳过次数
-	IsWeeklyBoss       bool                        `json:"is_weekly_boss"`         // 是否是本周梦魇
-	ChoiceLock         sync.Mutex                  `json:"-"` // 不序列化
+	RunID              string                   `json:"run_id"`
+	Success            bool                     `json:"success"`
+	MovieInfo          *services.MovieInfo      `json:"movie_info"`
+	Level              int                      `json:"level"`
+	HP                 int                      `json:"hp"`
+	MaxHP              int                      `json:"max_hp"` // 最大HP（含连胜加成）
+	Combo              int                      `json:"combo"`
+	MaxCombo           int                      `json:"max_combo"`
+	Score              int                      `json:"score"`
+	History            []string                 `json:"history"`
+	Scene              *services.AdventureScene `json:"scene"`
+	InProgress         bool                     `json:"in_progress"`
+	TotalLevels        int                      `json:"total_levels"`
+	PerfectRun         bool                     `json:"perfect_run"`
+	TriedChoices       map[int]bool             `json:"tried_choices"`
+	HintUsed           bool                     `json:"hint_used"`
+	LastFreeReviveDate string                   `json:"last_free_revive_date"` // 上次免费复活日期 (YYYY-MM-DD)
+	VengeanceActive    bool                     `json:"vengeance_active"`      // 复仇模式（跳过第1关）
+	StreakDays         int                      `json:"streak_days"`           // 连胜天数
+	StreakRewards      *services.StreakRewards  `json:"-"`                     // 连胜奖励（不序列化）
+	FreeSkipsUsed      int                      `json:"free_skips_used"`       // 已使用的免费跳过次数
+	IsWeeklyBoss       bool                     `json:"is_weekly_boss"`        // 是否是本周梦魇
+	ChoiceLock         sync.Mutex               `json:"-"`                     // 不序列化
 }
 
 // AdventureHandler 冒险处理器
@@ -68,12 +71,14 @@ type AdventureHandler struct {
 	groupChatID  int64
 
 	// 冒险成功后的求片回调（由 main 注入，解耦 requestHandler）
-	onAdventureSuccess func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)
+	onAdventureSuccess func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, mediaType string, genres []string, score int, grade string)
 
 	mu            sync.Mutex
 	generating    map[int64]bool
 	gambleStash   map[int64]*gambleStashEntry // 双倍或归零暂存 (userID → items+state)
 	gambleStashMu sync.Mutex
+	shareMu       sync.Mutex
+	sharedRuns    map[string]struct{}
 }
 
 type gambleStashEntry struct {
@@ -99,7 +104,50 @@ func NewAdventureHandler(
 		userMapping:  userMapping,
 		groupChatID:  groupChatID,
 		generating:   make(map[int64]bool),
+		sharedRuns:   make(map[string]struct{}),
 	}
+}
+
+func newAdventureRunID() string {
+	var b [12]byte
+	if _, err := cryptorand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return fmt.Sprintf("%x", b[:])
+}
+
+func canFreeRevive(s *AdventureState, today string) bool {
+	return s != nil && s.HP <= 0 && s.Level >= 1 && s.Level <= 3 && s.LastFreeReviveDate != today
+}
+
+func canShareAdventure(s *AdventureState, runID string) bool {
+	return s != nil && s.Success && !s.InProgress && s.HP > 0 && runID != "" && s.RunID == runID
+}
+
+func shouldBroadcastAdventure(success bool, grade string, perfect bool, combo, failedLevel, total int) bool {
+	if success {
+		return grade == "SSS" || grade == "SS" || perfect || combo >= 4
+	}
+	return total > 0 && failedLevel == total
+}
+
+func (h *AdventureHandler) claimAdventureShare(runID, requestID string) bool {
+	if runID == "" || requestID == "" {
+		return false
+	}
+	h.shareMu.Lock()
+	defer h.shareMu.Unlock()
+	if h.sharedRuns == nil {
+		h.sharedRuns = make(map[string]struct{})
+	}
+	for _, k := range []string{"run:" + runID, "request:" + requestID} {
+		if _, ok := h.sharedRuns[k]; ok {
+			return false
+		}
+	}
+	h.sharedRuns["run:"+runID] = struct{}{}
+	h.sharedRuns["request:"+requestID] = struct{}{}
+	return true
 }
 
 // SetSocialDB 注入社交数据库
@@ -108,7 +156,7 @@ func (h *AdventureHandler) SetSocialDB(db *services.SocialDB) {
 }
 
 // SetOnAdventureSuccess 注入冒险成功回调
-func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, genres []string, score int, grade string)) {
+func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, mediaType string, genres []string, score int, grade string)) {
 	h.onAdventureSuccess = fn
 }
 
@@ -516,10 +564,15 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	if advState.HP <= 0 {
 		// 💀 死亡
 		advState.HP = 0
-		advState.InProgress = false
+		advState.InProgress = canFreeRevive(advState, time.Now().Format("2006-01-02"))
 		sess.Set("adventure_state", advState)
-		h.removeState(ctx.UserID) // 死亡，清除持久化
-		go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
+		if advState.InProgress {
+			h.saveState(ctx.UserID, advState)
+			go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result)
+		} else {
+			h.removeState(ctx.UserID)
+			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
+		}
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("💀 %s\n生命耗尽...", choice.Result),
 			ShowAlert:   false,
@@ -707,24 +760,30 @@ func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Respons
 		return &callback.Response{CallbackMsg: "❌ 数据异常", ShowAlert: true}, nil
 	}
 
-	// 只有已结束的冒险才能分享
-	if advState.InProgress {
-		return &callback.Response{CallbackMsg: "⏳ 冒险还没结束呢，先通关再说！", ShowAlert: true}, nil
+	runID := ""
+	if ctx.Callback != nil {
+		runID = ctx.Callback.Params["run"]
+	}
+	if !canShareAdventure(advState, runID) {
+		return &callback.Response{CallbackMsg: "❌ 只有本次成功通关的战绩可以分享", ShowAlert: true}, nil
+	}
+	if !h.claimAdventureShare(runID, ctx.CallbackID) {
+		return &callback.Response{CallbackMsg: "✅ 这份战绩已经分享过了", ShowAlert: false}, nil
 	}
 
 	userName := h.getUserName(ctx.UserID)
 
 	// 构建炫耀卡（不泄露Scene.Choices中的正确答案信息）
 	shareCard := richmessage.BuildAdventureShareCard(richmessage.AdventureShareCardData{
-		UserName:   userName,
-		MovieTitle: advState.MovieInfo.Title,
-		MovieYear:  advState.MovieInfo.Year,
-		Score:      advState.Score,
-		HP:         advState.HP,
-		MaxCombo:   advState.MaxCombo,
-		PerfectRun: advState.PerfectRun,
-		Success:    !advState.InProgress && advState.HP > 0,
-		Level:      advState.Level - 1,
+		UserName:    userName,
+		MovieTitle:  advState.MovieInfo.Title,
+		MovieYear:   advState.MovieInfo.Year,
+		Score:       advState.Score,
+		HP:          advState.HP,
+		MaxCombo:    advState.MaxCombo,
+		PerfectRun:  advState.PerfectRun,
+		Success:     true,
+		Level:       advState.Level - 1,
 		TotalLevels: advState.TotalLevels,
 	})
 
@@ -783,6 +842,9 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	advState := h.getOrRestoreState(ctx.UserID, sess)
 	if advState == nil {
 		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险", ShowAlert: true}, nil
+	}
+	if !canFreeRevive(advState, time.Now().Format("2006-01-02")) {
+		return &callback.Response{CallbackMsg: "❌ 当前没有可用的免费复活", ShowAlert: true}, nil
 	}
 
 	// 复活：HP = 30，标记今日已复活
@@ -1144,6 +1206,7 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	}
 
 	state := &AdventureState{
+		RunID:           newAdventureRunID(),
 		MovieInfo:       movieInfo,
 		Level:           startLevel,
 		HP:              initialHP,
@@ -1274,18 +1337,18 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 	}
 
 	card := richmessage.BuildAdventureDamageCard(richmessage.AdventureDamageCardData{
-		ChoiceResult: choiceResult,
-		Damage:       damage,
-		HP:           state.HP,
-		Level:        state.Level,
-		TotalLevels:  state.TotalLevels,
-		Combo:        state.Combo,
-		Score:        state.Score,
-		IsDead:       isDead,
+		ChoiceResult:     choiceResult,
+		Damage:           damage,
+		HP:               state.HP,
+		Level:            state.Level,
+		TotalLevels:      state.TotalLevels,
+		Combo:            state.Combo,
+		Score:            state.Score,
+		IsDead:           isDead,
 		RemainingChoices: remainingChoices,
-		TriedChoices: state.TriedChoices,
-		CorrectAnswer: correctAnswer,
-		CorrectReason: correctReason,
+		TriedChoices:     state.TriedChoices,
+		CorrectAnswer:    correctAnswer,
+		CorrectReason:    correctReason,
 	})
 
 	if isDead {
@@ -1333,8 +1396,16 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
 }
 
+func normalizeAdventureMediaType(mediaType string) string {
+	if mediaType == "tv" {
+		return "tv"
+	}
+	return "movie"
+}
+
 // finishAdventureAsync 完成冒险
 func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, state *AdventureState, success bool) {
+	state.Success = success
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Finish panic: %v", r)
@@ -1382,7 +1453,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		go h.onAdventureSuccess(
 			userID, chatID,
 			state.MovieInfo.Title, state.MovieInfo.Year,
-			state.MovieInfo.TMDBID, state.MovieInfo.Genres,
+			state.MovieInfo.TMDBID, normalizeAdventureMediaType(state.MovieInfo.MediaType), state.MovieInfo.Genres,
 			result.Score, result.Grade,
 		)
 	}
@@ -1397,7 +1468,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		} else if displayHP > 100 {
 			displayHP = 100
 		}
-		
+
 		shouldNotify := false
 		notifyMsg := ""
 		switch {
@@ -1575,10 +1646,10 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
 				userName, state.MovieInfo.Title, state.MovieInfo.Year)
 		}
-		if shouldNotify {
+		if shouldNotify && shouldBroadcastAdventure(true, result.Grade, state.PerfectRun, state.MaxCombo, 0, state.TotalLevels) {
 			h.notifyGroup(userName, notifyMsg)
 		}
-	} else if state.Level-1 >= 4 {
+	} else if shouldBroadcastAdventure(false, result.Grade, state.PerfectRun, state.MaxCombo, state.Level-1, state.TotalLevels) {
 		h.notifyGroup(userName, fmt.Sprintf(`💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀
 
 ⚡ 惜败 · 差一步 ⚡
@@ -1641,7 +1712,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		})
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📢 分享战绩", "adventure_share")
+		kb.AddButton("📢 分享战绩", fmt.Sprintf("adventure_share:run:%s", state.RunID))
 		kb.AddButton("🔄 再挑战一次", "adventure_retry")
 		kb.NewRow()
 		kb.AddButton("🎰 通关盲盒", "game_blindbox")
@@ -1670,7 +1741,6 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		})
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📢 分享战绩", "adventure_share")
 		kb.AddButton("🔄 我知道答案了！", "adventure_retry")
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
@@ -1714,25 +1784,25 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 	deathRate, optionStats, timeUrgency := generatePsychoData(state.Level, state.TotalLevels, len(scene.Choices))
 
 	card := richmessage.BuildAdventureSceneCard(richmessage.AdventureSceneCardData{
-		MovieTitle:   state.MovieInfo.Title,
-		MovieYear:    state.MovieInfo.Year,
-		Genres:       state.MovieInfo.Genres,
-		Level:        state.Level,
-		TotalLevels:  state.TotalLevels,
-		StageName:    scene.StageName,
-		SceneTitle:   scene.Title,
-		Description:  scene.Description,
-		Atmosphere:   scene.Atmosphere,
-		Choices:      choices,
-		Hint:         scene.Hint,
-		HP:           state.HP,
-		Combo:        state.Combo,
-		Score:        state.Score,
-		IsBoss:       state.Level == state.TotalLevels,
-		LastResult:   lastResult,
-		DeathRate:    deathRate,
-		OptionStats:  optionStats,
-		TimeUrgency:  timeUrgency,
+		MovieTitle:  state.MovieInfo.Title,
+		MovieYear:   state.MovieInfo.Year,
+		Genres:      state.MovieInfo.Genres,
+		Level:       state.Level,
+		TotalLevels: state.TotalLevels,
+		StageName:   scene.StageName,
+		SceneTitle:  scene.Title,
+		Description: scene.Description,
+		Atmosphere:  scene.Atmosphere,
+		Choices:     choices,
+		Hint:        scene.Hint,
+		HP:          state.HP,
+		Combo:       state.Combo,
+		Score:       state.Score,
+		IsBoss:      state.Level == state.TotalLevels,
+		LastResult:  lastResult,
+		DeathRate:   deathRate,
+		OptionStats: optionStats,
+		TimeUrgency: timeUrgency,
 	})
 
 	kb := services.NewKeyboardBuilder()

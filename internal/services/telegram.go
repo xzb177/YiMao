@@ -588,12 +588,20 @@ func (c *TelegramClient) SendPhotoByFileIDWithParseMode(chatID int64, fileID, ca
 	return c.makeRequest(apiURL, payload)
 }
 
-// SetWebhook sets the webhook URL
+// SetWebhook sets the webhook URL without a secret (legacy callers).
 func (c *TelegramClient) SetWebhook(webhookURL string) error {
+	return c.SetWebhookWithSecret(webhookURL, "")
+}
+
+// SetWebhookWithSecret sets the webhook URL and Telegram secret_token.
+func (c *TelegramClient) SetWebhookWithSecret(webhookURL, secret string) error {
 	apiURL := fmt.Sprintf("%s/setWebhook", c.baseURL)
 
 	payload := map[string]interface{}{
 		"url": webhookURL,
+	}
+	if secret != "" {
+		payload["secret_token"] = secret
 	}
 
 	_, err := c.makeRequest(apiURL, payload)

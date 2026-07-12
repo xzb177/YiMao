@@ -106,7 +106,6 @@ func (s *SecurityService) SetAPIKeys(keys map[string]string) {
 	s.ctx.apiKeys.mu.Lock()
 	defer s.ctx.apiKeys.mu.Unlock()
 	s.ctx.apiKeys.Keys = keys
-	s.ctx.apiKeys.Enabled = len(keys) > 0
 	logger.Info("[Security] API keys configured: %d keys", len(keys))
 }
 
@@ -287,7 +286,10 @@ func (s *SecurityService) validateAPIKey(key string) bool {
 	defer s.ctx.apiKeys.mu.RUnlock()
 
 	if !s.ctx.apiKeys.Enabled {
-		return true // Authentication disabled
+		return true // Authentication explicitly disabled
+	}
+	if len(s.ctx.apiKeys.Keys) == 0 {
+		return false // enabled without keys must fail closed
 	}
 
 	// Use a constant-time approach: always compare against all keys
