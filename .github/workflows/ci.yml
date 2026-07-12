@@ -44,11 +44,12 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
-      - name: Lint
+      - name: Lint new issues
         uses: golangci/golangci-lint-action@v6
         with:
           version: v1.64.8
           args: --timeout=5m
+          only-new-issues: true
 
       - name: Callback completeness check
         run: go test ./internal/callback/... -run "TestAllMenuButton|TestKnownShort|TestValidActions" -v

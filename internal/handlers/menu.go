@@ -110,7 +110,7 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 
 	// 退配额；撤回状态已持久化，但返还失败时不能谎报成功。
 	quotaRestored := false
-	quotaErr := error(nil)
+	var quotaErr error
 	if h.quotaSvc == nil {
 		quotaErr = fmt.Errorf("quota service not configured")
 	} else {
