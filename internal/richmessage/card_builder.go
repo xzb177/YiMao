@@ -707,14 +707,14 @@ type ReviewResultData struct {
 
 // GroupApprovedData holds data for group chat approval notification.
 type GroupApprovedData struct {
-	Title       string
-	Year        int
-	MediaType   string // "电影" or "剧集"
-	MediaIcon   string // "🎬" or "📺"
-	SeasonText  string // "全季", "第X季", or ""
-	Requester   string // requester display name
-	TMDBID      int
-	ApprovedBy  string // admin display name (optional)
+	Title      string
+	Year       int
+	MediaType  string // "电影" or "剧集"
+	MediaIcon  string // "🎬" or "📺"
+	SeasonText string // "全季", "第X季", or ""
+	Requester  string // requester display name
+	TMDBID     int
+	ApprovedBy string // admin display name (optional)
 }
 
 // BuildGroupApprovedCard builds group notification when a request is approved.

@@ -325,8 +325,6 @@ func (s *RankService) calculateBadges(items []PortraitItem, genres map[string]in
 	return badges
 }
 
-
-
 // ============================================================
 //  性格测试 (Personality Test)
 // ============================================================
@@ -344,12 +342,12 @@ type PersonalityResult struct {
 
 // PDimension 性格维度
 type PDimension struct {
-	Name    string  `json:"name"`    // 维度名
-	Left    string  `json:"left"`    // 左极
-	Right   string  `json:"right"`   // 右极
-	Score   float64 `json:"score"`   // 0-100，<50偏左，>50偏右
-	Result  string  `json:"result"`  // 最终判定
-	Icon    string  `json:"icon"`
+	Name   string  `json:"name"`   // 维度名
+	Left   string  `json:"left"`   // 左极
+	Right  string  `json:"right"`  // 右极
+	Score  float64 `json:"score"`  // 0-100，<50偏左，>50偏右
+	Result string  `json:"result"` // 最终判定
+	Icon   string  `json:"icon"`
 }
 
 // PersonalityService 性格测试服务
@@ -572,10 +570,10 @@ func (s *PersonalityService) getTopTrait(genres map[string]int) string {
 type NarratorResult struct {
 	Title       string   `json:"title"`
 	Year        int      `json:"year"`
-	Summary     string   `json:"summary"`      // 无剧透概要
-	KeyPoints   []string `json:"key_points"`   // 关键看点
-	Mood        string   `json:"mood"`          // 适合心情
-	Similar     []string `json:"similar"`       // 类似电影
+	Summary     string   `json:"summary"`    // 无剧透概要
+	KeyPoints   []string `json:"key_points"` // 关键看点
+	Mood        string   `json:"mood"`       // 适合心情
+	Similar     []string `json:"similar"`    // 类似电影
 	Rating      float64  `json:"rating"`
 	Genres      []string `json:"genres"`
 	SpoilerMode bool     `json:"spoiler_mode"` // 是否剧透模式
@@ -784,17 +782,17 @@ func (s *NarratorService) callOpenAI(prompt string) (string, error) {
 
 // BlindBoxItem 盲盒物品
 type BlindBoxItem struct {
-	ID          int      `json:"id"`
-	TMDBID      int      `json:"tmdb_id"`
-	Title       string   `json:"title"`
-	Year        int      `json:"year"`
-	Genres      []string `json:"genres"`
-	Rating      float64  `json:"rating"`
-	Overview    string   `json:"overview"`
-	PosterURL   string   `json:"poster_url"`
-	MediaType   string   `json:"media_type"` // movie / tv
-	Rarity      string   `json:"rarity"`     // N/R/SR/SSR
-	IsRevealed  bool     `json:"is_revealed"`
+	ID         int      `json:"id"`
+	TMDBID     int      `json:"tmdb_id"`
+	Title      string   `json:"title"`
+	Year       int      `json:"year"`
+	Genres     []string `json:"genres"`
+	Rating     float64  `json:"rating"`
+	Overview   string   `json:"overview"`
+	PosterURL  string   `json:"poster_url"`
+	MediaType  string   `json:"media_type"` // movie / tv
+	Rarity     string   `json:"rarity"`     // N/R/SR/SSR
+	IsRevealed bool     `json:"is_revealed"`
 }
 
 // BlindBoxService 盲盒服务
@@ -925,8 +923,8 @@ type Review struct {
 	UserName  string    `json:"user_name"`
 	MovieName string    `json:"movie_name"`
 	TMDBID    int       `json:"tmdb_id"`
-	Rating    int       `json:"rating"`    // 1-5星
-	Content   string    `json:"content"`   // 短评内容
+	Rating    int       `json:"rating"`  // 1-5星
+	Content   string    `json:"content"` // 短评内容
 	Likes     int       `json:"likes"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -1341,14 +1339,14 @@ func stars(n int) string {
 
 // RouletteResult 轮盘结果
 type RouletteResult struct {
-	Title      string   `json:"title"`
-	Year       int      `json:"year"`
-	Genres     []string `json:"genres"`
-	Rating     float64  `json:"rating"`
-	Overview   string   `json:"overview"`
-	MediaType  string   `json:"media_type"`
-	SpinCount  int      `json:"spin_count"`  // 今日已转次数
-	MaxSpins   int      `json:"max_spins"`   // 每日最大次数
+	Title     string   `json:"title"`
+	Year      int      `json:"year"`
+	Genres    []string `json:"genres"`
+	Rating    float64  `json:"rating"`
+	Overview  string   `json:"overview"`
+	MediaType string   `json:"media_type"`
+	SpinCount int      `json:"spin_count"` // 今日已转次数
+	MaxSpins  int      `json:"max_spins"`  // 每日最大次数
 }
 
 // RouletteService 轮盘服务
@@ -1600,20 +1598,20 @@ func generateChallenge() (string, string, int) {
 
 // AdventureRecord 冒险记录
 type AdventureRecord struct {
-	ID             int
-	UserID         int64
-	UserName       string
-	MovieName      string
-	MovieYear      int
-	Score          int
-	Grade          string
-	MaxCombo       int
-	HPRemaining    int
+	ID              int
+	UserID          int64
+	UserName        string
+	MovieName       string
+	MovieYear       int
+	Score           int
+	Grade           string
+	MaxCombo        int
+	HPRemaining     int
 	LevelsCompleted int
-	TotalLevels    int
-	PerfectRun     bool
-	Success        bool
-	CreatedAt      time.Time
+	TotalLevels     int
+	PerfectRun      bool
+	Success         bool
+	CreatedAt       time.Time
 }
 
 // AdventureUserStats 用户冒险统计
@@ -1847,8 +1845,8 @@ func (s *SocialDB) HasDailyChallenge(userID int64, dateStr string) (bool, error)
 
 // AdventureStreak 连胜数据
 type AdventureStreak struct {
-	CurrentStreak int // 当前连胜天数
-	BestStreak    int // 最佳连胜天数
+	CurrentStreak int    // 当前连胜天数
+	BestStreak    int    // 最佳连胜天数
 	LastPlayDate  string // 最后一次游玩日期
 	TodayPlayed   bool   // 今天是否已游玩
 }
@@ -2135,13 +2133,13 @@ func (s *SocialDB) DeleteGambleStash(userID int64) error {
 
 // StreakRewards 连胜奖励
 type StreakRewards struct {
-	FlameLevel     string // 火焰等级名称
-	FlameIcon      string // 火焰图标
-	BonusHP        int    // 额外初始HP
-	FreeSkipTraps  int    // 免费跳过陷阱次数
-	BossDR         int    // Boss伤害减免%
-	ExtraBlindBox  bool   // 通关后额外盲盒
-	NextLevelDays  int    // 距离下一级还需天数
+	FlameLevel    string // 火焰等级名称
+	FlameIcon     string // 火焰图标
+	BonusHP       int    // 额外初始HP
+	FreeSkipTraps int    // 免费跳过陷阱次数
+	BossDR        int    // Boss伤害减免%
+	ExtraBlindBox bool   // 通关后额外盲盒
+	NextLevelDays int    // 距离下一级还需天数
 }
 
 // GetStreakRewards 根据连胜天数计算奖励

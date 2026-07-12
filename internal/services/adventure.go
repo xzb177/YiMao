@@ -18,15 +18,15 @@ import (
 
 // AdventureScene 一个关卡场景
 type AdventureScene struct {
-	Level       int              `json:"level"`
-	TotalLevels int              `json:"total_levels"`
-	Title       string           `json:"title"`
-	StageName   string           `json:"stage_name"`   // 阶段名：试炼/抉择/深渊/审判/终局
-	Description string           `json:"description"`
-	Atmosphere  string           `json:"atmosphere"`   // 氛围词：紧张/诡异/压迫/绝望/史诗
+	Level       int               `json:"level"`
+	TotalLevels int               `json:"total_levels"`
+	Title       string            `json:"title"`
+	StageName   string            `json:"stage_name"` // 阶段名：试炼/抉择/深渊/审判/终局
+	Description string            `json:"description"`
+	Atmosphere  string            `json:"atmosphere"` // 氛围词：紧张/诡异/压迫/绝望/史诗
 	Choices     []AdventureChoice `json:"choices"`
-	Hint        string           `json:"hint,omitempty"`
-	Trap        string           `json:"trap,omitempty"` // 陷阱提示（暗示某选项是陷阱但不指明）
+	Hint        string            `json:"hint,omitempty"`
+	Trap        string            `json:"trap,omitempty"` // 陷阱提示（暗示某选项是陷阱但不指明）
 }
 
 // AdventureChoice 一个选项
@@ -45,10 +45,10 @@ type AdventureResult struct {
 	FinalScene  string `json:"final_scene"`
 	EasterEgg   string `json:"easter_egg"`
 	Score       int    `json:"score"`
-	Grade       string `json:"grade"`       // SSS/SS/S/A/B/C/D
+	Grade       string `json:"grade"` // SSS/SS/S/A/B/C/D
 	DeathReason string `json:"death_reason"`
 	Tips        string `json:"tips"`
-	Stats       string `json:"stats"`       // 结算统计
+	Stats       string `json:"stats"` // 结算统计
 }
 
 // AdventureService 求片大冒险服务
@@ -93,19 +93,19 @@ func NewAdventureService(embyURL, embyAPIKey, tmdbAPIKey, openaiKey, openaiBase,
 
 // MovieInfo 电影基本信息
 type MovieInfo struct {
-	Title      string   `json:"title"`
-	MediaType  string   `json:"media_type,omitempty"`
-	Year       int      `json:"year"`
-	Genres     []string `json:"genres"`
-	Overview   string   `json:"overview"`
-	Rating     float64  `json:"rating"`
-	TMDBID     int      `json:"tmdb_id"`
-	Keywords   []string `json:"keywords,omitempty"`   // 剧情关键词
-	Cast       []string `json:"cast,omitempty"`       // 主要演员
-	Similar    []string `json:"similar,omitempty"`     // 类似电影
-	Director   string   `json:"director,omitempty"`   // 导演
-	Tagline    string   `json:"tagline,omitempty"`    // 一句话宣传语
-	VoteCount  int      `json:"vote_count,omitempty"` // 评价人数
+	Title     string   `json:"title"`
+	MediaType string   `json:"media_type,omitempty"`
+	Year      int      `json:"year"`
+	Genres    []string `json:"genres"`
+	Overview  string   `json:"overview"`
+	Rating    float64  `json:"rating"`
+	TMDBID    int      `json:"tmdb_id"`
+	Keywords  []string `json:"keywords,omitempty"`   // 剧情关键词
+	Cast      []string `json:"cast,omitempty"`       // 主要演员
+	Similar   []string `json:"similar,omitempty"`    // 类似电影
+	Director  string   `json:"director,omitempty"`   // 导演
+	Tagline   string   `json:"tagline,omitempty"`    // 一句话宣传语
+	VoteCount int      `json:"vote_count,omitempty"` // 评价人数
 }
 
 // SearchMovieInfo 搜索电影信息（带缓存）
@@ -793,7 +793,7 @@ func completeTruncatedJSON(s string) string {
 	openBrackets := 0
 	inString := false
 	escaped := false
-	
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if escaped {
@@ -821,24 +821,24 @@ func completeTruncatedJSON(s string) string {
 			openBrackets--
 		}
 	}
-	
+
 	if inString {
 		s += "\""
 	}
-	
+
 	for i := 0; i < openBrackets; i++ {
 		s += "]"
 	}
-	
+
 	for i := 0; i < openBraces; i++ {
 		s += "}"
 	}
-	
+
 	var test interface{}
 	if json.Unmarshal([]byte(s), &test) == nil {
 		return s
 	}
-	
+
 	return aggressiveJSONFix(s)
 }
 
@@ -848,7 +848,7 @@ func aggressiveJSONFix(s string) string {
 	if lastComma > 0 {
 		s = s[:lastComma]
 	}
-	
+
 	lastQuote := strings.LastIndex(s, "\"")
 	if lastQuote > 0 {
 		beforeQuote := s[:lastQuote]
@@ -860,12 +860,12 @@ func aggressiveJSONFix(s string) string {
 			}
 		}
 	}
-	
+
 	openBraces := 0
 	openBrackets := 0
 	inString := false
 	escaped := false
-	
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if escaped {
@@ -893,18 +893,18 @@ func aggressiveJSONFix(s string) string {
 			openBrackets--
 		}
 	}
-	
+
 	if inString {
 		s += "\""
 	}
-	
+
 	for i := 0; i < openBrackets; i++ {
 		s += "]"
 	}
 	for i := 0; i < openBraces; i++ {
 		s += "}"
 	}
-	
+
 	return s
 }
 func genreIDsToNames(ids []int) []string {
@@ -998,12 +998,12 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 
 	// 根据类型生成不同的陷阱风格
 	genreTraps := map[string]struct {
-		trap1, trap2, trap3, trap4 string
+		trap1, trap2, trap3, trap4         string
 		result1, result2, result3, result4 string
 	}{
 		"科幻": {
 			"按照逻辑推演做出最优选择", "相信科技能解决一切问题", "凭直觉选最不合理的那个", "模仿电影中AI的决策模式",
-			"逻辑在这里是最危险的陷阱。", "科技有时候是最大的幻觉。", "直觉这次救了你一命。", "你读懂了这部电影的AI。", 
+			"逻辑在这里是最危险的陷阱。", "科技有时候是最大的幻觉。", "直觉这次救了你一命。", "你读懂了这部电影的AI。",
 		},
 		"悬疑": {
 			"相信你看到的第一条线索", "跟着最可疑的人走", "停下来重新审视所有细节", "相信那个看起来最无辜的人",
@@ -1029,7 +1029,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 	trap := genreTraps[genre]
 	if trap.trap1 == "" {
 		trap = struct {
-			trap1, trap2, trap3, trap4 string
+			trap1, trap2, trap3, trap4         string
 			result1, result2, result3, result4 string
 		}{
 			"选择看起来最安全的路", "凭直觉选最不显眼的", "先观察再行动", "跟着大多数人的选择",
@@ -1041,13 +1041,13 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 	directorHint := ""
 	if director != "" {
 		directorHints := map[string]string{
-			"诺兰": "时间从来不是线性的",
-			"昆汀": "暴力也可以很美学",
-			"王家卫": "留白比台词更重要",
-			"大卫·芬奇": "真相藏在细节里",
-			"奉俊昊": "阶级是看不见的墙",
+			"诺兰":       "时间从来不是线性的",
+			"昆汀":       "暴力也可以很美学",
+			"王家卫":      "留白比台词更重要",
+			"大卫·芬奇":    "真相藏在细节里",
+			"奉俊昊":      "阶级是看不见的墙",
 			"克里斯托弗·诺兰": "时间从来不是线性的",
-			"昆汀·塔伦蒂诺": "暴力也可以很美学",
+			"昆汀·塔伦蒂诺":  "暴力也可以很美学",
 		}
 		directorHint = directorHints[director]
 	}
@@ -1061,7 +1061,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 	scenes := map[int]*AdventureScene{
 		1: {
 			Level: 1, TotalLevels: totalLevels, Title: "迷雾初现", StageName: stageName,
-			Atmosphere: atmosphere,
+			Atmosphere:  atmosphere,
 			Description: fmt.Sprintf(`你站在《%s》的起点。%s。导演%s的镜头下，一切都暗藏玄机。你面前有四条路，每一条都似曾相识，但你总觉得哪里不对。`, title, prefix, director),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
@@ -1073,7 +1073,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 		},
 		2: {
 			Level: 2, TotalLevels: totalLevels, Title: "致命诱惑", StageName: stageName,
-			Atmosphere: atmosphere,
+			Atmosphere:  atmosphere,
 			Description: fmt.Sprintf(`你深入了《%s》的核心地带。%s。每一个选项都像是正确答案——但只有一个能让你活着走出去。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
@@ -1085,7 +1085,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 		},
 		3: {
 			Level: 3, TotalLevels: totalLevels, Title: "深渊凝视", StageName: stageName,
-			Atmosphere: atmosphere,
+			Atmosphere:  atmosphere,
 			Description: fmt.Sprintf(`你终于来到了《%s》最黑暗的时刻。%s。四面八方都是镜子，每一面都映照出不同的你。但只有一个影像是真实的——你需要找到它。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1},
@@ -1097,7 +1097,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 		},
 		4: {
 			Level: 4, TotalLevels: totalLevels, Title: "献祭时刻", StageName: stageName,
-			Atmosphere: atmosphere,
+			Atmosphere:  atmosphere,
 			Description: fmt.Sprintf(`《%s》的终章前奏。%s。你手中握着改变一切的钥匙——但每一扇门背后都是未知的代价。时间不多了。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
@@ -1109,7 +1109,7 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 		},
 		5: {
 			Level: 5, TotalLevels: totalLevels, Title: "终局审判", StageName: stageName,
-			Atmosphere: atmosphere,
+			Atmosphere:  atmosphere,
 			Description: fmt.Sprintf(`最后的时刻。《%s》的一切都汇聚于此。%s。你的每一个选择都承载着之前的全部重量。这不是选择题——这是命运的终极审判。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},

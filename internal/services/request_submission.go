@@ -8,32 +8,32 @@ import (
 
 var (
 	ErrRequestUserNotBound = errors.New("request user is not bound")
-	ErrDuplicateRequest     = errors.New("duplicate active request")
+	ErrDuplicateRequest    = errors.New("duplicate active request")
 )
 
 type RequestSubmission struct {
-	TelegramID int64
-	TelegramName string
-	TmdbID int
-	MediaTitle string
-	MediaYear int
-	MediaType MediaType
-	Season int
-	PosterPath string
-	Overview string
-	EmbyInfo *EmbySearchResult
-	Origin string
-	Priority string
+	TelegramID     int64
+	TelegramName   string
+	TmdbID         int
+	MediaTitle     string
+	MediaYear      int
+	MediaType      MediaType
+	Season         int
+	PosterPath     string
+	Overview       string
+	EmbyInfo       *EmbySearchResult
+	Origin         string
+	Priority       string
 	AdventureScore int
 	AdventureGrade string
-	UseQuota bool
+	UseQuota       bool
 }
 
 type RequestSubmissionService struct {
 	mapping UserMappingStore
 	reviews *ReviewService
-	quota *QuotaService
-	notify func(*ReviewRequest)
+	quota   *QuotaService
+	notify  func(*ReviewRequest)
 }
 
 func NewRequestSubmissionService(mapping UserMappingStore, reviews *ReviewService, quota *QuotaService, notify func(*ReviewRequest)) *RequestSubmissionService {
@@ -67,20 +67,28 @@ func (s *RequestSubmissionService) Submit(in RequestSubmission) (*ReviewRequest,
 		}
 	}
 	origin := in.Origin
-	if origin == "" { origin = "normal" }
+	if origin == "" {
+		origin = "normal"
+	}
 	review := &ReviewRequest{
-		RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()),
+		RequestID:  fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()),
 		TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID,
 		TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear,
 		MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview,
 		EmbyExists: in.EmbyInfo != nil, EmbyInfo: in.EmbyInfo, RequestOrigin: origin,
 		Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade,
 	}
-	if in.UseQuota { review.QuotaCost = quotaCost }
+	if in.UseQuota {
+		review.QuotaCost = quotaCost
+	}
 	if err := s.reviews.CreateRequest(review); err != nil {
-		if in.UseQuota { s.quota.RestoreQuota(in.TelegramID, mediaType) }
+		if in.UseQuota {
+			s.quota.RestoreQuota(in.TelegramID, mediaType)
+		}
 		return nil, err
 	}
-	if s.notify != nil { go s.notify(review) }
+	if s.notify != nil {
+		go s.notify(review)
+	}
 	return review, nil
 }

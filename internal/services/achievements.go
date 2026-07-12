@@ -161,7 +161,7 @@ var AllAchievements = []Achievement{
 	},
 	{
 		ID:          "ssr_hunter",
-			Name:        "SSR猎人",
+		Name:        "SSR猎人",
 		Description: "开出SSR级电影",
 		Icon:        "💎",
 		Category:    "explore",

@@ -18,22 +18,22 @@ import (
 
 // ViewingRecord 单条观影记录
 type ViewingRecord struct {
-	ID         string   `json:"id"`
-	Title      string   `json:"title"`
-	Year       int      `json:"year"`
-	Genres     []string `json:"genres"`
-	Rating     float64  `json:"rating"`
-	Type       string   `json:"type"` // movie / series
-	WatchedAt  time.Time `json:"watched_at"`
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Year      int       `json:"year"`
+	Genres    []string  `json:"genres"`
+	Rating    float64   `json:"rating"`
+	Type      string    `json:"type"` // movie / series
+	WatchedAt time.Time `json:"watched_at"`
 }
 
 // UserViewingProfile 用户观影画像
 type UserViewingProfile struct {
-	UserID       string
-	UserName     string
-	Records      []ViewingRecord
-	TopGenres    []ViewingGenreCount
-	LastUpdated  time.Time
+	UserID      string
+	UserName    string
+	Records     []ViewingRecord
+	TopGenres   []ViewingGenreCount
+	LastUpdated time.Time
 }
 
 type ViewingGenreCount struct {

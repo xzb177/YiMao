@@ -16,21 +16,23 @@ import (
 
 // RequestHandler handles media request callbacks
 type RequestHandler struct {
-	sessMgr        *session.Manager
-	telegram       *services.TelegramClient
-	moviepilot     *services.MoviePilotClient
-	tmdbClient     *services.TMDBClient
-	adminService   *services.AdminService
-	webhookService *services.WebhookService
-	userMapping    services.UserMappingStore
-	quotaService   *services.QuotaService
-	reviewService  *services.ReviewService
-	carpoolService *services.CarpoolService
+	sessMgr           *session.Manager
+	telegram          *services.TelegramClient
+	moviepilot        *services.MoviePilotClient
+	tmdbClient        *services.TMDBClient
+	adminService      *services.AdminService
+	webhookService    *services.WebhookService
+	userMapping       services.UserMappingStore
+	quotaService      *services.QuotaService
+	reviewService     *services.ReviewService
+	carpoolService    *services.CarpoolService
 	submissionService *services.RequestSubmissionService
-	enableReview   bool // Enable review system
+	enableReview      bool // Enable review system
 }
 
-func (h *RequestHandler) SetRequestSubmissionService(s *services.RequestSubmissionService) { h.submissionService = s }
+func (h *RequestHandler) SetRequestSubmissionService(s *services.RequestSubmissionService) {
+	h.submissionService = s
+}
 func (h *RequestHandler) NotifyAdminsForReview(r *services.ReviewRequest) { h.notifyAdminsForReview(r) }
 
 func NewRequestHandler(

@@ -45,7 +45,7 @@ func completeTruncatedJSON(s string) string {
 	openBrackets := 0
 	inString := false
 	escaped := false
-	
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if escaped {
@@ -73,24 +73,24 @@ func completeTruncatedJSON(s string) string {
 			openBrackets--
 		}
 	}
-	
+
 	if inString {
 		s += "\""
 	}
-	
+
 	for i := 0; i < openBrackets; i++ {
 		s += "]"
 	}
-	
+
 	for i := 0; i < openBraces; i++ {
 		s += "}"
 	}
-	
+
 	var test interface{}
 	if json.Unmarshal([]byte(s), &test) == nil {
 		return s
 	}
-	
+
 	return aggressiveJSONFix(s)
 }
 
@@ -99,7 +99,7 @@ func aggressiveJSONFix(s string) string {
 	if lastComma > 0 {
 		s = s[:lastComma]
 	}
-	
+
 	lastQuote := strings.LastIndex(s, "\"")
 	if lastQuote > 0 {
 		beforeQuote := s[:lastQuote]
@@ -111,12 +111,12 @@ func aggressiveJSONFix(s string) string {
 			}
 		}
 	}
-	
+
 	openBraces := 0
 	openBrackets := 0
 	inString := false
 	escaped := false
-	
+
 	for i := 0; i < len(s); i++ {
 		c := s[i]
 		if escaped {
@@ -144,17 +144,17 @@ func aggressiveJSONFix(s string) string {
 			openBrackets--
 		}
 	}
-	
+
 	if inString {
 		s += "\""
 	}
-	
+
 	for i := 0; i < openBrackets; i++ {
 		s += "]"
 	}
 	for i := 0; i < openBraces; i++ {
 		s += "}"
 	}
-	
+
 	return s
 }

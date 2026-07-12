@@ -21,30 +21,30 @@ type PortraitData struct {
 
 // PortraitItem 单部作品信息
 type PortraitItem struct {
-	ID      string // Emby Item ID（用于去重）
-	Name    string
-	Year    int
-	Genres  []string
-	Rating  float64
-	Type    string // "movie", "series", "episode"
+	ID     string // Emby Item ID（用于去重）
+	Name   string
+	Year   int
+	Genres []string
+	Rating float64
+	Type   string // "movie", "series", "episode"
 }
 
 // PortraitResult 完整的灵魂画像分析结果
 type PortraitResult struct {
-	UserName     string             `json:"user_name"`
-	TotalItems   int                `json:"total_items"`
-	GenrePct     map[string]float64 `json:"genre_pct"`      // 类型→百分比
-	TopGenres    []string           `json:"top_genres"`     // 前3类型
-	AvgRating    float64            `json:"avg_rating"`     // 平均评分
-	RatingCount  int                `json:"rating_count"`   // 有效评分数量
-	TasteLevel   string             `json:"taste_level"`    // 品味标尺
-	TasteDesc    string             `json:"taste_desc"`     // 品味描述
-	RhythmType   string             `json:"rhythm_type"`    // 观影节奏
-	RhythmDesc   string             `json:"rhythm_desc"`    // 节奏描述
-	PsychTraits  []PsychTrait       `json:"psych_traits"`   // 心理特质
-	Surprises    []string           `json:"surprises"`      // 反直觉发现
-	BlindSpots   []string           `json:"blind_spots"`    // 盲区
-	GenreBar     []GenreBar         `json:"genre_bar"`      // 类型条形图数据
+	UserName    string             `json:"user_name"`
+	TotalItems  int                `json:"total_items"`
+	GenrePct    map[string]float64 `json:"genre_pct"`    // 类型→百分比
+	TopGenres   []string           `json:"top_genres"`   // 前3类型
+	AvgRating   float64            `json:"avg_rating"`   // 平均评分
+	RatingCount int                `json:"rating_count"` // 有效评分数量
+	TasteLevel  string             `json:"taste_level"`  // 品味标尺
+	TasteDesc   string             `json:"taste_desc"`   // 品味描述
+	RhythmType  string             `json:"rhythm_type"`  // 观影节奏
+	RhythmDesc  string             `json:"rhythm_desc"`  // 节奏描述
+	PsychTraits []PsychTrait       `json:"psych_traits"` // 心理特质
+	Surprises   []string           `json:"surprises"`    // 反直觉发现
+	BlindSpots  []string           `json:"blind_spots"`  // 盲区
+	GenreBar    []GenreBar         `json:"genre_bar"`    // 类型条形图数据
 }
 
 // PsychTrait 心理特质
@@ -64,22 +64,22 @@ type GenreBar struct {
 // ==================== 类型→心理映射 ====================
 
 var genrePsychology = map[string]PsychTrait{
-	"恐怖": {Genre: "恐怖", Trait: "掌控欲", Desc: "通过虚构恐惧获得掌控感，在安全环境中体验极限情绪"},
-	"惊悚": {Genre: "惊悚", Trait: "刺激寻求", Desc: "大脑需要高强度悬念和反转来保持兴奋"},
-	"悬疑": {Genre: "悬疑", Trait: "逻辑驱动", Desc: "享受解谜过程，讨厌被蒙在鼓里"},
-	"科幻": {Genre: "科幻", Trait: "未来思维", Desc: "对未知世界充满好奇，喜欢推演可能性"},
-	"奇幻": {Genre: "奇幻", Trait: "想象力丰富", Desc: "不愿被现实束缚，渴望超越物理法则的世界"},
-	"动画": {Genre: "动画", Trait: "审美敏感", Desc: "对视觉艺术有天然亲和力，不拘泥于形式"},
-	"剧情": {Genre: "剧情", Trait: "共情力强", Desc: "善于代入他人视角，对人性有深度理解"},
-	"喜剧": {Genre: "喜剧", Trait: "压力释放型", Desc: "用幽默对抗生活压力，乐观主义者"},
-	"爱情": {Genre: "爱情", Trait: "情感丰富", Desc: "内心柔软，对亲密关系有深层渴望"},
-	"动作": {Genre: "动作", Trait: "肾上腺素型", Desc: "追求直接的感官刺激，不喜欢拖沓"},
-	"犯罪": {Genre: "犯罪", Trait: "规则意识", Desc: "对秩序与混乱的边界感兴趣"},
-	"战争": {Genre: "战争", Trait: "历史感强", Desc: "对宏大叙事和人类命运有思考"},
-	"纪录": {Genre: "纪录", Trait: "求知欲旺盛", Desc: "相信真实比虚构更有力量"},
-	"音乐": {Genre: "音乐", Trait: "感官丰富", Desc: "对声音和节奏有特殊敏感度"},
-	"家庭": {Genre: "家庭", Trait: "归属感强", Desc: "重视家庭关系和温情"},
-	"冒险": {Genre: "冒险", Trait: "探索欲强", Desc: "渴望未知体验，不惧风险"},
+	"恐怖":   {Genre: "恐怖", Trait: "掌控欲", Desc: "通过虚构恐惧获得掌控感，在安全环境中体验极限情绪"},
+	"惊悚":   {Genre: "惊悚", Trait: "刺激寻求", Desc: "大脑需要高强度悬念和反转来保持兴奋"},
+	"悬疑":   {Genre: "悬疑", Trait: "逻辑驱动", Desc: "享受解谜过程，讨厌被蒙在鼓里"},
+	"科幻":   {Genre: "科幻", Trait: "未来思维", Desc: "对未知世界充满好奇，喜欢推演可能性"},
+	"奇幻":   {Genre: "奇幻", Trait: "想象力丰富", Desc: "不愿被现实束缚，渴望超越物理法则的世界"},
+	"动画":   {Genre: "动画", Trait: "审美敏感", Desc: "对视觉艺术有天然亲和力，不拘泥于形式"},
+	"剧情":   {Genre: "剧情", Trait: "共情力强", Desc: "善于代入他人视角，对人性有深度理解"},
+	"喜剧":   {Genre: "喜剧", Trait: "压力释放型", Desc: "用幽默对抗生活压力，乐观主义者"},
+	"爱情":   {Genre: "爱情", Trait: "情感丰富", Desc: "内心柔软，对亲密关系有深层渴望"},
+	"动作":   {Genre: "动作", Trait: "肾上腺素型", Desc: "追求直接的感官刺激，不喜欢拖沓"},
+	"犯罪":   {Genre: "犯罪", Trait: "规则意识", Desc: "对秩序与混乱的边界感兴趣"},
+	"战争":   {Genre: "战争", Trait: "历史感强", Desc: "对宏大叙事和人类命运有思考"},
+	"纪录":   {Genre: "纪录", Trait: "求知欲旺盛", Desc: "相信真实比虚构更有力量"},
+	"音乐":   {Genre: "音乐", Trait: "感官丰富", Desc: "对声音和节奏有特殊敏感度"},
+	"家庭":   {Genre: "家庭", Trait: "归属感强", Desc: "重视家庭关系和温情"},
+	"冒险":   {Genre: "冒险", Trait: "探索欲强", Desc: "渴望未知体验，不惧风险"},
 	"科幻奇幻": {Genre: "科幻奇幻", Trait: "未来思维", Desc: "对未知世界充满好奇，喜欢推演可能性"},
 	"动作冒险": {Genre: "动作冒险", Trait: "肾上腺素型", Desc: "追求直接的感官刺激，不喜欢拖沓"},
 }

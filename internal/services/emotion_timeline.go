@@ -19,19 +19,19 @@ import (
 
 // ViewRecord 单次观影记录
 type ViewRecord struct {
-	ID       string
-	Name     string
-	Type     string    // movie / series
-	Genres   []string
-	Rating   float64
-	Year     int
+	ID        string
+	Name      string
+	Type      string // movie / series
+	Genres    []string
+	Rating    float64
+	Year      int
 	WatchedAt time.Time // 观影时间
 }
 
 // ViewingSession 观影会话（连续观看同一类型的一组记录）
 type ViewingSession struct {
 	Genres    []string
-	Movies    []string  // 电影名列表
+	Movies    []string // 电影名列表
 	StartTime time.Time
 	EndTime   time.Time
 	Count     int
@@ -57,44 +57,44 @@ type GenreTransition struct {
 
 // ViewingPattern 观影模式
 type ViewingPattern struct {
-	PeakHour    int    // 高峰观影时间
-	PeakPeriod  string // "深夜" / "傍晚" / "午后" / "早晨"
-	WeekdayAvg  float64
-	WeekendAvg  float64
-	IsNightOwl  bool
+	PeakHour   int    // 高峰观影时间
+	PeakPeriod string // "深夜" / "傍晚" / "午后" / "早晨"
+	WeekdayAvg float64
+	WeekendAvg float64
+	IsNightOwl bool
 }
 
 // EmotionalProfile 完整情绪画像
 type EmotionalProfile struct {
 	// 基础数据
-	TotalWatched  int
-	MovieCount    int
-	SeriesCount   int
-	TopGenres     []GenreCount
-	WatchDays     int
+	TotalWatched int
+	MovieCount   int
+	SeriesCount  int
+	TopGenres    []GenreCount
+	WatchDays    int
 
 	// 情绪分析
-	EmotionalIntensity float64        // 当前情绪强度 0-10
-	EmotionTrend       string         // "上升" / "平稳" / "下降"
-	EmotionCurve       []EmotionData  // 近4周情绪曲线
-	CurrentMood        string         // 当前情绪描述
+	EmotionalIntensity float64       // 当前情绪强度 0-10
+	EmotionTrend       string        // "上升" / "平稳" / "下降"
+	EmotionCurve       []EmotionData // 近4周情绪曲线
+	CurrentMood        string        // 当前情绪描述
 
 	// 模式分析
-	Pattern         ViewingPattern
-	SignatureGenre  string           // 标志性类型
+	Pattern          ViewingPattern
+	SignatureGenre   string            // 标志性类型
 	GenreTransitions []GenreTransition // 重要类型转变
-	WatchStreak     int              // 连续观影天数
-	LongestGap      int              // 最长空白天数
+	WatchStreak      int               // 连续观影天数
+	LongestGap       int               // 最长空白天数
 
 	// 叙事元素
-	Narrative       string           // 生成的叙事文本
-	PersonalityTag  string           // 性格标签
-	LifePhase       string           // 当前人生阶段推断
+	Narrative      string // 生成的叙事文本
+	PersonalityTag string // 性格标签
+	LifePhase      string // 当前人生阶段推断
 
 	// 深度分析
-	Sessions        []ViewingSession // 观影会话（连续同类型的观影）
-	RecentMovies    []string         // 最近10部看过的电影名
-	TasteSignature  string           // 口味签名（一句话概括）
+	Sessions       []ViewingSession // 观影会话（连续同类型的观影）
+	RecentMovies   []string         // 最近10部看过的电影名
+	TasteSignature string           // 口味签名（一句话概括）
 }
 
 // GenreCount 类型计数
@@ -133,22 +133,22 @@ func NewEmotionTimelineService(embyURL, embyAPIKey, openaiKey, openaiBase, model
 
 // 情绪强度映射
 var genreIntensityMap = map[string]float64{
-	"恐怖":   9.0,
-	"惊悚":   8.5,
-	"动作":   8.0,
-	"犯罪":   7.5,
-	"战争":   8.0,
-	"悬疑":   7.0,
-	"科幻":   6.5,
-	"冒险":   6.5,
-	"奇幻":   6.0,
-	"剧情":   5.5,
-	"爱情":   5.0,
-	"喜剧":   4.0,
-	"动画":   4.5,
-	"家庭":   3.5,
-	"纪录":   3.0,
-	"音乐":   3.5,
+	"恐怖": 9.0,
+	"惊悚": 8.5,
+	"动作": 8.0,
+	"犯罪": 7.5,
+	"战争": 8.0,
+	"悬疑": 7.0,
+	"科幻": 6.5,
+	"冒险": 6.5,
+	"奇幻": 6.0,
+	"剧情": 5.5,
+	"爱情": 5.0,
+	"喜剧": 4.0,
+	"动画": 4.5,
+	"家庭": 3.5,
+	"纪录": 3.0,
+	"音乐": 3.5,
 }
 
 // BuildProfile 构建用户情绪画像

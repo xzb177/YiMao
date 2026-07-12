@@ -8,10 +8,10 @@ import (
 
 // DreamHandler 本周梦魇处理器
 type DreamHandler struct {
-	socialDB       *services.SocialDB
-	telegram       *services.TelegramClient
-	adventureHdl   *AdventureHandler
-	userMapping    services.UserMappingStore
+	socialDB     *services.SocialDB
+	telegram     *services.TelegramClient
+	adventureHdl *AdventureHandler
+	userMapping  services.UserMappingStore
 }
 
 // NewDreamHandler 创建梦魇处理器

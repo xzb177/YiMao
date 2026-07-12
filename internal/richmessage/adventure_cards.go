@@ -11,26 +11,26 @@ import (
 
 // AdventureSceneCardData 场景卡片
 type AdventureSceneCardData struct {
-	MovieTitle   string
-	MovieYear    int
-	Genres       []string
-	Level        int
-	TotalLevels  int
-	StageName    string
-	SceneTitle   string
-	Description  string
-	Atmosphere   string
-	Choices      []AdventureChoiceView
-	Hint         string
-	HP           int
-	Combo        int
-	Score        int
-	IsBoss       bool
-	LastResult   string // 上一关的结果反馈（内嵌，不单独发卡片）
+	MovieTitle  string
+	MovieYear   int
+	Genres      []string
+	Level       int
+	TotalLevels int
+	StageName   string
+	SceneTitle  string
+	Description string
+	Atmosphere  string
+	Choices     []AdventureChoiceView
+	Hint        string
+	HP          int
+	Combo       int
+	Score       int
+	IsBoss      bool
+	LastResult  string // 上一关的结果反馈（内嵌，不单独发卡片）
 	// 心理学数据
-	DeathRate    string // "73% 的人死在这一关"
-	OptionStats  string // "📊 A 35% | B 15% | C 42% | D 8%"
-	TimeUrgency  string // "⚡ 思考时间：30秒"
+	DeathRate   string // "73% 的人死在这一关"
+	OptionStats string // "📊 A 35% | B 15% | C 42% | D 8%"
+	TimeUrgency string // "⚡ 思考时间：30秒"
 }
 
 type AdventureChoiceView struct {
@@ -145,15 +145,15 @@ func buildLevelProgress(current, total int) string {
 
 // AdventureShareCardData 炫耀卡数据
 type AdventureShareCardData struct {
-	UserName   string
-	MovieTitle string
-	MovieYear  int
-	Score      int
-	HP         int
-	MaxCombo   int
-	PerfectRun bool
-	Success    bool
-	Level      int
+	UserName    string
+	MovieTitle  string
+	MovieYear   int
+	Score       int
+	HP          int
+	MaxCombo    int
+	PerfectRun  bool
+	Success     bool
+	Level       int
 	TotalLevels int
 }
 
@@ -279,18 +279,18 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 // ============================================================
 
 type AdventureDamageCardData struct {
-	ChoiceResult string
-	Damage       int
-	HP           int
-	Level        int
-	TotalLevels  int
-	Combo        int
-	Score        int
-	IsDead       bool
+	ChoiceResult     string
+	Damage           int
+	HP               int
+	Level            int
+	TotalLevels      int
+	Combo            int
+	Score            int
+	IsDead           bool
 	RemainingChoices []AdventureChoiceView // 剩余选项
-	TriedChoices map[int]bool             // 已试过的选项
-	CorrectAnswer string                 // 正确答案（死亡时展示）
-	CorrectReason string                 // 正确原因（死亡时展示）
+	TriedChoices     map[int]bool          // 已试过的选项
+	CorrectAnswer    string                // 正确答案（死亡时展示）
+	CorrectReason    string                // 正确原因（死亡时展示）
 }
 
 func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {

@@ -93,7 +93,9 @@ func New(
 		fmt.Fprintf(w, `{"status":"%s","dependencies":{`, status)
 		first := true
 		for name, dependencyStatus := range checks {
-			if !first { fmt.Fprint(w, ",") }
+			if !first {
+				fmt.Fprint(w, ",")
+			}
 			fmt.Fprintf(w, `%q:%q`, name, dependencyStatus)
 			first = false
 		}
@@ -168,12 +170,12 @@ func New(
 	}
 
 	return &http.Server{
-		Addr:         cfg.ServerHost + ":" + cfg.ServerPort,
-		Handler:      mux,
+		Addr:              cfg.ServerHost + ":" + cfg.ServerPort,
+		Handler:           mux,
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }
 

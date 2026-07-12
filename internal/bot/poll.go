@@ -17,52 +17,52 @@ import (
 
 // Dependencies holds bot dependencies
 type Dependencies struct {
-	Telegram        *services.TelegramClient
-	MoviePilot      *services.MoviePilotClient
-	SessionMgr      *session.Manager
-	UserMapping     services.UserMappingStore
-	BindingRequest  *services.BindingRequestService
-	AdminService    *services.AdminService
-	AdminHandler    *handlers.AdminHandler
-	QuotaService    *services.QuotaService
-	SearchHistory   *services.SearchHistoryService
-	SearchHistoryDB *services.SearchHistoryDB
-	TMDB            *services.TMDBClient
-	IssueService    *services.IssueService
-	FeedbackHandler *handlers.FeedbackHandler
-	FallbackService *services.SearchFallbackService
-	WishHandler     *handlers.WishHandler       // #6 许愿池
-	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
-	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler // 求片大冒险
-	RankHandler      *handlers.RankHandler      // 冒险者公会排行
-	StatsHandler     *handlers.StatsHandler     // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler     // 本周梦魇挑战
+	Telegram         *services.TelegramClient
+	MoviePilot       *services.MoviePilotClient
+	SessionMgr       *session.Manager
+	UserMapping      services.UserMappingStore
+	BindingRequest   *services.BindingRequestService
+	AdminService     *services.AdminService
+	AdminHandler     *handlers.AdminHandler
+	QuotaService     *services.QuotaService
+	SearchHistory    *services.SearchHistoryService
+	SearchHistoryDB  *services.SearchHistoryDB
+	TMDB             *services.TMDBClient
+	IssueService     *services.IssueService
+	FeedbackHandler  *handlers.FeedbackHandler
+	FallbackService  *services.SearchFallbackService
+	WishHandler      *handlers.WishHandler       // #6 许愿池
+	MyRequests       *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler *handlers.AdventureHandler  // 求片大冒险
+	RankHandler      *handlers.RankHandler       // 冒险者公会排行
+	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
+	DreamHandler     *handlers.DreamHandler      // 本周梦魇挑战
 }
 
 // PollDeps holds dependencies for polling (reduced set)
 type PollDeps struct {
-	Telegram        *services.TelegramClient
-	MoviePilot      *services.MoviePilotClient
-	SessionMgr      *session.Manager
-	UserMapping     services.UserMappingStore
-	BindingRequest  *services.BindingRequestService
-	AdminService    *services.AdminService
-	AdminHandler    *handlers.AdminHandler // For admin management flows
-	QuotaService    *services.QuotaService
-	SearchHistory   *services.SearchHistoryService // Legacy, for backward compatibility
-	SearchHistoryDB *services.SearchHistoryDB      // New, advanced features
-	TMDB            *services.TMDBClient
-	IssueService    *services.IssueService
-	FeedbackHandler *handlers.FeedbackHandler
-	FallbackService *services.SearchFallbackService
-	WishHandler     *handlers.WishHandler       // #6 许愿池
-	MyRequests      *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
-	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler // 求片大冒险
-	RankHandler      *handlers.RankHandler      // 冒险者公会排行
-	StatsHandler     *handlers.StatsHandler     // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler     // 本周梦魇挑战
+	Telegram         *services.TelegramClient
+	MoviePilot       *services.MoviePilotClient
+	SessionMgr       *session.Manager
+	UserMapping      services.UserMappingStore
+	BindingRequest   *services.BindingRequestService
+	AdminService     *services.AdminService
+	AdminHandler     *handlers.AdminHandler // For admin management flows
+	QuotaService     *services.QuotaService
+	SearchHistory    *services.SearchHistoryService // Legacy, for backward compatibility
+	SearchHistoryDB  *services.SearchHistoryDB      // New, advanced features
+	TMDB             *services.TMDBClient
+	IssueService     *services.IssueService
+	FeedbackHandler  *handlers.FeedbackHandler
+	FallbackService  *services.SearchFallbackService
+	WishHandler      *handlers.WishHandler       // #6 许愿池
+	MyRequests       *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler *handlers.AdventureHandler  // 求片大冒险
+	RankHandler      *handlers.RankHandler       // 冒险者公会排行
+	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
+	DreamHandler     *handlers.DreamHandler      // 本周梦魇挑战
 }
 
 // StartPolling starts the Telegram update polling
@@ -78,23 +78,23 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Telegram:        deps.Telegram,
-		MoviePilot:      deps.MoviePilot,
-		SessionMgr:      deps.SessionMgr,
-		UserMapping:     deps.UserMapping,
-		BindingRequest:  deps.BindingRequest,
-		AdminService:    deps.AdminService,
-		AdminHandler:    deps.AdminHandler,
-		QuotaService:    deps.QuotaService,
-		SearchHistory:   deps.SearchHistory,
-		SearchHistoryDB: deps.SearchHistoryDB,
-		TMDB:            deps.TMDB,
-		IssueService:    deps.IssueService,
-		FeedbackHandler: deps.FeedbackHandler,
-		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
-		WishHandler:     deps.WishHandler,
-		MyRequests:      deps.MyRequests,
-		GameHandler:     deps.GameHandler,
+		Telegram:         deps.Telegram,
+		MoviePilot:       deps.MoviePilot,
+		SessionMgr:       deps.SessionMgr,
+		UserMapping:      deps.UserMapping,
+		BindingRequest:   deps.BindingRequest,
+		AdminService:     deps.AdminService,
+		AdminHandler:     deps.AdminHandler,
+		QuotaService:     deps.QuotaService,
+		SearchHistory:    deps.SearchHistory,
+		SearchHistoryDB:  deps.SearchHistoryDB,
+		TMDB:             deps.TMDB,
+		IssueService:     deps.IssueService,
+		FeedbackHandler:  deps.FeedbackHandler,
+		FallbackService:  services.NewSearchFallbackService(deps.MoviePilot),
+		WishHandler:      deps.WishHandler,
+		MyRequests:       deps.MyRequests,
+		GameHandler:      deps.GameHandler,
 		AdventureHandler: deps.AdventureHandler,
 		RankHandler:      deps.RankHandler,
 		StatsHandler:     deps.StatsHandler,
@@ -465,7 +465,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
 		kb.AddButton("📖 情报站", "game_narrator")
 		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
-		case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
+	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		// 群聊中直接解说：/解说 电影名
 		movieName := extractMovieName(text, cmd)
 		if movieName == "" {

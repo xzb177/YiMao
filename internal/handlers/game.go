@@ -53,7 +53,7 @@ func NewGameHandler(
 	sessionMgr *session.Manager,
 	emotionSvc *services.EmotionTimelineService,
 	adventureHdl *AdventureHandler,
-	groupChatID  int64,
+	groupChatID int64,
 ) *GameHandler {
 	return &GameHandler{
 		rankSvc:        rankSvc,
@@ -206,7 +206,6 @@ func (h *GameHandler) handleRank(ctx *callback.Context) (*callback.Response, err
 }
 
 // --- 性格测试 ---
-
 
 // --- AI 解说员 ---
 
@@ -508,11 +507,7 @@ func (h *GameHandler) handleSocialFeed(ctx *callback.Context) (*callback.Respons
 
 // --- 影评 ---
 
-
-
 // --- 命运轮盘 ---
-
-
 
 // --- 工具函数 ---
 
@@ -572,7 +567,7 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 			WeekendAvg: profile.Pattern.WeekendAvg,
 			IsNightOwl: profile.Pattern.IsNightOwl,
 		},
-		Transitions: transitions,
+		Transitions:    transitions,
 		TasteSignature: profile.TasteSignature,
 		RecentMovies:   profile.RecentMovies,
 	})
@@ -597,12 +592,9 @@ func (h *GameHandler) handleEmotionProfile(ctx *callback.Context) (*callback.Res
 
 // --- 时光放映机 ---
 
-
 // --- 情绪处方 ---
 
-
 // --- 命运契约 ---
-
 
 // notifyGroup 发送群通知（异步，不阻塞主流程）
 // notifyGroup 发送群通知（10分钟后自毁）
@@ -651,7 +643,6 @@ func formatTimeAgo(t time.Time) string {
 }
 
 // --- 完成契约 ---
-
 
 // handleCompareTaste 处理观影关系对比
 func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Response, error) {
@@ -765,7 +756,7 @@ func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Respo
 	var lines []string
 	lines = append(lines, "🏆 **成就殿堂**")
 	lines = append(lines, "")
-	
+
 	// 按分类分组展示
 	categories := map[string]string{
 		"watch":     "🎬 观影之路",
@@ -773,7 +764,7 @@ func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Respo
 		"explore":   "🔍 探索发现",
 		"challenge": "⚔️ 挑战极限",
 	}
-	
+
 	displayed := 0
 	for cat, label := range categories {
 		lines = append(lines, label)
@@ -793,11 +784,11 @@ func (h *GameHandler) handleAchievements(ctx *callback.Context) (*callback.Respo
 			break
 		}
 	}
-	
+
 	lines = append(lines, fmt.Sprintf("共 %d 个成就等待解锁", len(achievements)))
-	
+
 	text := strings.Join(lines, "\n")
-	
+
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
@@ -839,8 +830,8 @@ func (h *GameHandler) handleAdventureRank(ctx *callback.Context) (*callback.Resp
 	userName := h.getUserName(ctx.UserID)
 
 	card := richmessage.BuildAdventureRankCard(richmessage.AdventureRankCardData{
-		UserName:    userName,
-		TopPlayers:  topPlayers,
+		UserName:   userName,
+		TopPlayers: topPlayers,
 	})
 
 	kb := services.NewKeyboardBuilder()

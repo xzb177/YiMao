@@ -35,7 +35,7 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		fileInfoCache:        make(map[string]*cachedFileInfo),
 		fileInfoCacheTTL:     1 * time.Hour, // 缓存1小时
 		playbackPushThrottle: make(map[int64]time.Time),
-		stopCleanup:         make(chan struct{}),
+		stopCleanup:          make(chan struct{}),
 	}
 
 	// Auto-discover Emby user ID if not configured

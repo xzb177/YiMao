@@ -36,7 +36,7 @@ func BuildRankCard(data RankCardData) RichMessage {
 
 	// 核心数据 - 用更直观的方式展示
 	builder.Heading("📊 核心数据", 3)
-	
+
 	// 分数和进度
 	scoreText := fmt.Sprintf("🏆 **%d** 分", data.Score)
 	if data.NextTier != "" {
@@ -193,13 +193,13 @@ type BlindBoxCardData struct {
 
 // BlindBoxItemView 盲盒物品视图
 type BlindBoxItemView struct {
-	Title     string
-	Year      int
-	Rating    float64
-	Rarity    string
-	Genres    string
-	Overview  string
-	Revealed  bool
+	Title    string
+	Year     int
+	Rating   float64
+	Rarity   string
+	Genres   string
+	Overview string
+	Revealed bool
 }
 
 // BuildBlindBoxCard 构建盲盒卡片

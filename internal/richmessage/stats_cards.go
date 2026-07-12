@@ -11,7 +11,7 @@ import (
 
 // AdventureStatsCardData 冒险统计卡片数据
 type AdventureStatsCardData struct {
-	UserName       string
+	UserName        string
 	TotalChallenges int
 	TotalSuccess    int
 	BestScore       int
@@ -25,13 +25,13 @@ type AdventureStatsCardData struct {
 
 // AdventureRecordView 冒险记录视图
 type AdventureRecordView struct {
-	MovieName   string
-	MovieYear   int
-	Score       int
-	Grade       string
-	Success     bool
-	MaxCombo    int
-	TimeAgo     string
+	MovieName string
+	MovieYear int
+	Score     int
+	Grade     string
+	Success   bool
+	MaxCombo  int
+	TimeAgo   string
 }
 
 // BuildAdventureStatsCard 构建冒险统计卡片
@@ -198,11 +198,11 @@ func BuildUserRequestStatsCard(data UserRequestStatsData) RichMessage {
 
 // AdventureRankPlayer 排行榜玩家数据
 type AdventureRankPlayer struct {
-	Rank     int
-	UserName string
-	BestScore int
-	BestGrade string
-	BestCombo int
+	Rank         int
+	UserName     string
+	BestScore    int
+	BestGrade    string
+	BestCombo    int
 	TotalSuccess int
 	PerfectRuns  int
 }

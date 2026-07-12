@@ -32,17 +32,17 @@ type EmotionProfileCardData struct {
 	WatchStreak        int
 	Pattern            ViewingPatternView
 	Transitions        []GenreTransitionView
-	TasteSignature     string // 口味签名
+	TasteSignature     string   // 口味签名
 	RecentMovies       []string // 最近看过的电影
 }
 
 // ViewingPatternView 观影模式视图
 type ViewingPatternView struct {
-	PeakHour    int
-	PeakPeriod  string
-	WeekdayAvg  float64
-	WeekendAvg  float64
-	IsNightOwl  bool
+	PeakHour   int
+	PeakPeriod string
+	WeekdayAvg float64
+	WeekendAvg float64
+	IsNightOwl bool
 }
 
 // GenreTransitionView 类型转变视图
@@ -183,11 +183,11 @@ type PrescriptionItem struct {
 
 // PrescriptionCardDataV2 处方卡片数据（v2，无循环依赖）
 type PrescriptionCardDataV2 struct {
-	UserName     string
-	Diagnosis    string
-	Intensity    float64
-	Trend        string
-	Items        []PrescriptionItem
+	UserName  string
+	Diagnosis string
+	Intensity float64
+	Trend     string
+	Items     []PrescriptionItem
 }
 
 // BuildPrescriptionCard 构建情绪处方卡片
@@ -241,16 +241,16 @@ func BuildPrescriptionCard(data PrescriptionCardDataV2) RichMessage {
 
 // ContractCardData 命运契约卡片数据
 type ContractCardData struct {
-	MovieName  string
-	Year       int
-	Rating     float64
-	Genres     string
-	Overview   string
-	Challenge  string  // 挑战内容
-	Deadline   string  // 截止时间
-	Reward     string  // 奖励描述
-	SpinCount  int
-	MaxSpins   int
+	MovieName string
+	Year      int
+	Rating    float64
+	Genres    string
+	Overview  string
+	Challenge string // 挑战内容
+	Deadline  string // 截止时间
+	Reward    string // 奖励描述
+	SpinCount int
+	MaxSpins  int
 }
 
 // BuildContractCard 构建命运契约卡片
@@ -300,14 +300,14 @@ func BuildContractCard(data ContractCardData) RichMessage {
 
 // RelationshipCardData 观影关系卡片数据
 type RelationshipCardData struct {
-	User1Name     string
-	User2Name     string
-	Overlap       int      // 共同观看数量
-	OverlapRate   float64  // 重合度
-	User1Top      []string // 用户1的top类型
-	User2Top      []string // 用户2的top类型
-	Divergence    string   // "正在趋同" / "正在分化" / "稳定"
-	Relationship  string   // 关系描述
+	User1Name    string
+	User2Name    string
+	Overlap      int      // 共同观看数量
+	OverlapRate  float64  // 重合度
+	User1Top     []string // 用户1的top类型
+	User2Top     []string // 用户2的top类型
+	Divergence   string   // "正在趋同" / "正在分化" / "稳定"
+	Relationship string   // 关系描述
 }
 
 // BuildRelationshipCard 构建观影关系卡片
