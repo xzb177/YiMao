@@ -283,15 +283,12 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 
 	kb.AddButton("❌ 取消反馈", "cancel")
 
-	// Send message with options (don't edit, send new message for user to reply)
-	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
-
-	// Update original message to show waiting state
 	return &callback.Response{
-		Text:        "请描述您遇到的问题",
+		Text:        msg.Build(),
 		CallbackMsg: "请发送问题描述或选择快捷选项",
-		Edit:        true,
-		Keyboard:    &callback.Keyboard{},
+		Edit:        false,
+		Keyboard:    convertKeyboard(kb.Build()),
+		ParseMode:   "HTML",
 	}, nil
 }
 
@@ -1211,18 +1208,15 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 
-	// Send confirmation message
-	h.telegram.SendMessage(ctx.ChatID, msg.Build(), "HTML", kb.Build())
-
 	// Notify admins
 	go h.notifyAdmins(issue, typeLabel)
 
-	// Update original message
 	return &callback.Response{
-		Text:        "✅ 已提交",
+		Text:        msg.Build(),
 		CallbackMsg: "反馈已提交",
-		Edit:        true,
-		Keyboard:    &callback.Keyboard{},
+		Edit:        false,
+		Keyboard:    convertKeyboard(kb.Build()),
+		ParseMode:   "HTML",
 	}, nil
 }
 

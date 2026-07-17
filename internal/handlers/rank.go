@@ -33,8 +33,12 @@ func NewRankHandler(
 
 // HandleCommand 处理 /rank 命令
 func (h *RankHandler) HandleCommand(chatID, userID int64) {
+	h.handleCommand(newUserScopedSender(h.telegram, chatID, userID))
+}
+
+func (h *RankHandler) handleCommand(sender *userScopedSender) {
 	if h.socialDB == nil {
-		h.telegram.SendMessage(chatID, "❌ 排行服务未就绪", "", nil)
+		sender.SendMessage("❌ 排行服务未就绪", "", nil)
 		return
 	}
 
@@ -87,7 +91,7 @@ func (h *RankHandler) HandleCommand(chatID, userID int64) {
 	sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
 	sb.WriteString("📅 每周一凌晨重置 · 下一局见")
 
-	h.telegram.SendMessage(chatID, sb.String(), "", nil)
+	sender.SendMessage(sb.String(), "", nil)
 }
 
 func (h *RankHandler) getUserName(userID int64) string {
@@ -101,6 +105,6 @@ func (h *RankHandler) getUserName(userID int64) string {
 
 // Handle 处理排行回调（从游戏中心进入）
 func (h *RankHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	go h.HandleCommand(ctx.ChatID, ctx.UserID)
+	go h.handleCommand(newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID))
 	return &callback.Response{CallbackMsg: "📊 正在生成排行榜...", ShowAlert: false}, nil
 }

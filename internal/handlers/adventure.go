@@ -243,6 +243,7 @@ func (h *AdventureHandler) SetOnAdventureSuccess(fn func(userID int64, chatID in
 func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
 	userID := msg.From.ID
 	chatID := msg.Chat.ID
+	sender := newUserScopedSender(telegram, chatID, userID)
 
 	// 1. 优先：最近失败的宿敌
 	movieName := ""
@@ -267,7 +268,7 @@ func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, ms
 			}
 		}
 		h.removeState(userID)
-		telegram.SendMessage(chatID, "⚔️ 没有发现宿敌或梦魇\n\n请发送你想挑战的电影名：", "", nil)
+		sender.SendMessage("⚔️ 没有发现宿敌或梦魇\n\n请发送你想挑战的电影名：", "", nil)
 		return
 	}
 
@@ -277,7 +278,7 @@ func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, ms
 // startWeeklyBossAsync 发起梦魇挑战
 func (h *AdventureHandler) startWeeklyBossAsync(userID int64, chatID int64, wb *services.WeeklyBoss) {
 	if wb == nil {
-		h.telegram.SendMessage(chatID, "🎪 本周暂无梦魇", "", nil)
+		newUserScopedSender(h.telegram, chatID, userID).SendMessage("🎪 本周暂无梦魇", "", nil)
 		return
 	}
 	// 以梦魇模式启动冒险
@@ -416,7 +417,7 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 	// 输入净化：限制长度，去除危险字符
 	movieName = strings.TrimSpace(movieName)
 	if len([]rune(movieName)) < 1 || len([]rune(movieName)) > 100 {
-		h.telegram.SendMessage(chatID, "❌ 电影名太长或为空，请重新输入", "", nil)
+		newUserScopedSender(h.telegram, chatID, userID).SendMessage("❌ 电影名太长或为空，请重新输入", "", nil)
 		return true
 	}
 	// 去除可能导致prompt注入的字符
@@ -438,7 +439,7 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 
 	// 二次校验：如果已经有进行中的冒险，不重复启动（内存+DB双重检查）
 	if advState := h.getOrRestoreState(userID, sess); advState != nil {
-		h.telegram.SendMessage(chatID, "⚠️ 你已经有一场进行中的冒险了", "", nil)
+		newUserScopedSender(h.telegram, chatID, userID).SendMessage("⚠️ 你已经有一场进行中的冒险了", "", nil)
 		return true
 	}
 
@@ -737,9 +738,9 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 
 	// 发送提示 + 更新场景卡片
 	go func() {
-		h.telegram.SendMessage(ctx.ChatID, hintMsg, "", nil)
+		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(hintMsg, "", nil)
 		// 重新发送场景卡片（更新HP和按钮状态）
-		h.sendSceneCard(ctx.ChatID, advState)
+		h.sendSceneCard(ctx.UserID, ctx.ChatID, advState)
 	}()
 
 	return &callback.Response{
@@ -933,12 +934,12 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	h.saveState(ctx.UserID, advState)
 
 	// 重生通知
-	h.telegram.SendMessage(ctx.ChatID, fmt.Sprintf(
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(fmt.Sprintf(
 		"🩸 **死神今天放你一马...**\n\n💚 HP 恢复至 30\n📖 再给你一次机会 —— 这次仔细看\n\n⚠️ 今天的免费复活已用尽",
 	), "Markdown", nil)
 
 	// 重新发送当前场景卡片
-	h.sendSceneCard(ctx.ChatID, advState)
+	h.sendSceneCard(ctx.UserID, ctx.ChatID, advState)
 
 	return &callback.Response{CallbackMsg: "🩸 已复活！HP=30", ShowAlert: false}, nil
 }
@@ -996,7 +997,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 		kb.AddButton("🎰 再开一个", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
 		return &callback.Response{CallbackMsg: "🎉 赌赢了！奖励翻倍！", ShowAlert: false}, nil
 	}
 
@@ -1011,7 +1012,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
 	return &callback.Response{CallbackMsg: "💸 本局归零，赌局结束", ShowAlert: false}, nil
 }
 
@@ -1057,7 +1058,7 @@ func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Re
 	kb.AddButton("🎰 再开一个", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(ctx.ChatID, rewardCard.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(rewardCard.Markdown, "Markdown", kb.Build())
 	return &callback.Response{CallbackMsg: "📦 奖励已安全入袋", ShowAlert: false}, nil
 }
 
@@ -1115,7 +1116,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 		kb.AddButton("🎰 再开一个", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
 		// 三倍成功 → 群通知
 		userName := h.getUserName(ctx.UserID)
 		h.notifyGroup(userName, fmt.Sprintf("💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀\n\n⚡ 三倍豪赌 ⚡\n\n💀 %s\n💀 《%s》\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n30%% 的概率，他押中了\n三倍收益 · 一念天堂\n\n💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀", userName, movieTitle))
@@ -1139,7 +1140,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(ctx.ChatID, card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
 	return &callback.Response{CallbackMsg: "💀 腰斩了...30% 可不是好赌的", ShowAlert: false}, nil
 }
 
@@ -1154,10 +1155,11 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 
 // startAdventureAsyncLevel 开始冒险（指定起始关卡 + 复仇信息）
 func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, movieName string, startLevel int, preMsg string) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Panic for user %d: %v", userID, r)
-			h.telegram.SendMessage(chatID, "❌ 冒险启动出错了，请稍后再试", "", nil)
+			sender.SendMessage("❌ 冒险启动出错了，请稍后再试", "", nil)
 		}
 		h.mu.Lock()
 		delete(h.generating, userID)
@@ -1183,7 +1185,7 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		h.mu.Unlock()
 	}(userID)
 
-	loadingMsg, _ := h.telegram.SendMessage(chatID, "⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
+	loadingMsg, _ := sender.SendMessage("⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
 
 	// 清除旧的冒险状态
 	if h.sessionMgr != nil {
@@ -1198,10 +1200,10 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	movieInfo, err := h.adventureSvc.SearchMovieInfo(movieName)
 	if err != nil {
 		if loadingMsg != nil {
-			h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
+			sender.DeleteMessage(loadingMsg)
 		}
 		logger.Info("[冒险] 搜索电影失败: query=%q err=%v", movieName, err)
-		if _, sendErr := h.telegram.SendMessage(chatID, fmt.Sprintf("没搜到《%s》。换个中文名、英文名，或者带上年份再试。", movieName), "", nil); sendErr != nil {
+		if _, sendErr := sender.SendMessage(fmt.Sprintf("没搜到《%s》。换个中文名、英文名，或者带上年份再试。", movieName), "", nil); sendErr != nil {
 			logger.Info("[冒险] 发送搜索失败提示失败: %v", sendErr)
 		}
 		return
@@ -1224,13 +1226,13 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	})
 
 	if loadingMsg != nil {
-		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
+		sender.DeleteMessage(loadingMsg)
 	}
-	h.telegram.SendMessage(chatID, entryCard.Markdown, "Markdown", nil)
+	sender.SendRichMessage(entryCard.Markdown, nil)
 
 	// 复仇模式提示消息
 	if preMsg != "" {
-		h.telegram.SendMessage(chatID, preMsg, "Markdown", nil)
+		sender.SendMessage(preMsg, "Markdown", nil)
 	}
 
 	// 宿敌警告
@@ -1241,13 +1243,13 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		} else {
 			nemesisMsg = fmt.Sprintf("☠️ **宿敌警报！《%s》已经击败你 %d 次了！**", movieInfo.Title, nemesisCount)
 		}
-		h.telegram.SendMessage(chatID, nemesisMsg, "Markdown", nil)
+		sender.SendMessage(nemesisMsg, "Markdown", nil)
 	}
 
 	// 生成起始关
 	levelLabel := fmt.Sprintf("第 %d 关", startLevel)
 	tip := randomMovieTip()
-	tipMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造%s...\n\n%s", levelLabel, tip), "", nil)
+	tipMsg, _ := sender.SendMessage(fmt.Sprintf("⏳ 正在构造%s...\n\n%s", levelLabel, tip), "", nil)
 
 	scene, err := h.adventureSvc.GenerateScene(movieInfo, startLevel, adventureMaxLevels, nil, adventureMaxHP)
 	if err != nil {
@@ -1257,7 +1259,7 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	scene.TotalLevels = adventureMaxLevels
 
 	if tipMsg != nil {
-		h.telegram.DeleteMessage(chatID, tipMsg.MessageID)
+		sender.DeleteMessage(tipMsg)
 	}
 
 	vengeanceActive := startLevel > 1
@@ -1308,11 +1310,12 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 	}
 	h.saveState(userID, state)
 
-	h.sendSceneCard(chatID, state)
+	h.sendSceneCard(userID, chatID, state)
 }
 
 // handleCorrectChoice 选对后的处理 — 只发场景卡片，反馈内嵌
 func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state *AdventureState, choiceResult string) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Correct choice panic: %v", r)
@@ -1321,7 +1324,7 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 
 	// 生成下一关（不发单独的combo卡片，反馈直接写在场景卡片里）
 	tip := randomMovieTip()
-	loadingMsg, _ := h.telegram.SendMessage(chatID, fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
+	loadingMsg, _ := sender.SendMessage(fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
 
 	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level+1, state.TotalLevels, state.History, state.HP)
 	if err != nil {
@@ -1360,14 +1363,15 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 	h.saveState(userID, state) // 持久化
 
 	if loadingMsg != nil {
-		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
+		sender.DeleteMessage(loadingMsg)
 	}
 
-	h.sendSceneCard(chatID, state)
+	h.sendSceneCard(userID, chatID, state)
 }
 
 // sendDamageCard 发送受伤卡片 + 剩余选项（含每日免费复活检查）
 func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *AdventureState, damage int, choiceResult string) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Damage card panic: %v", r)
@@ -1394,7 +1398,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 			kb.NewRow()
 			kb.AddButton("💀 拒绝（再来一次）", "adventure_retry")
 			kb.AddButton("🎮 游戏中心", "game_menu")
-			h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+			sender.SendMessage(card.Markdown, "Markdown", kb.Build())
 			return
 		}
 	}
@@ -1443,7 +1447,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		kb.AddButton("🎬 换一部电影", "adventure_start")
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
-		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
 		return
 	}
 
@@ -1479,7 +1483,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		kb.AddButton("🔄 重新开始", "adventure_retry")
 	}
 
-	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+	sender.SendMessage(card.Markdown, "Markdown", kb.Build())
 }
 
 func normalizeAdventureMediaType(mediaType string) string {
@@ -1491,15 +1495,16 @@ func normalizeAdventureMediaType(mediaType string) string {
 
 // finishAdventureAsync 完成冒险
 func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, state *AdventureState, success bool) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	state.Success = success
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Finish panic: %v", r)
-			h.telegram.SendMessage(chatID, "❌ 结局生成出错了", "", nil)
+			sender.SendMessage("❌ 结局生成出错了", "", nil)
 		}
 	}()
 
-	loadingMsg, _ := h.telegram.SendMessage(chatID, "🎬 生成结局...", "", nil)
+	loadingMsg, _ := sender.SendMessage("🎬 生成结局...", "", nil)
 
 	result, err := h.adventureSvc.GenerateEndScene(
 		state.MovieInfo, state.History, success, state.HP, state.MaxCombo, state.TotalLevels,
@@ -1744,10 +1749,10 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		kb.AddButton("🎰 通关盲盒", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
 
 		// 通关奖励：免费开盲盒
-		go h.sendRewardBlindBox(chatID, state, result.Grade)
+		go h.sendRewardBlindBox(userID, chatID, state, result.Grade)
 	} else {
 		card := richmessage.BuildAdventureFailCard(richmessage.AdventureFailCardData{
 			MovieTitle:     state.MovieInfo.Title,
@@ -1771,7 +1776,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
 	}
 	state.ChoiceLock.Lock()
 	state.Phase = AdventurePhaseFinished
@@ -1786,7 +1791,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 }
 
 // sendSceneCard 发送场景卡片
-func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
+func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *AdventureState) {
 	scene := state.Scene
 	if scene == nil {
 		return
@@ -1858,7 +1863,7 @@ func (h *AdventureHandler) sendSceneCard(chatID int64, state *AdventureState) {
 	}
 	kb.AddButton("🚪 退出", "adventure_quit")
 
-	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, chatID, userID).SendMessage(card.Markdown, "Markdown", kb.Build())
 }
 
 // boolStr 条件字符串
@@ -2050,7 +2055,8 @@ func (h *AdventureHandler) generateRecommendation(userID int64, movieInfo *servi
 	return ""
 }
 
-func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureState, grade string) {
+func (h *AdventureHandler) sendRewardBlindBox(userID int64, chatID int64, state *AdventureState, grade string) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Reward blindbox panic: %v", r)
@@ -2123,7 +2129,7 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 		if h.socialDB != nil {
 			itemsJSON, _ := json.Marshal(views)
 			genresJSON, _ := json.Marshal(state.MovieInfo.Genres)
-			_ = h.socialDB.SaveGambleStash(chatID, string(itemsJSON), grade,
+			_ = h.socialDB.SaveGambleStash(userID, string(itemsJSON), grade,
 				state.MovieInfo.Title, state.MovieInfo.Year, state.MovieInfo.TMDBID, string(genresJSON))
 		} else {
 			// 回退到内存（socialDB未初始化时）
@@ -2131,14 +2137,14 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 			if h.gambleStash == nil {
 				h.gambleStash = make(map[int64]*gambleStashEntry)
 			}
-			h.gambleStash[chatID] = &gambleStashEntry{Items: views, Grade: grade, MovieInfo: state.MovieInfo}
+			h.gambleStash[userID] = &gambleStashEntry{Items: views, Grade: grade, MovieInfo: state.MovieInfo}
 			h.gambleStashMu.Unlock()
 			go func(cid int64) {
 				time.Sleep(60 * time.Second)
 				h.gambleStashMu.Lock()
 				delete(h.gambleStash, cid)
 				h.gambleStashMu.Unlock()
-			}(chatID)
+			}(userID)
 		}
 
 		// 发送赌博卡片
@@ -2155,7 +2161,7 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 		kb.NewRow()
 		kb.AddButton("💀 三倍豪赌 (30%)", "adventure_gamble_triple")
 
-		h.telegram.SendMessage(chatID, gambleCard.Markdown, "Markdown", kb.Build())
+		sender.SendMessage(gambleCard.Markdown, "Markdown", kb.Build())
 		return
 	}
 
@@ -2169,5 +2175,5 @@ func (h *AdventureHandler) sendRewardBlindBox(chatID int64, state *AdventureStat
 	kb.AddButton("🎰 再开一个", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(chatID, rewardCard.Markdown, "Markdown", kb.Build())
+	sender.SendMessage(rewardCard.Markdown, "Markdown", kb.Build())
 }

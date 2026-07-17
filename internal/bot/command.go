@@ -57,6 +57,10 @@ func HandleCommand(
 	case "/start":
 		isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
+	case "/adventure":
+		if adventureHandler != nil {
+			adventureHandler.HandleGoCommand(telegram, msg)
+		}
 	case "/status":
 		telegram.SendMessage(msg.Chat.ID, BuildStatusMessage(msg, cfg, adminService, userMapping), "HTML", nil)
 	case "/help":

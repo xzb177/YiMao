@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.backup-*
 
 # Data files
 *.json
@@ -17,7 +18,6 @@
 # Binaries
 yimao
 yimao-*
-bot
 /bot
 *.exe
 

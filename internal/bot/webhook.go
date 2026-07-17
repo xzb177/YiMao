@@ -60,7 +60,26 @@ func HandleWebhook(
 		}
 		HandleWebhookCallback(w, &update, registry, deps.Telegram, deps.SessionMgr, cfg, deps.AdminService)
 	} else if update.Message != nil {
-		if update.Message.From == nil || update.Message.Chat == nil {
+		if update.Message.Chat == nil {
+			http.Error(w, "Bad request", http.StatusBadRequest)
+			return
+		}
+		// Community membership changes are service messages and may not carry a
+		// sender. Acknowledge them without routing into user-command handlers.
+		if update.Message.CommunityChatAdded != nil {
+			community := update.Message.CommunityChatAdded.Community
+			logger.Info("[Community] Chat %d joined community id=%d name=%q", update.Message.Chat.ID, community.ID, community.Name)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "OK")
+			return
+		}
+		if update.Message.CommunityChatRemoved != nil {
+			logger.Info("[Community] Chat %d left its community", update.Message.Chat.ID)
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "OK")
+			return
+		}
+		if update.Message.From == nil {
 			http.Error(w, "Bad request", http.StatusBadRequest)
 			return
 		}
@@ -96,12 +115,14 @@ func HandleWebhookCallback(
 
 	// Build context
 	ctx := &callback.Context{
-		UserID:     cb.From.ID,
-		ChatID:     cb.Message.Chat.ID,
-		ChatType:   cb.Message.Chat.Type,
-		MessageID:  cb.Message.MessageID,
-		CallbackID: cb.ID,
-		Callback:   parsed,
+		UserID:             cb.From.ID,
+		ChatID:             cb.Message.Chat.ID,
+		ChatType:           cb.Message.Chat.Type,
+		MessageID:          cb.Message.MessageID,
+		MessageThreadID:    cb.Message.MessageThreadID,
+		EphemeralMessageID: cb.Message.EphemeralMessageID,
+		CallbackID:         cb.ID,
+		Callback:           parsed,
 	}
 
 	// Get handler
@@ -112,6 +133,28 @@ func HandleWebhookCallback(
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 		return
+	}
+
+	// Establish the private target before potentially slow business work. Later
+	// rendering edits this message by ephemeral_message_id.
+	if isCommunityChat(ctx.ChatType) {
+		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
+			logger.Info("[Webhook] Immediate callback answer failed: %v", err)
+		}
+		if ctx.EphemeralMessageID == 0 {
+			placeholder, sendErr := telegram.SendMessage(ctx.ChatID, "⏳ 正在处理…", "", nil, &types.TelegramSendOptions{
+				ReceiverUserID:  ctx.UserID,
+				CallbackQueryID: ctx.CallbackID,
+				MessageThreadID: ctx.MessageThreadID,
+			})
+			if sendErr != nil || placeholder == nil || placeholder.EphemeralMessageID == 0 {
+				logger.Info("[Webhook] Cannot establish ephemeral response target: %v", sendErr)
+				w.WriteHeader(http.StatusOK)
+				fmt.Fprint(w, "OK")
+				return
+			}
+			ctx.EphemeralMessageID = placeholder.EphemeralMessageID
+		}
 	}
 
 	// Handle callback
@@ -128,6 +171,9 @@ func HandleWebhookCallback(
 		}
 		showAlert = resp.ShowAlert
 	}
+	if isCommunityChat(ctx.ChatType) && callbackMsg == "" {
+		callbackMsg = "私密响应仅你可见；若未显示请重试"
+	}
 
 	if err != nil {
 		logger.Info("Handler error: %v", err)
@@ -141,8 +187,10 @@ func HandleWebhookCallback(
 		callbackMsg = callbackMsg[:197] + "..."
 	}
 
-	if err := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); err != nil {
-		logger.Info("[Callback] AnswerCallback error: %v", err)
+	if !isCommunityChat(ctx.ChatType) {
+		if err := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); err != nil {
+			logger.Info("[Callback] AnswerCallback error: %v", err)
+		}
 	}
 
 	// Send or edit message
@@ -435,8 +483,8 @@ func HandleWebhookGroupChat(
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
-		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/adventure", "/go":
+		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
 	case "/game", "/游戏", "/游戏中心":
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("⚔️ 求片大冒险", "adventure_start")
@@ -445,7 +493,7 @@ func HandleWebhookGroupChat(
 		kb.NewRow()
 		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
 		kb.AddButton("📖 情报站", "game_narrator")
-		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
+		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n选择你的私人玩法：", "Markdown", kb.Build())
 	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		movieName := extractMovieName(text, cmd)
 		if movieName == "" {

@@ -247,13 +247,15 @@ func (h HandlerFunc) Action() Action {
 
 // Context provides context for callback handling
 type Context struct {
-	UserID      int64
-	ChatID      int64
-	ChatType    string // "private", "group", "supergroup", "channel"
-	MessageID   int64
-	CallbackID  string
-	Callback    *Callback
-	SessionData interface{}
+	UserID             int64
+	ChatID             int64
+	ChatType           string // "private", "group", "supergroup", "channel"
+	MessageID          int64
+	MessageThreadID    int64
+	EphemeralMessageID int64
+	CallbackID         string
+	Callback           *Callback
+	SessionData        interface{}
 }
 
 // Response represents the result of callback handling

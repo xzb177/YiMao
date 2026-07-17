@@ -1,3 +1,10 @@
+# Environment and credentials — never send secrets to the Docker builder
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
 # Git
 .git
 .gitignore

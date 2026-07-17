@@ -249,10 +249,11 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 
 // generateNarrationAsync 异步生成解说并发送结果
 func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieName string, spoilerMode bool) {
+	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Game] Narration panic for user %d: %v", userID, r)
-			h.telegram.SendMessage(chatID, "❌ AI 解说出错了，请稍后再试", "", nil)
+			sender.SendMessage("❌ AI 解说出错了，请稍后再试", "", nil)
 		}
 	}()
 
@@ -266,7 +267,7 @@ func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieNa
 	result, err := h.narratorSvc.GenerateNarration(title, year, spoilerMode)
 	if err != nil {
 		logger.Info("[Game] Narration failed for user %d: %v", userID, err)
-		h.telegram.SendMessage(chatID, "❌ AI 解说生成失败，请稍后再试", "", nil)
+		sender.SendMessage("❌ AI 解说生成失败，请稍后再试", "", nil)
 		return
 	}
 	result.Rating = rating
@@ -294,7 +295,7 @@ func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieNa
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+	sender.SendRichMessage(card.Markdown, kb.Build())
 }
 
 // HandleNarrateText 处理文本消息中的电影解说请求（由 poll.go 调用）

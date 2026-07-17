@@ -128,6 +128,23 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 			go func() {
 				// Debug: log update type
 				if update.Message != nil {
+					if update.Message.Chat == nil {
+						logger.Info("[Poll] Update %d ignored: message has no chat", update.UpdateID)
+						return
+					}
+					if update.Message.CommunityChatAdded != nil {
+						community := update.Message.CommunityChatAdded.Community
+						logger.Info("[Community] Chat %d joined community id=%d name=%q", update.Message.Chat.ID, community.ID, community.Name)
+						return
+					}
+					if update.Message.CommunityChatRemoved != nil {
+						logger.Info("[Community] Chat %d left its community", update.Message.Chat.ID)
+						return
+					}
+					if update.Message.From == nil {
+						logger.Info("[Poll] Update %d ignored: message has no sender", update.UpdateID)
+						return
+					}
 					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
 					HandlePollMessage(update.Message, pollDeps, cfg)
 				} else if update.CallbackQuery != nil {
@@ -446,15 +463,10 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
-		sent, _ := telegram.SendMessage(msg.Chat.ID, "🔒 为了保护观影隐私，搜片、求片、进度和配额请私聊机器人使用。\n\n群组会用于接收入库通知、拼车到货提醒和公告～", "", nil)
-		// 3 秒自毁：不污染群聊记录
-		if sent != nil {
-			go func(chatID int64, msgID int64) {
-				time.Sleep(3 * time.Second)
-				_ = telegram.DeleteMessage(chatID, msgID)
-			}(msg.Chat.ID, sent.MessageID)
-		}
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/adventure", "/go":
+		// Ephemeral command response: visible only to the invoking member. Fail
+		// closed instead of posting private details when delivery is unavailable.
+		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
 	case "/game", "/游戏", "/游戏中心":
 		// 群聊中发送游戏中心菜单
 		kb := services.NewKeyboardBuilder()
@@ -464,7 +476,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		kb.NewRow()
 		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
 		kb.AddButton("📖 情报站", "game_narrator")
-		telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
+		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n选择你的私人玩法：", "Markdown", kb.Build())
 	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		// 群聊中直接解说：/解说 电影名
 		movieName := extractMovieName(text, cmd)
@@ -505,6 +517,19 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	default:
 		// 其他命令不响应，交给 Telegram/群管理习惯。
 		return
+	}
+}
+
+func sendCommunityCommandMessage(telegram *services.TelegramClient, msg *types.TelegramMessage, text, parseMode string, keyboard *types.TelegramInlineKeyboard) {
+	if telegram == nil || msg == nil || msg.Chat == nil || msg.From == nil || !isCommunityChat(msg.Chat.Type) {
+		return
+	}
+	opt := &types.TelegramSendOptions{ReceiverUserID: msg.From.ID}
+	if msg.EphemeralMessageID != 0 {
+		opt.ReplyParameters = &types.TelegramReplyParameters{EphemeralMessageID: msg.EphemeralMessageID}
+	}
+	if _, err := telegram.SendMessage(msg.Chat.ID, text, parseMode, keyboard, opt); err != nil {
+		logger.Info("[Community] Ephemeral command response unavailable for user=%d: %v", msg.From.ID, err)
 	}
 }
 
@@ -843,12 +868,14 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 
 	// Build context
 	ctx := &callback.Context{
-		UserID:     cb.From.ID,
-		ChatID:     cb.Message.Chat.ID,
-		ChatType:   cb.Message.Chat.Type,
-		MessageID:  cb.Message.MessageID,
-		CallbackID: cb.ID,
-		Callback:   parsed,
+		UserID:             cb.From.ID,
+		ChatID:             cb.Message.Chat.ID,
+		ChatType:           cb.Message.Chat.Type,
+		MessageID:          cb.Message.MessageID,
+		MessageThreadID:    cb.Message.MessageThreadID,
+		EphemeralMessageID: cb.Message.EphemeralMessageID,
+		CallbackID:         cb.ID,
+		Callback:           parsed,
 	}
 
 	// Get handler
@@ -861,7 +888,28 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		return
 	}
 
-	// Handle callback with timeout protection (10 seconds)
+	// Establish a private response target before invoking potentially slow business
+	// handlers. This consumes the callback within Telegram's 15-second window;
+	// subsequent updates edit the ephemeral placeholder by ID.
+	if isCommunityChat(ctx.ChatType) {
+		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
+			logger.Info("[Callback] Immediate answer failed: %v", err)
+		}
+		if ctx.EphemeralMessageID == 0 {
+			placeholder, sendErr := telegram.SendMessage(ctx.ChatID, "⏳ 正在处理…", "", nil, &types.TelegramSendOptions{
+				ReceiverUserID:  ctx.UserID,
+				CallbackQueryID: ctx.CallbackID,
+				MessageThreadID: ctx.MessageThreadID,
+			})
+			if sendErr != nil || placeholder == nil || placeholder.EphemeralMessageID == 0 {
+				logger.Info("[Callback] Cannot establish ephemeral response target: %v", sendErr)
+				return
+			}
+			ctx.EphemeralMessageID = placeholder.EphemeralMessageID
+		}
+	}
+
+	// Handle callback with timeout protection
 	type handleResult struct {
 		resp *callback.Response
 		err  error
@@ -895,13 +943,15 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			if result.resp != nil && result.resp.CallbackMsg != "" {
 				callbackMsg = result.resp.CallbackMsg
 			}
-			if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, true); ansErr != nil {
-				logger.Info("[Callback] Failed to answer callback (error): %v", ansErr)
+			if !isCommunityChat(ctx.ChatType) {
+				if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, true); ansErr != nil {
+					logger.Info("[Callback] Failed to answer callback (error): %v", ansErr)
+				}
 			}
-			// Try to show error message if response exists
+			// Errors must stay private in Community chats. Render through the
+			// central P1 router instead of editing the public source message.
 			if result.resp != nil && result.resp.Text != "" {
-				keyboard := ConvertKeyboard(result.resp.Keyboard)
-				telegram.EditMessage(ctx.ChatID, ctx.MessageID, result.resp.Text, "", keyboard)
+				RenderCallbackResponse("[Callback]", ctx, result.resp, telegram)
 			}
 			return
 		}
@@ -917,13 +967,18 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			}
 			showAlert = resp.ShowAlert
 		}
+		if isCommunityChat(ctx.ChatType) && callbackMsg == "" {
+			callbackMsg = "私密响应仅你可见；若未显示请重试"
+		}
 
 		if showAlert && len(callbackMsg) > 200 {
 			callbackMsg = callbackMsg[:197] + "..."
 		}
 
-		if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); ansErr != nil {
-			logger.Info("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
+		if !isCommunityChat(ctx.ChatType) {
+			if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); ansErr != nil {
+				logger.Info("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
+			}
 		}
 
 		// Send or edit message
@@ -934,12 +989,6 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		} else {
 			logger.Info("[Callback] Response is nil!")
 		}
-	case <-time.After(25 * time.Second):
-		logger.Info("[Callback] Handler timeout for action=%s, userID=%d", parsed.Action, cb.From.ID)
-		if ansErr := telegram.AnswerCallback(cb.ID, "处理超时，请重试", true); ansErr != nil {
-			logger.Info("[Callback] Failed to answer callback (timeout): %v", ansErr)
-		}
-		return
 	}
 }
 

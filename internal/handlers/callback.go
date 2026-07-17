@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"html"
 	"strconv"
 	"strings"
 
@@ -505,14 +506,6 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
 
-	// 群组隐私保护
-	if ctx.ChatType != "private" {
-		return &callback.Response{
-			CallbackMsg: "观影画像只支持私聊查看",
-			ShowAlert:   true,
-		}, nil
-	}
-
 	// 查找 MoviePilot 用户名
 	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
 	if err != nil || mpUsername == "" {
@@ -627,6 +620,44 @@ func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 	return "🙋 我也想看 +1"
 }
 
+func buildEphemeralMediaCaption(info richmessage.MediaInfo) string {
+	var b strings.Builder
+	icon := "🎬"
+	kind := "电影"
+	if info.MediaType == "tv" {
+		icon, kind = "📺", "剧集"
+	}
+	fmt.Fprintf(&b, "%s <b>《%s》</b>", icon, html.EscapeString(info.Title))
+	if info.Year > 0 {
+		fmt.Fprintf(&b, " (%d)", info.Year)
+	}
+	b.WriteString("\n")
+	meta := []string{kind}
+	if info.Rating > 0 {
+		meta = append(meta, fmt.Sprintf("⭐ %.1f", info.Rating))
+	}
+	if len(info.Genres) > 0 {
+		meta = append(meta, html.EscapeString(strings.Join(info.Genres, "/")))
+	}
+	b.WriteString(strings.Join(meta, " · "))
+	if info.MediaType == "tv" && info.SeasonCount > 0 {
+		fmt.Fprintf(&b, "\n📚 %d 季", info.SeasonCount)
+		if info.EpisodeCount > 0 {
+			fmt.Fprintf(&b, " · %d 集", info.EpisodeCount)
+		}
+	} else if info.Runtime > 0 {
+		fmt.Fprintf(&b, "\n⏱ %d 分钟", info.Runtime)
+	}
+	if info.Overview != "" {
+		overview := []rune(strings.TrimSpace(info.Overview))
+		if len(overview) > 420 {
+			overview = append(overview[:417], '.', '.', '.')
+		}
+		fmt.Fprintf(&b, "\n\n%s", html.EscapeString(string(overview)))
+	}
+	return b.String()
+}
+
 // buildRichDetailResponse builds a Rich Message detail page response.
 // If posterURL is non-empty, sends photo + Rich Message (dispatcher handles both).
 func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyboard *types.TelegramInlineKeyboard, posterURL string, edit bool) *callback.Response {
@@ -635,7 +666,8 @@ func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyb
 		if posterURL != "" {
 			return &callback.Response{
 				Photo:        posterURL,
-				PhotoCaption: fmt.Sprintf("🎬 《%s》", info.Title),
+				PhotoCaption: buildEphemeralMediaCaption(info),
+				ParseMode:    "HTML",
 				RichMessage:  msg.Markdown,
 				Edit:         false,
 				Keyboard:     convertKeyboard(keyboard),

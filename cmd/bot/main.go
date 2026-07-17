@@ -930,7 +930,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 
 // setupBotCommands sets up the bot command menu
 func setupBotCommands(telegram *services.TelegramClient) {
-	commands := []services.BotCommand{
+	privateCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 普通求片"},
 		{Command: "adventure", Description: "⚔️ 趣味求片（闯关）"},
@@ -949,10 +949,30 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "dream", Description: "🎪 本周梦魇"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
-	if err := telegram.SetMyCommands(commands, ""); err != nil {
-		logger.Info("⚠️  Failed to set bot commands: %v", err)
+	if err := telegram.SetMyCommandsForScope(privateCommands, "", map[string]interface{}{"type": "all_private_chats"}); err != nil {
+		logger.Info("⚠️  Failed to set private bot commands: %v", err)
 	} else {
-		logger.Info("✅ Bot command menu set")
+		logger.Info("✅ Private bot command menu set")
+	}
+
+	// Group and Community chats expose only privacy-safe entries. Every command
+	// in this scope is ephemeral; credential-bearing and free-form commands such
+	// as /link, /review and /narrate remain private-chat only.
+	groupCommands := []services.BotCommand{
+		{Command: "start", Description: "🌟 私密主菜单", IsEphemeral: true},
+		{Command: "search", Description: "🔍 私密求片", IsEphemeral: true},
+		{Command: "adventure", Description: "⚔️ 私密趣味求片", IsEphemeral: true},
+		{Command: "requests", Description: "📋 私密查看请求", IsEphemeral: true},
+		{Command: "wish", Description: "🌟 私密许愿", IsEphemeral: true},
+		{Command: "quota", Description: "💎 私密查看配额", IsEphemeral: true},
+		{Command: "portrait", Description: "🧠 私密灵魂画像", IsEphemeral: true},
+		{Command: "game", Description: "🎮 私密游戏中心", IsEphemeral: true},
+		{Command: "go", Description: "⚡ 私密开启冒险", IsEphemeral: true},
+	}
+	if err := telegram.SetMyCommandsForScope(groupCommands, "", map[string]interface{}{"type": "all_group_chats"}); err != nil {
+		logger.Info("⚠️  Failed to set group/community bot commands: %v", err)
+	} else {
+		logger.Info("✅ Group/community ephemeral command menu set")
 	}
 }
 

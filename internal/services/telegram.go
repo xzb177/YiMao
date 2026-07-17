@@ -70,14 +70,22 @@ func NewTelegramClient(botToken string) *TelegramClient {
 	}
 }
 
+// SetBaseURLForTest replaces the API endpoint and HTTP client for isolated tests.
+// It is intentionally narrow and should not be used by runtime wiring.
+func (c *TelegramClient) SetBaseURLForTest(baseURL string, httpClient *http.Client) {
+	c.baseURL = baseURL
+	c.httpClient = httpClient
+}
+
 // SetImageCache 设置图片缓存服务
 func (c *TelegramClient) SetImageCache(cache *ImageCache) {
 	c.imageCache = cache
 	logger.Info("[Telegram] ImageCache attached")
 }
 
-// SendMessage sends a message to a chat
-func (c *TelegramClient) SendMessage(chatID int64, text string, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+// SendMessage sends a message to a chat. Optional send options preserve the
+// existing call shape while allowing ephemeral message targeting.
+func (c *TelegramClient) SendMessage(chatID int64, text string, parseMode string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/sendMessage", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -89,6 +97,7 @@ func (c *TelegramClient) SendMessage(chatID int64, text string, parseMode string
 	if keyboard != nil {
 		payload["reply_markup"] = keyboard
 	}
+	applyTelegramSendOptions(payload, options)
 
 	return c.makeRequest(apiURL, payload)
 }
@@ -100,8 +109,28 @@ func richMessageEnabled() bool {
 	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
 }
 
-// SendRichMessage sends a rich message via Telegram Bot API 10.1
+// SendRichMessage sends a rich message via Telegram Bot API 10.1.
+// Bot API 10.2 does not document ephemeral targeting for sendRichMessage;
+// callers needing private group output must use SendMessage with send options.
 func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return c.sendRichMessage(chatID, markdown, nil, keyboard)
+}
+
+// SendRichMessageWithPhoto embeds a photo in the same Rich Message card. The
+// media is referenced by an internal tg:// ID, so users see one unified card
+// instead of a separate photo message followed by duplicated text.
+func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	media := []map[string]interface{}{{
+		"id": "poster",
+		"media": map[string]interface{}{
+			"type":  "photo",
+			"media": photo,
+		},
+	}}
+	return c.sendRichMessage(chatID, "![](tg://photo?id=poster)\n\n"+markdown, media, keyboard)
+}
+
+func (c *TelegramClient) sendRichMessage(chatID int64, markdown string, media []map[string]interface{}, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	if !richMessageEnabled() {
 		return nil, fmt.Errorf("rich message disabled by ENABLE_RICH_MESSAGE")
 	}
@@ -109,6 +138,9 @@ func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard
 
 	richMessage := map[string]interface{}{
 		"markdown": markdown,
+	}
+	if len(media) > 0 {
+		richMessage["media"] = media
 	}
 
 	payload := map[string]interface{}{
@@ -121,6 +153,46 @@ func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard
 	}
 
 	return c.makeRequest(apiURL, payload)
+}
+
+func applyTelegramSendOptions(payload map[string]interface{}, options []*types.TelegramSendOptions) {
+	if len(options) == 0 || options[0] == nil {
+		return
+	}
+	option := options[0]
+	if option.ReceiverUserID != 0 {
+		payload["receiver_user_id"] = option.ReceiverUserID
+	}
+	if option.CallbackQueryID != "" {
+		payload["callback_query_id"] = option.CallbackQueryID
+	}
+	if option.MessageThreadID != 0 {
+		payload["message_thread_id"] = option.MessageThreadID
+	}
+	if option.ReplyParameters != nil {
+		payload["reply_parameters"] = option.ReplyParameters
+	}
+}
+
+func applyTelegramSendOptionsToMultipart(writer *multipart.Writer, options []*types.TelegramSendOptions) {
+	if len(options) == 0 || options[0] == nil {
+		return
+	}
+	option := options[0]
+	if option.ReceiverUserID != 0 {
+		_ = writer.WriteField("receiver_user_id", fmt.Sprintf("%d", option.ReceiverUserID))
+	}
+	if option.CallbackQueryID != "" {
+		_ = writer.WriteField("callback_query_id", option.CallbackQueryID)
+	}
+	if option.MessageThreadID != 0 {
+		_ = writer.WriteField("message_thread_id", fmt.Sprintf("%d", option.MessageThreadID))
+	}
+	if option.ReplyParameters != nil {
+		if raw, err := json.Marshal(option.ReplyParameters); err == nil {
+			_ = writer.WriteField("reply_parameters", string(raw))
+		}
+	}
 }
 
 // EditMessage edits an existing message
@@ -151,6 +223,84 @@ func (c *TelegramClient) DeleteMessage(chatID int64, messageID int64) error {
 	}
 
 	// DeleteMessage returns bool result, not Message
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
+// DeleteEphemeralMessage deletes a message visible only to receiverUserID.
+func (c *TelegramClient) DeleteEphemeralMessage(chatID int64, receiverUserID int64, ephemeralMessageID int64) error {
+	apiURL := fmt.Sprintf("%s/deleteEphemeralMessage", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
+// EditEphemeralMessageText edits an established user-scoped message. It no
+// longer depends on the callback's 15-second send window.
+func (c *TelegramClient) EditEphemeralMessageText(chatID, receiverUserID, ephemeralMessageID int64, text, parseMode string, keyboard *types.TelegramInlineKeyboard) error {
+	apiURL := fmt.Sprintf("%s/editEphemeralMessageText", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+		"text":                 text,
+		"parse_mode":           parseMode,
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
+// EditEphemeralMessageReplyMarkup updates only the buttons of an established
+// ephemeral message.
+func (c *TelegramClient) EditEphemeralMessageReplyMarkup(chatID, receiverUserID, ephemeralMessageID int64, keyboard *types.TelegramInlineKeyboard) error {
+	apiURL := fmt.Sprintf("%s/editEphemeralMessageReplyMarkup", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
+// EditEphemeralMessageCaption edits the caption and keyboard of an established
+// ephemeral media message. Telegram returns a Boolean, not a Message.
+func (c *TelegramClient) EditEphemeralMessageCaption(chatID, receiverUserID, ephemeralMessageID int64, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) error {
+	apiURL := fmt.Sprintf("%s/editEphemeralMessageCaption", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+		"caption":              caption,
+	}
+	if parseMode != "" {
+		payload["parse_mode"] = parseMode
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
+// EditEphemeralMessageMedia replaces an ephemeral message with URL/file_id
+// media. Telegram doesn't allow uploading a new file through this edit method.
+func (c *TelegramClient) EditEphemeralMessageMedia(chatID, receiverUserID, ephemeralMessageID int64, media map[string]interface{}, keyboard *types.TelegramInlineKeyboard) error {
+	apiURL := fmt.Sprintf("%s/editEphemeralMessageMedia", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+		"media":                media,
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
 	return c.makeSimpleRequest(apiURL, payload)
 }
 
@@ -203,18 +353,19 @@ func (c *TelegramClient) SendPhoto(chatID int64, photoURL, caption string, keybo
 	return c.SendPhotoWithParseMode(chatID, photoURL, caption, "HTML", keyboard)
 }
 
-// SendPhotoWithParseMode sends a photo with caption and specified parse mode
-func (c *TelegramClient) SendPhotoWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+// SendPhotoWithParseMode sends a photo with caption and specified parse mode.
+// Options carry ephemeral targeting and Forum topic context.
+func (c *TelegramClient) SendPhotoWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	// Use URL method first to avoid multipart encoding issues with Chinese characters
 	// Telegram will download the image directly
-	msg, err := c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
+	msg, err := c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 	if err == nil {
 		return msg, nil
 	}
 
 	// If URL method fails, try downloading and sending as file
 	logger.Info("[Telegram] URL method failed: %v, trying file upload with parse_mode=%s", err, parseMode)
-	return c.SendPhotoFromURLWithParseMode(chatID, photoURL, caption, parseMode, nil, keyboard)
+	return c.SendPhotoFromURLWithParseMode(chatID, photoURL, caption, parseMode, nil, keyboard, options...)
 }
 
 // SendPhotoWithAuth sends a photo with caption, using custom headers for image download
@@ -227,7 +378,7 @@ func (c *TelegramClient) SendPhotoWithAuth(chatID int64, photoURL, caption strin
 }
 
 // SendPhotoWithAuthAndParseMode sends a photo with caption, parse mode, and custom headers
-func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	// 优先使用缓存（如果有）
 	var imageData []byte
 	var fromCache bool
@@ -253,7 +404,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		req, err := http.NewRequest("GET", photoURL, nil)
 		if err != nil {
 			logger.Info("[Telegram] Failed to create request: %v", err)
-			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 		}
 
 		// Add User-Agent to avoid being blocked
@@ -268,13 +419,13 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
 			logger.Info("[Telegram] [代理上传] 下载失败: %v", err)
-			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
 			logger.Info("[Telegram] [代理上传] 下载状态码异常: %d", resp.StatusCode)
-			return c.SendPhotoByURL(chatID, photoURL, caption, keyboard)
+			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 		}
 
 		// 读取图片数据
@@ -307,8 +458,9 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	// Add chat_id
+	// Add chat_id and optional ephemeral/thread targeting.
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
+	applyTelegramSendOptionsToMultipart(writer, options)
 
 	// Add parse_mode
 	writer.WriteField("parse_mode", parseMode)
@@ -409,7 +561,7 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 }
 
 // SendPhotoFromURLWithParseMode downloads photo from URL and sends it to Telegram with specified parse mode
-func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	logger.Info("[Telegram] Downloading photo from: %s with parse_mode=%s", photoURL, parseMode)
 
 	// Download the image
@@ -430,14 +582,14 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	if err != nil {
 		logger.Info("[Telegram] Failed to download photo: %v", err)
 		// Fallback to URL method if download fails
-		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		logger.Info("[Telegram] Photo download status: %d", resp.StatusCode)
 		// Fallback to URL method
-		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 	}
 
 	logger.Info("[Telegram] Photo downloaded, size: %d bytes", resp.ContentLength)
@@ -449,8 +601,9 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 
-	// Add chat_id
+	// Add chat_id and optional ephemeral/thread targeting.
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
+	applyTelegramSendOptionsToMultipart(writer, options)
 
 	// Add parse_mode
 	writer.WriteField("parse_mode", parseMode)
@@ -464,12 +617,12 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	// Add photo file
 	part, err := writer.CreateFormFile("photo", "photo.jpg")
 	if err != nil {
-		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 	}
 
 	_, err = io.Copy(part, resp.Body)
 	if err != nil {
-		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard)
+		return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 	}
 
 	// Add keyboard if provided
@@ -539,7 +692,7 @@ func (c *TelegramClient) SendPhotoByURL(chatID int64, photoURL, caption string, 
 }
 
 // SendPhotoByURLWithParseMode sends photo by URL with specified parse mode
-func (c *TelegramClient) SendPhotoByURLWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendPhotoByURLWithParseMode(chatID int64, photoURL, caption, parseMode string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -548,6 +701,7 @@ func (c *TelegramClient) SendPhotoByURLWithParseMode(chatID int64, photoURL, cap
 		"caption":    caption,
 		"parse_mode": parseMode,
 	}
+	applyTelegramSendOptions(payload, options)
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
@@ -569,7 +723,7 @@ func (c *TelegramClient) SendPhotoByFileID(chatID int64, fileID, caption string,
 }
 
 // SendPhotoByFileIDWithParseMode sends a photo using Telegram's file_id with specified parse mode
-func (c *TelegramClient) SendPhotoByFileIDWithParseMode(chatID int64, fileID, caption, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendPhotoByFileIDWithParseMode(chatID int64, fileID, caption, parseMode string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	apiURL := fmt.Sprintf("%s/sendPhoto", c.baseURL)
 
 	payload := map[string]interface{}{
@@ -578,6 +732,7 @@ func (c *TelegramClient) SendPhotoByFileIDWithParseMode(chatID int64, fileID, ca
 		"caption":    caption,
 		"parse_mode": parseMode,
 	}
+	applyTelegramSendOptions(payload, options)
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
@@ -857,14 +1012,25 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 type BotCommand struct {
 	Command     string `json:"command"`
 	Description string `json:"description"`
+	IsEphemeral bool   `json:"is_ephemeral,omitempty"`
 }
 
-// SetMyCommands sets the bot's command menu
+// SetMyCommands sets the bot's default command menu.
 func (c *TelegramClient) SetMyCommands(commands []BotCommand, languageCode string) error {
+	return c.SetMyCommandsForScope(commands, languageCode, nil)
+}
+
+// SetMyCommandsForScope sets commands for a Bot API command scope. Passing nil
+// keeps the historical default scope. Group commands can therefore be marked
+// ephemeral without changing the private-chat command menu.
+func (c *TelegramClient) SetMyCommandsForScope(commands []BotCommand, languageCode string, scope map[string]interface{}) error {
 	apiURL := fmt.Sprintf("%s/setMyCommands", c.baseURL)
 
 	payload := map[string]interface{}{
 		"commands": commands,
+	}
+	if scope != nil {
+		payload["scope"] = scope
 	}
 
 	if languageCode != "" {
