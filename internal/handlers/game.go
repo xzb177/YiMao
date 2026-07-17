@@ -210,6 +210,11 @@ func (h *GameHandler) handleNarratorEntry(ctx *callback.Context) (*callback.Resp
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 		if sess != nil {
+			// Some Telegram clients can emit the same tap twice. Once input mode is
+			// active, acknowledge the duplicate without sending a second card.
+			if _, exists := sess.Get("pending_narrate_input"); exists {
+				return &callback.Response{CallbackMsg: "🎬 请直接发送电影名称"}, nil
+			}
 			sess.Set("pending_narrate_input", true)
 		}
 	}

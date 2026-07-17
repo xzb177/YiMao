@@ -5,8 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 )
 
 func TestUserScopedSenderPrivateRichMessageUsesNativeAPI(t *testing.T) {
@@ -38,5 +41,22 @@ func TestUserScopedSenderPrivateRichMessageUsesNativeAPI(t *testing.T) {
 	rich, ok := payload["rich_message"].(map[string]any)
 	if !ok || rich["markdown"] != "## 富文本标题\n\n**正文**" {
 		t.Fatalf("rich_message=%v", payload["rich_message"])
+	}
+}
+
+func TestNarratorEntryDuplicateTapDoesNotSendSecondCard(t *testing.T) {
+	h := &GameHandler{sessionMgr: session.NewManager(time.Hour, 10)}
+	ctx := &callback.Context{UserID: 42}
+
+	first, err := h.handleNarratorEntry(ctx)
+	if err != nil || first.RichMessage == "" {
+		t.Fatalf("first response=%+v err=%v, want rich card", first, err)
+	}
+	second, err := h.handleNarratorEntry(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.RichMessage != "" || second.Text != "" || second.CallbackMsg == "" {
+		t.Fatalf("second response=%+v, want callback acknowledgement only", second)
 	}
 }
