@@ -185,6 +185,8 @@ var validActions = map[Action]bool{
 	"game_blindbox_open":        true, // 盲盒开盒
 	"game_blindbox_horror":      true, // 恐怖盲盒
 	"game_blindbox_personality": true, // 盲盒性格分析
+	"game_personality":          true, // 旧画像入口（兼容提示）
+	"game_contract":             true, // 旧契约入口（兼容提示）
 	"game_social":               true, // 社交动态
 	"game_emotion":              true, // 情绪画像
 	"game_achievements":         true, // 成就系统

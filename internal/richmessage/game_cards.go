@@ -488,21 +488,21 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	}
 	builder.Divider()
 
-	builder.BoldParagraph("⚔️ 双核心")
-	builder.Paragraph("  求片大冒险 — 化身主角闯关，通关才能求片")
-	builder.Paragraph("  📖 情报站 — AI解说电影剧情，闯关前做好功课")
+	builder.BoldParagraph("⚔️ 今晚就玩真的")
+	builder.Paragraph("  求片大冒险 — 选一部片，闯完 5 关直接提交求片")
+	builder.Paragraph("  🎯 今日挑战 — 每天同一道擂台题，赢了计入战绩")
 	builder.Divider()
 
-	builder.BoldParagraph("🏆 竞技场")
-	builder.Paragraph("  📊 冒险排行 — 群内TOP10，谁是最强影迷")
-	builder.Paragraph("  🎯 每日挑战 — 今日推荐电影，通关双倍积分")
+	builder.BoldParagraph("🏆 有记录，才有输赢")
+	builder.Paragraph("  📊 冒险排行 — 只统计真实通关成绩")
+	builder.Paragraph("  📈 我的战绩 — 胜场、最高分、连胜和最近对局")
 	builder.Divider()
 
-	builder.BoldParagraph("🎁 奖励")
-	builder.Paragraph("  🎰 通关盲盒 — 冒险通关免费开，评分越高越稀有")
+	builder.BoldParagraph("📖 卡关再看")
+	builder.Paragraph("  电影情报站 — 输入片名，先补背景再继续挑战")
 	builder.Divider()
 
-	builder.Italic("闯关是手段，求片是目的，排行是动力")
+	builder.Italic("游戏中心只保留能产生真实战绩的玩法")
 
 	return builder.Build()
 }

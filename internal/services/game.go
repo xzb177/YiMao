@@ -1630,6 +1630,7 @@ type AdventureUserStats struct {
 // AdventureRankEntry 排行榜条目
 type AdventureRankEntry struct {
 	Rank         int
+	UserID       int64
 	UserName     string
 	MovieName    string
 	MovieYear    int
@@ -1794,16 +1795,17 @@ func (s *SocialDB) GetAdventureLeaderboard(limit int) ([]*AdventureRankEntry, er
 	}
 
 	rows, err := s.db.Query(`
-		SELECT user_name,
+		SELECT user_id,
+			   (SELECT user_name FROM adventure_stats n WHERE n.user_id = a1.user_id ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS user_name,
 			   MAX(score) as best_score,
-			   (SELECT grade FROM adventure_stats a2 WHERE a2.user_name = a1.user_name ORDER BY score DESC LIMIT 1) as best_grade,
+			   (SELECT grade FROM adventure_stats a2 WHERE a2.user_id = a1.user_id ORDER BY score DESC, id DESC LIMIT 1) as best_grade,
 			   MAX(max_combo) as best_combo,
 			   SUM(success) as total_success,
 			   SUM(perfect_run) as perfect_runs
 		FROM adventure_stats a1
 		WHERE success = 1
-		GROUP BY user_name
-		ORDER BY best_score DESC
+		GROUP BY user_id
+		ORDER BY best_score DESC, total_success DESC, user_id ASC
 		LIMIT ?
 	`, limit)
 	if err != nil {
@@ -1815,7 +1817,7 @@ func (s *SocialDB) GetAdventureLeaderboard(limit int) ([]*AdventureRankEntry, er
 	rank := 1
 	for rows.Next() {
 		var p AdventureRankEntry
-		err := rows.Scan(&p.UserName, &p.BestScore, &p.BestGrade, &p.BestCombo, &p.TotalSuccess, &p.PerfectRuns)
+		err := rows.Scan(&p.UserID, &p.UserName, &p.BestScore, &p.BestGrade, &p.BestCombo, &p.TotalSuccess, &p.PerfectRuns)
 		if err != nil {
 			continue
 		}
@@ -1827,15 +1829,15 @@ func (s *SocialDB) GetAdventureLeaderboard(limit int) ([]*AdventureRankEntry, er
 	return players, nil
 }
 
-// HasDailyChallenge 检查用户今天是否已完成每日挑战
-func (s *SocialDB) HasDailyChallenge(userID int64, dateStr string) (bool, error) {
+// HasDailyChallenge checks whether the user cleared today's recommended movie.
+func (s *SocialDB) HasDailyChallenge(userID int64, dateStr, movieName string) (bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	var count int
 	err := s.db.QueryRow(
-		"SELECT COUNT(*) FROM adventure_stats WHERE user_id = ? AND success = 1 AND date(created_at) = ?",
-		userID, dateStr,
+		"SELECT COUNT(*) FROM adventure_stats WHERE user_id = ? AND success = 1 AND date(created_at) = ? AND movie_name = ?",
+		userID, dateStr, movieName,
 	).Scan(&count)
 	if err != nil {
 		return false, err

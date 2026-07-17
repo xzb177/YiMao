@@ -1972,35 +1972,17 @@ func randomMovieTip() string {
 func generateBonusEffect(grade string, perfectRun bool) string {
 	// 基于评级的彩蛋池
 	bonusPool := []string{
-		"🎁 恭喜获得「剧情先知」称号！",
-		"🎬 解锁隐藏电影推荐：《穆赫兰道》",
-		"⚡ 下次冒险双倍积分已激活！",
-		"🔮 你获得了「导演视角」——下次冒险可查看一关的正确答案",
-		"🎭 解锁「电影达人」成就！",
-		"💎 获得稀有盲盒券一张！",
-		"🌟 你的名字将出现在本周冒险周报中",
-		"🎬 解锁彩蛋电影：《彗星来的那一夜》",
-		"⚡ 获得「连击大师」光环——下次冒险连击回血翻倍",
-		"🔮 解锁「剧透之眼」——下次冒险每关多一次提示机会",
+		"🎬 彩蛋片单：《穆赫兰道》",
+		"⚡ 本局高光已记录到冒险战绩",
+		"🎭 彩蛋片单：《彗星来的那一夜》",
 	}
 
-	// SSS评级有特殊彩蛋
+	// 高评级和无伤通关只追加真实可见的战绩描述，不承诺未实现的道具。
 	if grade == "SSS" {
-		ssrPool := []string{
-			"👑 SSS专属：解锁「传说挑战者」称号，永久显示！",
-			"👑 SSS专属：获得「无限盲盒」——下次通关可开5个盲盒！",
-			"👑 SSS专属：你的通关记录将被刻入「冒险名人堂」！",
-		}
-		bonusPool = append(bonusPool, ssrPool...)
+		bonusPool = append(bonusPool, "👑 SSS 高光已进入冒险排行统计")
 	}
-
-	// 完美通关有额外彩蛋
 	if perfectRun {
-		perfectPool := []string{
-			"🛡️ 完美通关专属：解锁「无伤行者」称号！",
-			"🛡️ 完美通关专属：获得「金手指」——下次冒险可跳过一关！",
-		}
-		bonusPool = append(bonusPool, perfectPool...)
+		bonusPool = append(bonusPool, "🛡️ 无伤通关已写入个人战绩")
 	}
 
 	// 30%概率触发彩蛋

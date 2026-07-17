@@ -468,15 +468,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		// closed instead of posting private details when delivery is unavailable.
 		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
 	case "/game", "/游戏", "/游戏中心":
-		// 群聊中发送游戏中心菜单
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-		kb.AddButton("🎰 通关盲盒", "game_blindbox")
-		kb.AddButton("📊 冒险排行", "game_adventure_rank")
-		kb.NewRow()
-		kb.AddButton("🎯 每日挑战", "game_daily_challenge")
-		kb.AddButton("📖 情报站", "game_narrator")
-		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n选择你的私人玩法：", "Markdown", kb.Build())
+		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())
 	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
 		// 群聊中直接解说：/解说 电影名
 		movieName := extractMovieName(text, cmd)
@@ -562,14 +554,7 @@ func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.Tel
 	gameKeywords := []string{"游戏中心", "游戏", "玩游戏", "来个游戏", "游戏菜单"}
 	for _, kw := range gameKeywords {
 		if input == kw {
-			kb := services.NewKeyboardBuilder()
-			kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-			kb.AddButton("🎰 通关盲盒", "game_blindbox")
-			kb.AddButton("📊 冒险排行", "game_adventure_rank")
-			kb.NewRow()
-			kb.AddButton("🎯 每日挑战", "game_daily_challenge")
-			kb.AddButton("📖 情报站", "game_narrator")
-			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n群聊可用功能：", "Markdown", kb.Build())
+			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())
 			return true
 		}
 	}

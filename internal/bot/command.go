@@ -678,20 +678,7 @@ var (
 // HandleGameCommand 处理 /game 命令 — 游戏中心入口
 func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
 	card := richmessage.BuildGameCenterCard(0, 0) // /game 命令无法获取 userID，默认无连胜
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-	kb.AddButton("🎬 AI解说", "game_narrator")
-	kb.AddButton("🎰 通关盲盒", "game_blindbox")
-	kb.NewRow()
-	kb.AddButton("📊 冒险排行", "game_adventure_rank")
-	kb.AddButton("🎯 每日挑战", "game_daily_challenge")
-	kb.AddButton("🏆 成就", "game_achievements")
-	kb.NewRow()
-	kb.AddButton("🧠 性格分析", "game_emotion")
-	kb.AddButton("👅 品味分析", "game_compare")
-	kb.AddButton("⬅️ 返回", "start")
-
-	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, kb.Build())
+	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, services.BuildGameCenterKeyboard())
 }
 
 // HandleNarrateCommand 处理 /narrate 命令 — AI 电影解说

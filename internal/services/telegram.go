@@ -1333,6 +1333,21 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 	return kb.Build()
 }
 
+// BuildGameCenterKeyboard builds the single canonical game-center menu.
+// Viewing portraits stay in the main menu and are intentionally not duplicated here.
+func BuildGameCenterKeyboard() *types.TelegramInlineKeyboard {
+	kb := NewKeyboardBuilder()
+	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
+	kb.AddButton("🎯 今日挑战", "game_daily_challenge")
+	kb.NewRow()
+	kb.AddButton("📊 冒险排行", "game_adventure_rank")
+	kb.AddButton("📈 我的战绩", "game_adventure_stats")
+	kb.NewRow()
+	kb.AddButton("📖 电影情报站", "game_narrator")
+	kb.AddButton("⬅️ 返回", "start")
+	return kb.Build()
+}
+
 // Int64ToString converts int64 to string
 func Int64ToString(i int64) string {
 	return strconv.FormatInt(i, 10)

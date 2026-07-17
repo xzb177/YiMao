@@ -101,17 +101,17 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.handleAdventureStats(ctx)
 	case "game_daily_challenge":
 		return h.handleDailyChallenge(ctx)
-	case "game_compare":
-		return h.handleCompareTaste(ctx)
+	case "game_compare", "game_emotion", "game_personality":
+		return &callback.Response{CallbackMsg: "🧠 该功能已合并到主菜单「观影画像」", ShowAlert: true}, nil
 	case "game_achievements":
-		return h.handleAchievements(ctx)
-	case "game_emotion":
-		return h.handleEmotionProfile(ctx)
+		return &callback.Response{CallbackMsg: "📈 静态成就已下线，请查看真实「我的战绩」", ShowAlert: true}, nil
 	// 以下功能已废弃，返回友好提示
 	case "game_rank", "game_social",
-		"game_contract", "game_prescription", "game_time_machine",
+		"game_prescription", "game_time_machine",
 		"game_roulette", "game_review":
 		return &callback.Response{CallbackMsg: "🚧 该功能已升级，请从游戏中心进入", ShowAlert: true}, nil
+	case "game_contract":
+		return &callback.Response{CallbackMsg: "⚔️ 契约玩法已下线，请使用「求片大冒险」", ShowAlert: true}, nil
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}
@@ -132,22 +132,10 @@ func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, err
 	}
 
 	card := richmessage.BuildGameCenterCard(streakCurrent, streakBest)
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
-	kb.AddButton("🎬 AI解说", "game_narrator")
-	kb.AddButton("🎰 通关盲盒", "game_blindbox")
-	kb.NewRow()
-	kb.AddButton("📊 冒险排行", "game_adventure_rank")
-	kb.AddButton("🎯 每日挑战", "game_daily_challenge")
-	kb.AddButton("🏆 成就", "game_achievements")
-	kb.NewRow()
-	kb.AddButton("🧠 观影画像", "game_emotion")
-	kb.AddButton("👅 品味分析", "game_compare")
-	kb.AddButton("⬅️ 返回", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(kb.Build()),
+		Keyboard:    convertKeyboard(services.BuildGameCenterKeyboard()),
 	}, nil
 }
 
@@ -418,17 +406,9 @@ func (h *GameHandler) handleBlindBoxOpen(ctx *callback.Context) (*callback.Respo
 
 	card := richmessage.BuildBlindBoxCard(richmessage.BlindBoxCardData{Items: views})
 
-	// 群通知：开出SSR/SR时通知群聊
-	userName := h.getUserName(ctx.UserID)
-	for _, item := range items {
-		if item.Rarity == "SSR" {
-			h.notifyGroup(userName, fmt.Sprintf("开出了🟡SSR盲盒：《%s》！恭喜！", item.Title))
-		}
-	}
-
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎰 再开一组", "game_blindbox_open")
-	kb.AddButton("📜 和它签契约", "game_contract")
+	kb.AddButton("⚔️ 去闯关", "adventure_start")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
@@ -644,7 +624,11 @@ func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Respo
 	}
 
 	userName := h.getUserName(ctx.UserID)
-	profile, err := h.viewingSvc.GetProfile(fmt.Sprintf("%d", ctx.UserID), userName)
+	embyUserID, err := h.viewingSvc.FindEmbyUserByName(userName)
+	if err != nil || embyUserID == "" {
+		return &callback.Response{Text: "🔗 观影品味需要先绑定与 Emby 同名的账号（/link）", CallbackMsg: "请先绑定账号", ShowAlert: true}, nil
+	}
+	profile, err := h.viewingSvc.GetProfile(embyUserID, userName)
 	if err != nil || profile == nil {
 		return &callback.Response{Text: "📊 还没有观影数据，先看几部电影再来吧~", CallbackMsg: "暂无数据", ShowAlert: true}, nil
 	}
@@ -675,7 +659,7 @@ func (h *GameHandler) handleCompareTaste(ctx *callback.Context) (*callback.Respo
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("🧠 观影画像", "game_personality")
+	kb.AddButton("🧠 观影画像", "portrait")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -865,7 +849,7 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	// 检查今天是否已挑战
 	alreadyChallenged := false
 	if h.socialDB != nil {
-		alreadyChallenged, _ = h.socialDB.HasDailyChallenge(ctx.UserID, time.Now().Format("2006-01-02"))
+		alreadyChallenged, _ = h.socialDB.HasDailyChallenge(ctx.UserID, time.Now().Format("2006-01-02"), movie.Title)
 	}
 
 	card := richmessage.BuildDailyChallengeCard(richmessage.DailyChallengeCardData{
