@@ -495,7 +495,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	}
 
 	return &callback.Response{
-		Text: fmt.Sprintf("⚔️ **求片大冒险**\n\n请发送你想求的电影/剧集名称\n\n例如：`流浪地球` 或 `权力的游戏`\n\n只有通关才能提交求片请求\n每关 4 个选项；普通失误重伤，陷阱和 Boss 会更致命。读懂线索再出手。\n%s", passRateText),
+		RichMessage: fmt.Sprintf("## ⚔️ 求片大冒险\n\n请发送你想求的电影或剧集名称。\n\n**例如**：`流浪地球` 或 `权力的游戏`\n\n> 只有通关才能提交求片请求。每关 4 个选项；普通失误重伤，陷阱和 Boss 会更致命。读懂线索再出手。\n\n%s", passRateText),
 	}, nil
 }
 
@@ -997,7 +997,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 		kb.AddButton("🎰 再开一个", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
+		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
 		return &callback.Response{CallbackMsg: "🎉 赌赢了！奖励翻倍！", ShowAlert: false}, nil
 	}
 
@@ -1012,7 +1012,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
 	return &callback.Response{CallbackMsg: "💸 本局归零，赌局结束", ShowAlert: false}, nil
 }
 
@@ -1116,7 +1116,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 		kb.AddButton("🎰 再开一个", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
+		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
 		// 三倍成功 → 群通知
 		userName := h.getUserName(ctx.UserID)
 		h.notifyGroup(userName, fmt.Sprintf("💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀\n\n⚡ 三倍豪赌 ⚡\n\n💀 %s\n💀 《%s》\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n30%% 的概率，他押中了\n三倍收益 · 一念天堂\n\n💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀", userName, movieTitle))
@@ -1140,7 +1140,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
 	return &callback.Response{CallbackMsg: "💀 腰斩了...30% 可不是好赌的", ShowAlert: false}, nil
 }
 
@@ -1398,7 +1398,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 			kb.NewRow()
 			kb.AddButton("💀 拒绝（再来一次）", "adventure_retry")
 			kb.AddButton("🎮 游戏中心", "game_menu")
-			sender.SendMessage(card.Markdown, "Markdown", kb.Build())
+			sender.SendRichMessage(card.Markdown, kb.Build())
 			return
 		}
 	}
@@ -1447,7 +1447,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		kb.AddButton("🎬 换一部电影", "adventure_start")
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
-		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
+		sender.SendRichMessage(card.Markdown, kb.Build())
 		return
 	}
 
@@ -1483,7 +1483,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 		kb.AddButton("🔄 重新开始", "adventure_retry")
 	}
 
-	sender.SendMessage(card.Markdown, "Markdown", kb.Build())
+	sender.SendRichMessage(card.Markdown, kb.Build())
 }
 
 func normalizeAdventureMediaType(mediaType string) string {
@@ -1749,7 +1749,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		kb.AddButton("🎰 通关盲盒", "game_blindbox")
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
+		sender.SendRichMessage(card.Markdown, kb.Build())
 
 		// 通关奖励：免费开盲盒
 		go h.sendRewardBlindBox(userID, chatID, state, result.Grade)
@@ -1776,7 +1776,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
-		sender.SendMessage(card.Markdown, "Markdown", kb.Build())
+		sender.SendRichMessage(card.Markdown, kb.Build())
 	}
 	state.ChoiceLock.Lock()
 	state.Phase = AdventurePhaseFinished
@@ -1863,7 +1863,7 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 	}
 	kb.AddButton("🚪 退出", "adventure_quit")
 
-	newUserScopedSender(h.telegram, chatID, userID).SendMessage(card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, chatID, userID).SendRichMessage(card.Markdown, kb.Build())
 }
 
 // boolStr 条件字符串

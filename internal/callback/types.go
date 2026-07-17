@@ -180,6 +180,7 @@ var validActions = map[Action]bool{
 	"game_menu":                 true, // 游戏中心主菜单
 	"game_rank":                 true, // 段位系统
 	"game_narrator":             true, // AI解说入口
+	"game_narrate":              true, // AI解说生成/剧透切换
 	"game_blindbox":             true, // 盲盒入口
 	"game_blindbox_open":        true, // 盲盒开盒
 	"game_blindbox_horror":      true, // 恐怖盲盒

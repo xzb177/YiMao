@@ -747,7 +747,7 @@ func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.Telegram
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	// 删除"生成中"提示

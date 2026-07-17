@@ -214,7 +214,7 @@ func (h *GameHandler) handleNarratorEntry(ctx *callback.Context) (*callback.Resp
 		}
 	}
 	return &callback.Response{
-		Text: "🎬 **AI 电影解说员**\n\n请直接发送电影名称，我来给你讲讲这部电影～\n\n例如：发送 `流浪地球` 或 `Inception`\n\n💡 也可以使用命令：`/narrate 电影名`",
+		RichMessage: "## 🎬 AI 电影解说员\n\n请直接发送电影名称，我来给你讲讲这部电影。\n\n**例如**：`流浪地球` 或 `Inception`\n\n> 也可以使用命令：`/narrate 电影名`",
 	}, nil
 }
 
@@ -352,7 +352,7 @@ func (h *GameHandler) HandleNarrateText(userID int64, chatID int64, movieName st
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
-	h.telegram.SendMessage(chatID, card.Markdown, "Markdown", kb.Build())
+	newUserScopedSender(h.telegram, chatID, userID).SendRichMessage(card.Markdown, kb.Build())
 	return true
 }
 
