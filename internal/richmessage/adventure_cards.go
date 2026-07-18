@@ -265,7 +265,7 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 	b.Divider()
 
 	b.BoldParagraph("🎬 准备好进入这部影片了吗？")
-	b.Italic("这是可选玩法；普通求片可随时从主菜单直接使用。")
+	b.Italic("这是可选玩法；需要直接求片时，可返回主菜单选择「搜索求片」。")
 
 	return b.Build()
 }
@@ -443,7 +443,7 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 
 	// 🌍 全球通关率
 	if data.GlobalPassRate != "" {
-		b.BoldParagraph("🌍 全球通关率")
+		b.BoldParagraph("📊 当前通关率")
 		b.Paragraph(data.GlobalPassRate)
 		b.Divider()
 	}
@@ -514,7 +514,7 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 
 	// 🌍 全球通关率
 	if data.GlobalPassRate != "" {
-		b.BoldParagraph("🌍 全球通关率")
+		b.BoldParagraph("📊 当前通关率")
 		b.Paragraph(data.GlobalPassRate)
 		b.Divider()
 	}
@@ -656,16 +656,16 @@ type GambleOfferCardData struct {
 func BuildGambleOfferCard(data GambleOfferCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("🎰 战利品时间", 2)
-	b.BoldParagraph(fmt.Sprintf("🏆 %s 评级通关 · 《%s》", data.Grade, data.MovieTitle))
+	b.Heading("🎁 通关奖励", 2)
+	b.BoldParagraph(fmt.Sprintf("🏆 %s 评级 · 《%s》", data.Grade, data.MovieTitle))
 	b.Divider()
 
-	b.Paragraph(fmt.Sprintf("🎁 你获得了 %d 个通关盲盒", data.ItemCount))
+	b.Paragraph(fmt.Sprintf("你获得了 %d 个盲盒", data.ItemCount))
 	b.Divider()
 
-	b.BoldParagraph("你怎么选？")
-	b.Paragraph("  📦 稳妥收下 — 保留当前奖励")
-	b.Paragraph("  🎰 尝试翻倍 — 50% 翻倍 / 50% 归零")
+	b.BoldParagraph("选择领取方式")
+	b.Paragraph("  📦 保留当前奖励")
+	b.Paragraph("  🎰 尝试双倍 — 50% 翻倍 / 50% 归零")
 	b.Paragraph("  ✨ 尝试三倍 — 30% 三倍 / 70% 减半")
 	b.Divider()
 
@@ -682,6 +682,7 @@ type GambleResultCardData struct {
 	Grade      string
 	Items      []BlindBoxItemView
 	Won        bool
+	Multiplier int
 	MovieTitle string
 }
 
@@ -689,36 +690,39 @@ func BuildGambleResultCard(data GambleResultCardData) RichMessage {
 	b := NewBuilder()
 
 	if data.Won {
-		b.Heading("🎉 赌赢了！", 2)
-		b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
-		b.Divider()
-		b.BoldParagraph(fmt.Sprintf("🎁 奖励翻倍！获得 %d 个盲盒", len(data.Items)))
-		b.Divider()
-
-		for _, item := range data.Items {
-			rarityEmoji := map[string]string{
-				"SSR": "🌈", "SR": "💎", "R": "⭐", "N": "📀",
-			}[item.Rarity]
-			if rarityEmoji == "" {
-				rarityEmoji = "📀"
-			}
-			b.BoldParagraph(fmt.Sprintf("%s %s · %s (%d)", rarityEmoji, item.Rarity, item.Title, item.Year))
-			if item.Genres != "" && item.Genres != "/" {
-				b.Italic(fmt.Sprintf("  %s  ⭐ %.1f", item.Genres, item.Rating))
-			}
+		multiplier := data.Multiplier
+		if multiplier < 2 {
+			multiplier = 2
 		}
-
-		b.Divider()
-		b.Italic("命运眷顾勇者——你敢赌，它就敢给你")
+		b.Heading(fmt.Sprintf("🎉 奖励 %d 倍", multiplier), 2)
 	} else {
-		b.Heading("💸 归零！", 2)
-		b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
-		b.Divider()
-		b.Paragraph("🎰 赌局结果：归零")
-		b.Paragraph("  所有的盲盒化为乌有...")
-		b.Divider()
-		b.Italic("本局赌注已结算")
+		b.Heading("🎁 奖励选择已结算", 2)
+	}
+	b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
+	b.Divider()
+
+	if data.Won {
+		b.BoldParagraph(fmt.Sprintf("本次获得 %d 个盲盒", len(data.Items)))
+	} else if len(data.Items) > 0 {
+		b.BoldParagraph(fmt.Sprintf("本次保留 %d 个盲盒", len(data.Items)))
+	} else {
+		b.Paragraph("本次结果：当前奖励归零")
 	}
 
+	for _, item := range data.Items {
+		rarityEmoji := map[string]string{
+			"SSR": "🌈", "SR": "💎", "R": "⭐", "N": "📀",
+		}[item.Rarity]
+		if rarityEmoji == "" {
+			rarityEmoji = "📀"
+		}
+		b.BoldParagraph(fmt.Sprintf("%s %s · %s (%d)", rarityEmoji, item.Rarity, item.Title, item.Year))
+		if item.Genres != "" && item.Genres != "/" {
+			b.Italic(fmt.Sprintf("  %s  ⭐ %.1f", item.Genres, item.Rating))
+		}
+	}
+
+	b.Divider()
+	b.Italic("本次倍率选择已完成。")
 	return b.Build()
 }

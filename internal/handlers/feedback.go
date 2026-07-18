@@ -825,7 +825,7 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "feedback:view")
-	kb.AddButton("🏠 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),
@@ -1090,7 +1090,7 @@ func (h *FeedbackHandler) handleRateSatisfaction(ctx *callback.Context, ratingSt
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("⬅️ 返回列表", "feedback:view")
-	kb.AddButton("🏠 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:        msg.Build(),
@@ -1259,7 +1259,7 @@ func (h *FeedbackHandler) handleStopFollowUp(ctx *callback.Context) (*callback.R
 	kb.AddButton("🔄 继续追问", fmt.Sprintf("feedback:detail_id:%d", issue.ID))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "feedback:view")
-	kb.AddButton("🏠 返回主菜单", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:        msg.Build(),

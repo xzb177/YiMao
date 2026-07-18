@@ -193,7 +193,7 @@ var validActions = map[Action]bool{
 	"game_compare":              true, // 品味对比
 
 	// Adventure game actions
-	"adventure_start":         true, // 求片大冒险入口
+	"adventure_start":         true, // 电影冒险入口
 	"adventure_choice":        true, // 选择选项
 	"adventure_hint":          true, // 问导演（花HP换线索）
 	"adventure_retry":         true, // 重试冒险

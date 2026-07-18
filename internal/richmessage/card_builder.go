@@ -113,12 +113,12 @@ func BuildWelcomeMessage(userName string) RichMessage {
 	builder.Divider()
 
 	// Quick guide
-	guide := "🔍 普通求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n⚔️ 趣味求片 — 可选的五关电影互动玩法"
+	guide := "🔍 搜索求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n⚔️ 电影冒险 — 可选的五关互动玩法"
 	builder.Paragraph(guide)
 	builder.Divider()
 
 	// Tips (collapsible)
-	tips := "• 支持电影、剧集、综艺与纪录片\n• 普通求片无需参与互动玩法\n• 趣味求片通关后会自动提交请求\n• 下载完成并入库后，将收到私聊通知"
+	tips := "• 支持电影、剧集、综艺与纪录片\n• 搜索求片无需参与互动玩法\n• 电影冒险通关后会自动提交请求\n• 下载完成并入库后，将收到私聊通知"
 	builder.Details("💡 使用技巧", tips, false)
 
 	return builder.Build()
@@ -853,7 +853,7 @@ type MyReviewItem struct {
 // BuildMyReviewsCard builds user's review requests list card.
 func BuildMyReviewsCard(items []MyReviewItem) RichMessage {
 	builder := NewBuilder()
-	builder.Heading("📋 我的求片", 3)
+	builder.Heading("📊 求片进度", 3)
 	builder.BoldParagraph(fmt.Sprintf("共 %d 条记录", len(items)))
 
 	rows := make([][]string, 0, len(items))

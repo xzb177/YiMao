@@ -14,7 +14,7 @@ func TestBaseUserCopyRegression(t *testing.T) {
 	}{
 		{
 			file:   "request.go",
-			want:   []string{"《%s》", "/link 用户名 密码", "📋 我的请求", "今日求片次数已用完"},
+			want:   []string{"《%s》", "/link 用户名 密码", "📊 求片进度", "今日求片次数已用完"},
 			forbid: []string{"《%s}", "服务配置错误", "无效的 TMDB ID", "配额操作失败"},
 		},
 		{

@@ -874,7 +874,7 @@ func (h *ResourceHandler) buildBackKeyboard(mediaID, mediaType, seasonStr string
 	}
 
 	kb.AddButton("🔍 搜索", "search:menu")
-	kb.AddButton("📋 我的请求", string(callback.ActionRequests))
+	kb.AddButton("📊 求片进度", string(callback.ActionRequests))
 	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 

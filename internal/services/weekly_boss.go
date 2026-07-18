@@ -25,7 +25,7 @@ type WeeklyBoss struct {
 	TotalClears      int     `json:"total_clears"`
 }
 
-// GetWeeklyBoss 获取本周梦魇
+// GetWeeklyBoss 获取本周挑战
 func (s *SocialDB) GetWeeklyBoss() (*WeeklyBoss, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -48,7 +48,7 @@ func (s *SocialDB) GetWeeklyBoss() (*WeeklyBoss, error) {
 	return &wb, nil
 }
 
-// SetWeeklyBoss 设置本周梦魇
+// SetWeeklyBoss 设置本周挑战
 func (s *SocialDB) SetWeeklyBoss(wb *WeeklyBoss) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -64,7 +64,7 @@ func (s *SocialDB) SetWeeklyBoss(wb *WeeklyBoss) error {
 	return err
 }
 
-// RecordWeeklyBossAttempt 记录梦魇挑战（增加尝试次数）
+// RecordWeeklyBossAttempt 记录本周挑战（增加尝试次数）
 func (s *SocialDB) RecordWeeklyBossAttempt(userID int64, success bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -220,13 +220,13 @@ func getMondayString() string {
 }
 
 // AutoGenerateWeeklyBoss 自动生成每周梦魇（TMDB trending 选片）
-// 如果本周梦魇已存在则跳过，否则从 TMDB trending API 选取第一部有海报的电影作为梦魇。
+// 如果本周挑战已存在则跳过，否则从 TMDB trending API 选取第一部有海报的电影作为梦魇。
 func (s *SocialDB) AutoGenerateWeeklyBoss(tmdbAPIKey string) {
 	if tmdbAPIKey == "" {
 		return
 	}
 
-	// 检查本周梦魇是否已存在
+	// 检查本周挑战是否已存在
 	existing, err := s.GetWeeklyBoss()
 	if err != nil || existing != nil {
 		return

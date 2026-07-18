@@ -1260,7 +1260,7 @@ func BuildDetailKeyboard(mediaID, mediaType string, hasQuota bool) *types.Telegr
 
 	kb.NewRow()
 	kb.AddButton("🔍 搜索", "search:menu")
-	kb.AddButton("📋 我的请求", "requests:list")
+	kb.AddButton("📊 求片进度", "requests:list")
 
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回列表", "back")
@@ -1319,7 +1319,7 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 	}
 	kb.AddButton("🧠 观影画像", "start_portrait")
 	kb.NewRow()
-	kb.AddButton("⚔️ 趣味求片", "adventure_start")
+	kb.AddButton("⚔️ 电影冒险", "adventure_start")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
 	kb.AddButton("⚙️ 设置", "start_settings")
@@ -1344,7 +1344,7 @@ func BuildGameCenterKeyboard() *types.TelegramInlineKeyboard {
 	kb.AddButton("📈 我的战绩", "game_adventure_stats")
 	kb.NewRow()
 	kb.AddButton("📖 电影情报站", "game_narrator")
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 	return kb.Build()
 }
 

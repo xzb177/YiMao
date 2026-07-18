@@ -374,19 +374,19 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 	case "search":
 		msg.Bold("🔍 怎么求片").Newline()
 		msg.Newline()
-		msg.Bold("普通求片（推荐）：").Newline()
+		msg.Bold("搜索求片（推荐）：").Newline()
 		msg.Text("1. 点「搜索求片」").Newline()
 		msg.Text("2. 直接发送片名").Newline()
 		msg.Text("3. 选择搜索结果查看详情").Newline()
 		msg.Text("4. 点「求片」或「订阅」").Newline()
 		msg.Newline()
-		msg.Bold("趣味求片（可选）：").Newline()
-		msg.Text("1. 点「趣味求片」").Newline()
+		msg.Bold("电影冒险（可选）：").Newline()
+		msg.Text("1. 点「电影冒险」").Newline()
 		msg.Text("2. 输入影片名称").Newline()
 		msg.Text("3. 以主角视角完成五关互动").Newline()
 		msg.Text("4. 通关后自动提交求片").Newline()
 		msg.Newline()
-		msg.Italic("普通求片无需闯关；想换一种体验时，再选择趣味模式。")
+		msg.Italic("搜索求片无需闯关；想换一种体验时，再选择电影冒险。")
 
 	case "link":
 		msg.Bold("🔗 怎么绑定").Newline()

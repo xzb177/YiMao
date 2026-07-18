@@ -190,12 +190,12 @@ type Dependencies struct {
 	WishService       *services.WishService       // #6 许愿池存储
 	WishScheduler     *services.WishScheduler     // #6 许愿池 DailyRescan task
 	WishHandler       *handlers.WishHandler       // #6 许愿池命令/回调处理器
-	MyRequestsHandler *handlers.MyRequestsHandler // 「我的请求」聚合视图（/requests 命令复用）
+	MyRequestsHandler *handlers.MyRequestsHandler // 求片进度聚合视图（/requests 命令复用）
 	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler  *handlers.AdventureHandler  // 求片大冒险
-	RankHandler       *handlers.RankHandler       // 冒险者公会排行
-	StatsHandler      *handlers.StatsHandler      // 个人冒险面板
-	DreamHandler      *handlers.DreamHandler      // 本周梦魇挑战
+	AdventureHandler  *handlers.AdventureHandler  // 电影冒险
+	RankHandler       *handlers.RankHandler       // 冒险排行
+	StatsHandler      *handlers.StatsHandler      // 个人冒险战绩
+	DreamHandler      *handlers.DreamHandler      // 本周挑战
 }
 
 // initServices initializes all services
@@ -423,7 +423,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Start image cache cleanup routine (每天清理一次过期缓存)
 	imageCache.StartCleanupRoutine(24 * time.Hour)
 
-	// 预热 MoviePilot 订阅缓存（后台执行，避免首次「我的请求」点击超时）
+	// 预热 MoviePilot 订阅缓存（后台执行，避免首次打开「求片进度」超时）
 	go moviepilotClient.WarmupSubscriptionCache()
 
 	logger.Info("✅ Services initialized")
@@ -573,7 +573,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	startHandler.SetUserMapping(deps.UserMapping)
 	startHandler.SetWeeklyReportService(deps.WeeklyReportSvc)
 
-	// 灵魂画像服务
+	// 观影画像服务
 	if deps.Cfg.EmbyURL != "" && deps.Cfg.EmbyAPIKey != "" {
 		startHandler.SetPortraitService(services.NewPortraitService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey))
 	}
@@ -589,12 +589,12 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		logger.Info("[initRegistry] ⚠️ SocialDB init failed: %v", socialErr)
 	}
 	emotionSvc := services.NewEmotionTimelineService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	// 求片大冒险服务
+	// 电影冒险服务
 	adventureSvc := services.NewAdventureService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
 	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
 	if socialDB != nil {
 		adventureHandler.SetSocialDB(socialDB)
-		// 自动生成本周梦魇（如果没有的话）
+		// 自动生成本周挑战（如果没有的话）
 		if deps.Cfg.TMDBAPIKey != "" {
 			go socialDB.AutoGenerateWeeklyBoss(deps.Cfg.TMDBAPIKey)
 		}
@@ -761,7 +761,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("game_daily_challenge", gameHandler.Handle)
 	registry.RegisterFunc("game_daily_complete", gameHandler.Handle)
 	registry.RegisterFunc("game_achievements", gameHandler.Handle)
-	// 求片大冒险回调
+	// 电影冒险回调
 	registry.RegisterFunc("adventure_start", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
 	registry.RegisterFunc("adventure_hint", adventureHandler.Handle) // 🎬 问导演
@@ -933,20 +933,20 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	privateCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索求片"},
-		{Command: "adventure", Description: "⚔️ 趣味求片（闯关）"},
+		{Command: "adventure", Description: "⚔️ 电影冒险"},
 		{Command: "ai", Description: "🎬 精选推荐"},
-		{Command: "requests", Description: "📋 我的请求"},
-		{Command: "wish", Description: "🌟 许愿求片（无源片众筹）"},
+		{Command: "requests", Description: "📊 求片进度"},
+		{Command: "wish", Description: "✨ 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
 		{Command: "portrait", Description: "🧠 观影画像"},
 		{Command: "game", Description: "🎮 游戏中心"},
 		{Command: "narrate", Description: "🎬 AI 电影解说"},
 		{Command: "review", Description: "✍️ 写影评"},
-		{Command: "rank", Description: "🏆 冒险排行"},
-		{Command: "mystats", Description: "📜 我的冒险档案"},
-		{Command: "go", Description: "⚡ 一键开启冒险"},
-		{Command: "dream", Description: "🎪 本周梦魇"},
+		{Command: "rank", Description: "📊 冒险排行"},
+		{Command: "mystats", Description: "📈 我的战绩"},
+		{Command: "go", Description: "⚔️ 开始冒险"},
+		{Command: "dream", Description: "🎯 本周挑战"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommandsForScope(privateCommands, "", map[string]interface{}{"type": "all_private_chats"}); err != nil {
@@ -960,14 +960,14 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	// as /link, /review and /narrate remain private-chat only.
 	groupCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 私密主菜单", IsEphemeral: true},
-		{Command: "search", Description: "🔍 私密求片", IsEphemeral: true},
-		{Command: "adventure", Description: "⚔️ 私密趣味求片", IsEphemeral: true},
-		{Command: "requests", Description: "📋 私密查看请求", IsEphemeral: true},
-		{Command: "wish", Description: "🌟 私密许愿", IsEphemeral: true},
+		{Command: "search", Description: "🔍 私密搜索求片", IsEphemeral: true},
+		{Command: "adventure", Description: "⚔️ 私密电影冒险", IsEphemeral: true},
+		{Command: "requests", Description: "📊 私密求片进度", IsEphemeral: true},
+		{Command: "wish", Description: "✨ 私密许愿", IsEphemeral: true},
 		{Command: "quota", Description: "💎 私密查看配额", IsEphemeral: true},
 		{Command: "portrait", Description: "🧠 私密观影画像", IsEphemeral: true},
 		{Command: "game", Description: "🎮 私密游戏中心", IsEphemeral: true},
-		{Command: "go", Description: "⚡ 私密开启冒险", IsEphemeral: true},
+		{Command: "go", Description: "⚔️ 私密开始冒险", IsEphemeral: true},
 	}
 	if err := telegram.SetMyCommandsForScope(groupCommands, "", map[string]interface{}{"type": "all_group_chats"}); err != nil {
 		logger.Info("⚠️  Failed to set group/community bot commands: %v", err)

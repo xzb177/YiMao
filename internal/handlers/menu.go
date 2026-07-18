@@ -53,8 +53,8 @@ func (h *MyRequestsHandler) SetUserMapping(um services.UserMappingStore) {
 	h.userMapping = um
 }
 
-// SetReviewService 注入审核服务，用于把 pending/stuck 的审核单合并进「我的请求」，
-// 修复「刚提交的请求在『我的请求』里看不到」（pending 存在 ReviewService，MP 还没有）。
+// SetReviewService 注入审核服务，用于把 pending/stuck 的审核单合并进「求片进度」，
+// 修复「刚提交的请求在『求片进度』里看不到」（pending 存在 ReviewService，MP 还没有）。
 func (h *MyRequestsHandler) SetReviewService(rs *services.ReviewService) {
 	h.reviewSvc = rs
 }
@@ -64,7 +64,7 @@ func (h *MyRequestsHandler) SetQuotaService(qs *services.QuotaService) {
 	h.quotaSvc = qs
 }
 
-// SetWishService 注入许愿池服务（用于「我的请求」显示许愿列表）。
+// SetWishService 注入许愿池服务（用于「求片进度」显示许愿列表）。
 func (h *MyRequestsHandler) SetWishService(ws *services.WishService) {
 	h.wishSvc = ws
 }
@@ -143,7 +143,7 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 		text += "\n\n⚠️ 配额返还异常，管理员会根据审核记录补偿处理"
 	}
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📋 我的请求", "requests")
+	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
@@ -211,7 +211,7 @@ func (h *MyRequestsHandler) HandleItemAction(ctx *callback.Context) (*callback.R
 	}
 }
 
-// BuildForCommand 为 /requests 命令构建「我的请求」首页（文本 + 键盘）。
+// BuildForCommand 为 /requests 命令构建「求片进度」首页（文本 + 键盘）。
 // 复用与回调入口完全一致的聚合逻辑（含 ReviewService 合并），让命令不再踢皮球。
 // resolveMoviePilotID 返回 0 表示用户未绑定。
 func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback.Keyboard) {
@@ -226,7 +226,7 @@ func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback
 		return "🔗 请先绑定账号后使用 /link", &callback.Keyboard{
 			InlineKeyboard: [][]callback.Button{
 				{{Text: "🔗 立即绑定", CallbackData: "link"}},
-				{{Text: "⬅️ 返回", CallbackData: "start"}},
+				{{Text: "🏠 主菜单", CallbackData: "start"}},
 			},
 		}
 	}
@@ -269,7 +269,7 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 			Keyboard: &callback.Keyboard{
 				InlineKeyboard: [][]callback.Button{
 					{{Text: "🔗 立即绑定", CallbackData: "link"}},
-					{{Text: "⬅️ 返回", CallbackData: "start"}},
+					{{Text: "🏠 主菜单", CallbackData: "start"}},
 				},
 			},
 		}, nil
@@ -280,14 +280,14 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 		// Trigger background warmup (first call after startup)
 		go h.moviepilot.WarmupSubscriptionCache()
 		msg := services.NewMessageBuilder()
-		msg.Bold("📋 我的请求").Newline()
+		msg.Bold("📊 求片进度").Newline()
 		msg.Newline()
 		msg.Text("⏳ 数据加载中，请稍候再试（首次加载约需 2-3 分钟）").Newline()
 		msg.Newline()
 		msg.Italic("💡 后续访问会很快")
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("🔄 刷新", "requests")
-		kb.AddButton("⬅️ 返回", "start")
+		kb.AddButton("🏠 主菜单", "start")
 		return &callback.Response{
 			Text:     msg.Build(),
 			Edit:     true,
@@ -302,7 +302,7 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	// 聚合：把 ReviewService 里「还没成为 MP 订阅」的审核单合并进来。
 	// 主从规则：MP（执行层）离最终结果近，凡是已有 MP 订阅的请求以 MP 为准；
 	// 仅当某审核单在 MP 里查不到对应订阅时，才用审核单的状态兜底显示，
-	// 从而修复「pending / 已审核同步中(stuck) 在『我的请求』里看不到」。
+	// 从而修复「pending / 已审核同步中(stuck) 在『求片进度』里看不到」。
 	requests = h.mergePendingReviews(ctx.UserID, requests)
 
 	// 合并许愿池：把用户的活跃许愿追加到列表末尾
@@ -356,7 +356,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	msg := services.NewMessageBuilder()
 
 	if totalRequests == 0 {
-		msg.Bold("我的请求").Newline()
+		msg.Bold("求片进度").Newline()
 		msg.Newline()
 		msg.Text("暂无记录").Newline()
 		msg.Newline()
@@ -365,14 +365,14 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		kb := &callback.Keyboard{
 			InlineKeyboard: [][]callback.Button{
 				{{Text: "刷新", CallbackData: callback.BuildCallback("myreqs_page", map[string]string{"page": "1"})}},
-				{{Text: "返回", CallbackData: "start"}},
+				{{Text: "🏠 主菜单", CallbackData: "start"}},
 			},
 		}
 		return msg.Build(), "", kb
 	}
 
 	// Header
-	msg.Bold("📋 我的请求").Newline()
+	msg.Bold("📊 求片进度").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
 	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{stateReviewing, stateStuck, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
 	msg.Text("────────").Newline()
@@ -528,7 +528,7 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 	return line
 }
 
-// 合成状态：仅用于「我的请求」聚合视图，区分尚未进入 MP 的审核单。
+// 合成状态：仅用于「求片进度」聚合视图，区分尚未进入 MP 的审核单。
 const (
 	stateReviewing = "REVIEWING" // ReviewService pending：审核中
 	stateStuck     = "STUCK"     // 已审核但提交 MP 失败：同步中/重试
@@ -570,7 +570,7 @@ func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []serv
 			if rv.Status == "approved" {
 				synthState = stateStuck
 			} else {
-				continue // rejected / 其他已终结状态不在「我的请求」进行中列表里展示
+				continue // rejected / 其他已终结状态不在「求片进度」进行中列表里展示
 			}
 		}
 
@@ -939,7 +939,7 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	msg.Italic("👇 选一个问题看看")
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔍 怎么搜片", "help_topic:topic:search")
+	kb.AddButton("🔍 怎么求片", "help_topic:topic:search")
 	kb.AddButton("🔗 怎么绑定", "help_topic:topic:link")
 	kb.NewRow()
 	kb.AddButton("❌ 请求失败", "help_topic:topic:failed")
@@ -947,7 +947,7 @@ func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	kb.NewRow()
 	kb.AddButton("📮 其他问题", "help_topic:topic:other")
 	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     msg.Build(),

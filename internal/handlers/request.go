@@ -316,8 +316,8 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	receiptMsg += fmt.Sprintf(
 		"\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你")
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📋 我的请求", "requests")
-	kb.AddButton("⬅️ 继续搜片", "start")
+	kb.AddButton("📊 求片进度", "requests")
+	kb.AddButton("🏠 主菜单", "start")
 	return &callback.Response{
 		Text:        receiptMsg,
 		CallbackMsg: "请求已提交",
@@ -626,8 +626,8 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	}
 	receiptMsg += "\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你"
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📋 我的请求", "requests")
-	kb.AddButton("⬅️ 继续搜片", "start")
+	kb.AddButton("📊 求片进度", "requests")
+	kb.AddButton("🏠 主菜单", "start")
 	return &callback.Response{
 		Text:        receiptMsg,
 		CallbackMsg: "请求已提交",
@@ -655,9 +655,9 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 	switch result.Status {
 	case services.SubmissionDuplicateOwn:
 		if force {
-			return &callback.Response{Text: fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“我的请求”查看。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+			return &callback.Response{Text: fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“求片进度”查看。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
 		}
-		return &callback.Response{Text: fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“我的请求”查看进度。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+		return &callback.Response{Text: fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“求片进度”查看进度。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
 	case services.SubmissionDuplicateOther:
 		people := 1
 		if h.carpoolService != nil {

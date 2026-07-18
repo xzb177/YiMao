@@ -29,7 +29,7 @@ func (b *PopBuilder) BuildMenu(title, subtitle string) string {
 	sb.WriteString("🔍 搜索影片 · 快速查找想看的内容\n")
 	sb.WriteString("💫 情绪选片 · 按心情一键找片\n")
 	sb.WriteString("🎯 不纠结 · 直接给你三种风格候选\n")
-	sb.WriteString("📋 我的请求 · 查看求片进度\n")
+	sb.WriteString("📊 求片进度 · 查看处理与入库状态\n")
 	sb.WriteString("🐞 我的反馈 · 查看处理结果\n")
 	sb.WriteString("🔗 绑定账号 · 同步账号信息\n")
 
@@ -187,7 +187,7 @@ func (b *PopBuilder) BuildRequestList(requests []services.SubscribeItem, page, t
 	var sb strings.Builder
 
 	sb.WriteString(popSeparator + "\n")
-	sb.WriteString("📋 我的请求\n")
+	sb.WriteString("📊 求片进度\n")
 	sb.WriteString(popSeparator + "\n\n")
 
 	if total == 0 {

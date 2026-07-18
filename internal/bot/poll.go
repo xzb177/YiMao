@@ -32,12 +32,12 @@ type Dependencies struct {
 	FeedbackHandler  *handlers.FeedbackHandler
 	FallbackService  *services.SearchFallbackService
 	WishHandler      *handlers.WishHandler       // #6 许愿池
-	MyRequests       *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	MyRequests       *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
 	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler  // 求片大冒险
+	AdventureHandler *handlers.AdventureHandler  // 电影冒险
 	RankHandler      *handlers.RankHandler       // 冒险者公会排行
 	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler      // 本周梦魇挑战
+	DreamHandler     *handlers.DreamHandler      // 本周挑战
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -57,12 +57,12 @@ type PollDeps struct {
 	FeedbackHandler  *handlers.FeedbackHandler
 	FallbackService  *services.SearchFallbackService
 	WishHandler      *handlers.WishHandler       // #6 许愿池
-	MyRequests       *handlers.MyRequestsHandler // 我的请求（/requests 命令复用）
+	MyRequests       *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
 	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler  // 求片大冒险
+	AdventureHandler *handlers.AdventureHandler  // 电影冒险
 	RankHandler      *handlers.RankHandler       // 冒险者公会排行
 	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler      // 本周梦魇挑战
+	DreamHandler     *handlers.DreamHandler      // 本周挑战
 }
 
 // StartPolling starts the Telegram update polling
@@ -386,7 +386,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 			}
 		}
 
-		// 检查是否处于求片大冒险 pending 状态
+		// 检查是否处于电影冒险待输入状态
 		if deps.AdventureHandler != nil {
 			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, sanitizedText) {
 				return
@@ -495,7 +495,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		if dreamHandler != nil {
 			dreamHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
 		} else {
-			telegram.SendMessage(msg.Chat.ID, "👾 梦魇挑战未就绪", "", nil)
+			_, _ = telegram.SendMessage(msg.Chat.ID, "🎯 本周挑战暂不可用", "", nil)
 		}
 	case "/mystats":
 		if statsHandler != nil {

@@ -186,7 +186,7 @@ func (b *FilmBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	var sb strings.Builder
 
 	sb.WriteString(filmSeparator + "\n")
-	sb.WriteString("「我的请求」\n")
+	sb.WriteString("「求片进度」\n")
 	sb.WriteString(filmSeparator + "\n\n")
 
 	if total == 0 {

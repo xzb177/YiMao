@@ -358,7 +358,7 @@ func HandleWebhookMessage(
 			}
 		}
 
-		// 检查是否处于求片大冒险 pending 状态
+		// 检查是否处于电影冒险待输入状态
 		if deps.AdventureHandler != nil {
 			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, msg.Text) {
 				w.WriteHeader(http.StatusOK)

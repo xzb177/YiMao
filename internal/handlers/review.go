@@ -385,7 +385,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	}
 	rejectCard := richmessage.BuildReviewRejectedCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
 	rejectKb := services.NewKeyboardBuilder()
-	rejectKb.AddButton("🔍 重新搜索", "start")
+	rejectKb.AddButton("🏠 主菜单", "start")
 	h.telegram.SendRichMessage(review.TelegramID, rejectCard.Markdown, rejectKb.Build())
 
 	// 通知其他管理员：此请求已被处理
@@ -465,7 +465,7 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 
 	if len(reviews) == 0 {
 		return &callback.Response{
-			RichMessage: "📋 我的求片\n\n暂无求片记录\n\n使用 🔍 搜索功能来请求影片",
+			RichMessage: "📊 求片进度\n\n暂无求片记录\n\n选择「🔍 搜索求片」即可添加",
 			Edit:        true,
 		}, nil
 	}

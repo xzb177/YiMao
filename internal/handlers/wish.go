@@ -370,7 +370,7 @@ func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, er
 			kb.NewRow()
 		}
 		b.WriteString("\n💡 出源后会私信你「🎬 立即求片」按钮")
-		kb.AddButton("⬅️ 返回", "start")
+		kb.AddButton("🏠 主菜单", "start")
 		return &callback.Response{
 			Text:     b.String(),
 			Edit:     true,
@@ -379,7 +379,7 @@ func (h *WishHandler) HandleEntry(ctx *callback.Context) (*callback.Response, er
 	}
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:     b.String(),

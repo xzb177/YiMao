@@ -38,13 +38,13 @@ type AdventureRecordView struct {
 func BuildAdventureStatsCard(data AdventureStatsCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("⚔️ 冒险档案", 2)
-	b.BoldParagraph(fmt.Sprintf("👤 %s 的闯关记录", data.UserName))
+	b.Heading("📈 我的冒险战绩", 2)
+	b.BoldParagraph(fmt.Sprintf("👤 %s", data.UserName))
 	b.Divider()
 
 	// 核心数据
 	if data.TotalChallenges == 0 {
-		b.Italic("还没有挑战记录，去试试吧！")
+		b.Italic("暂无冒险记录。")
 		return b.Build()
 	}
 
@@ -71,12 +71,11 @@ func BuildAdventureStatsCard(data AdventureStatsCardData) RichMessage {
 		} else if data.CurrentStreak >= 3 {
 			streakEmoji = "🔥🔥"
 		}
-		b.BoldParagraph(fmt.Sprintf("%s 连胜 %d 天！", streakEmoji, data.CurrentStreak))
+		b.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天", streakEmoji, data.CurrentStreak))
 		if data.BestStreak > data.CurrentStreak {
 			b.Italic(fmt.Sprintf("最佳纪录：%d 天", data.BestStreak))
 		}
-		b.Paragraph("  每天挑战，连胜越长奖励越丰厚")
-		b.Paragraph("  断签一次，连胜归零")
+		b.Paragraph("  连续天数按实际通关记录更新")
 	}
 
 	// 最近记录
@@ -84,7 +83,7 @@ func BuildAdventureStatsCard(data AdventureStatsCardData) RichMessage {
 		b.Divider()
 		b.Heading("📜 最近挑战", 3)
 		for _, r := range data.RecentRecords {
-			icon := "💀"
+			icon := "•"
 			if r.Success {
 				icon = gradeToIcon(r.Grade)
 			}
@@ -157,8 +156,8 @@ func BuildUserRequestStatsCard(data UserRequestStatsData) RichMessage {
 	b.BoldParagraph(fmt.Sprintf("👤 %s", data.UserName))
 	b.Divider()
 
-	// 普通求片
-	b.Heading("🔍 普通求片", 3)
+	// 搜索求片
+	b.Heading("🔍 搜索求片", 3)
 	if data.NormalTotal > 0 {
 		approveRate := data.NormalApproved * 100 / data.NormalTotal
 		b.Paragraph(fmt.Sprintf("  总请求：%d 次", data.NormalTotal))
@@ -167,8 +166,8 @@ func BuildUserRequestStatsCard(data UserRequestStatsData) RichMessage {
 		b.Paragraph("  暂无记录")
 	}
 
-	// 趣味求片
-	b.Heading("⚔️ 趣味求片", 3)
+	// 电影冒险
+	b.Heading("⚔️ 电影冒险", 3)
 	if data.AdventureTotal > 0 {
 		passRate := data.AdventureSuccess * 100 / data.AdventureTotal
 		b.Paragraph(fmt.Sprintf("  总挑战：%d 次", data.AdventureTotal))

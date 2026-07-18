@@ -85,7 +85,7 @@ func ValidateAdventureScene(scene *AdventureScene) error {
 	return nil
 }
 
-// AdventureService 求片大冒险服务
+// AdventureService 电影冒险服务
 type AdventureService struct {
 	embyURL    string
 	embyAPIKey string
@@ -510,7 +510,7 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
 - 这一关的正确率目标：20%`
 	}
 
-	prompt := fmt.Sprintf(`你是「求片大冒险」的电影互动关卡引擎。请设计有辨识度、逐步深入且公平可理解的五关体验。
+	prompt := fmt.Sprintf(`你是「电影冒险」的互动关卡引擎。请设计有辨识度、逐步深入且公平可理解的五关体验。
 
 ## 你的设计哲学
 - 你设计的每一关都必须**只属于这部电影**——换一部电影就不成立
@@ -701,7 +701,7 @@ func (s *AdventureService) callAIForResult(prompt string) (*AdventureResult, err
 }
 
 func (s *AdventureService) callOpenAI(prompt string) (string, error) {
-	systemMsg := `你是「求片大冒险」的电影互动关卡引擎。你要让玩家在具体剧情线索中完成一段紧张但公平的五关体验。
+	systemMsg := `你是「电影冒险」的互动关卡引擎。你要让玩家在具体剧情线索中完成一段紧张但公平的五关体验。
 
 核心设计原则：
 1. 每关必须4个选项，选项都应合理，但可通过剧情线索判断
@@ -1181,6 +1181,6 @@ func (s *AdventureService) GenerateFallbackResult(info *MovieInfo, survived bool
 		Score:       20 + level*5,
 		Grade:       "D",
 		Tips:        "这部电影的主角从不按常理出牌",
-		Stats:       fmt.Sprintf("倒在第%d关，距离终点还差%d关", level, totalLevels-level),
+		Stats:       fmt.Sprintf("完成至第%d关，距离终点还有%d关", level, totalLevels-level),
 	}
 }

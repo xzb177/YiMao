@@ -38,7 +38,7 @@ func TestGameCenterUsesCanonicalCopyWithoutChangingCallbacks(t *testing.T) {
 		"game_adventure_rank":  "📊 冒险排行",
 		"game_adventure_stats": "📈 我的战绩",
 		"game_narrator":        "📖 电影情报站",
-		"start":                "⬅️ 返回",
+		"start":                "🏠 主菜单",
 	}
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {

@@ -197,7 +197,7 @@ func (b *CinemaBuilder) BuildRequestList(requests []services.SubscribeItem, page
 
 	sb.WriteString(cinemaSeparator + "\n\n")
 
-	sb.WriteString(fmt.Sprintf("              📋 我的请求\n\n"))
+	sb.WriteString("              📊 求片进度\n\n")
 
 	sb.WriteString(cinemaSeparator + "\n\n")
 

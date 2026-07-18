@@ -91,7 +91,7 @@ func HandleCommand(
 			telegram.SendMessage(msg.Chat.ID, "🔒 为了保护您的观影隐私，请私聊查看完整片单", "", nil)
 			return
 		}
-		// 片单 == 我的请求（已订阅/进行中），与 /requests 同源，不再踢皮球。
+		// 片单与“求片进度”同源，统一展示已订阅和进行中的内容。
 		if myRequestsHandler != nil {
 			text, kb := myRequestsHandler.BuildForCommand(msg.From.ID)
 			telegram.SendMessage(msg.Chat.ID, text, "HTML", ConvertKeyboard(kb))
@@ -458,7 +458,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg := services.NewMessageBuilder()
 	msg.Bold("❓ 我能帮你做什么").Newline()
 	msg.Newline()
-	msg.Bold("🔍 搜片").Newline()
+	msg.Bold("🔍 搜索求片").Newline()
 	msg.Text("直接把片名发给我，中英文都行，点结果看详情再求片").Newline()
 	msg.Newline()
 	msg.Bold("🎬 求片").Newline()
@@ -480,7 +480,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Text("用 /link 创建或绑定 MoviePilot 账号；/resetpw 重置自己的密码").Newline()
 	msg.Newline()
 	msg.Bold("⌨️ 命令速查").Newline()
-	msg.Text("/start 主菜单  /search 搜片  /ai 今晚看什么").Newline()
+	msg.Text("/start 主菜单  /search 搜索求片  /ai 今晚看什么").Newline()
 	msg.Text("/wish 许愿  /requests 求片进度  /quota 配额").Newline()
 	msg.Text("/portrait 观影画像  /link 绑定  /resetpw 重置密码  /help 帮助").Newline()
 	msg.Newline()

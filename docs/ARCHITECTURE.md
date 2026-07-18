@@ -49,7 +49,7 @@ Telegram (long polling) → internal/bot/poll.go
 | `callback.go` | 通用回调处理（开始、返回、取消） |
 | `search.go` | 搜索、推荐、搜索历史 |
 | `request.go` | 创建求片请求 |
-| `menu.go` | 主菜单、我的请求、帮助 |
+| `menu.go` | 主菜单、求片进度、帮助 |
 | `review.go` | 审核系统 |
 | `admin.go` | 管理员功能 |
 | `feedback.go` | 用户反馈 |

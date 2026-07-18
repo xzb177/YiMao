@@ -52,7 +52,7 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		button   string
 		callback string
 	}{
-		{"🔍 搜影片", "start_search"},
+		{"🔍 搜索求片", "start_search"},
 		{"🎬 今晚看什么", "start_ai"},
 		{"📊 求片进度", "start_requests"},
 		{"✨ 许愿池", "start_wish"},

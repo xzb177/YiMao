@@ -471,7 +471,7 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 游戏中心", 2)
-	builder.Italic("这里是求片之外的可选玩法，不影响普通求片。")
+	builder.Italic("这里是求片之外的可选玩法，不影响搜索求片。")
 
 	// 🔥 连胜火焰
 	if streakCurrent > 0 {
@@ -503,7 +503,7 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder.Paragraph("  电影情报站 — 输入片名，了解背景与剧情线索")
 	builder.Divider()
 
-	builder.Italic("随时可以返回主菜单，直接使用普通求片。")
+	builder.Italic("随时可以返回主菜单，直接使用搜索求片。")
 
 	return builder.Build()
 }

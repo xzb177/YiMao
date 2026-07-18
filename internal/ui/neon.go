@@ -178,7 +178,7 @@ func (b *NeonBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	var sb strings.Builder
 
 	sb.WriteString(neonLine + "\n")
-	sb.WriteString(fmt.Sprintf("📋 我的请求\n"))
+	sb.WriteString("📊 求片进度\n")
 	sb.WriteString(neonLine + "\n\n")
 
 	if total == 0 {

@@ -541,7 +541,7 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 	msg.Textf("问题ID: #%d", issueID).Newline()
 	msg.Text("状态: 已关闭").Newline()
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		Text:        msg.Build(),

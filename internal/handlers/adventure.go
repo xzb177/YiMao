@@ -50,11 +50,11 @@ type AdventureState struct {
 	TriedChoices       map[int]bool             `json:"tried_choices"`
 	HintUsed           bool                     `json:"hint_used"`
 	LastFreeReviveDate string                   `json:"last_free_revive_date"` // 上次免费复活日期 (YYYY-MM-DD)
-	VengeanceActive    bool                     `json:"vengeance_active"`      // 复仇模式（跳过第1关）
+	VengeanceActive    bool                     `json:"vengeance_active"`      // 继续挑战进度回馈（跳过第1关）
 	StreakDays         int                      `json:"streak_days"`           // 连胜天数
 	StreakRewards      *services.StreakRewards  `json:"-"`                     // 连胜奖励（不序列化）
 	FreeSkipsUsed      int                      `json:"free_skips_used"`       // 已使用的免费跳过次数
-	IsWeeklyBoss       bool                     `json:"is_weekly_boss"`        // 是否是本周梦魇
+	IsWeeklyBoss       bool                     `json:"is_weekly_boss"`        // 是否为本周挑战
 	Phase              AdventurePhase           `json:"phase,omitempty"`
 	Turn               int                      `json:"turn,omitempty"`
 	ResolvedTurn       int                      `json:"resolved_turn,omitempty"`
@@ -245,13 +245,13 @@ func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, ms
 	chatID := msg.Chat.ID
 	sender := newUserScopedSender(telegram, chatID, userID)
 
-	// 1. 优先：最近失败的宿敌
+	// 1. 优先：最近未完成的影片记录
 	movieName := ""
 	if h.socialDB != nil {
 		movieName, _ = h.socialDB.GetTopNemesis(userID)
 	}
 
-	// 2. 其次：本周梦魇
+	// 2. 其次：本周挑战
 	if movieName == "" && h.socialDB != nil {
 		if wb, err := h.socialDB.GetWeeklyBoss(); err == nil && wb != nil {
 			movieName = wb.MovieName
@@ -268,17 +268,17 @@ func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, ms
 			}
 		}
 		h.removeState(userID)
-		sender.SendMessage("⚔️ 没有发现宿敌或梦魇\n\n请发送你想挑战的电影名：", "", nil)
+		_, _ = sender.SendMessage("⚔️ 暂无可继续的历史记录或本周片单。\n\n请发送你想挑战的电影名：", "", nil)
 		return
 	}
 
 	go h.startAdventureAsync(userID, chatID, movieName)
 }
 
-// startWeeklyBossAsync 发起梦魇挑战
+// startWeeklyBossAsync 发起本周挑战
 func (h *AdventureHandler) startWeeklyBossAsync(userID int64, chatID int64, wb *services.WeeklyBoss) {
 	if wb == nil {
-		newUserScopedSender(h.telegram, chatID, userID).SendMessage("🎪 本周暂无梦魇", "", nil)
+		_, _ = newUserScopedSender(h.telegram, chatID, userID).SendMessage("🎯 本周挑战尚未更新", "", nil)
 		return
 	}
 	// 以梦魇模式启动冒险
@@ -447,7 +447,7 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 	return true
 }
 
-// handleStart 点击"趣味求片"或每日挑战启动
+// handleStart 点击“电影冒险”或每日挑战启动
 func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Response, error) {
 	// 检查是否从每日挑战等入口带入了电影名
 	movieName := ""
@@ -490,12 +490,12 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	if h.socialDB != nil {
 		total, successCount, rate := h.socialDB.GetAdventureGlobalPassRate()
 		if total >= 5 {
-			passRateText = fmt.Sprintf("全球通关率 %.0f%%（%d/%d）", rate, successCount, total)
+			passRateText = fmt.Sprintf("当前通关率 %.0f%%（%d/%d）", rate, successCount, total)
 		}
 	}
 
 	return &callback.Response{
-		RichMessage: fmt.Sprintf("## ⚔️ 趣味求片 · 电影冒险\n\n请发送你想求的电影或剧集名称。\n\n**例如**：`流浪地球` 或 `权力的游戏`\n\n> 这是可选的五关互动玩法。完成后会自动提交求片；如想直接求片，请返回主菜单选择「搜索求片」。\n\n%s", passRateText),
+		RichMessage: fmt.Sprintf("## ⚔️ 电影冒险\n\n请发送你想求的电影或剧集名称。\n\n**例如**：`流浪地球` 或 `权力的游戏`\n\n> 这是可选的五关互动玩法。完成后会自动提交求片；如想直接求片，请返回主菜单选择「搜索求片」。\n\n%s", passRateText),
 	}, nil
 }
 
@@ -945,7 +945,7 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	return &callback.Response{CallbackMsg: "❤️ 已恢复 30 HP", ShowAlert: false}, nil
 }
 
-// handleGamble 🎰 双倍或归零 — 用户选择赌一把
+// handleGamble 尝试双倍奖励 — 50% 翻倍 / 50% 归零
 func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Response, error) {
 	logger.Info("[Adventure] 🎰 Gamble callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
@@ -976,7 +976,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	}
 
 	if len(items) == 0 {
-		return &callback.Response{CallbackMsg: "🎰 赌局已过期，请重新通关获取盲盒", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "🎁 奖励选择已过期，请重新通关获取盲盒", ShowAlert: true}, nil
 	}
 
 	// 50% 概率双倍
@@ -999,7 +999,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 		kb.AddButton("🎮 游戏中心", "game_menu")
 
 		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
-		return &callback.Response{CallbackMsg: "🎉 赌赢了！奖励翻倍！", ShowAlert: false}, nil
+		return &callback.Response{CallbackMsg: "🎉 奖励已翻倍", ShowAlert: false}, nil
 	}
 
 	card := richmessage.BuildGambleResultCard(richmessage.GambleResultCardData{
@@ -1014,10 +1014,10 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
-	return &callback.Response{CallbackMsg: "💸 本局归零，赌局结束", ShowAlert: false}, nil
+	return &callback.Response{CallbackMsg: "🎁 本次奖励归零", ShowAlert: false}, nil
 }
 
-// handleGambleSafe 📦 安全领取 — 用户放弃赌博
+// handleGambleSafe 保留当前奖励
 func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Response, error) {
 	logger.Info("[Adventure] 📦 GambleSafe callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
@@ -1110,6 +1110,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 			Grade:      grade,
 			Items:      tripled,
 			Won:        true,
+			Multiplier: 3,
 			MovieTitle: movieTitle,
 		})
 
@@ -1124,7 +1125,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 		return &callback.Response{CallbackMsg: "✨ 三倍奖励已到账", ShowAlert: false}, nil
 	}
 
-	// 腰斩：只保留一半
+	// 未命中时保留一半奖励
 	halved := items[:len(items)/2]
 	if len(halved) == 0 {
 		halved = nil
@@ -1142,7 +1143,11 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
-	return &callback.Response{CallbackMsg: "🎁 本次保留一半奖励", ShowAlert: false}, nil
+	callbackMsg := "🎁 本次奖励归零"
+	if len(halved) > 0 {
+		callbackMsg = "🎁 本次保留一半奖励"
+	}
+	return &callback.Response{CallbackMsg: callbackMsg, ShowAlert: false}, nil
 }
 
 // ============================================================
@@ -1568,138 +1573,25 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		case result.Grade == "SSS":
 			shouldNotify = true
 			if state.PerfectRun {
-				notifyMsg = fmt.Sprintf(`👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑
-
-⚡ 传说诞生 ⚡
-
-🏆 %s
-🏆 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ 满血  🔥 x%d 连击
-🛡️ 全程无伤  ⚔️ 五关全通
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💯 SSS · 完美通关
-零失误 · 零扣血 · 无可挑剔
-
-👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑`,
-					userName, state.MovieInfo.Title, state.MovieInfo.Year,
-					result.Score, state.MaxCombo)
+				notifyMsg = fmt.Sprintf("👑 电影冒险 · SSS\n\n%s 通关了《%s》(%d)\n\n🎯 %d分 · ❤️ 100%% · 🔥 x%d\n🛡️ 全程无伤", userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score, state.MaxCombo)
 			} else {
-				notifyMsg = fmt.Sprintf(`👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑
-
-⚡ 传奇操作 ⚡
-
-🏆 %s
-🏆 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ %d%%  🔥 x%d 连击
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-💯 SSS · 近乎完美
-这部电影他不只是看过——他活过
-
-👑━━━━━━━━━━━━━━━━━━━━━━━━━━👑`,
-					userName, state.MovieInfo.Title, state.MovieInfo.Year,
-					result.Score, displayHP, state.MaxCombo)
+				notifyMsg = fmt.Sprintf("👑 电影冒险 · SSS\n\n%s 通关了《%s》(%d)\n\n🎯 %d分 · ❤️ %d%% · 🔥 x%d", userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score, displayHP, state.MaxCombo)
 			}
-
 		case result.Grade == "SS":
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`💎━━━━━━━━━━━━━━━━━━━━━━━━━━💎
-
-⚡ 王者通关 ⚡
-
-💎 %s
-💎 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ %d%%  🔥 x%d 连击
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🥈 SS · 距离传说一步之遥
-五关险境，他几乎毫发无伤地走了出来
-
-💎━━━━━━━━━━━━━━━━━━━━━━━━━━💎`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, displayHP, state.MaxCombo)
-
+			notifyMsg = fmt.Sprintf("💎 电影冒险 · SS\n\n%s 通关了《%s》(%d)\n\n🎯 %d分 · ❤️ %d%% · 🔥 x%d", userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score, displayHP, state.MaxCombo)
 		case state.PerfectRun:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🛡️━━━━━━━━━━━━━━━━━━━━━━━━━━🛡️
-
-⚡ 无伤传说 ⚡
-
-🛡️ %s
-🛡️ 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ 100%%  🛡️ 全程零失误
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-五关全过，一滴血没掉
-这个人看电影是认真的
-
-🛡️━━━━━━━━━━━━━━━━━━━━━━━━━━🛡️`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score)
-
+			notifyMsg = fmt.Sprintf("🛡️ 电影冒险 · 无伤通关\n\n%s 通关了《%s》(%d)\n\n🎯 %d分 · ❤️ 100%%", userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score)
 		case state.MaxCombo >= 4:
 			shouldNotify = true
-			notifyMsg = fmt.Sprintf(`🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥
-
-⚡ 连击风暴 ⚡
-
-🔥 %s
-🔥 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 %d分  ❤️ %d%%  🔥 x%d 连击
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-连续%d关一选即中
-这部电影他真的看过
-
-🔥━━━━━━━━━━━━━━━━━━━━━━━━━━🔥`,
-				userName, state.MovieInfo.Title, state.MovieInfo.Year,
-				result.Score, displayHP, state.MaxCombo, state.MaxCombo)
-
+			notifyMsg = fmt.Sprintf("🔥 电影冒险 · 连击记录\n\n%s 完成了《%s》(%d)\n\n🎯 %d分 · ❤️ %d%% · 🔥 x%d", userName, state.MovieInfo.Title, state.MovieInfo.Year, result.Score, displayHP, state.MaxCombo)
 		}
 		if shouldNotify && shouldBroadcastAdventure(true, result.Grade, state.PerfectRun, state.MaxCombo, 0, state.TotalLevels) {
 			h.notifyGroup(userName, notifyMsg)
 		}
 	} else if shouldBroadcastAdventure(false, result.Grade, state.PerfectRun, state.MaxCombo, state.Level-1, state.TotalLevels) {
-		h.notifyGroup(userName, fmt.Sprintf(`💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀
-
-⚡ 惜败 · 差一步 ⚡
-
-💀 %s
-💀 《%s》(%d)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-倒在第 %d/%d 关
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-他已经看到了终点的光...
-却在最后一刻倒下了
-要不要帮他一把？
-
-💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀`,
-			userName, state.MovieInfo.Title, state.MovieInfo.Year,
-			state.Level-1, state.TotalLevels))
+		h.notifyGroup(userName, fmt.Sprintf("🎬 电影冒险 · 本次记录\n\n%s 完成至《%s》(%d) 第 %d/%d 关\n\n本次成绩已保存。", userName, state.MovieInfo.Title, state.MovieInfo.Year, state.Level-1, state.TotalLevels))
 	}
 
 	// 发送结果卡片
@@ -1709,9 +1601,9 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		total, successCount, rate := h.socialDB.GetMoviePassRate(state.MovieInfo.Title)
 		if total >= 1 {
 			if total < 5 {
-				globalPassRate = "冒险者寥寥，暂无足够数据统计通关率——你的成败，正在书写历史"
+				globalPassRate = "当前参与记录较少，暂不展示通关率"
 			} else if success {
-				globalPassRate = fmt.Sprintf("全球仅 %.0f%% 的玩家通关了《%s》（%d/%d）", rate, state.MovieInfo.Title, successCount, total)
+				globalPassRate = fmt.Sprintf("当前记录中，%.0f%% 的参与者通关了《%s》（%d/%d）", rate, state.MovieInfo.Title, successCount, total)
 			} else {
 				globalPassRate = fmt.Sprintf("已有 %.0f%% 的参与者尚未完成《%s》的五关挑战", 100-rate, state.MovieInfo.Title)
 			}
@@ -2086,7 +1978,7 @@ func (h *AdventureHandler) sendRewardBlindBox(userID int64, chatID int64, state 
 		})
 	}
 
-	// 🎰 赌注升级：S评级以上才有资格赌（改为DB持久化）
+	// S 评级以上可选择保留当前奖励，或尝试倍率奖励（DB 持久化）。
 	if grade == "SSS" || grade == "SS" || grade == "S" {
 		// 暂存盲盒物品到 DB
 		if h.socialDB != nil {
@@ -2110,7 +2002,7 @@ func (h *AdventureHandler) sendRewardBlindBox(userID int64, chatID int64, state 
 			}(userID)
 		}
 
-		// 发送赌博卡片
+		// 发送倍率奖励选择卡片
 		gambleCard := richmessage.BuildGambleOfferCard(richmessage.GambleOfferCardData{
 			Grade:      grade,
 			ItemCount:  len(views),
@@ -2120,7 +2012,7 @@ func (h *AdventureHandler) sendRewardBlindBox(userID int64, chatID int64, state 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("📦 稳妥收下", "adventure_gamble_safe")
 		kb.NewRow()
-		kb.AddButton("🎰 双倍或归零 (50%)", "adventure_gamble")
+		kb.AddButton("🎰 尝试双倍 (50%)", "adventure_gamble")
 		kb.NewRow()
 		kb.AddButton("✨ 尝试三倍 (30%)", "adventure_gamble_triple")
 

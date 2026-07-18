@@ -6,7 +6,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 )
 
-// DreamHandler 本周梦魇处理器
+// DreamHandler 本周特别挑战处理器
 type DreamHandler struct {
 	socialDB     *services.SocialDB
 	telegram     *services.TelegramClient
@@ -14,7 +14,7 @@ type DreamHandler struct {
 	userMapping  services.UserMappingStore
 }
 
-// NewDreamHandler 创建梦魇处理器
+// NewDreamHandler 创建本周挑战处理器
 func NewDreamHandler(
 	socialDB *services.SocialDB,
 	telegram *services.TelegramClient,
@@ -32,18 +32,18 @@ func NewDreamHandler(
 // HandleCommand 处理 /dream 命令
 func (h *DreamHandler) HandleCommand(chatID, userID int64) {
 	if h.socialDB == nil || h.adventureHdl == nil {
-		h.telegram.SendMessage(chatID, "❌ 梦魇服务未就绪", "", nil)
+		_, _ = h.telegram.SendMessage(chatID, "❌ 本周挑战暂不可用，请稍后再试", "", nil)
 		return
 	}
 
 	wb, err := h.socialDB.GetWeeklyBoss()
 	if err != nil || wb == nil {
-		h.telegram.SendMessage(chatID, "🎪 本周暂无梦魇\n\n梦魇会在每周一自动生成\n敬请期待", "", nil)
+		_, _ = h.telegram.SendMessage(chatID, "🎯 本周挑战尚未更新\n\n新片单会在每周一生成。", "", nil)
 		return
 	}
 
-	text := fmt.Sprintf("🎪 本周梦魇\n━━━━━━━━━━━━━━━━━━━\n本周片单：《%s》 (%d)\n\n难度 +30%% · 奖励翻倍\n准备好就入场，看看能走到哪一幕\n━━━━━━━━━━━━━━━━━━━\n/dream 开始挑战", wb.MovieName, wb.MovieYear)
-	h.telegram.SendMessage(chatID, text, "", nil)
+	text := fmt.Sprintf("🎯 本周挑战\n━━━━━━━━━━━━━━━━━━━\n本周片单：《%s》 (%d)\n\n难度加成 30%% · 通关奖励翻倍\n完成记录会计入本周挑战。\n━━━━━━━━━━━━━━━━━━━", wb.MovieName, wb.MovieYear)
+	_, _ = h.telegram.SendMessage(chatID, text, "", nil)
 
 	// 直接发起冒险（梦魇模式）
 	h.adventureHdl.startWeeklyBossAsync(userID, chatID, wb)

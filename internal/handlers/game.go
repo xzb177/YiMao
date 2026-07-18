@@ -26,7 +26,7 @@ type GameHandler struct {
 	telegram       *services.TelegramClient
 	sessionMgr     *session.Manager
 	emotionSvc     *services.EmotionTimelineService
-	adventureHdl   *AdventureHandler // 求片大冒险
+	adventureHdl   *AdventureHandler // 电影冒险
 	viewingSvc     *services.ViewingHistoryService
 	groupChatID    int64 // 群聊ID，用于发送群通知
 }
@@ -372,7 +372,7 @@ func (h *GameHandler) handleBlindBox(ctx *callback.Context) (*callback.Response,
 	kb.AddButton("🎲 恐怖盲盒", "game_blindbox_horror")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,
@@ -477,7 +477,7 @@ func (h *GameHandler) handleSocialFeed(ctx *callback.Context) (*callback.Respons
 	kb.AddButton("🔄 刷新", "game_social")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
-	kb.AddButton("⬅️ 返回", "start")
+	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
 		RichMessage: card.Markdown,

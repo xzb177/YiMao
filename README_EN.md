@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Dual-Core Telegram Media Request Bot — Subscription Mode: TMDB AI Search → One-Click Subscribe / Adventure Mode: AI-Generated Five-Level Hell Challenge → Priority Request. Deep MoviePilot + Emby/Jellyfin Integration.**
+**Telegram media request assistant focused on search, subscription, progress tracking, and library notifications, with an optional five-stage movie adventure. Deep MoviePilot + Emby/Jellyfin integration.**
 
 [中文](README.md) · [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org) [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com) [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -14,36 +14,39 @@
 
 YiMao (云海求片助手) is a Telegram Bot that integrates the complete media request lifecycle — search → subscribe → track → notify — into a single chat interface. Deeply integrated with [MoviePilot](https://github.com/jxxghp/MoviePilot), powered by [TMDB](https://www.themoviedb.org) metadata, with optional [Emby](https://emby.media) / [Jellyfin](https://jellyfin.org) integration for media library checking and import notifications.
 
-**Dual-Core Architecture**
+**Clear Product Hierarchy**
 
+```text
+Default path:
+  🔍 Search & Request — Search → One-click Subscribe → Track → Notify
+
+Optional activity:
+  ⚔️ Movie Adventure — Five interactive stages → Auto-submit after completion
 ```
-Request a Movie → Two Paths:
-  🔍 Normal Request — Search → One-click Subscribe
-  ⚔️ Adventure Mode — 5-Level Hell Challenge → Survive → Auto-Submit Priority Request
-```
+
+Search & Request is always available and never requires playing the adventure.
 
 ---
 
 ## Core Features
 
-### 🔍 Normal Request
+### 🔍 Search & Request
 - Send a movie/show name (Chinese or English), bot returns TMDB search results
 - Detail view with overview, year, rating, genres, poster
 - One-click subscribe with quota checking and duplicate detection
 - Series support with season selection
 
-### ⚔️ Adventure Mode
-- **5-Level Hell Challenge**: Trial → Crossroads → Judgment → Sacrifice → Finale
-- AI-generated scenes with TMDB deep data (keywords, cast, director, taglines)
-- 4 options per level, all look correct — only 1 is right
-- Two wrong choices = death. Target completion rate < 10%
-- **Psychology-driven**: Social proof, loss aversion, sunk cost, scarcity, streak system
-- Clear it → auto-submit request with **priority processing**
-- Leaderboard, daily challenges, reward blind boxes
+### ⚔️ Movie Adventure (Optional)
+- Five interactive stages: Discovery → Turning Point → Conflict → Choice → Finale
+- AI-generated scenes grounded in TMDB metadata (keywords, cast, director, taglines)
+- Four close options per stage, judged through plot and character clues
+- Keeps HP, combos, ratings, and progress records
+- Completion automatically submits the request; direct search remains available at any time
+- Leaderboard, daily challenges, and reward blind boxes
 
 ### 🎮 Game Center
 - Adventure Leaderboard (TOP10 rankings)
-- Daily Challenge (social comparison mode)
+- Daily Challenge (one shared movie prompt per day)
 - Reward Blind Box (free after adventure completion)
 - Intelligence Station (AI movie narration)
 - Personal stats, streak tracking, achievement system
@@ -81,14 +84,14 @@ Request a Movie → Two Paths:
 | Command | Description | Access |
 |---------|-------------|--------|
 | `/start` | Main menu | All |
-| `/search` | Search mode | All |
-| `/adventure` | Adventure mode (5-level challenge) | All |
+| `/search` | Search & Request | All |
+| `/adventure` | Movie Adventure (five stages) | All |
 | `/game` | Game center | All |
 | `/wish` | Wish pool | All |
-| `/requests` | My requests | All |
+| `/requests` | Request progress | All |
 | `/quota` | Check quota | All |
 | `/link` | Bind MoviePilot account | All |
-| `/portrait` | Soul portrait | All |
+| `/portrait` | Viewing profile | All |
 | `/help` | Help | All |
 
 ---

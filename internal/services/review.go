@@ -43,7 +43,7 @@ type ReviewRequest struct {
 
 	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
 	// 当 Status=="approved" 但提交 MP 失败时，进入 stuck 兜底（而不是凭空消失），
-	// 让管理员可见、可手动重试，用户在「我的请求」也能看到「同步中/重试」。
+	// 让管理员可见、可手动重试，用户在「求片进度」也能看到「同步中/重试」。
 	RetryCount int    `json:"retry_count,omitempty"` // 已重试次数
 	LastError  string `json:"last_error,omitempty"`  // 最近一次提交 MP 的错误
 	Stuck      bool   `json:"stuck,omitempty"`       // 审核通过但提交 MP 失败，卡住待处理
@@ -654,7 +654,7 @@ func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID 
 
 // MarkStuck 记录「审核已通过但提交 MoviePilot 失败」的兜底状态。
 // 不改变 Status（仍为 approved），仅累加 RetryCount + 记录 LastError + 置 Stuck，
-// 这样请求不会凭空消失：管理员面板可见、可手动重试，用户在「我的请求」也能看到。
+// 这样请求不会凭空消失：管理员面板可见、可手动重试，用户在「求片进度」也能看到。
 const MaxApproveRetry = 3
 
 func isNonRetryableApproveError(errMsg string) bool {
