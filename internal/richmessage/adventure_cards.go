@@ -27,10 +27,10 @@ type AdventureSceneCardData struct {
 	Score       int
 	IsBoss      bool
 	LastResult  string // 上一关的结果反馈（内嵌，不单独发卡片）
-	// 心理学数据
-	DeathRate   string // "73% 的人死在这一关"
-	OptionStats string // "📊 A 35% | B 15% | C 42% | D 8%"
-	TimeUrgency string // "⚡ 思考时间：30秒"
+	// 关卡辅助信息（保留字段名以兼容现有调用）
+	DeathRate   string // 难度提示
+	OptionStats string // 可选的真实选项统计
+	TimeUrgency string // 节奏提示
 }
 
 type AdventureChoiceView struct {
@@ -94,7 +94,7 @@ func BuildAdventureSceneCard(data AdventureSceneCardData) RichMessage {
 		b.Italic(fmt.Sprintf("💡 %s", data.Hint))
 	}
 
-	// 心理学数据：社交证明 + 时间压力
+	// 关卡辅助信息
 	if data.DeathRate != "" || data.OptionStats != "" || data.TimeUrgency != "" {
 		b.Divider()
 		if data.DeathRate != "" {
@@ -189,16 +189,16 @@ func BuildAdventureShareCard(data AdventureShareCardData) RichMessage {
 			b.Italic("险象环生，但他挺过来了")
 		}
 	} else {
-		// 失败炫耀（惜败也有面子）
-		b.BoldParagraph(fmt.Sprintf("💀 %s 在《%s》的求片大冒险中惜败", data.UserName, data.MovieTitle))
-		b.Paragraph(fmt.Sprintf("⚔️ 倒在第 %d/%d 关  🎯 %d分", data.Level, data.TotalLevels, data.Score))
+		// 未通关记录
+		b.BoldParagraph(fmt.Sprintf("🎬 %s 完成了《%s》的一次电影冒险", data.UserName, data.MovieTitle))
+		b.Paragraph(fmt.Sprintf("⚔️ 进度 %d/%d 关  🎯 %d分", data.Level, data.TotalLevels, data.Score))
 
 		if data.Level >= 4 {
-			b.Italic("差一步就通关了... 这个人有实力")
+			b.Italic("已经非常接近终点，期待下一次记录。")
 		} else if data.Level >= 3 {
-			b.Italic("走到了深渊边缘，差一点就能看到真相")
+			b.Italic("进入了后半程，也看见了更多剧情线索。")
 		} else {
-			b.Italic("这部电影比想象中要难...")
+			b.Italic("一次新的尝试，记录已经保留。")
 		}
 	}
 
@@ -245,28 +245,27 @@ func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 	}
 	b.Divider()
 
-	// ☠️ 宿敌标记
+	// 再次挑战记录
 	if data.NemesisCount > 0 {
 		if data.NemesisCount == 1 {
-			b.BoldParagraph("☠️ 宿敌！这部电影击败过你 1 次")
+			b.BoldParagraph("↻ 再次挑战 · 你曾在这部影片中止步 1 次")
 		} else {
-			b.BoldParagraph(fmt.Sprintf("☠️ 宿敌！这部电影已经击败你 %d 次", data.NemesisCount))
+			b.BoldParagraph(fmt.Sprintf("↻ 再次挑战 · 你曾在这部影片中止步 %d 次", data.NemesisCount))
 		}
 		b.Divider()
 	}
 
-	// 游戏规则 — 带上心理学钩子
-	b.BoldParagraph("📜 冒险规则")
-	b.Paragraph("  • 你将化身这部电影的主角")
-	b.Paragraph("  • 5道关卡，难度逐级递增")
-	b.Paragraph("  • 每关4个选项，每个都看起来非常合理")
-	b.Paragraph("  • ❤️ 生命值100，选错扣45-60HP")
-	b.Paragraph("  • ⚠️ 两次失误即死，没有犯错空间")
-	b.Paragraph("  • 陷阱选项看起来最正确——这正是它的危险之处")
+	b.BoldParagraph("📜 玩法说明")
+	b.Paragraph("  • 以主角视角进入影片情境")
+	b.Paragraph("  • 共 5 关，难度逐步提升")
+	b.Paragraph("  • 每关提供 4 个相近选项")
+	b.Paragraph("  • ❤️ 初始生命值 100，失误会扣除生命值")
+	b.Paragraph("  • 生命值归零后，本次挑战结束")
+	b.Paragraph("  • 完成五关后，系统自动提交求片")
 	b.Divider()
 
-	b.BoldParagraph("🎬 你对这部电影记得多深？")
-	b.Italic("  只有通关才能提交求片请求")
+	b.BoldParagraph("🎬 准备好进入这部影片了吗？")
+	b.Italic("这是可选玩法；普通求片可随时从主菜单直接使用。")
 
 	return b.Build()
 }
@@ -294,10 +293,10 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 	b := NewBuilder()
 
 	if data.IsDead {
-		b.Heading("💀 生命耗尽", 2)
+		b.Heading("本次挑战结束", 2)
 		b.BoldParagraph(fmt.Sprintf("💥 %s", data.ChoiceResult))
 		b.Divider()
-		b.Paragraph(fmt.Sprintf("❤️ 0%% — 你倒在了第 %d/%d 关", data.Level, data.TotalLevels))
+		b.Paragraph(fmt.Sprintf("❤️ 0%% · 进度停在第 %d/%d 关", data.Level, data.TotalLevels))
 
 		// 真相时刻：展示正确答案
 		if data.CorrectAnswer != "" {
@@ -485,11 +484,11 @@ type AdventureFailCardData struct {
 func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("💀 冒险失败", 2)
+	b.Heading("本次冒险结束", 2)
 	b.BoldParagraph(fmt.Sprintf("🎬 %s (%d)", data.MovieTitle, data.MovieYear))
 
-	// 死因
-	b.Paragraph(fmt.Sprintf("☠️ %s", data.DeathReason))
+	// 结束原因
+	b.Paragraph(fmt.Sprintf("📝 %s", data.DeathReason))
 	b.Divider()
 
 	// 最后一刻
@@ -499,7 +498,7 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 
 	// 结算
 	b.Heading("📊 冒险结算", 3)
-	b.Paragraph(fmt.Sprintf("⚔️ 倒在第 %d/%d 关", data.Level, data.TotalLevels))
+	b.Paragraph(fmt.Sprintf("⚔️ 完成至第 %d/%d 关", data.Level, data.TotalLevels))
 	b.Paragraph(fmt.Sprintf("🎯 得分：%d  %s", data.Score, data.Grade))
 	b.Paragraph(fmt.Sprintf("🔥 最高连击：x%d", data.MaxCombo))
 	if data.Stats != "" {
@@ -520,18 +519,17 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 		b.Divider()
 	}
 
-	// 心理学钩子：近因效应 + 损失厌恶
-	nearMiss := ""
+	progressNote := ""
 	switch {
 	case data.Level >= 4:
-		nearMiss = "你已经看到了终点的光... 就差这一步"
+		progressNote = "已经接近终点，下次可以从现有线索继续判断"
 	case data.Level >= 3:
-		nearMiss = "已经走进后半场，线索也更清楚了"
+		progressNote = "你已进入后半程，对影片脉络也更熟悉了"
 	default:
-		nearMiss = "这部电影比你想象的要复杂，但你已经学到了关键线索"
+		progressNote = "这部影片比预想中更复杂，但关键线索已经出现"
 	}
-	b.BoldParagraph(fmt.Sprintf("🔄 %s", nearMiss))
-	b.Italic("求片请求未提交——只有通关才能求片")
+	b.BoldParagraph(fmt.Sprintf("🔄 %s", progressNote))
+	b.Italic("本次未自动提交；如需直接求片，可返回主菜单选择「搜索求片」。")
 
 	// 惜败安慰：第4-5关失败给安慰奖
 	if data.Level >= 4 {
@@ -624,18 +622,18 @@ type AdventureReviveCardData struct {
 func BuildAdventureReviveCard(data AdventureReviveCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("🩸 命悬一线", 2)
+	b.Heading("继续挑战", 2)
 	b.BoldParagraph(fmt.Sprintf("🎬 %s · 第 %d/%d 关", data.MovieTitle, data.Level, data.TotalLevels))
 	b.Divider()
 
-	b.Paragraph(fmt.Sprintf("💀 你受到了 %d 点伤害，生命值归零", data.Damage))
+	b.Paragraph(fmt.Sprintf("❤️ 本次失误扣除 %d 点，当前生命值为 0", data.Damage))
 	if data.CorrectAnswer != "" {
 		b.Italic(fmt.Sprintf("正确答案是：%s", data.CorrectAnswer))
 	}
 	b.Divider()
 
 	b.BoldParagraph("🩸 今日免费复活可用")
-	b.Paragraph("  每天第1次在第1-3关死亡时")
+	b.Paragraph("  每天第1次在第1-3关结束挑战时")
 	b.Paragraph("  可以免费复活 · HP恢复到 30")
 	b.Paragraph("  点击后恢复 30 HP，并重新挑战当前关卡")
 	b.Divider()
@@ -666,12 +664,12 @@ func BuildGambleOfferCard(data GambleOfferCardData) RichMessage {
 	b.Divider()
 
 	b.BoldParagraph("你怎么选？")
-	b.Paragraph("  📦 稳妥收下 — 落袋为安，零风险")
-	b.Paragraph("  🎰 双倍或归零 — 50% 翻倍 / 50% 归零")
-	b.Paragraph("  💀 三倍豪赌 — 30% 三倍 / 70% 腰斩")
+	b.Paragraph("  📦 稳妥收下 — 保留当前奖励")
+	b.Paragraph("  🎰 尝试翻倍 — 50% 翻倍 / 50% 归零")
+	b.Paragraph("  ✨ 尝试三倍 — 30% 三倍 / 70% 减半")
 	b.Divider()
 
-	b.Italic("要么稳稳地走，要么玩命地赌")
+	b.Italic("按自己的节奏选择，保留当前奖励也很好。")
 
 	return b.Build()
 }

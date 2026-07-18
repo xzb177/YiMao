@@ -19,7 +19,7 @@ import (
 )
 
 // ============================================================
-//  求片大冒险 v2 — 上瘾引擎
+//  求片大冒险 v2 — 电影互动处理器
 // ============================================================
 
 const (
@@ -495,7 +495,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 	}
 
 	return &callback.Response{
-		RichMessage: fmt.Sprintf("## ⚔️ 求片大冒险\n\n请发送你想求的电影或剧集名称。\n\n**例如**：`流浪地球` 或 `权力的游戏`\n\n> 只有通关才能提交求片请求。每关 4 个选项；普通失误重伤，陷阱和 Boss 会更致命。读懂线索再出手。\n\n%s", passRateText),
+		RichMessage: fmt.Sprintf("## ⚔️ 趣味求片 · 电影冒险\n\n请发送你想求的电影或剧集名称。\n\n**例如**：`流浪地球` 或 `权力的游戏`\n\n> 这是可选的五关互动玩法。完成后会自动提交求片；如想直接求片，请返回主菜单选择「搜索求片」。\n\n%s", passRateText),
 	}, nil
 }
 
@@ -776,7 +776,7 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 		}
 	}
 
-	// 🔪 复仇模式检查：上次在第3关后死亡，这次跳过第1关
+	// 继续挑战：上次到达第3关后结束，本次从第2关开始
 	startLevel := 1
 	vengeanceMsg := ""
 	if oldState != nil && oldState.Level >= 3 && oldState.HP <= 0 && movieName != "" {
@@ -784,7 +784,7 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 		if h.socialDB != nil {
 			if failedLevel := h.socialDB.GetLastFailedLevel(ctx.UserID, movieName); failedLevel >= 3 {
 				startLevel = 2
-				vengeanceMsg = fmt.Sprintf("🔪 **复仇模式激活！**\n\n你上次倒在第 %d 关——这次从第 2 关开始\n跳过试炼，直奔复仇\n\n⚠️ 只能跳一次，这关再死就从头来", failedLevel)
+				vengeanceMsg = fmt.Sprintf("↻ **继续挑战**\n\n你上次完成至第 %d 关，本次可从第 2 关开始。\n已为你保留一次进度回馈。", failedLevel)
 			}
 		}
 	}
@@ -1235,15 +1235,15 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		sender.SendMessage(preMsg, "Markdown", nil)
 	}
 
-	// 宿敌警告
+	// 再次挑战提示
 	if nemesisCount > 0 {
-		var nemesisMsg string
+		var retryMsg string
 		if nemesisCount == 1 {
-			nemesisMsg = fmt.Sprintf("☠️ **注意！《%s》击败过你 1 次 —— 这次能复仇吗？**", movieInfo.Title)
+			retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你曾在这里止步 1 次，这次可以带着上次的线索继续。", movieInfo.Title)
 		} else {
-			nemesisMsg = fmt.Sprintf("☠️ **宿敌警报！《%s》已经击败你 %d 次了！**", movieInfo.Title, nemesisCount)
+			retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你已尝试过 %d 次，每一次记录都为你保留。", movieInfo.Title, nemesisCount)
 		}
-		sender.SendMessage(nemesisMsg, "Markdown", nil)
+		sender.SendMessage(retryMsg, "Markdown", nil)
 	}
 
 	// 生成起始关
@@ -1712,7 +1712,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 			} else if success {
 				globalPassRate = fmt.Sprintf("全球仅 %.0f%% 的玩家通关了《%s》（%d/%d）", rate, state.MovieInfo.Title, successCount, total)
 			} else {
-				globalPassRate = fmt.Sprintf("你不是一个人——%.0f%% 的人也倒在了《%s》面前", 100-rate, state.MovieInfo.Title)
+				globalPassRate = fmt.Sprintf("已有 %.0f%% 的参与者尚未完成《%s》的五关挑战", 100-rate, state.MovieInfo.Title)
 			}
 		}
 	}
@@ -1907,42 +1907,22 @@ func (h *AdventureHandler) notifyGroup(userName, message string) {
 
 // sendRewardBlindBox 通关奖励：免费开盲盒
 
-// generatePsychoData 生成心理学数据（社交证明 + 时间压力）
-func generatePsychoData(level, totalLevels, choiceCount int) (deathRate, optionStats, timeUrgency string) {
-	// 死亡率：关卡越高死亡率越高（模拟数据，但要看起来真实）
-	deathRates := map[int]string{
-		1: "💀 32% 的人死在这一关",
-		2: "💀 51% 的人死在这一关",
-		3: "💀 68% 的人死在这一关",
-		4: "💀 81% 的人死在这一关",
-		5: "💀 89% 的人死在这一关",
+// generatePsychoData 生成中性的关卡难度与节奏提示。
+// 保留原返回结构以兼容卡片渲染，但不展示模拟的玩家死亡率或选项分布。
+func generatePsychoData(level, totalLevels, choiceCount int) (difficulty, optionStats, paceHint string) {
+	if totalLevels <= 0 {
+		totalLevels = adventureMaxLevels
 	}
-	deathRate = deathRates[level]
-	if deathRate == "" {
-		deathRate = fmt.Sprintf("💀 %d%% 的人死在这一关", 50+level*8)
+	if level < 1 {
+		level = 1
+	}
+	if level > totalLevels {
+		level = totalLevels
 	}
 
-	// 选项分布：正确选项的被选率最低（模拟数据）
-	// 正确选项通常是第3个（index 2），被选率最低
-	distributions := map[int]string{
-		1: "📊 选项分布：A 35% | B 25% | C 15% | D 25%",
-		2: "📊 选项分布：A 28% | B 32% | C 18% | D 22%",
-		3: "📊 选项分布：A 25% | B 30% | C 20% | D 25%",
-		4: "📊 选项分布：A 30% | B 25% | C 22% | D 23%",
-		5: "📊 选项分布：A 28% | B 27% | C 23% | D 22%",
-	}
-	optionStats = distributions[level]
-
-	// 时间压力：关卡越高时间越短
-	timeLimits := map[int]string{
-		1: "⏱️ 建议思考时间：60秒",
-		2: "⏱️ 建议思考时间：45秒",
-		3: "⚡ 建议思考时间：30秒",
-		4: "⚡ 建议思考时间：20秒",
-		5: "🔥 建议思考时间：15秒",
-	}
-	timeUrgency = timeLimits[level]
-
+	difficulty = fmt.Sprintf("🎬 关卡难度：%d/%d", level, totalLevels)
+	optionStats = ""
+	paceHint = "按自己的节奏阅读线索，不限作答时间"
 	return
 }
 

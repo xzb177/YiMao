@@ -108,16 +108,17 @@ func BuildWelcomeMessage(userName string) RichMessage {
 		builder.Heading("🎬 云海求片助手", 2)
 	}
 
-	builder.BoldParagraph("求片也能闯关⚔️ 通关才给下载")
+	builder.BoldParagraph("想看的，交给云海")
+	builder.Paragraph("搜索、求片、追踪与入库通知，都在这里完成。")
 	builder.Divider()
 
 	// Quick guide
-	guide := "🔍 普通求片 — 发片名直接搜索订阅\n⚔️ 趣味求片 — 5关地狱难度闯关，通关才能求片\n🎮 游戏中心 — 排行榜 · 每日挑战 · 通关盲盒"
+	guide := "🔍 普通求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n⚔️ 趣味求片 — 可选的五关电影互动玩法"
 	builder.Paragraph(guide)
 	builder.Divider()
 
 	// Tips (collapsible)
-	tips := "• 支持电影、剧集、综艺、纪录片\n• 通关冒险自动提交求片，优先处理\n• 下载完成 + Emby 入库后私聊通知\n• 输入 /game 进入游戏中心"
+	tips := "• 支持电影、剧集、综艺与纪录片\n• 普通求片无需参与互动玩法\n• 趣味求片通关后会自动提交请求\n• 下载完成并入库后，将收到私聊通知"
 	builder.Details("💡 使用技巧", tips, false)
 
 	return builder.Build()

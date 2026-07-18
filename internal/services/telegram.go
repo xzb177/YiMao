@@ -1311,15 +1311,15 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
-	kb.AddButton("🔍 普通求片", "start_search")
-	kb.AddButton("⚔️ 趣味求片", "adventure_start")
-	kb.NewRow()
+	kb.AddButton("🔍 搜索求片", "start_search")
 	kb.AddButton("📊 求片进度", "start_requests")
+	kb.NewRow()
 	if showWish {
 		kb.AddButton("✨ 许愿池", "start_wish")
 	}
-	kb.NewRow()
 	kb.AddButton("🧠 观影画像", "start_portrait")
+	kb.NewRow()
+	kb.AddButton("⚔️ 趣味求片", "adventure_start")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
 	kb.AddButton("⚙️ 设置", "start_settings")

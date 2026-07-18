@@ -471,6 +471,7 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 云海游戏中心", 2)
+	builder.Italic("这里是求片之外的可选玩法，不影响普通求片。")
 
 	// 🔥 连胜火焰
 	if streakCurrent > 0 {
@@ -482,27 +483,27 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 		} else if streakCurrent >= 3 {
 			fireEmoji = "⚡🔥" // 银焰
 		}
-		builder.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天 （最佳：%d 天）", fireEmoji, streakCurrent, streakBest))
+		builder.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天 · 最佳 %d 天", fireEmoji, streakCurrent, streakBest))
 	} else {
-		builder.Italic("今天还没有通关，来打破沉默？")
+		builder.Italic("今天尚无通关记录，想玩时再来。")
 	}
 	builder.Divider()
 
-	builder.BoldParagraph("⚔️ 今晚就玩真的")
-	builder.Paragraph("  求片大冒险 — 选一部片，闯完 5 关直接提交求片")
-	builder.Paragraph("  🎯 今日挑战 — 每天同一道擂台题，赢了计入战绩")
+	builder.BoldParagraph("⚔️ 互动玩法")
+	builder.Paragraph("  求片大冒险 — 选择一部影片，完成五关后自动提交求片")
+	builder.Paragraph("  🎯 今日挑战 — 每日一道共同题目，成绩计入战绩")
 	builder.Divider()
 
-	builder.BoldParagraph("🏆 有记录，才有输赢")
-	builder.Paragraph("  📊 冒险排行 — 只统计真实通关成绩")
-	builder.Paragraph("  📈 我的战绩 — 胜场、最高分、连胜和最近对局")
+	builder.BoldParagraph("📊 成绩记录")
+	builder.Paragraph("  冒险排行 — 查看真实通关成绩")
+	builder.Paragraph("  我的战绩 — 胜场、最高分、连胜与最近记录")
 	builder.Divider()
 
-	builder.BoldParagraph("📖 卡关再看")
-	builder.Paragraph("  电影情报站 — 输入片名，先补背景再继续挑战")
+	builder.BoldParagraph("📖 电影情报")
+	builder.Paragraph("  电影情报站 — 输入片名，了解背景与剧情线索")
 	builder.Divider()
 
-	builder.Italic("游戏中心只保留能产生真实战绩的玩法")
+	builder.Italic("随时可以返回主菜单，直接使用普通求片。")
 
 	return builder.Build()
 }

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**双核心 Telegram 影视求片机器人 — 订阅模式：TMDB 智能搜索一键订阅 / 趣味求片模式：AI 生成五层地狱闯关，通关解锁优先求片。深度集成 MoviePilot + Emby/Jellyfin。**
+**Telegram 影视求片助手 — 以搜索、订阅、追踪与入库通知为核心，并提供可选的电影互动玩法。深度集成 MoviePilot + Emby/Jellyfin。**
 
 [English](README_EN.md) · [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org) [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com) [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -14,13 +14,17 @@
 
 云海求片助手 (YiMao) 是一款 Telegram Bot，将影视求片全流程——搜索 → 订阅 → 追踪 → 通知——整合到单一聊天界面。深度集成 [MoviePilot](https://github.com/jxxghp/MoviePilot)，基于 [TMDB](https://www.themoviedb.org) 元数据，可选集成 [Emby](https://emby.media) / [Jellyfin](https://jellyfin.org) 实现媒体库检查和入库通知。
 
-**双核心架构**
+**清晰的主次结构**
 
+```text
+默认路径：
+  🔍 普通求片 — 搜索 → 一键订阅 → 进度追踪 → 入库通知
+
+可选玩法：
+  ⚔️ 趣味求片 — 五关电影互动 → 通关后自动提交求片
 ```
-求片 → 两种路径：
-  🔍 普通求片 — 搜索 → 一键订阅
-  ⚔️ 趣味求片 — 五层地狱闯关 → 通关 → 自动提交优先求片
-```
+
+普通求片始终可以直接使用，无需参与互动玩法。
 
 ---
 
@@ -32,14 +36,13 @@
 - 一键订阅，含配额检查和重复检测
 - 剧集支持季选择
 
-### ⚔️ 趣味求片
-- **五层地狱闯关**：试炼 → 岔路 → 审判 → 献祭 → 终章
+### ⚔️ 趣味求片（可选）
+- 五关电影互动：发现 → 转折 → 冲突 → 抉择 → 终章
 - AI 生成场景，融入 TMDB 深度数据（关键词、演员、导演、标语）
-- 每层 4 选项，全部看似正确——仅 1 个为真
-- 两次选错 = 死亡。目标通关率 < 10%
-- **心理学驱动**：社会认同、损失厌恶、沉没成本、稀缺性、连击系统
-- 通关 → 自动提交求片，**优先处理**
-- 排行榜、每日挑战、奖励盲盒
+- 每关 4 个相近选项，通过剧情与人物线索作出判断
+- 保留生命值、连击、评分与进度记录
+- 通关后自动提交求片；未通关也可返回主菜单直接使用普通求片
+- 排行榜、每日挑战与奖励盲盒
 
 ### 🎮 游戏中心
 - 冒险排行（TOP10 排名）

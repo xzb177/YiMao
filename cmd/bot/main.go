@@ -634,9 +634,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 						// 文案变化：根据冷却状态调整语气
 						var msg string
 						if _, remindedBefore := lastReminded[uid]; remindedBefore {
-							msg = fmt.Sprintf("⚔️ %s，宿敌还在周榜上等你…\n\n有空就回来复仇吧，你的记录还在。\n\n/go 一键开战", userName)
+							msg = fmt.Sprintf("⚔️ %s，你的冒险记录仍在周榜上。\n\n有空时，欢迎回来继续挑战。\n\n/go 开始冒险", userName)
 						} else {
-							msg = fmt.Sprintf("⚔️ 你的宿敌还在等你…\n\n%s，自从上次冒险已经过去许久了。\n你的宿敌还在周榜上——不来复仇吗？\n\n/go 一键开战", userName)
+							msg = fmt.Sprintf("⚔️ %s，好久不见。\n\n上次的冒险记录还为你保留着；想继续时，随时回来。\n\n/go 开始冒险", userName)
 						}
 						deps.Telegram.SendMessage(uid, msg, "", nil)
 						lastReminded[uid] = time.Now()
