@@ -519,7 +519,7 @@ func BuildAdventureFailCard(data AdventureFailCardData) RichMessage {
 		b.Divider()
 	}
 
-	progressNote := ""
+	var progressNote string
 	switch {
 	case data.Level >= 4:
 		progressNote = "已经接近终点，下次可以从现有线索继续判断"

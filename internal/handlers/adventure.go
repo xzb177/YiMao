@@ -1243,7 +1243,7 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		} else {
 			retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你已尝试过 %d 次，每一次记录都为你保留。", movieInfo.Title, nemesisCount)
 		}
-		sender.SendMessage(retryMsg, "Markdown", nil)
+		_, _ = sender.SendMessage(retryMsg, "Markdown", nil)
 	}
 
 	// 生成起始关
