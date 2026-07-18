@@ -701,11 +701,12 @@ func BuildGambleResultCard(data GambleResultCardData) RichMessage {
 	b.BoldParagraph(fmt.Sprintf("🏆 %s · 《%s》", data.Grade, data.MovieTitle))
 	b.Divider()
 
-	if data.Won {
+	switch {
+	case data.Won:
 		b.BoldParagraph(fmt.Sprintf("本次获得 %d 个盲盒", len(data.Items)))
-	} else if len(data.Items) > 0 {
+	case len(data.Items) > 0:
 		b.BoldParagraph(fmt.Sprintf("本次保留 %d 个盲盒", len(data.Items)))
-	} else {
+	default:
 		b.Paragraph("本次结果：当前奖励归零")
 	}
 
