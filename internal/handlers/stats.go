@@ -38,7 +38,7 @@ func (h *StatsHandler) HandleCommand(chatID, userID int64) {
 	userName := h.getUserName(userID)
 
 	if total == 0 {
-		h.telegram.SendMessage(chatID, "📈 暂无冒险记录\n\n发送 /adventure 开始第一次电影冒险。", "", nil)
+		_, _ = h.telegram.SendMessage(chatID, "📈 暂无冒险记录\n\n发送 /adventure 开始第一次电影冒险。", "", nil)
 		return
 	}
 

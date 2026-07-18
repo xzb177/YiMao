@@ -563,7 +563,7 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 
 	// 群组隐私保护：群内引导去私聊
 	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
-		telegram.SendMessage(msg.Chat.ID, "🔒 观影画像包含私人观影记录，请私聊机器人查看。", "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "🔒 观影画像包含私人观影记录，请私聊机器人查看。", "", nil)
 		return
 	}
 
@@ -574,7 +574,7 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	}
 	mpUsername, err := userMapping.GetMoviePilotUsername(msg.From.ID)
 	if err != nil || mpUsername == "" {
-		telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号（/link），再生成观影画像", "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号（/link），再生成观影画像", "", nil)
 		return
 	}
 
