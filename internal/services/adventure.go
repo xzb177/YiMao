@@ -13,7 +13,7 @@ import (
 )
 
 // ============================================================
-//  求片大冒险 v2 — 电影互动关卡引擎
+//  电影冒险 v2 — 电影互动关卡引擎
 // ============================================================
 
 // AdventureScene 一个关卡场景
@@ -421,7 +421,7 @@ func (s *AdventureService) searchEmby(query string) (*MovieInfo, error) {
 
 // GenerateScene 生成指定关卡的场景
 func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels int, history []string, hp int) (*AdventureScene, error) {
-	stageNames := map[int]string{1: "序章·试炼", 2: "迷局·抉择", 3: "深渊·审判", 4: "黑暗·献祭", 5: "终局·命运"}
+	stageNames := map[int]string{1: "序章·发现", 2: "转折·选择", 3: "冲突·判断", 4: "抉择·理解", 5: "终章·回响"}
 	stageName := stageNames[level]
 	if stageName == "" {
 		stageName = fmt.Sprintf("第%d关", level)
@@ -976,7 +976,7 @@ func truncate(s string, maxLen int) string {
 
 // GenerateFallbackScene 模板兜底场景（类型感知版）
 func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, totalLevels int) *AdventureScene {
-	stageNames := map[int]string{1: "序章·试炼", 2: "迷局·抉择", 3: "深渊·审判", 4: "黑暗·献祭", 5: "终局·命运"}
+	stageNames := map[int]string{1: "序章·发现", 2: "转折·选择", 3: "冲突·判断", 4: "抉择·理解", 5: "终章·回响"}
 	stageName := stageNames[level]
 	if stageName == "" {
 		stageName = fmt.Sprintf("第%d关", level)
@@ -1122,9 +1122,9 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 			Hint: "在这部电影里，眼见不一定为实",
 		},
 		4: {
-			Level: 4, TotalLevels: totalLevels, Title: "献祭时刻", StageName: stageName,
+			Level: 4, TotalLevels: totalLevels, Title: "关键抉择", StageName: stageName,
 			Atmosphere:  atmosphere,
-			Description: fmt.Sprintf(`《%s》的终章前奏。%s。你手中握着改变一切的钥匙——但每一扇门背后都是未知的代价。时间不多了。`, title, prefix),
+			Description: fmt.Sprintf(`《%s》的终章前奏。%s。你手中握着改变局面的线索，每个选项都对应不同的人物动机。先回想角色一路以来的选择，再作判断。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
 				{Text: trap.trap2, Correct: false, Result: trap.result2},
@@ -1134,9 +1134,9 @@ func (s *AdventureService) GenerateFallbackScene(info *MovieInfo, level int, tot
 			Hint: directorHint,
 		},
 		5: {
-			Level: 5, TotalLevels: totalLevels, Title: "终局审判", StageName: stageName,
+			Level: 5, TotalLevels: totalLevels, Title: "终章回响", StageName: stageName,
 			Atmosphere:  atmosphere,
-			Description: fmt.Sprintf(`最后的时刻。《%s》的一切都汇聚于此。%s。你的每一个选择都承载着之前的全部重量。这不是选择题——这是命运的终极审判。`, title, prefix),
+			Description: fmt.Sprintf(`最后的时刻。《%s》的一切都汇聚于此。%s。之前出现过的线索会在这里彼此照应；理解角色真正想守住的东西，再作出最后选择。`, title, prefix),
 			Choices: []AdventureChoice{
 				{Text: trap.trap1, Correct: false, Result: trap.result1, IsTrap: true},
 				{Text: trap.trap2, Correct: false, Result: trap.result2},

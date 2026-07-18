@@ -17,6 +17,17 @@ func TestGlobalUserCopyGuard(t *testing.T) {
 		"通关率不到 10%",
 		"大多数人在第2关就会倒下",
 		"⬅️ 返回主菜单",
+		"通关才给下载",
+		"只有通关才能求片",
+		"云海影视助手",
+		"灵魂画像",
+		"宿敌警报",
+		"复仇模式激活",
+		"三倍豪赌",
+		"死神今天放你一马",
+		"这是碾压",
+		"无人能及",
+		"真正的主角",
 	}
 	var checked int
 	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {

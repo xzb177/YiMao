@@ -111,7 +111,7 @@ func (h *GameHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		"game_roulette", "game_review":
 		return &callback.Response{CallbackMsg: "🚧 该功能已升级，请从游戏中心进入", ShowAlert: true}, nil
 	case "game_contract":
-		return &callback.Response{CallbackMsg: "⚔️ 契约玩法已下线，请使用「求片大冒险」", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "⚔️ 契约玩法已下线，请使用「电影冒险」", ShowAlert: true}, nil
 	default:
 		return nil, fmt.Errorf("unknown game action: %s", action)
 	}

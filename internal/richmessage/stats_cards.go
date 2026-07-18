@@ -217,12 +217,12 @@ type AdventureRankCardData struct {
 func BuildAdventureRankCard(data AdventureRankCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("📊 冒险排行榜", 2)
-	b.Italic("谁是最强影迷？用实力说话")
+	b.Heading("📊 冒险排行", 2)
+	b.Italic("按真实通关成绩排列，每周更新。")
 	b.Divider()
 
 	if len(data.TopPlayers) == 0 {
-		b.Italic("还没有人通关过... 你要做第一个吗？")
+		b.Italic("本周暂无通关记录。")
 		return b.Build()
 	}
 
@@ -246,7 +246,7 @@ func BuildAdventureRankCard(data AdventureRankCardData) RichMessage {
 	}
 
 	b.Divider()
-	b.Italic(fmt.Sprintf("👤 %s — 向排行榜发起冲击！", data.UserName))
+	b.Italic(fmt.Sprintf("👤 %s · 完成冒险后，成绩会自动计入排行。", data.UserName))
 
 	return b.Build()
 }
@@ -272,7 +272,7 @@ func BuildDailyChallengeCard(data DailyChallengeCardData) RichMessage {
 	b := NewBuilder()
 
 	b.Heading("🎯 今日挑战", 2)
-	b.Italic("每天一部电影，通关有额外奖励")
+	b.Italic("每天一部影片，完成后可获得额外奖励。")
 	b.Divider()
 
 	// 社交攀比提示
@@ -293,7 +293,7 @@ func BuildDailyChallengeCard(data DailyChallengeCardData) RichMessage {
 		}
 		b.Italic("明天还有一部新电影等你")
 	} else {
-		b.BoldParagraph("⚔️ 你敢接受挑战吗？")
+		b.BoldParagraph("⚔️ 今日挑战尚未完成")
 		b.Paragraph("  • 通关双倍冒险积分")
 		b.Paragraph("  • SSS评级额外奖励盲盒")
 		b.Italic("  五关电影情境，通关即可领取奖励")

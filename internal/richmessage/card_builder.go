@@ -246,7 +246,7 @@ func BuildDailyRecommendCard(movies []RecommendMovie) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎬 每日推荐", 2)
-	builder.BoldParagraph("今日精选 · 云海影视")
+	builder.BoldParagraph("今日精选 · 云海")
 	builder.Divider()
 
 	for i, m := range movies {
@@ -362,7 +362,7 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 
 	// Header
 	builder.Heading("📥 今日入库", 2)
-	builder.BoldParagraph(fmt.Sprintf("%s · 云海影视", dateStr))
+	builder.BoldParagraph(fmt.Sprintf("%s · 云海", dateStr))
 	builder.Divider()
 
 	// Stats table
@@ -468,7 +468,7 @@ func BuildDashboardCard(data DashboardData) RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("📈 数据概览", 3)
-	builder.BoldParagraph("云海影视 · 管理看板")
+	builder.BoldParagraph("云海 · 管理看板")
 
 	builder.Table(
 		[]string{"模块", "数据"},
@@ -885,9 +885,9 @@ func BuildMyReviewsCard(items []MyReviewItem) RichMessage {
 	return builder.Build()
 }
 
-// ==================== 灵魂画像 ====================
+// ==================== 观影画像 ====================
 
-// PortraitCardData 灵魂画像卡片数据（从 services.PortraitResult 转换）
+// PortraitCardData 观影画像卡片数据（从 services.PortraitResult 转换）
 type PortraitCardData struct {
 	UserName    string
 	TotalItems  int
@@ -968,9 +968,9 @@ func BuildPortraitCard(data PortraitCardData) RichMessage {
 	// 盲区
 	if len(data.BlindSpots) > 0 {
 		builder.Divider()
-		builder.BoldParagraph("🌑 你的盲区")
+		builder.BoldParagraph("🧭 待探索类型")
 		builder.Paragraph(strings.Join(data.BlindSpots, " · "))
-		builder.Italic("试试看？也许会打开新世界")
+		builder.Italic("如果感兴趣，可以从这些类型里挑一部试试。")
 	}
 
 	return builder.Build()

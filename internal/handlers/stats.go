@@ -38,7 +38,7 @@ func (h *StatsHandler) HandleCommand(chatID, userID int64) {
 	userName := h.getUserName(userID)
 
 	if total == 0 {
-		h.telegram.SendMessage(chatID, "📜 你还没有开始冒险\n\n发送 /adventure 开始你的第一次冒险！", "", nil)
+		h.telegram.SendMessage(chatID, "📈 暂无冒险记录\n\n发送 /adventure 开始第一次电影冒险。", "", nil)
 		return
 	}
 
@@ -50,30 +50,30 @@ func (h *StatsHandler) HandleCommand(chatID, userID int64) {
 	sssRank := h.socialDB.GetUserWeeklyRank(userID, "sss")
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📜 冒险者档案：@%s\n", userName))
+	sb.WriteString(fmt.Sprintf("📈 我的冒险战绩 · @%s\n", userName))
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n")
 	sb.WriteString(fmt.Sprintf("🏆 称号：%s（%d天连胜中）\n", title, streakDays))
-	sb.WriteString(fmt.Sprintf("⚔️ 总冒险：%d次 | 通关：%d次\n", total, wins))
+	sb.WriteString(fmt.Sprintf("⚔️ 参与：%d 次 · 通关：%d 次\n", total, wins))
 	sb.WriteString(fmt.Sprintf("🎯 SSS次数：%d | 最高分：%d\n", sss, maxScore))
 	if maxCombo > 0 {
 		sb.WriteString(fmt.Sprintf("🔥 最大连击：x%d\n", maxCombo))
 	}
 	sb.WriteString(fmt.Sprintf("📅 连胜：%d天 | 最佳：%d天\n", streakDays, bestStreak))
 	if sssRank > 0 {
-		sb.WriteString(fmt.Sprintf("📊 本周排名：#%d SSS猎人\n", sssRank))
+		sb.WriteString(fmt.Sprintf("📊 本周 SSS 排名：#%d\n", sssRank))
 	}
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n")
 
-	// 宿敌墙
+	// 再次挑战记录
 	nemeses, err := h.socialDB.GetAllNemeses(userID)
 	if err == nil && len(nemeses) > 0 {
-		sb.WriteString("宿敌墙：\n")
+		sb.WriteString("再次挑战记录：\n")
 		for _, n := range nemeses {
-			revengedIcon := "☠️"
+			status := "待完成"
 			if n.Revenged {
-				revengedIcon = "💀已复仇"
+				status = "已完成"
 			}
-			sb.WriteString(fmt.Sprintf("  %s %s — %d次\n", revengedIcon, n.MovieName, n.FailCount))
+			sb.WriteString(fmt.Sprintf("  ↻ %s · %d 次 · %s\n", n.MovieName, n.FailCount, status))
 		}
 	}
 

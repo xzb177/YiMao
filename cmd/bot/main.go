@@ -282,7 +282,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		msg.Text("🍿 快去 Emby 观看吧～")
 
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📋 我的求片", "my_requests")
+		kb.AddButton("📊 求片进度", "my_requests")
 		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
 	}
@@ -681,7 +681,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		})
 		if err != nil {
 			logger.Info("[Adventure] 求片提交失败: %v", err)
-			deps.Telegram.SendMessage(chatID, "❌ 求片自动提交失败，请使用普通求片重试", "", nil)
+			deps.Telegram.SendMessage(chatID, "❌ 求片自动提交失败，请返回主菜单选择「搜索求片」重试", "", nil)
 			return
 		}
 		logger.Info("[Adventure] 冒险通关自动提交求片: %s (%d), 用户 %d, 评级 %s", movieName, movieYear, userID, grade)
@@ -771,7 +771,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)        // 🩸 每日免费复活
 	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)        // 🎰 双倍或归零
 	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle)   // 📦 安全领取
-	registry.RegisterFunc("adventure_gamble_triple", adventureHandler.Handle) // 💀 三倍豪赌
+	registry.RegisterFunc("adventure_gamble_triple", adventureHandler.Handle) // 尝试三倍奖励
 	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
 	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
 	logger.Info("[initRegistry] Game callbacks registered (27+5 actions)")
@@ -932,14 +932,14 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 func setupBotCommands(telegram *services.TelegramClient) {
 	privateCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
-		{Command: "search", Description: "🔍 普通求片"},
+		{Command: "search", Description: "🔍 搜索求片"},
 		{Command: "adventure", Description: "⚔️ 趣味求片（闯关）"},
 		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📋 我的请求"},
 		{Command: "wish", Description: "🌟 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
-		{Command: "portrait", Description: "🧠 灵魂画像"},
+		{Command: "portrait", Description: "🧠 观影画像"},
 		{Command: "game", Description: "🎮 游戏中心"},
 		{Command: "narrate", Description: "🎬 AI 电影解说"},
 		{Command: "review", Description: "✍️ 写影评"},
@@ -965,7 +965,7 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "requests", Description: "📋 私密查看请求", IsEphemeral: true},
 		{Command: "wish", Description: "🌟 私密许愿", IsEphemeral: true},
 		{Command: "quota", Description: "💎 私密查看配额", IsEphemeral: true},
-		{Command: "portrait", Description: "🧠 私密灵魂画像", IsEphemeral: true},
+		{Command: "portrait", Description: "🧠 私密观影画像", IsEphemeral: true},
 		{Command: "game", Description: "🎮 私密游戏中心", IsEphemeral: true},
 		{Command: "go", Description: "⚡ 私密开启冒险", IsEphemeral: true},
 	}

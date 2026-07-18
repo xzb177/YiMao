@@ -219,7 +219,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜影片").Newline()
+	msg.Bold("🔍 搜索求片").Newline()
 	msg.Newline()
 	msg.Text("把片名发给我就行").Newline()
 	msg.Newline()

@@ -470,7 +470,7 @@ func BuildBlindBoxRewardCard(data BlindBoxRewardCardData) RichMessage {
 func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder := NewBuilder()
 
-	builder.Heading("🎮 云海游戏中心", 2)
+	builder.Heading("🎮 游戏中心", 2)
 	builder.Italic("这里是求片之外的可选玩法，不影响普通求片。")
 
 	// 🔥 连胜火焰
@@ -490,7 +490,7 @@ func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
 	builder.Divider()
 
 	builder.BoldParagraph("⚔️ 互动玩法")
-	builder.Paragraph("  求片大冒险 — 选择一部影片，完成五关后自动提交求片")
+	builder.Paragraph("  电影冒险 — 选择一部影片，完成五关后自动提交求片")
 	builder.Paragraph("  🎯 今日挑战 — 每日一道共同题目，成绩计入战绩")
 	builder.Divider()
 

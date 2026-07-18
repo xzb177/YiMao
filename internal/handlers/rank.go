@@ -8,7 +8,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 )
 
-// RankHandler 冒险者公会排行处理器
+// RankHandler 电影冒险排行处理器
 type RankHandler struct {
 	socialDB    *services.SocialDB
 	telegram    *services.TelegramClient
@@ -47,10 +47,10 @@ func (h *RankHandler) handleCommand(sender *userScopedSender) {
 	vengeanceEntries, _ := h.socialDB.GetWeeklyLeaderboard("vengeance", 3)
 
 	var sb strings.Builder
-	sb.WriteString("🏛️ 冒险者公会 · 本周排行\n")
+	sb.WriteString("📊 电影冒险 · 本周排行\n")
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n\n")
 
-	sb.WriteString("🏆 SSS猎人榜\n")
+	sb.WriteString("🏆 SSS 评级\n")
 	if len(sssEntries) == 0 {
 		sb.WriteString("  暂无记录\n")
 	} else {
@@ -78,18 +78,18 @@ func (h *RankHandler) handleCommand(sender *userScopedSender) {
 		}
 	}
 
-	sb.WriteString("\n💀 宿敌终结者\n")
+	sb.WriteString("\n↻ 再次完成\n")
 	if len(vengeanceEntries) == 0 {
 		sb.WriteString("  暂无记录\n")
 	} else {
 		for _, e := range vengeanceEntries {
 			name := h.getUserName(e.UserID)
-			sb.WriteString(fmt.Sprintf("  ⚔️ %s · 复仇%d次\n", name, e.Value))
+			sb.WriteString(fmt.Sprintf("  ↻ %s · %d 次\n", name, e.Value))
 		}
 	}
 
 	sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
-	sb.WriteString("📅 每周一凌晨重置 · 下一局见")
+	sb.WriteString("📅 每周一凌晨重置")
 
 	sender.SendMessage(sb.String(), "", nil)
 }

@@ -19,7 +19,7 @@ import (
 )
 
 // ============================================================
-//  求片大冒险 v2 — 电影互动处理器
+//  电影冒险 v2 — 电影互动处理器
 // ============================================================
 
 const (
@@ -636,7 +636,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 			}
 		}
 		return &callback.Response{
-			CallbackMsg: fmt.Sprintf("💀 %s\n生命耗尽...", choice.Result),
+			CallbackMsg: fmt.Sprintf("❤️ %s\n本次挑战结束", choice.Result),
 			ShowAlert:   false,
 		}, nil
 	}
@@ -800,7 +800,7 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 
 	go h.startAdventureAsyncLevel(ctx.UserID, ctx.ChatID, movieName, startLevel, vengeanceMsg)
 	return &callback.Response{
-		CallbackMsg: fmt.Sprintf("🔄 重新挑战《%s》...", movieName),
+		CallbackMsg: fmt.Sprintf("🔄 正在重新开始《%s》...", movieName),
 		ShowAlert:   false,
 	}, nil
 }
@@ -933,15 +933,16 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	}
 	h.saveState(ctx.UserID, advState)
 
-	// 重生通知
-	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(fmt.Sprintf(
-		"🩸 **死神今天放你一马...**\n\n💚 HP 恢复至 30\n📖 再给你一次机会 —— 这次仔细看\n\n⚠️ 今天的免费复活已用尽",
-	), "Markdown", nil)
+	// 继续机会通知
+	_, _ = newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(
+		"❤️ **已恢复 30 HP**\n\n📖 可以继续当前关卡，请重新阅读线索后作答。\n\n⚠️ 今天的继续机会已使用",
+		"Markdown", nil,
+	)
 
 	// 重新发送当前场景卡片
 	h.sendSceneCard(ctx.UserID, ctx.ChatID, advState)
 
-	return &callback.Response{CallbackMsg: "🩸 已复活！HP=30", ShowAlert: false}, nil
+	return &callback.Response{CallbackMsg: "❤️ 已恢复 30 HP", ShowAlert: false}, nil
 }
 
 // handleGamble 🎰 双倍或归零 — 用户选择赌一把
@@ -1009,7 +1010,7 @@ func (h *AdventureHandler) handleGamble(ctx *callback.Context) (*callback.Respon
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
+	kb.AddButton("🎁 再开一个盲盒", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
@@ -1062,7 +1063,7 @@ func (h *AdventureHandler) handleGambleSafe(ctx *callback.Context) (*callback.Re
 	return &callback.Response{CallbackMsg: "📦 奖励已安全入袋", ShowAlert: false}, nil
 }
 
-// handleGambleTriple 💀 三倍豪赌 — 30%三倍 / 70%腰斩
+// handleGambleTriple 尝试三倍奖励 — 30% 三倍 / 70% 减半
 func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.Response, error) {
 	logger.Info("[Adventure] 💀 GambleTriple callback from user %d", ctx.UserID)
 	var items []richmessage.BlindBoxItemView
@@ -1093,7 +1094,7 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 	}
 
 	if len(items) == 0 {
-		return &callback.Response{CallbackMsg: "💀 赌局已过期", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "🎁 奖励选择已过期", ShowAlert: true}, nil
 	}
 
 	// 30% 概率三倍
@@ -1119,8 +1120,8 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
 		// 三倍成功 → 群通知
 		userName := h.getUserName(ctx.UserID)
-		h.notifyGroup(userName, fmt.Sprintf("💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀\n\n⚡ 三倍豪赌 ⚡\n\n💀 %s\n💀 《%s》\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n30%% 的概率，他押中了\n三倍收益 · 一念天堂\n\n💀━━━━━━━━━━━━━━━━━━━━━━━━━━💀", userName, movieTitle))
-		return &callback.Response{CallbackMsg: "💀 三倍豪赌成功！天堂之门开启！", ShowAlert: false}, nil
+		h.notifyGroup(userName, fmt.Sprintf("✨ 三倍奖励命中\n\n%s 在《%s》的奖励选择中获得三倍盲盒。\n\n概率 30%% · 本次已结算", userName, movieTitle))
+		return &callback.Response{CallbackMsg: "✨ 三倍奖励已到账", ShowAlert: false}, nil
 	}
 
 	// 腰斩：只保留一半
@@ -1137,11 +1138,11 @@ func (h *AdventureHandler) handleGambleTriple(ctx *callback.Context) (*callback.
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎰 开个盲盒安慰自己", "game_blindbox")
+	kb.AddButton("🎁 再开一个盲盒", "game_blindbox")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendRichMessage(card.Markdown, kb.Build())
-	return &callback.Response{CallbackMsg: "💀 腰斩了...30% 可不是好赌的", ShowAlert: false}, nil
+	return &callback.Response{CallbackMsg: "🎁 本次保留一半奖励", ShowAlert: false}, nil
 }
 
 // ============================================================
@@ -1394,9 +1395,9 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 				CorrectAnswer: "",
 			})
 			kb := services.NewKeyboardBuilder()
-			kb.AddButton("🩸 恢复30HP并重试本关", fmt.Sprintf("adventure_revive:run:%s:turn:%d", state.RunID, state.Turn))
+			kb.AddButton("❤️ 恢复 30 HP 并继续", fmt.Sprintf("adventure_revive:run:%s:turn:%d", state.RunID, state.Turn))
 			kb.NewRow()
-			kb.AddButton("💀 拒绝（再来一次）", "adventure_retry")
+			kb.AddButton("🔄 重新开始", "adventure_retry")
 			kb.AddButton("🎮 游戏中心", "game_menu")
 			sender.SendRichMessage(card.Markdown, kb.Build())
 			return
@@ -1443,7 +1444,7 @@ func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *Adv
 
 	if isDead {
 		kb := services.NewKeyboardBuilder()
-		kb.AddButton("🔄 再来一次", "adventure_retry")
+		kb.AddButton("🔄 重新开始", "adventure_retry")
 		kb.AddButton("🎬 换一部电影", "adventure_start")
 		kb.NewRow()
 		kb.AddButton("🎮 游戏中心", "game_menu")
@@ -2121,7 +2122,7 @@ func (h *AdventureHandler) sendRewardBlindBox(userID int64, chatID int64, state 
 		kb.NewRow()
 		kb.AddButton("🎰 双倍或归零 (50%)", "adventure_gamble")
 		kb.NewRow()
-		kb.AddButton("💀 三倍豪赌 (30%)", "adventure_gamble_triple")
+		kb.AddButton("✨ 尝试三倍 (30%)", "adventure_gamble_triple")
 
 		sender.SendMessage(gambleCard.Markdown, "Markdown", kb.Build())
 		return

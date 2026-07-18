@@ -447,7 +447,7 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 
 	if _, err := telegram.SendRichMessage(chatID, richMsg.Markdown, keyboard); err != nil {
 		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)
-		menuText := ui.BuildMenuWith(ui.StyleCard, "云海影视", "你的私人选片师")
+		menuText := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
 		telegram.SendMessage(chatID, menuText, "", keyboard)
 	}
 }
@@ -482,7 +482,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Bold("⌨️ 命令速查").Newline()
 	msg.Text("/start 主菜单  /search 搜片  /ai 今晚看什么").Newline()
 	msg.Text("/wish 许愿  /requests 求片进度  /quota 配额").Newline()
-	msg.Text("/portrait 灵魂画像  /link 绑定  /resetpw 重置密码  /help 帮助").Newline()
+	msg.Text("/portrait 观影画像  /link 绑定  /resetpw 重置密码  /help 帮助").Newline()
 	msg.Newline()
 	msg.Italic("💬 想被通知出源？记得先和我私聊过一句哦，不然我发不出私信～").Newline()
 
@@ -509,7 +509,7 @@ func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMe
 func BuildStatusMessage(msg *types.TelegramMessage, cfg *config.Config, adminService *services.AdminService, userMapping services.UserMappingStore) string {
 	isAdmin := adminService != nil && msg != nil && adminService.IsAdmin(msg.From.ID)
 	var sb strings.Builder
-	sb.WriteString("🤖 <b>云海影视 Bot</b>\n\n")
+	sb.WriteString("🎬 <b>云海求片助手</b>\n\n")
 	sb.WriteString("📊 版本: <code>v1.0</code>\n")
 	sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
 	if msg != nil {
@@ -552,7 +552,7 @@ func richMessageStatusEnabled() bool {
 	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
 }
 
-// HandlePortraitCommand handles /portrait command — 灵魂画像
+// HandlePortraitCommand handles /portrait command — 观影画像
 func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
 	logger.Info("[Portrait] Processing /portrait from user %d", msg.From.ID)
 
@@ -563,7 +563,7 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 
 	// 群组隐私保护：群内引导去私聊
 	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
-		telegram.SendMessage(msg.Chat.ID, "🔒 灵魂画像是你的私人观影密码，请私聊机器人查看 🧠", "", nil)
+		telegram.SendMessage(msg.Chat.ID, "🔒 观影画像包含私人观影记录，请私聊机器人查看。", "", nil)
 		return
 	}
 
@@ -574,12 +574,12 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	}
 	mpUsername, err := userMapping.GetMoviePilotUsername(msg.From.ID)
 	if err != nil || mpUsername == "" {
-		telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号（/link），才能生成灵魂画像", "", nil)
+		telegram.SendMessage(msg.Chat.ID, "🔗 请先绑定账号（/link），再生成观影画像", "", nil)
 		return
 	}
 
 	// 发送"生成中"提示
-	sent, _ := telegram.SendMessage(msg.Chat.ID, "🧠 正在分析你的观影灵魂，请稍候...", "", nil)
+	sent, _ := telegram.SendMessage(msg.Chat.ID, "🧠 正在整理你的观影记录，请稍候...", "", nil)
 
 	// 创建画像服务（单例复用 http.Client）
 	portraitOnce.Do(func() {
@@ -647,7 +647,7 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 		if result.AvgRating >= 0 {
 			ratingText = fmt.Sprintf("⭐ %.1f", result.AvgRating)
 		}
-		text := fmt.Sprintf("🧠 灵魂画像 — %s\n\n👤 %d 部作品\n🎭 %s\n%s\n%s — %s\n%s — %s",
+		text := fmt.Sprintf("🧠 观影画像 — %s\n\n👤 %d 部作品\n🎭 %s\n%s\n%s — %s\n%s — %s",
 			result.UserName, result.TotalItems, cardData.TopGenres, ratingText,
 			result.TasteLevel, result.TasteDesc, result.RhythmType, result.RhythmDesc)
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)

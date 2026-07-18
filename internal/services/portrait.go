@@ -29,7 +29,7 @@ type PortraitItem struct {
 	Type   string // "movie", "series", "episode"
 }
 
-// PortraitResult 完整的灵魂画像分析结果
+// PortraitResult 完整的观影画像分析结果
 type PortraitResult struct {
 	UserName    string             `json:"user_name"`
 	TotalItems  int                `json:"total_items"`
@@ -86,7 +86,7 @@ var genrePsychology = map[string]PsychTrait{
 
 // ==================== PortraitService ====================
 
-// PortraitService 灵魂画像服务
+// PortraitService 观影画像服务
 type PortraitService struct {
 	embyURL    string
 	embyAPIKey string
@@ -138,7 +138,7 @@ func (s *PortraitService) FindEmbyUserByName(name string) (string, error) {
 	return "", fmt.Errorf("未找到匹配的 Emby 用户: %s", name)
 }
 
-// GeneratePortrait 生成灵魂画像
+// GeneratePortrait 生成观影画像
 func (s *PortraitService) GeneratePortrait(embyUserID, userName string) (*PortraitResult, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby 未配置")

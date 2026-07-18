@@ -8,7 +8,7 @@ import (
 )
 
 // ─────────────────────────────────────
-// 云海影视 · 全新 UI
+// 云海求片助手 · 文本卡片 UI
 // 设计理念：管家迎门、信息有层次、文案有人味
 // ─────────────────────────────────────
 
@@ -42,7 +42,7 @@ func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 func (b *DashBuilder) BuildMenuWithName(name string) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
-	sb.WriteString(fmt.Sprintf("%s  🌊 云海影视\n", boxLine))
+	sb.WriteString(fmt.Sprintf("%s  🌊 云海求片助手\n", boxLine))
 	if name != "" {
 		sb.WriteString(fmt.Sprintf("%s  你好，%s 👋\n", boxLine, name))
 	} else {

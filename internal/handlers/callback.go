@@ -248,7 +248,7 @@ func (h *StartHandler) SetWeeklyReportService(svc *services.WeeklyReportService)
 	h.weeklyReportSvc = svc
 }
 
-// SetPortraitService sets the portrait service (灵魂画像)
+// SetPortraitService sets the portrait service (观影画像)
 func (h *StartHandler) SetPortraitService(svc *services.PortraitService) {
 	h.portraitSvc = svc
 }
@@ -294,7 +294,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 	richMsg := richmessage.BuildWelcomeMessage(userName)
 
-	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
+	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
 
 	// Check if user is admin to add admin menu button
 	isAdmin := false
@@ -314,7 +314,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
 	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 普通求片").Newline()
+	msg.Bold("🔍 搜索求片").Newline()
 	msg.Newline()
 	msg.Text("把片名发给我就行").Newline()
 	msg.Newline()
@@ -500,7 +500,7 @@ func (h *StartHandler) HandleWeeklyReportSend(ctx *callback.Context) (*callback.
 	}, nil
 }
 
-// HandlePortrait handles the portrait (灵魂画像) callback from the start menu.
+// HandlePortrait handles the portrait (观影画像) callback from the start menu.
 func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response, error) {
 	if h.portraitSvc == nil || h.userMapping == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
@@ -510,7 +510,7 @@ func (h *StartHandler) HandlePortrait(ctx *callback.Context) (*callback.Response
 	mpUsername, err := h.userMapping.GetMoviePilotUsername(ctx.UserID)
 	if err != nil || mpUsername == "" {
 		return &callback.Response{
-			Text:        "🔗 请先绑定账号（/link），才能生成灵魂画像",
+			Text:        "🔗 请先绑定账号（/link），再生成观影画像",
 			CallbackMsg: "请先绑定账号",
 			ShowAlert:   true,
 		}, nil
@@ -1261,7 +1261,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
 		// No history, show start menu using UI package
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 
@@ -1371,7 +1371,7 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		}
 
 		// Show start menu using UI package for any other source
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师")
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 
@@ -1392,7 +1392,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu using UI package
 		logger.Info("[BackHandler] Search results expired or empty, showing start menu")
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海影视助手", "你的私人选片师") + "\n\n⏰ 搜索结果已过期，请重新搜索"
+		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海") + "\n\n⏰ 搜索结果已过期，请重新搜索"
 
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
 

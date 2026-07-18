@@ -6,7 +6,7 @@ import (
 )
 
 // ============================================================
-//  求片大冒险 v2 — 沉浸式卡片引擎
+//  电影冒险 v2 — 沉浸式卡片引擎
 // ============================================================
 
 // AdventureSceneCardData 场景卡片
@@ -86,7 +86,7 @@ func BuildAdventureSceneCard(data AdventureSceneCardData) RichMessage {
 
 	// Boss关特殊提示
 	if data.IsBoss {
-		b.BoldParagraph("💀 BOSS 关 — 这是最后的考验")
+		b.BoldParagraph("⚔️ 最终关 · 留意前面出现过的线索")
 	}
 
 	// 提示（如果有）
@@ -172,21 +172,21 @@ func BuildAdventureShareCard(data AdventureShareCardData) RichMessage {
 			gradeIcon = "⭐"
 		}
 
-		b.BoldParagraph(fmt.Sprintf("%s %s 通关了《%s》的求片大冒险！", gradeIcon, data.UserName, data.MovieTitle))
+		b.BoldParagraph(fmt.Sprintf("%s %s 通关了《%s》的电影冒险", gradeIcon, data.UserName, data.MovieTitle))
 
 		statsLine := fmt.Sprintf("🎯 %d分  ❤️ %d%%  🔥 x%d", data.Score, data.HP, data.MaxCombo)
 		b.Paragraph(statsLine)
 
 		if data.PerfectRun {
-			b.BoldParagraph("🛡️ 全程无伤 — 无人能及！")
+			b.BoldParagraph("🛡️ 全程无伤 · 完整保留生命值")
 		}
 
 		if data.Score >= 90 {
-			b.Italic("这不是挑战，这是碾压")
+			b.Italic("对剧情与人物动机的判断非常准确。")
 		} else if data.Score >= 70 {
-			b.Italic("这部电影他不只是看过——他活过")
+			b.Italic("一路读懂了不少关键线索。")
 		} else {
-			b.Italic("险象环生，但他挺过来了")
+			b.Italic("完成五关，本次记录已经收录。")
 		}
 	} else {
 		// 未通关记录
@@ -221,7 +221,7 @@ type AdventureEntryCardData struct {
 func BuildAdventureEntryCard(data AdventureEntryCardData) RichMessage {
 	b := NewBuilder()
 
-	b.Heading("⚔️ 求片大冒险", 2)
+	b.Heading("⚔️ 电影冒险", 2)
 	b.BoldParagraph(fmt.Sprintf("🎬 %s (%d)", data.MovieTitle, data.MovieYear))
 
 	var meta []string
@@ -309,7 +309,7 @@ func BuildAdventureDamageCard(data AdventureDamageCardData) RichMessage {
 		}
 
 		b.Divider()
-		b.Italic("这不是结束... 还是想再来一次？")
+		b.Italic("本次记录已保存，想继续时可以重新开始。")
 	} else {
 		b.Heading("💥 受伤！", 2)
 		b.BoldParagraph(data.ChoiceResult)
@@ -455,7 +455,7 @@ func BuildAdventureSuccessCard(data AdventureSuccessCardData) RichMessage {
 		b.Divider()
 	}
 
-	b.Italic("🌟 你证明了自己是真正的主角。求片请求已提交！")
+	b.Italic("✅ 五关已完成，求片请求已经自动提交。")
 
 	return b.Build()
 }
@@ -632,13 +632,13 @@ func BuildAdventureReviveCard(data AdventureReviveCardData) RichMessage {
 	}
 	b.Divider()
 
-	b.BoldParagraph("🩸 今日免费复活可用")
+	b.BoldParagraph("❤️ 今日继续机会可用")
 	b.Paragraph("  每天第1次在第1-3关结束挑战时")
-	b.Paragraph("  可以免费复活 · HP恢复到 30")
-	b.Paragraph("  点击后恢复 30 HP，并重新挑战当前关卡")
+	b.Paragraph("  可以恢复 30 HP，继续当前关卡")
+	b.Paragraph("  点击后恢复 30 HP，并重新作答")
 	b.Divider()
 
-	b.Italic("今天可使用一次免费复活")
+	b.Italic("今天可使用一次继续机会")
 
 	return b.Build()
 }

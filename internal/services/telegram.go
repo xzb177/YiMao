@@ -1337,7 +1337,7 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 // Viewing portraits stay in the main menu and are intentionally not duplicated here.
 func BuildGameCenterKeyboard() *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
-	kb.AddButton("⚔️ 求片大冒险", "adventure_start")
+	kb.AddButton("⚔️ 电影冒险", "adventure_start")
 	kb.AddButton("🎯 今日挑战", "game_daily_challenge")
 	kb.NewRow()
 	kb.AddButton("📊 冒险排行", "game_adventure_rank")
