@@ -22,6 +22,15 @@ COPY . .
 # Tidy dependencies and build
 RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 
+# Explicit verification target for deployment preflight on Docker-only hosts.
+# The production image remains lean, while `docker build --target verify .`
+# runs the same source through vet and the full Go test suite first.
+FROM builder AS verify
+RUN files=$(find . -type f -name '*.go' -not -path './vendor/*') && \
+    test -z "$(gofmt -l $files)" && \
+    go vet ./... && \
+    go test ./...
+
 # Final stage
 FROM alpine:latest
 

@@ -1,6 +1,6 @@
 # 更新指南
 
-> 💡 **新用户提示**：如果你是第一次使用本 Bot，请先查看 [README.md](README.md) 的快速上手部分，完成初始部署后再使用本文档进行更新。
+> 💡 **新用户提示**：如果你是第一次使用本 Bot，请先查看 [README.md](../README.md) 的快速上手部分，完成初始部署后再使用本文档进行更新。
 
 ---
 
@@ -112,7 +112,7 @@
 | 命令 | 说明 | 推荐场景 |
 |------|------|---------|
 | `./update.sh` | 一键更新脚本 | **日常更新（推荐）** |
-| `./manage.sh update` | 管理脚本更新 | 习惯使用 manage.sh |
+| `./scripts/ops.sh update` | 运维脚本更新 | 需要先验收再自动重建 |
 | 手动更新 | 逐步执行 | 需要更多控制 |
 
 ---
@@ -230,10 +230,10 @@ cat CHANGELOG.md | head -50
 ======================================
 ```
 
-### 方法二：使用 manage.sh
+### 方法二：使用运维脚本
 
 ```bash
-./manage.sh update
+./scripts/ops.sh update
 ```
 
 这个命令会：
@@ -316,7 +316,7 @@ docker logs yimao --tail 50
 
 ```bash
 # 进入容器检查数据
-./manage.sh shell
+docker exec -it yimao sh
 ls -la /app/data/
 exit
 ```
@@ -347,13 +347,13 @@ docker compose up -d --force-recreate
 
 ```bash
 # 1. 停止容器
-./manage.sh stop
+./scripts/ops.sh stop
 
 # 2. 恢复备份
 cp -r backup-20260308-043558/* .
 
 # 3. 重启容器
-./manage.sh start
+./scripts/ops.sh start
 ```
 
 ### 方法三：保存旧镜像
@@ -379,10 +379,10 @@ docker compose up -d
 
 ```bash
 # 1. 检查容器状态
-./manage.sh status
+./scripts/ops.sh status
 
 # 2. 查看日志
-./manage.sh logs-f
+./scripts/ops.sh logs
 
 # 3. 检查环境变量是否需要更新
 git diff HEAD@{1} .env.example

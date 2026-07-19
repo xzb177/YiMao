@@ -449,10 +449,20 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 
 // handleStart 点击“电影冒险”或每日挑战启动
 func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Response, error) {
-	// 检查是否从每日挑战等入口带入了电影名
+	// New daily-challenge callbacks carry a short session reference. Legacy
+	// URL-escaped movie callbacks remain readable for cards already sent.
 	movieName := ""
+	params := map[string]string{}
 	if ctx.Callback != nil && ctx.Callback.Params != nil {
-		if name, ok := ctx.Callback.Params["movie"]; ok && name != "" {
+		params = ctx.Callback.Params
+	}
+	if ref := params["ref"]; ref != "" && h.sessionMgr != nil {
+		if sess := h.sessionMgr.GetOrCreate(ctx.UserID); sess != nil {
+			movieName, _ = sess.GetString("adventure_movie_" + ref)
+		}
+	}
+	if movieName == "" {
+		if name, ok := params["movie"]; ok && name != "" {
 			if decoded, err := url.QueryUnescape(name); err == nil {
 				movieName = decoded
 			} else {

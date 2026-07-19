@@ -448,7 +448,8 @@ func handleAdminPendingReplyText(deps *Dependencies, sess interface{ Delete(stri
 
 	_, err := deps.IssueService.AddReply(issueID, msg.From.ID, adminName, msg.Text, "admin")
 	if err != nil {
-		deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 回复失败: %v", err), "", nil)
+		logger.Info("[Webhook] Issue reply failed for issue %d by user %d: %v", issueID, msg.From.ID, err)
+		_, _ = deps.Telegram.SendMessage(msg.Chat.ID, "❌ 回复失败，请稍后再试", "", nil)
 		return
 	}
 

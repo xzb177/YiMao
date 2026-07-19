@@ -13,7 +13,7 @@
 docker --version
 
 # 检查 Docker Compose
-docker-compose --version
+docker compose --version
 # 或
 docker compose version
 ```
@@ -45,13 +45,13 @@ cp user_mapping.json backup-$(date +%Y%m%d)/
 
 ```bash
 # 构建镜像
-docker-compose build
+docker compose build
 
 # 启动容器
-docker-compose up -d
+docker compose up -d
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ## 验证部署
@@ -59,17 +59,17 @@ docker-compose logs -f
 ### 检查容器状态
 
 ```bash
-docker-compose ps
+docker compose ps
 ```
 
 ### 查看日志
 
 ```bash
 # 实时日志
-docker-compose logs -f
+docker compose logs -f
 
 # 最近 100 行
-docker-compose logs --tail=100
+docker compose logs --tail=100
 ```
 
 ### 测试 Webhook
@@ -84,28 +84,28 @@ curl -X POST http://localhost:8080/webhook \
 
 ```bash
 # 启动
-docker-compose up -d
+docker compose up -d
 
 # 停止
-docker-compose stop
+docker compose stop
 
 # 重启
-docker-compose restart
+docker compose restart
 
 # 查看状态
-docker-compose ps
+docker compose ps
 
 # 查看日志
-docker-compose logs -f
+docker compose logs -f
 
 # 进入容器
-docker-compose exec yimao sh
+docker compose exec yimao sh
 
 # 更新代码后重新构建
-docker-compose up -d --build
+docker compose up -d --build
 
 # 完全清理
-docker-compose down
+docker compose down
 ```
 
 ## 数据持久化
@@ -148,7 +148,7 @@ vi .env
 
 ```bash
 # 1. 停止 Docker 容器
-docker-compose down
+docker compose down
 
 # 2. 重新启用 systemd 服务
 sudo systemctl enable yimao
@@ -161,19 +161,19 @@ sudo systemctl start yimao
 
 ```bash
 # 查看详细日志
-docker-compose logs
+docker compose logs
 
 # 检查环境变量
-docker-compose config
+docker compose config
 ```
 
 ### 端口冲突
 
-修改 `docker-compose.yml` 中的端口映射或停止占用 8080 端口的服务。
+修改 `docker-compose.yml` 中的端口配置，或停止占用 8080 端口的服务。
 
 ### 数据丢失
 
 检查卷挂载是否正确配置：
 ```bash
-docker-compose config | grep -A 10 volumes
+docker compose config | grep -A 10 volumes
 ```

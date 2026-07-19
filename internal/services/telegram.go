@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"mime/multipart"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -35,6 +38,42 @@ func sanitizeUTF8(s string) string {
 		result.WriteRune(r)
 	}
 	return result.String()
+}
+
+var htmlTagPattern = regexp.MustCompile(`<[^>]*>`)
+
+func safeURLForLog(raw string) string {
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Host == "" {
+		return "<redacted-url>"
+	}
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	parsed.User = nil
+	return parsed.String()
+}
+
+func truncateTelegramText(text string, maxRunes int, parseMode string) (string, bool) {
+	text = sanitizeUTF8(text)
+
+	// Telegram counts rendered HTML text, not markup bytes. Preserve valid
+	// formatting when the rendered text is within the limit; only strip tags
+	// when an actual truncation is required.
+	if strings.EqualFold(parseMode, "HTML") {
+		plain := html.UnescapeString(htmlTagPattern.ReplaceAllString(text, ""))
+		if utf8.RuneCountInString(plain) <= maxRunes {
+			return text, false
+		}
+		text = plain
+	} else if utf8.RuneCountInString(text) <= maxRunes {
+		return text, false
+	}
+
+	runes := []rune(text)
+	if len(runes) > maxRunes-3 {
+		runes = runes[:maxRunes-3]
+	}
+	return string(runes) + "...", true
 }
 
 // TelegramClient provides access to Telegram Bot API
@@ -332,7 +371,8 @@ func (c *TelegramClient) AnswerCallback(callbackID string, text string, showAler
 
 	// Only include text if it's not empty
 	if text != "" {
-		payload["text"] = text
+		clean, _ := truncateTelegramText(text, 200, "")
+		payload["text"] = clean
 	}
 
 	return c.makeSimpleRequest(apiURL, payload)
@@ -399,7 +439,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		} else if strings.Contains(photoURL, "tmdb") || strings.Contains(photoURL, "themoviedb") {
 			imageType = "TMDB"
 		}
-		logger.Info("[Telegram] [代理上传] 正在下载 %s 图片: %s", imageType, photoURL)
+		logger.Info("[Telegram] [代理上传] 正在下载 %s 图片: %s", imageType, safeURLForLog(photoURL))
 
 		req, err := http.NewRequest("GET", photoURL, nil)
 		if err != nil {
@@ -462,13 +502,16 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
 	applyTelegramSendOptionsToMultipart(writer, options)
 
-	// Add parse_mode
+	// Sanitize and cap captions before writing parse_mode; a truncated rich
+	// caption is downgraded to plain text to avoid broken markup.
+	caption, captionTruncated := truncateTelegramText(caption, 1024, parseMode)
+	if captionTruncated {
+		parseMode = ""
+		logger.Warn("[Telegram] Truncated oversized multipart caption to 1024 runes")
+	}
 	writer.WriteField("parse_mode", parseMode)
-
-	// Add caption (sanitize to ensure valid UTF-8)
 	if caption != "" {
-		sanitized := sanitizeUTF8(caption)
-		writer.WriteField("caption", sanitized)
+		_ = writer.WriteField("caption", caption)
 	}
 
 	// Add photo file (从内存字节流上传)
@@ -483,7 +526,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
-		keyboardJSON, err := json.Marshal(keyboard)
+		keyboardJSON, err := json.Marshal(sanitizeInlineKeyboard(keyboard))
 		if err != nil {
 			logger.Info("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
@@ -562,7 +605,7 @@ func (c *TelegramClient) SendPhotoFromURL(chatID int64, photoURL, caption string
 
 // SendPhotoFromURLWithParseMode downloads photo from URL and sends it to Telegram with specified parse mode
 func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, caption, parseMode string, headers map[string]string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
-	logger.Info("[Telegram] Downloading photo from: %s with parse_mode=%s", photoURL, parseMode)
+	logger.Info("[Telegram] Downloading photo from %s with parse_mode=%s", safeURLForLog(photoURL), parseMode)
 
 	// Download the image
 	var resp *http.Response
@@ -605,13 +648,16 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 	writer.WriteField("chat_id", fmt.Sprintf("%d", chatID))
 	applyTelegramSendOptionsToMultipart(writer, options)
 
-	// Add parse_mode
+	// Sanitize and cap captions before writing parse_mode; a truncated rich
+	// caption is downgraded to plain text to avoid broken markup.
+	caption, captionTruncated := truncateTelegramText(caption, 1024, parseMode)
+	if captionTruncated {
+		parseMode = ""
+		logger.Warn("[Telegram] Truncated oversized multipart caption to 1024 runes")
+	}
 	writer.WriteField("parse_mode", parseMode)
-
-	// Add caption (sanitize to ensure valid UTF-8)
 	if caption != "" {
-		sanitized := sanitizeUTF8(caption)
-		writer.WriteField("caption", sanitized)
+		_ = writer.WriteField("caption", caption)
 	}
 
 	// Add photo file
@@ -627,7 +673,7 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
-		keyboardJSON, err := json.Marshal(keyboard)
+		keyboardJSON, err := json.Marshal(sanitizeInlineKeyboard(keyboard))
 		if err != nil {
 			logger.Info("[Telegram] Failed to marshal keyboard: %v", err)
 			// Continue without keyboard rather than failing the entire send
@@ -706,10 +752,8 @@ func (c *TelegramClient) SendPhotoByURLWithParseMode(chatID int64, photoURL, cap
 	// Add keyboard if provided
 	if keyboard != nil && len(keyboard.InlineKeyboard) > 0 {
 		payload["reply_markup"] = keyboard
-		if kbJSON, err := json.Marshal(keyboard); err == nil {
-			logger.Info("[Telegram] sendPhoto payload: chat_id=%d, photo=%s, caption=%d chars, parse_mode=%s, keyboard=%s",
-				chatID, photoURL, len(caption), parseMode, string(kbJSON))
-		}
+		logger.Info("[Telegram] sendPhoto payload: chat_id=%d, photo=%s, caption=%d chars, parse_mode=%s, keyboard_rows=%d",
+			chatID, safeURLForLog(photoURL), len(caption), parseMode, len(keyboard.InlineKeyboard))
 	}
 
 	logger.Info("[Telegram] Calling sendPhoto API with parse_mode=%s...", parseMode)
@@ -869,8 +913,41 @@ func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) 
 	return nil, fmt.Errorf("telegram API rate limited after %d retries", maxRetries)
 }
 
+// normalizeTelegramPayload sanitizes text and keyboards immediately before
+// JSON serialization, covering send/edit/rich/ephemeral request paths.
+func normalizeTelegramPayload(payload map[string]interface{}) {
+	parseMode, _ := payload["parse_mode"].(string)
+	for field, maxRunes := range map[string]int{"text": 4096, "caption": 1024} {
+		if value, ok := payload[field].(string); ok {
+			clean, truncated := truncateTelegramText(value, maxRunes, parseMode)
+			payload[field] = clean
+			if truncated {
+				// Truncation degrades HTML to plain text. Markdown is also disabled
+				// because a cut may leave an unfinished entity.
+				payload["parse_mode"] = ""
+				logger.Warn("[Telegram] Truncated oversized %s to %d runes", field, maxRunes)
+			}
+		}
+	}
+	if media, ok := payload["media"].(map[string]interface{}); ok {
+		mediaParseMode, _ := media["parse_mode"].(string)
+		if caption, ok := media["caption"].(string); ok {
+			clean, truncated := truncateTelegramText(caption, 1024, mediaParseMode)
+			media["caption"] = clean
+			if truncated {
+				media["parse_mode"] = ""
+				logger.Warn("[Telegram] Truncated oversized media caption to 1024 runes")
+			}
+		}
+	}
+	if keyboard, ok := payload["reply_markup"].(*types.TelegramInlineKeyboard); ok {
+		payload["reply_markup"] = sanitizeInlineKeyboard(keyboard)
+	}
+}
+
 // makeRequest makes a generic API request
 func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface{}) (*types.TelegramMessage, error) {
+	normalizeTelegramPayload(payload)
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -951,6 +1028,7 @@ func extractMethod(apiURL string) string {
 
 // makeSimpleRequest makes an API request that returns a boolean result (like answerCallbackQuery)
 func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]interface{}) error {
+	normalizeTelegramPayload(payload)
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -1075,6 +1153,41 @@ func (c *TelegramClient) SetMyCommandsForScope(commands []BotCommand, languageCo
 	}
 
 	return nil
+}
+
+const telegramCallbackDataMaxBytes = 64
+
+// sanitizeInlineKeyboard enforces Telegram's callback_data contract at the
+// final transport boundary. Invalid callback-only buttons are dropped so one
+// bad dynamic value cannot make the entire message fail.
+func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.TelegramInlineKeyboard {
+	if keyboard == nil {
+		return nil
+	}
+
+	rows := make([][]types.TelegramInlineKeyboardButton, 0, len(keyboard.InlineKeyboard))
+	for _, row := range keyboard.InlineKeyboard {
+		cleanRow := make([]types.TelegramInlineKeyboardButton, 0, len(row))
+		for _, button := range row {
+			button.Text = sanitizeUTF8(button.Text)
+			button.CallbackData = sanitizeUTF8(button.CallbackData)
+			if button.Text == "" {
+				continue
+			}
+			if button.CallbackData != "" && len(button.CallbackData) > telegramCallbackDataMaxBytes {
+				logger.Warn("[Telegram] Dropping oversized callback button %q (%d bytes)", button.Text, len(button.CallbackData))
+				continue
+			}
+			if button.CallbackData == "" && button.URL == "" {
+				continue
+			}
+			cleanRow = append(cleanRow, button)
+		}
+		if len(cleanRow) > 0 {
+			rows = append(rows, cleanRow)
+		}
+	}
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
 }
 
 // KeyboardBuilder helps build inline keyboards

@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -108,7 +109,8 @@ func HandleCommand(
 			return
 		}
 		if err := userMapping.RemoveMapping(msg.From.ID); err != nil {
-			telegram.SendMessage(msg.Chat.ID, "❌ 解绑失败："+err.Error(), "", nil)
+			logger.Info("[Command] Unlink failed for user %d: %v", msg.From.ID, err)
+			_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 解绑失败，请稍后再试或联系管理员", "", nil)
 		} else {
 			telegram.SendMessage(msg.Chat.ID, "✅ 已解绑 MoviePilot 账号", "", nil)
 		}
@@ -130,7 +132,7 @@ func HandleCommand(
 	case "/game":
 		HandleGameCommand(telegram, msg)
 	case "/narrate":
-		HandleNarrateCommand(telegram, msg, cfg)
+		HandleNarrateCommand(telegram, msg, cfg, sessMgr)
 	case "/review":
 		HandleReviewCommand(telegram, msg, cfg, userMapping)
 		// New adventure commands
@@ -323,7 +325,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		if err != nil {
 			logger.Info("[LinkCommand] RegisterUser failed for %s: %v", sanitizedUsername, err)
 			recordLinkFailure(msg.From.ID)
-			telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败："+err.Error(), "", nil)
+			_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败，请稍后再试或联系管理员", "", nil)
 			return
 		}
 		userID = newUser.ID
@@ -348,7 +350,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 
 	if err := userMapping.AddMapping(msg.From.ID, userID, sanitizedUsername); err != nil {
 		logger.Info("[LinkCommand] Failed to save mapping: %v", err)
-		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败："+err.Error(), "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败，请稍后再试或联系管理员", "", nil)
 		return
 	}
 
@@ -414,7 +416,7 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 	if err != nil {
 		logger.Info("[ResetPW] Failed to reset password for %s by tg=%d admin=%v: %v", mpUsername, msg.From.ID, isAdmin, err)
 		recordLinkFailure(msg.From.ID)
-		telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败："+err.Error(), "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败，请稍后再试或联系管理员", "", nil)
 		return
 	}
 	logger.Info("[ResetPW] Password reset completed for %s by tg=%d admin=%v", mpUsername, msg.From.ID, isAdmin)
@@ -602,7 +604,7 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	result, err := portraitSvc.GeneratePortrait(embyUserID, mpUsername)
 	if err != nil {
 		logger.Info("[Portrait] Generate failed: %v", err)
-		telegram.SendMessage(msg.Chat.ID, "❌ 画像生成失败："+err.Error(), "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 画像生成失败，请稍后再试", "", nil)
 		// 清理"生成中"提示
 		if sent != nil {
 			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
@@ -682,7 +684,7 @@ func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 }
 
 // HandleNarrateCommand 处理 /narrate 命令 — AI 电影解说
-func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config) {
+func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, sessMgr *session.Manager) {
 	parts := strings.Fields(msg.Text)
 	if len(parts) < 2 {
 		telegram.SendMessage(msg.Chat.ID, "🎬 用法: /narrate 电影名\n\n例如: /narrate 流浪地球", "", nil)
@@ -712,7 +714,8 @@ func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.Telegram
 	// 生成解说
 	result, err := gameNarratorSvc.GenerateNarration(title, year, false)
 	if err != nil {
-		telegram.SendMessage(msg.Chat.ID, "❌ 解说生成失败: "+err.Error(), "", nil)
+		logger.Info("[NarrateCommand] Generation failed for user %d: %v", msg.From.ID, err)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 解说生成失败，请稍后再试", "", nil)
 		if sent != nil {
 			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
 		}
@@ -734,7 +737,13 @@ func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.Telegram
 	})
 
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
+	if sessMgr != nil {
+		sess := sessMgr.GetOrCreate(msg.From.ID)
+		ref := callback.ShortRef(movieName)
+		sess.Set("narrate_movie_name", movieName)
+		sess.Set("narrate_movie_"+ref, movieName)
+		kb.AddButton("🔥 剧透版", "game_narrate:ref:"+ref+":spoiler:1")
+	}
 	kb.AddButton("🎮 游戏中心", "game_menu")
 
 	// 删除"生成中"提示
@@ -786,7 +795,8 @@ func HandleReviewCommand(telegram *services.TelegramClient, msg *types.TelegramM
 
 	err = gameSocialDB.AddReview(msg.From.ID, mpUsername, movieName, 0, rating, content)
 	if err != nil {
-		telegram.SendMessage(msg.Chat.ID, "❌ 发表影评失败: "+err.Error(), "", nil)
+		logger.Info("[ReviewCommand] AddReview failed for user %d: %v", msg.From.ID, err)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 发表影评失败，请稍后再试", "", nil)
 		return
 	}
 

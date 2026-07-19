@@ -29,10 +29,21 @@ func main() {
 	}
 	log.Println("🚀 Starting Emby Telegram Bot...")
 
-	// Load configuration
+	// Load configuration. --check-config optionally accepts a dotenv path and
+	// exits before any service, network client, or background worker starts.
+	checkConfig := len(os.Args) > 1 && os.Args[1] == "--check-config"
+	if checkConfig && len(os.Args) > 2 {
+		if err := config.LoadEnvFile(os.Args[2]); err != nil {
+			log.Fatalf("Failed to load env file: %v", err)
+		}
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
+	}
+	if checkConfig {
+		log.Println("✅ Configuration is valid")
+		return
 	}
 
 	// Initialize logger with configuration

@@ -103,10 +103,12 @@
 ```bash
 cp .env.example .env
 vim .env
+./scripts/preflight.sh --env  # 只检查，不启动、不重启服务
 docker compose up -d
+curl -fsS http://localhost:8080/health
 ```
 
-服务监听 `:8080` 端口，`/health` 健康检查端点。首个执行 `/link` 的用户自动成为管理员。
+服务监听 `:8080` 端口，`/health` 为健康检查端点。首次部署必须填写 `API_KEYS`（JSON 对象，每个 Key 至少 16 个字符）；首个执行 `/link` 的用户会自动成为管理员。
 
 ### 环境变量
 
@@ -122,6 +124,9 @@ docker compose up -d
 | `OPENAI_BASE_URL` | — | AI 提供商 Base URL |
 | `OPENAI_MODEL` | — | AI 模型名称 |
 | `WEBHOOK_SECRET` | — | 入站 Webhook 的 HMAC-SHA256 密钥 |
+| `ENABLE_API_AUTH` | `true` | 是否启用 HTTP API Key 鉴权 |
+| `API_KEYS` | — | HTTP API Key JSON 对象；鉴权开启时必填 |
+| `ADMIN_USER_IDS` | — | 可选管理员 Telegram ID，逗号分隔 |
 | `TZ` | `Asia/Shanghai` | 时区 |
 
 完整配置：[`.env.example`](.env.example)

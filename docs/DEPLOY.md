@@ -31,23 +31,34 @@ nano .env  # 或使用你喜欢的编辑器
 | `TELEGRAM_BOT_TOKEN` | Bot Token | `123456:ABC-DEF...` |
 | `MOVIEPILOT_URL` | MoviePilot 地址 | `http://192.168.1.100:4500` |
 | `MOVIEPILOT_API_KEY` | MoviePilot API Key | `abc123xyz` |
-| `ADMINS` | 管理员 ID | `123456789` |
+| `API_KEYS` | HTTP API 鉴权密钥 JSON（默认必需） | `{"replace-with-32-random-characters":"deployment"}` |
+| `ADMIN_USER_IDS` | 管理员 ID（可选，逗号分隔） | `123456789` |
 
-### 4. 启动服务
+### 4. 部署前验收
+
+```bash
+./scripts/preflight.sh --env
+```
+
+该命令检查格式、敏感信息、必需配置、依赖、测试、构建及 Compose 配置；**不会启动或重启服务**。全部通过后再继续。
+
+### 5. 启动服务
 
 ```bash
 docker compose up -d
 ```
 
-### 5. 查看日志
+### 6. 验证健康状态
 
 ```bash
-docker logs -f yimao
+curl -fsS http://localhost:8080/health
+docker compose ps
+docker logs --tail 100 yimao
 ```
 
-看到 `🌐 Server listening on 0.0.0.0:8080` 表示启动成功。
+看到健康接口成功、容器为 `healthy`，且日志出现 `🌐 Server listening on 0.0.0.0:8080`，表示基础启动成功。
 
-### 6. 在 Telegram 测试
+### 7. 在 Telegram 测试
 
 给你的 Bot 发送 `/start` 命令，应该收到主菜单回复。
 

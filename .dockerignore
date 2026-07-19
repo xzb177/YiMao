@@ -22,10 +22,13 @@ docs/
 *.log
 logs/
 
-# Temporary files
+# Temporary files and local backups
 *.tmp
 *.temp
 /tmp/
+backup-*/
+backup_*/
+.learnings/
 
 # Build artifacts
 yimao

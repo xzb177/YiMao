@@ -3,7 +3,6 @@ package handlers
 import (
 	"fmt"
 	"math/rand"
-	"net/url"
 	"strings"
 	"time"
 
@@ -216,19 +215,39 @@ func (h *GameHandler) handleNarrate(ctx *callback.Context) (*callback.Response, 
 		return &callback.Response{CallbackMsg: "❌ AI 服务未就绪", ShowAlert: true}, nil
 	}
 
-	// 从 callback params 中提取电影名和剧透模式
+	// 新按钮只携带模式，电影名保存在用户会话中，避免超过 Telegram
+	// callback_data 的 64-byte 上限。旧版含 name 参数的按钮继续兼容。
 	movieName := ""
 	spoilerMode := false
+	params := map[string]string{}
 	if ctx.Callback != nil && ctx.Callback.Params != nil {
-		if name, ok := ctx.Callback.Params["name"]; ok {
-			movieName = name
-		}
-		if sp, ok := ctx.Callback.Params["spoiler"]; ok && sp == "1" {
-			spoilerMode = true
+		params = ctx.Callback.Params
+	}
+	if name, ok := params["name"]; ok {
+		movieName = name
+	}
+	if sp, ok := params["spoiler"]; ok && sp == "1" {
+		spoilerMode = true
+	}
+	if movieName == "" && h.sessionMgr != nil {
+		if sess := h.sessionMgr.GetOrCreate(ctx.UserID); sess != nil {
+			ref := params["ref"]
+			if ref != "" {
+				movieName, _ = sess.GetString("narrate_movie_" + ref)
+			} else {
+				// Compatibility for short callbacks sent before per-card refs.
+				movieName, _ = sess.GetString("narrate_movie_name")
+			}
 		}
 	}
 	if movieName == "" {
-		return &callback.Response{CallbackMsg: "❌ 缺少电影名", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "解说状态已过期，请重新发送电影名", ShowAlert: true}, nil
+	}
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+		ref := callback.ShortRef(movieName)
+		sess.Set("narrate_movie_name", movieName)
+		sess.Set("narrate_movie_"+ref, movieName)
 	}
 
 	// 异步生成：先返回"生成中"，后台完成后发新消息
@@ -278,11 +297,17 @@ func (h *GameHandler) generateNarrationAsync(userID int64, chatID int64, movieNa
 		SpoilerMode: result.SpoilerMode,
 	})
 
+	ref := callback.ShortRef(movieName)
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.GetOrCreate(userID)
+		sess.Set("narrate_movie_name", movieName)
+		sess.Set("narrate_movie_"+ref, movieName)
+	}
 	kb := services.NewKeyboardBuilder()
 	if spoilerMode {
-		kb.AddButton("🔇 无剧透版", fmt.Sprintf("game_narrate:name:%s", movieName))
+		kb.AddButton("🔇 无剧透版", "game_narrate:ref:"+ref+":spoiler:0")
 	} else {
-		kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
+		kb.AddButton("🔥 剧透版", "game_narrate:ref:"+ref+":spoiler:1")
 	}
 	kb.AddButton("🎬 换一部", "game_narrator")
 	kb.NewRow()
@@ -339,8 +364,11 @@ func (h *GameHandler) HandleNarrateText(userID int64, chatID int64, movieName st
 		SpoilerMode: result.SpoilerMode,
 	})
 
+	ref := callback.ShortRef(movieName)
+	sess.Set("narrate_movie_name", movieName)
+	sess.Set("narrate_movie_"+ref, movieName)
 	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔥 剧透版", fmt.Sprintf("game_narrate:spoiler:1:name:%s", movieName))
+	kb.AddButton("🔥 剧透版", "game_narrate:ref:"+ref+":spoiler:1")
 	kb.AddButton("🎬 换一部", "game_narrator")
 	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
@@ -864,10 +892,18 @@ func (h *GameHandler) handleDailyChallenge(ctx *callback.Context) (*callback.Res
 	})
 
 	kb := services.NewKeyboardBuilder()
-	if !alreadyChallenged {
-		kb.AddButton("⚔️ 接受挑战", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
+	if h.sessionMgr != nil {
+		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
+		ref := callback.ShortRef(movie.Title)
+		sess.Set("adventure_movie_"+ref, movie.Title)
+		if !alreadyChallenged {
+			kb.AddButton("⚔️ 接受挑战", "adventure_start:ref:"+ref)
+		} else {
+			kb.AddButton("🔄 再挑战一次", "adventure_start:ref:"+ref)
+		}
 	} else {
-		kb.AddButton("🔄 再挑战一次", callback.BuildCallback("adventure_start", map[string]string{"movie": url.QueryEscape(movie.Title)}))
+		// Session storage is required to keep dynamic titles out of callback_data.
+		kb.AddButton("⚔️ 开始冒险", "adventure_start")
 	}
 	kb.AddButton("📖 情报站", "game_narrator")
 	kb.NewRow()

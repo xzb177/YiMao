@@ -103,10 +103,12 @@ Search & Request is always available and never requires playing the adventure.
 ```bash
 cp .env.example .env
 vim .env
+./scripts/preflight.sh --env  # validates only; does not start or restart services
 docker compose up -d
+curl -fsS http://localhost:8080/health
 ```
 
-Service listens on `:8080` with `/health` endpoint. First user to `/link` becomes admin.
+The service listens on `:8080`; `/health` is the health endpoint. New deployments must set `API_KEYS` (a JSON object with keys of at least 16 characters). The first user to run `/link` becomes an administrator.
 
 ### Environment Variables
 
@@ -122,6 +124,9 @@ Service listens on `:8080` with `/health` endpoint. First user to `/link` become
 | `OPENAI_BASE_URL` | — | AI provider base URL |
 | `OPENAI_MODEL` | — | AI model name |
 | `WEBHOOK_SECRET` | — | HMAC-SHA256 secret for inbound webhooks |
+| `ENABLE_API_AUTH` | `true` | Enables HTTP API key authentication |
+| `API_KEYS` | — | JSON object of HTTP API keys; required when auth is enabled |
+| `ADMIN_USER_IDS` | — | Optional comma-separated Telegram administrator IDs |
 | `TZ` | `Asia/Shanghai` | Timezone |
 
 Full config: [`.env.example`](.env.example)

@@ -797,7 +797,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	kb.AddButton(h.carpoolButtonText(media.ID, "movie"), fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
 	kb.NewRow()
 	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie:title:%s", media.ID, media.Title))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie", media.ID))
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回", "back")
 
@@ -1221,7 +1221,7 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 
 	// Action row: subscribe + feedback
 	kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv:title:%s", targetItem.ID, targetItem.Title))
+	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv", targetItem.ID))
 	kb.NewRow()
 
 	// Resource list button

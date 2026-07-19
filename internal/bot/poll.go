@@ -285,7 +285,8 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 					if deps.IssueService != nil {
 						_, err := deps.IssueService.AddReply(issueID, msg.From.ID, adminName, sanitizedText, "admin")
 						if err != nil {
-							deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 回复失败: %v", err), "", nil)
+							logger.Info("[Poll] Issue reply failed for issue %d by user %d: %v", issueID, msg.From.ID, err)
+							_, _ = deps.Telegram.SendMessage(msg.Chat.ID, "❌ 回复失败，请稍后再试", "", nil)
 						} else {
 							if issue, exists := deps.IssueService.GetIssue(issueID); exists && issue.UserID != msg.From.ID {
 								notifyMsg := fmt.Sprintf("💬 管理员回复了您的反馈\n\n问题 #%d: %s\n\n📝 回复: %s", issue.ID, issue.Title, sanitizedText)
@@ -323,7 +324,8 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 					if deps.IssueService != nil {
 						_, err := deps.IssueService.AddReply(issueID, msg.From.ID, adminName, sanitizedText, "admin")
 						if err != nil {
-							deps.Telegram.SendMessage(msg.Chat.ID, fmt.Sprintf("❌ 回复失败: %v", err), "", nil)
+							logger.Info("[Poll] Issue reply failed for issue %d by user %d: %v", issueID, msg.From.ID, err)
+							_, _ = deps.Telegram.SendMessage(msg.Chat.ID, "❌ 回复失败，请稍后再试", "", nil)
 						} else {
 							// Get issue details to notify user
 							issue, exists := deps.IssueService.GetIssue(issueID)

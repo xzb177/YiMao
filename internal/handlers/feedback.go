@@ -78,7 +78,11 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 	logger.Info("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
 
-	// Check if this is a quick option selection (feedback:quick:encoded_text:id:xxx)
+	// New callbacks carry only a compact option index; legacy callbacks with
+	// URL-escaped text remain supported for messages sent before this release.
+	if quickIndex, hasQuickIndex := ctx.Callback.Params["quick_idx"]; hasQuickIndex {
+		return h.handleQuickIndexSelect(ctx, quickIndex)
+	}
 	if quickText, hasQuick := ctx.Callback.Params["quick"]; hasQuick {
 		return h.handleQuickSelect(ctx, quickText)
 	}
@@ -151,8 +155,12 @@ func (h *FeedbackHandler) handleStart(ctx *callback.Context) (*callback.Response
 		}, nil
 	}
 
-	// Store feedback context in session
+	// Store feedback context in session. Detail pages already cache titles by
+	// TMDB ID, so removing the title from callback_data does not lose context.
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	if mediaTitle == "" {
+		mediaTitle, _ = sess.GetString("media_title_" + tmdbID)
+	}
 	sess.Set("feedback_tmdb_id", tmdbID)
 	sess.Set("feedback_media_type", mediaType)
 	sess.Set("feedback_media_title", mediaTitle)
@@ -266,11 +274,13 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 		for i, opt := range typeInfo.quickOptions {
 			// Truncate long options for button text
 			buttonText := opt
-			if len(buttonText) > 15 {
-				buttonText = buttonText[:12] + "..."
+			if len([]rune(buttonText)) > 15 {
+				buttonText = string([]rune(buttonText)[:12]) + "..."
 			}
-			// Use callback data with special prefix "quick:" to indicate quick selection
-			callbackData := fmt.Sprintf("feedback:quick:%s:id:%s", urlEncode(opt), tmdbID)
+			// Only carry the option index. The option text and media context are
+			// already in this user's session; embedding URL-escaped Chinese text
+			// easily exceeds Telegram's 64-byte callback_data limit.
+			callbackData := fmt.Sprintf("feedback:quick_idx:%d", i)
 			kb.AddButton(buttonText, callbackData)
 			if i%2 == 1 {
 				kb.NewRow()
@@ -371,10 +381,21 @@ func getTypeInfo(issueType string) struct {
 	return info
 }
 
-// urlEncode simple URL encoding for callback data
-func urlEncode(s string) string {
-	// Use standard URL encoding for proper handling
-	return url.QueryEscape(s)
+// handleQuickIndexSelect resolves compact callback data from the user's
+// feedback session. It keeps every generated callback well under 64 bytes.
+func (h *FeedbackHandler) handleQuickIndexSelect(ctx *callback.Context, indexText string) (*callback.Response, error) {
+	var index int
+	if _, err := fmt.Sscanf(indexText, "%d", &index); err != nil || index < 0 {
+		return &callback.Response{CallbackMsg: "快捷选项已失效，请重新选择", ShowAlert: true}, nil
+	}
+
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	issueType, _ := sess.GetString("feedback_issue_type")
+	options := getTypeInfo(issueType).quickOptions
+	if index >= len(options) {
+		return &callback.Response{CallbackMsg: "快捷选项已失效，请重新选择", ShowAlert: true}, nil
+	}
+	return h.handleQuickSelect(ctx, options[index])
 }
 
 // HandleFeedbackText handles user's feedback description text
@@ -1111,11 +1132,17 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 		decodedText = strings.ReplaceAll(decodedText, "\\s", ";")
 	}
 
-	// Get tmdbID from params
+	// New compact callbacks recover media context from the session. Legacy
+	// callbacks still provide id directly and continue to work.
 	tmdbID := ctx.Callback.Params["id"]
 	if tmdbID == "" {
+		if sess := h.sessMgr.GetOrCreate(ctx.UserID); sess != nil {
+			tmdbID, _ = sess.GetString("feedback_tmdb_id")
+		}
+	}
+	if tmdbID == "" {
 		return &callback.Response{
-			CallbackMsg: "参数错误",
+			CallbackMsg: "反馈状态已过期，请重新打开反馈",
 			ShowAlert:   true,
 		}, nil
 	}

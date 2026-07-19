@@ -1,13 +1,16 @@
 package callback
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/xzb177/yimao/pkg/logger"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Action represents a callback action
@@ -514,6 +517,14 @@ func (r *Registry) Match(pattern string, data string) bool {
 }
 
 // Helper functions for building callbacks
+
+// ShortRef returns a deterministic compact reference for session-backed
+// callback payloads. Twelve hexadecimal characters provide ample separation
+// while keeping callback_data comfortably below Telegram's 64-byte limit.
+func ShortRef(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:6])
+}
 
 // BuildCallback builds a callback string
 func BuildCallback(action Action, params map[string]string) string {

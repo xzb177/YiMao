@@ -56,7 +56,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/YiMao}"
 if [ -d "$INSTALL_DIR" ]; then
     warn "目录 $INSTALL_DIR 已存在，正在更新..."
     cd "$INSTALL_DIR"
-    git pull
+    git pull --ff-only
 else
     info "克隆仓库到 $INSTALL_DIR ..."
     sudo mkdir -p "$INSTALL_DIR"
@@ -82,6 +82,7 @@ if [ ! -f .env ]; then
     echo "  - TELEGRAM_BOT_TOKEN (从 @BotFather 获取)"
     echo "  - MOVIEPILOT_URL (MoviePilot 地址)"
     echo "  - MOVIEPILOT_API_KEY (MoviePilot API Key)"
+    echo "  - API_KEYS (JSON 对象，每个 Key 至少 16 个字符)"
     echo ""
     info "管理员配置：启动机器人后，私聊使用 /link 用户名 密码 绑定账号"
     echo ""
@@ -124,6 +125,10 @@ init_json_file "data/media_notifications.json" '{"settings":{}}'
 init_json_file "data/feedback.json" '{}'
 init_json_file "data/review_requests.json" '{}'
 init_json_file "data/search_history.json" '{}'
+
+# 部署前验收：失败时绝不启动或重建服务
+info "执行部署前验收..."
+./scripts/preflight.sh --env
 
 # 启动服务
 info "启动 Docker 服务..."

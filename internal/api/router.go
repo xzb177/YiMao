@@ -200,7 +200,8 @@ func (r *Router) addAdmin(w http.ResponseWriter, req *http.Request) {
 	}
 
 	if err := r.adminService.AddAdmin(userID, payload.Name); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logger.Info("[API] Failed to add admin %d by %s: %v", userID, adminUserID, err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -257,7 +258,8 @@ func (r *Router) removeAdmin(w http.ResponseWriter, req *http.Request, userID in
 	}
 
 	if err := r.adminService.RemoveAdmin(userID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logger.Info("[API] Failed to remove admin %d by %s: %v", userID, adminUserID, err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 

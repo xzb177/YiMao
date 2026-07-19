@@ -1,26 +1,28 @@
-# Emby Telegram Bot - Docker 部署说明
+# 云海求片助手 - Docker 部署说明
 
-## ⚠️ 重要提示
+## 运行方式
 
-**本机器人必须在 Docker 容器中运行，不要直接运行二进制文件。**
+推荐使用 Docker Compose 部署。每次更新前先执行只读验收，确认代码、配置、测试和构建通过后再启动或重建服务：
 
-所有后续更新和管理都应使用 Docker 方式。
+```bash
+./scripts/preflight.sh --env
+```
 
 ## 管理脚本
 
-使用 `manage.sh` 脚本管理容器：
+使用仓库内的 `scripts/ops.sh`：
 
 ```bash
-./manage.sh start      # 启动容器
-./manage.sh stop       # 停止容器
-./manage.sh restart    # 重启容器
-./manage.sh status     # 查看状态
-./manage.sh logs       # 查看日志
-./manage.sh logs-f     # 实时查看日志
-./manage.sh rebuild    # 重新构建并启动
-./manage.sh update     # 拉取代码、重新构建并启动
-./manage.sh shell      # 进入容器 shell
-./manage.sh clean      # 清理无用容器和镜像
+./scripts/ops.sh preflight  # 部署前验收，不启动、不重启
+./scripts/ops.sh start      # 启动容器
+./scripts/ops.sh stop       # 停止容器
+./scripts/ops.sh restart    # 重启容器
+./scripts/ops.sh status     # 查看状态
+./scripts/ops.sh logs       # 实时日志
+./scripts/ops.sh rebuild    # 重新构建并启动
+./scripts/ops.sh update     # 拉取代码、重新构建并启动
+./scripts/ops.sh health     # 健康检查
+./scripts/ops.sh backup     # 备份数据与配置
 ```
 
 ## Docker Compose 命令
@@ -38,43 +40,39 @@ docker compose build --no-cache  # 重新构建
 编辑 `.env` 文件配置环境变量：
 
 ```bash
-# Telegram Bot 配置
-TELEGRAM_BOT_TOKEN=你的bot_token
-TELEGRAM_CHAT_ID=群组ID
+# 必需
+TELEGRAM_BOT_TOKEN=你的_bot_token
+MOVIEPILOT_URL=http://moviepilot:4500
+MOVIEPILOT_API_KEY=你的_moviepilot_api_key
 
-# Jellyseerr 配置
-JELLYSEERR_URL=https://your-jellyseerr-url
-JELLYSEERR_API_KEY=你的api_key
+# HTTP API 鉴权默认开启；Key 至少 16 个字符
+ENABLE_API_AUTH=true
+API_KEYS={"replace-with-32-random-characters":"deployment"}
 
-# AI 配置
-ZHIPU_API_KEY=智谱API密钥
-CLAUDE_API_KEY=Claude API密钥
-
-# 管理员配置
-ADMINS=用户ID:姓名
-
-# 其他配置...
+# 可选
+ADMIN_USER_IDS=123456789,987654321
+EMBY_URL=http://emby:8096
+EMBY_API_KEY=你的_emby_api_key
+TMDB_API_KEY=你的_tmdb_api_key
 ```
+
+完整字段与说明以 [`.env.example`](../.env.example) 为准。
 
 ## 数据持久化
 
-以下目录和文件会被持久化：
-
-- `./data/` - 数据目录
-- `./preferences.json` - 用户偏好
-- `./user_quotas.json` - 用户配额
-- `./user_mappings.json` - 用户映射
-- `./binding_requests.json` - 绑定请求
+Compose 将宿主机的 `./data/` 挂载到容器 `/app/data`。用户映射、配额、反馈、搜索历史、许愿池等运行数据都应保存在该目录中；升级前使用 `./scripts/ops.sh backup` 备份 `data/` 与 `.env`。
 
 ## 更新代码后重新部署
 
 ```bash
-# 方法1：使用管理脚本
-./manage.sh update
+# 方法 1：先验收，再使用运维脚本更新
+./scripts/ops.sh preflight
+./scripts/ops.sh update
 
-# 方法2：手动操作
-git pull
-./manage.sh rebuild
+# 方法 2：手动更新
+./scripts/preflight.sh --env
+git pull --ff-only
+docker compose up -d --build
 ```
 
 ## 容器信息
@@ -89,15 +87,16 @@ git pull
 
 查看容器日志：
 ```bash
-./manage.sh logs-f
+./scripts/ops.sh logs
 ```
 
 进入容器调试：
 ```bash
-./manage.sh shell
+docker exec -it yimao sh
 ```
 
-重启容器：
+健康检查与重启：
 ```bash
-./manage.sh restart
+./scripts/ops.sh health
+./scripts/ops.sh restart
 ```

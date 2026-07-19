@@ -19,12 +19,24 @@ services:
       # === Telegram ===
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
 
-      # === Server ===
-      - PORT=8080
-      - TZ=Asia/Shanghai
+      # === Server / logging ===
+      - PORT=${PORT:-8080}
+      - TZ=${TZ:-Asia/Shanghai}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_PREFIX=${LOG_PREFIX:-YiMao}
+      - LOG_COLOR=${LOG_COLOR:-false}
       - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - ENABLE_API_AUTH=${ENABLE_API_AUTH:-true}
+      - API_KEYS=${API_KEYS}
+      - ENABLE_RATE_LIMIT=${ENABLE_RATE_LIMIT:-true}
+      - ENABLE_IP_BLOCKING=${ENABLE_IP_BLOCKING:-true}
+
+      # === Runtime permissions ===
+      - PUID=${PUID:-0}
+      - PGID=${PGID:-0}
 
       # === Emby / Jellyfin ===
       - EMBY_URL=${EMBY_URL}
@@ -33,14 +45,27 @@ services:
       # === MoviePilot ===
       - MOVIEPILOT_URL=${MOVIEPILOT_URL}
       - MOVIEPILOT_API_KEY=${MOVIEPILOT_API_KEY}
+      - DOWNLOAD_SAVE_PATH=${DOWNLOAD_SAVE_PATH}
 
       # === TMDB ===
       - TMDB_API_KEY=${TMDB_API_KEY}
 
-      # === AI (Adventure scenes) ===
+      # === AI (optional) ===
+      - AI_ENABLED=${AI_ENABLED:-false}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=${OPENAI_MODEL}
+      - ZHIPU_API_KEY=${ZHIPU_API_KEY}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+
+      # === Notifications / wish pool / UI ===
+      - NOTIFICATION_FORMAT=${NOTIFICATION_FORMAT:-detailed}
+      - WISH_RESEARCH_INTERVAL_HOURS=${WISH_RESEARCH_INTERVAL_HOURS:-24}
+      - WISH_EXPIRE_DAYS=${WISH_EXPIRE_DAYS:-30}
+      - WISH_MIN_SEEDERS=${WISH_MIN_SEEDERS:-1}
+      - ENABLE_RICH_MESSAGE=${ENABLE_RICH_MESSAGE:-true}
+      - UI_STYLE=${UI_STYLE:-card}
+      - DAILY_SUMMARY_HOUR=${DAILY_SUMMARY_HOUR:-21}
 
     network_mode: "host"
 
