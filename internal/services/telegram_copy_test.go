@@ -16,7 +16,7 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 	wantRows := [][]string{
 		{"start_search"},
 		{"start_requests", "start_wish"},
-		{"start_ai", "game_menu"},
+		{"request_heat", "game_menu"},
 		{"start_settings", "help"},
 	}
 	for i, want := range wantRows {
@@ -33,7 +33,7 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
-			if button.CallbackData == "adventure_start" || button.CallbackData == "start_portrait" {
+			if button.CallbackData == "adventure_start" || button.CallbackData == "start_portrait" || button.CallbackData == "start_ai" {
 				t.Fatalf("duplicate/low-frequency entry still exposed on home: %#v", button)
 			}
 		}

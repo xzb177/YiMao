@@ -748,19 +748,24 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	internalSource := ctx.Callback.Params["source"]
 	returningFromInternalStep := internalSource == "seasons" || internalSource == "confirm"
+	fromRequestHeat := internalSource == "request_heat"
 	finalizeDetail := func(resp *callback.Response) *callback.Response {
 		if resp != nil && returningFromInternalStep {
 			resp.DeleteMessage = true
 			resp.Edit = false
 		}
+		if resp != nil && fromRequestHeat {
+			retargetDetailKeyboard(resp.Keyboard, "request_heat")
+		}
 		return resp
 	}
 
-	// Check if we have cached data from search results first
+	// Check if we have cached data from search results first. Heat-list details
+	// bypass unrelated user search state and resolve by authoritative type + TMDB ID.
 	items, _, query, hasSearch := sess.GetSearchResults()
-	if hasSearch {
+	if hasSearch && !fromRequestHeat {
 		for _, item := range items {
-			if item.ID == mediaID {
+			if item.ID == mediaID && normalizeDetailMediaType(item.Type) == normalizeDetailMediaType(mediaType) {
 				// Internal season-picker navigation returns to the same detail card and
 				// must not duplicate the search history entry.
 				if !returningFromInternalStep {
@@ -776,8 +781,9 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		}
 	}
 
-	// Check if we have cached data from AI
-	if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
+	// Check if we have cached data from AI. Heat-list details deliberately avoid
+	// this cache because movie and TV IDs share a numeric namespace.
+	if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil && !fromRequestHeat && normalizeDetailMediaType(cachedItem.MediaType) == normalizeDetailMediaType(mediaType) {
 		return finalizeDetail(h.buildDetailFromCache(cachedItem, sess)), nil
 	}
 
@@ -798,6 +804,33 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 
 	// If all else fails, build a simple detail page
 	return finalizeDetail(h.buildSimpleDetail(tmdbID, mediaType, sess)), nil
+}
+
+func normalizeDetailMediaType(mediaType string) string {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "tv", "series", "电视剧", "剧集":
+		return "tv"
+	default:
+		return "movie"
+	}
+}
+
+func retargetDetailKeyboard(keyboard *callback.Keyboard, returnAction string) {
+	if keyboard == nil {
+		return
+	}
+	for i := range keyboard.InlineKeyboard {
+		for j := range keyboard.InlineKeyboard[i] {
+			button := &keyboard.InlineKeyboard[i][j]
+			if button.CallbackData == "back" {
+				button.Text = "⬅️ 返回热榜"
+				button.CallbackData = returnAction
+			}
+			if strings.HasPrefix(button.CallbackData, "detail_seasons:") && !strings.Contains(button.CallbackData, ":source:") {
+				button.CallbackData += ":source:request_heat"
+			}
+		}
+	}
 }
 
 // isAIRecommendationQuery checks if the query is from AI recommendation
@@ -1116,6 +1149,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response, error) {
 	// Get media ID from params
 	mediaID, hasID := ctx.Callback.Params["id"]
+	returnSource := ctx.Callback.Params["source"]
 	if !hasID {
 		return &callback.Response{
 			Text:        "❌ 请求无效",
@@ -1129,9 +1163,9 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	// Try to find the item in search results first.
 	items, _, _, hasSearch := sess.GetSearchResults()
 	var targetItem *session.SearchItem
-	if hasSearch {
+	if hasSearch && returnSource != "request_heat" {
 		for i := range items {
-			if items[i].ID == mediaID {
+			if items[i].ID == mediaID && normalizeDetailMediaType(items[i].Type) == "tv" {
 				targetItem = &items[i]
 				break
 			}
@@ -1216,7 +1250,11 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	kb.AddButton("📺 求全部季度", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
 	kb.NewRow()
 	// Return to detail without pushing another search navigation entry.
-	kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:seasons", targetItem.ID))
+	if returnSource == "request_heat" {
+		kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:request_heat", targetItem.ID))
+	} else {
+		kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:seasons", targetItem.ID))
+	}
 
 	return &callback.Response{
 		Text:      msg.Build(),

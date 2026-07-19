@@ -55,7 +55,7 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		{"🔍 搜索求片", "start_search"},
 		{"📊 求片进度", "start_requests"},
 		{"✨ 许愿池", "start_wish"},
-		{"🎬 今晚看什么", "start_ai"},
+		{"🔥 大家最近在求", "request_heat"},
 		{"🎮 游戏中心", "game_menu"},
 		{"⚙️ 设置", "start_settings"},
 		{"❓ 帮助", "help"},

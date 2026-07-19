@@ -1435,8 +1435,8 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 	}
 	kb.NewRow()
 
-	// Discovery and optional play are secondary to requesting.
-	kb.AddButton("🎬 今晚看什么", "start_ai")
+	// Discovery is grounded in real request activity, not generic recommendations.
+	kb.AddButton("🔥 大家最近在求", "request_heat")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
 

@@ -493,6 +493,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	requestHandler.SetRequestSubmissionService(submissionService)
 	requestHandler.SetCarpoolService(deps.CarpoolService)
 	searchHandler := handlers.NewSearchHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
+	requestHeatHandler := handlers.NewRequestHeatHandler(services.NewRequestHeatService(deps.ReviewService, deps.CarpoolService))
 	if deps.SearchHistoryDB != nil {
 		searchHandler.SetSearchHistoryDB(deps.SearchHistoryDB)
 	}
@@ -722,6 +723,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
+	registry.RegisterFunc(callback.ActionRequestHeat, requestHeatHandler.Handle)
+	// Legacy start_ai buttons now land on the request-focused search entry.
+	registry.RegisterFunc(callback.ActionAI, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionSettings, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
@@ -945,7 +949,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索求片"},
 		{Command: "adventure", Description: "⚔️ 电影冒险"},
-		{Command: "ai", Description: "🎬 精选推荐"},
 		{Command: "requests", Description: "📊 求片进度"},
 		{Command: "wish", Description: "✨ 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},

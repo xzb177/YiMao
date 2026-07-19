@@ -123,3 +123,29 @@ func TestReturningFromSeasonPickerDoesNotDuplicateNavigation(t *testing.T) {
 		t.Fatalf("season return duplicated navigation: %#v", extra)
 	}
 }
+
+func TestRequestHeatDetailBypassesWrongTypeSearchCacheAndReturnsToHeat(t *testing.T) {
+	manager := session.NewManager(time.Hour, 10)
+	sess := manager.GetOrCreate(9)
+	sess.SetSearchResults([]session.SearchItem{{ID: "550", Title: "错误电影缓存", Type: "movie"}}, 1, "旧搜索")
+	h := NewDetailHandler(manager, nil, nil, nil)
+	resp, err := h.Handle(&callback.Context{
+		UserID: 9,
+		Callback: &callback.Callback{Action: callback.ActionDetail, Params: map[string]string{
+			"id": "550", "type": "tv", "source": "request_heat",
+		}},
+	})
+	if err != nil || resp == nil || resp.Keyboard == nil {
+		t.Fatalf("resp=%#v err=%v", resp, err)
+	}
+	if strings.Contains(resp.RichMessage, "错误电影缓存") || strings.Contains(resp.Text, "错误电影缓存") {
+		t.Fatalf("wrong-type search cache reused: %#v", resp)
+	}
+	callbacks := keyboardCallbacks(resp.Keyboard)
+	if callbacks["request_heat"] != "⬅️ 返回热榜" {
+		t.Fatalf("heat return missing: %#v", callbacks)
+	}
+	if callbacks["detail_seasons:id:550:source:request_heat"] != "🗂️ 选择季度" {
+		t.Fatalf("season source missing: %#v", callbacks)
+	}
+}

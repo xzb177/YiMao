@@ -73,7 +73,8 @@ func HandleCommand(
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
 	case "/ai":
-		telegram.SendMessage(msg.Chat.ID, "🎬 AI 推荐功能已下线\n\n请使用主菜单的推荐功能", "", nil)
+		// Keep the legacy command harmless for old clients without advertising it.
+		telegram.SendMessage(msg.Chat.ID, "🔍 直接发送片名，我来帮你搜索求片", "", nil)
 	case "/requests":
 		// 群组隐私保护：群内不发长卡片，引导去私聊
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
@@ -482,8 +483,8 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Text("用 /link 创建或绑定 MoviePilot 账号；/resetpw 重置自己的密码").Newline()
 	msg.Newline()
 	msg.Bold("⌨️ 命令速查").Newline()
-	msg.Text("/start 主菜单  /search 搜索求片  /ai 今晚看什么").Newline()
-	msg.Text("/wish 许愿  /requests 求片进度  /quota 配额").Newline()
+	msg.Text("/start 主菜单  /search 搜索求片  /requests 求片进度").Newline()
+	msg.Text("/wish 许愿  /quota 配额").Newline()
 	msg.Text("/portrait 观影画像  /link 绑定  /resetpw 重置密码  /help 帮助").Newline()
 	msg.Newline()
 	msg.Italic("💬 想被通知出源？记得先和我私聊过一句哦，不然我发不出私信～").Newline()

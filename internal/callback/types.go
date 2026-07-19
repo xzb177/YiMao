@@ -36,6 +36,7 @@ const (
 	ActionHelpTopic     Action = "help_topic"
 	ActionSettings      Action = "settings"
 	ActionAI            Action = "ai"
+	ActionRequestHeat   Action = "request_heat"
 	ActionMood          Action = "mood"
 	ActionMoodPick      Action = "moodpick"
 	ActionQuickPick     Action = "quickpick"
@@ -72,6 +73,7 @@ var validActions = map[Action]bool{
 	ActionHelp:          true,
 	ActionHelpTopic:     true,
 	ActionSettings:      true,
+	ActionRequestHeat:   true,
 	ActionFeedback:      true,
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page

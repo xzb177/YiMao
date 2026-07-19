@@ -1408,13 +1408,25 @@ func (s *ReviewService) GetRequestUserCount() int {
 	return len(seen)
 }
 
-// GetAllRequests returns all review requests
+// GetAllRequests returns detached snapshots of all review requests.
 func (s *ReviewService) GetAllRequests() []*ReviewRequest {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	result := make([]*ReviewRequest, 0, len(s.reviews))
 	for _, r := range s.reviews {
-		result = append(result, r)
+		if r == nil {
+			continue
+		}
+		clone := *r
+		if r.EmbyInfo != nil {
+			embyClone := *r.EmbyInfo
+			clone.EmbyInfo = &embyClone
+		}
+		if r.LibraryNotifiedAt != nil {
+			notifiedAt := *r.LibraryNotifiedAt
+			clone.LibraryNotifiedAt = &notifiedAt
+		}
+		result = append(result, &clone)
 	}
 	return result
 }
