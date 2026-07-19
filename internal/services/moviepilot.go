@@ -406,22 +406,27 @@ func (c *MoviePilotClient) GetSuccessfulTransferHistory(start, end time.Time) ([
 	return result, nil
 }
 
-// SearchMedia searches for media by query
+// SearchMedia searches for media by query using the general 20-item page size.
 func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse, error) {
-	// Sanitize query to prevent injection attacks
+	return c.SearchMediaWithCount(query, page, 20)
+}
+
+// SearchMediaWithCount searches with an explicit page size. Interactive Telegram
+// results use 8 so every API item maps to one visible button without gaps.
+func (c *MoviePilotClient) SearchMediaWithCount(query string, page, count int) (*SearchResponse, error) {
 	query = validation.SanitizeSearchQuery(query)
 	if query == "" {
 		return nil, fmt.Errorf("search query cannot be empty")
 	}
-
-	// Validate page number
 	if page < 1 {
 		page = 1
 	}
+	if count < 1 || count > 50 {
+		count = 20
+	}
 
-	// URL encode the query
 	encodedQuery := url.QueryEscape(query)
-	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=20", encodedQuery, page)
+	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=%d", encodedQuery, page, count)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {

@@ -426,8 +426,16 @@ func (s *Session) GetSearchResults() ([]SearchItem, int, string, bool) {
 	}
 
 	page := 1
-	if p, ok := data["page"].(float64); ok {
+	switch p := data["page"].(type) {
+	case int:
+		page = p
+	case int64:
 		page = int(p)
+	case float64:
+		page = int(p)
+	}
+	if page < 1 {
+		page = 1
 	}
 
 	query := ""

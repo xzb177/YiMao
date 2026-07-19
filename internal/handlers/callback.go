@@ -1386,8 +1386,8 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 // restoreSearchResults restores the search results from session
 func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.Context) (*callback.Response, error) {
-	items, _, query, hasSearch := sess.GetSearchResults()
-	logger.Info("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, query=%s", hasSearch, len(items), query)
+	items, page, query, hasSearch := sess.GetSearchResults()
+	logger.Info("[BackHandler] restoreSearchResults: hasSearch=%v, items=%d, page=%d query=%s", hasSearch, len(items), page, query)
 
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu using UI package
@@ -1404,60 +1404,40 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		}, nil
 	}
 
-	// Restore search results display
-	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n", query, len(items))
-
-	// Build keyboard with results
-	var keyboardRows [][]types.TelegramInlineKeyboardButton
-	var row []types.TelegramInlineKeyboardButton
-
+	// Restore the same readable result list and page controls used by SearchHandler.
+	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n第 %d 页 · 本页最多展示 8 条\n\n", query, page)
+	results := make([]services.SearchResult, 0, len(items))
 	for i, item := range items {
 		if i >= 8 {
 			break
 		}
-
+		mediaType := "movie"
+		mediaLabel := "🎬 电影"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+			mediaLabel = "📺 剧集"
+		}
 		year := ""
 		if item.Year > 0 {
-			year = fmt.Sprintf("%d", item.Year)
+			year = fmt.Sprintf(" (%d)", item.Year)
 		}
-
 		rating := ""
 		if item.Rating > 0 {
 			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
 		}
-
-		mediaType := "🎬 电影"
-		if item.Type == "tv" {
-			mediaType = "📺 剧集"
-		}
-		text += fmt.Sprintf("%d. %s (%s) %s%s\n", i+1, item.Title, year, mediaType, rating)
-
-		row = append(row, types.TelegramInlineKeyboardButton{
-			Text:         fmt.Sprintf("%d", i+1),
-			CallbackData: fmt.Sprintf("select:id:%s:type:%s", item.ID, item.Type),
+		text += fmt.Sprintf("%d. %s%s · %s%s\n", i+1, item.Title, year, mediaLabel, rating)
+		id, _ := strconv.Atoi(item.ID)
+		results = append(results, services.SearchResult{
+			ID:     id,
+			Title:  item.Title,
+			Year:   services.FlexibleYear(item.Year),
+			Type:   mediaType,
+			Rating: item.Rating,
 		})
-
-		if len(row) == 4 {
-			keyboardRows = append(keyboardRows, row)
-			row = []types.TelegramInlineKeyboardButton{}
-		}
 	}
+	keyboard := buildSearchResultsKeyboard(results, page, len(items) >= 8)
 
-	if len(row) > 0 {
-		keyboardRows = append(keyboardRows, row)
-	}
-
-	// Navigation row
-	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "🏠 主菜单", CallbackData: "start"},
-	}
-	keyboardRows = append(keyboardRows, navRow)
-
-	keyboard := &types.TelegramInlineKeyboard{
-		InlineKeyboard: keyboardRows,
-	}
-
-	logger.Info("[BackHandler] Restoring search results: query=%s, items=%d", query, len(items))
+	logger.Info("[BackHandler] Restoring search results: query=%s, items=%d, page=%d", query, len(items), page)
 	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
 		Text:          text,

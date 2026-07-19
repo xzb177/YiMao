@@ -163,31 +163,43 @@ func (h *SearchHandler) getHistoryQuery(userID int64, idx int) string {
 	return ""
 }
 
-// HandleSearchQuery handles a text search query
+// HandleSearchQuery handles a text search query.
 func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query string) error {
-	logger.Info("[SearchHandler] Search query: %s", query)
+	return h.handleSearchQueryPage(userID, chatID, query, 1, true)
+}
+
+// handleSearchQueryPage keeps the requested page in the API call, session and
+// keyboard. recordHistory is false for pagination so navigation does not pollute
+// search frequency and trending statistics.
+func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query string, page int, recordHistory bool) error {
+	logger.Info("[SearchHandler] Search query: %s page=%d", query, page)
 
 	query = strings.TrimSpace(query)
 	if query == "" {
 		return h.showSearchHistory(userID, chatID)
 	}
+	if page < 1 {
+		page = 1
+	}
 
 	// 发送 typing 指示器，让用户知道 Bot 在处理
 	h.telegram.SendChatAction(chatID, "typing")
 
-	// Add to search history - prefer DB version (new), fallback to legacy
-	if h.searchHistoryDB != nil {
-		h.searchHistoryDB.AddSearch(userID, query)
-		logger.Info("[SearchHandler] Search added to SearchHistoryDB: userID=%d, query=%s", userID, query)
-	} else if h.searchHistory != nil {
-		h.searchHistory.AddSearch(userID, query)
-		logger.Info("[SearchHandler] Search added to SearchHistory (legacy): userID=%d, query=%s", userID, query)
-	} else {
-		logger.Info("[SearchHandler] WARNING: No search history service available, query not saved: %s", query)
+	// Add to search history only for a user-initiated query. Pagination is navigation.
+	if recordHistory {
+		if h.searchHistoryDB != nil {
+			h.searchHistoryDB.AddSearch(userID, query)
+			logger.Info("[SearchHandler] Search added to SearchHistoryDB: userID=%d, query=%s", userID, query)
+		} else if h.searchHistory != nil {
+			h.searchHistory.AddSearch(userID, query)
+			logger.Info("[SearchHandler] Search added to SearchHistory (legacy): userID=%d, query=%s", userID, query)
+		} else {
+			logger.Info("[SearchHandler] WARNING: No search history service available, query not saved: %s", query)
+		}
 	}
 
-	// Perform search
-	results, err := h.moviepilot.SearchMedia(query, 1)
+	// Perform an 8-item interactive search so every API result remains reachable.
+	results, err := h.moviepilot.SearchMediaWithCount(query, page, 8)
 	if err != nil {
 		logger.Info("[SearchHandler] Search failed: %v", err)
 		h.telegram.SendMessage(chatID, "❌ 搜索服务暂时不可用，请稍后再试", "", nil)
@@ -199,13 +211,25 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return nil
 	}
 
+	filtered := results.Results[:0]
+	for _, item := range results.Results {
+		if item.ID > 0 {
+			filtered = append(filtered, item)
+		}
+	}
+	results.Results = filtered
+
 	if len(results.Results) == 0 {
+		if page > 1 {
+			h.telegram.SendMessage(chatID, fmt.Sprintf("🔍 「%s」没有更多结果了", query), "", buildSearchRecoveryKeyboard(page-1))
+			return nil
+		}
 		fallbackResults, fallbackQuery, fbErr := h.trySearchFallback(query)
 		if fbErr != nil {
 			logger.Info("[SearchHandler] Fallback search failed: %v", fbErr)
 		}
 		if fallbackResults != nil && len(fallbackResults) > 0 {
-			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults})
+			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults}, 1)
 			h.telegram.SendMessage(chatID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
 			return nil
 		}
@@ -213,7 +237,7 @@ func (h *SearchHandler) HandleSearchQuery(userID int64, chatID int64, query stri
 		return nil
 	}
 
-	h.sendSearchResults(userID, chatID, query, results)
+	h.sendSearchResults(userID, chatID, query, results, page)
 	return nil
 }
 
@@ -287,14 +311,17 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	_, _, query, ok := sess.GetSearchResults()
 	if !ok || query == "" {
 		return &callback.Response{
-			Text:        "⚠️ 搜索会话已过期，请重新输入片名",
+			Text:        "⚠️ 搜索会话已过期，点下面重新搜索",
 			CallbackMsg: "会话过期",
 			ShowAlert:   true,
+			Keyboard:    convertKeyboard(buildSearchRecoveryKeyboard(0)),
 		}, nil
 	}
 
-	// 重新搜索并展示指定页
-	h.HandleSearchQuery(ctx.UserID, ctx.ChatID, query)
+	// 重新搜索并展示指定页。旧实现固定请求第 1 页，导致内容看似翻页但实际不变。
+	if err := h.handleSearchQueryPage(ctx.UserID, ctx.ChatID, query, page, false); err != nil {
+		return &callback.Response{CallbackMsg: "搜索失败，请稍后重试", ShowAlert: true}, nil
+	}
 	return &callback.Response{CallbackMsg: fmt.Sprintf("第 %d 页", page)}, nil
 }
 
@@ -490,6 +517,9 @@ func (h *SearchHandler) sendNoResultsMessage(userID int64, chatID int64, query s
 		kb.AddButton("✨ 许愿", "wish_add")
 		kb.NewRow()
 	}
+	kb.AddButton("🔍 重新搜索", "search")
+	kb.AddButton("📜 搜索记录", "search_history_menu")
+	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 	h.telegram.SendMessage(chatID, msg, "", kb.Build())
 }
@@ -498,60 +528,36 @@ func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult
 	return h.fallbackService.TryFallback(query)
 }
 
-func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse) {
-	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n找到 %d 条结果\n\n",
-		query, len(results.Results))
-
-	var keyboardRows [][]types.TelegramInlineKeyboardButton
-	var row []types.TelegramInlineKeyboardButton
-
+func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse, page int) {
+	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n第 %d 页 · 本页最多展示 8 条\n\n", query, page)
 	for i, item := range results.Results {
 		if i >= 8 {
 			break
 		}
-
 		year := ""
 		if item.Year > 0 {
-			year = fmt.Sprintf("%d", item.Year)
+			year = fmt.Sprintf(" (%d)", item.Year)
 		}
-
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
-		}
-
 		mediaType := "🎬 电影"
 		if item.Type == "tv" || item.Type == "电视剧" {
 			mediaType = "📺 剧集"
 		}
-		text += fmt.Sprintf("%d. %s (%s) %s%s\n", i+1, item.Title, year, mediaType, rating)
-
-		mediaTypeForCallback := "movie"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaTypeForCallback = "tv"
+		rating := ""
+		if item.Rating > 0 {
+			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
 		}
-
-		row = append(row, types.TelegramInlineKeyboardButton{
-			Text:         fmt.Sprintf("%d", i+1),
-			CallbackData: fmt.Sprintf("select:id:%d:type:%s", item.ID, mediaTypeForCallback),
-		})
-
-		if len(row) == 4 {
-			keyboardRows = append(keyboardRows, row)
-			row = []types.TelegramInlineKeyboardButton{}
-		}
+		text += fmt.Sprintf("%d. %s%s · %s%s\n", i+1, item.Title, year, mediaType, rating)
 	}
 
-	if len(row) > 0 {
-		keyboardRows = append(keyboardRows, row)
-	}
+	keyboard := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
 
 	// Save search results to session
 	sess := h.sessMgr.GetOrCreate(userID)
-	searchItems := make([]session.SearchItem, 0, len(results.Results))
-	if len(results.Results) > 8 {
-		searchItems = make([]session.SearchItem, 8)
+	displayCount := len(results.Results)
+	if displayCount > 8 {
+		displayCount = 8
 	}
+	searchItems := make([]session.SearchItem, 0, displayCount)
 	for i, item := range results.Results {
 		if i >= 8 {
 			break
@@ -560,7 +566,7 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 		if item.Type == "tv" || item.Type == "电视剧" {
 			mediaType = "tv"
 		}
-		searchItems[i] = session.SearchItem{
+		searchItems = append(searchItems, session.SearchItem{
 			ID:       fmt.Sprintf("%d", item.ID),
 			Title:    item.Title,
 			Year:     item.Year.Int(),
@@ -568,26 +574,79 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 			Rating:   item.Rating,
 			Poster:   item.Poster,
 			Overview: item.Overview,
-		}
-	}
-	sess.SetSearchResults(searchItems, 1, query)
-
-	navRow := []types.TelegramInlineKeyboardButton{
-		{Text: "🏠 主菜单", CallbackData: "start"},
-	}
-	if len(results.Results) >= 20 {
-		navRow = append(navRow, types.TelegramInlineKeyboardButton{
-			Text:         "➡️ 下一页",
-			CallbackData: "search:page:2",
 		})
 	}
-	keyboardRows = append(keyboardRows, navRow)
+	sess.SetSearchResults(searchItems, page, query)
+	h.telegram.SendMessage(chatID, text, "", keyboard)
+}
 
-	keyboard := &types.TelegramInlineKeyboard{
-		InlineKeyboard: keyboardRows,
+func buildSearchResultsKeyboard(results []services.SearchResult, page int, hasNext bool) *types.TelegramInlineKeyboard {
+	rows := make([][]types.TelegramInlineKeyboardButton, 0, 12)
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+		rows = append(rows, []types.TelegramInlineKeyboardButton{{
+			Text:         fmt.Sprintf("%d · %s", i+1, truncateSearchTitle(item.Title, 20)),
+			CallbackData: fmt.Sprintf("select:id:%d:type:%s", item.ID, mediaType),
+		}})
 	}
 
-	h.telegram.SendMessage(chatID, text, "", keyboard)
+	navRow := make([]types.TelegramInlineKeyboardButton, 0, 2)
+	if page > 1 {
+		navRow = append(navRow, types.TelegramInlineKeyboardButton{
+			Text: "⬅️ 上一页", CallbackData: fmt.Sprintf("search:page:%d", page-1),
+		})
+	}
+	if hasNext {
+		navRow = append(navRow, types.TelegramInlineKeyboardButton{
+			Text: "➡️ 下一页", CallbackData: fmt.Sprintf("search:page:%d", page+1),
+		})
+	}
+	if len(navRow) > 0 {
+		rows = append(rows, navRow)
+	}
+	rows = append(rows,
+		[]types.TelegramInlineKeyboardButton{
+			{Text: "🔍 换个片名", CallbackData: "search"},
+			{Text: "📜 搜索记录", CallbackData: "search_history_menu"},
+		},
+		[]types.TelegramInlineKeyboardButton{{Text: "🏠 主菜单", CallbackData: "start"}},
+	)
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
+}
+
+func truncateSearchTitle(title string, maxRunes int) string {
+	runes := []rune(strings.TrimSpace(title))
+	if len(runes) <= maxRunes {
+		return string(runes)
+	}
+	if maxRunes <= 1 {
+		return string(runes[:maxRunes])
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+func buildSearchRecoveryKeyboard(previousPage int) *types.TelegramInlineKeyboard {
+	rows := make([][]types.TelegramInlineKeyboardButton, 0, 3)
+	if previousPage > 0 {
+		rows = append(rows, []types.TelegramInlineKeyboardButton{{
+			Text:         "⬅️ 返回上一页",
+			CallbackData: fmt.Sprintf("search:page:%d", previousPage),
+		}})
+	}
+	rows = append(rows,
+		[]types.TelegramInlineKeyboardButton{
+			{Text: "🔍 换个片名", CallbackData: "search"},
+			{Text: "📜 搜索记录", CallbackData: "search_history_menu"},
+		},
+		[]types.TelegramInlineKeyboardButton{{Text: "🏠 主菜单", CallbackData: "start"}},
+	)
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
 }
 
 func (h *SearchHandler) showSearchHistory(userID int64, chatID int64) error {

@@ -522,8 +522,14 @@ func HandleWebhookTextQuery(
 	searchHistory *services.SearchHistoryService,
 	tmdb *services.TMDBClient,
 ) {
-	// Treat as search query
-	PerformSearch(telegram, msg, sessMgr, moviepilot, tmdb, searchHistory)
+	// Treat webhook text exactly like polling text so both transports share the
+	// same page size, result keyboard, fallback and session behavior.
+	query := strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(msg.Text, "@oceancloudying_bot", ""), "@云海看板娘", ""))
+	handler := handlers.NewSearchHandler(sessMgr, telegram, moviepilot, tmdb)
+	handler.SetSearchHistory(searchHistory)
+	if err := handler.HandleSearchQuery(msg.From.ID, msg.Chat.ID, query); err != nil {
+		logger.Info("[Webhook] Search failed for query %q: %v", query, err)
+	}
 }
 
 // PerformSearch performs the actual search in background
