@@ -20,6 +20,13 @@ value_of() {
   awk -F= -v key="$1" '$1 == key { print substr($0, index($0, "=") + 1) }' "$2" | tail -n 1
 }
 
+normalize_endpoint() {
+  printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed \
+    -e 's#/*$##' \
+    -e 's#://localhost:#://127.0.0.1:#' \
+    -e 's#://\[::1\]:#://127.0.0.1:#'
+}
+
 init_env() {
   if [ -e "$ENV_FILE" ]; then
     echo "$ENV_FILE already exists; not overwriting"
@@ -64,12 +71,17 @@ require_isolated() {
   if [ -f .env ]; then
     production_token=$(value_of TELEGRAM_BOT_TOKEN .env)
     production_mp=$(value_of MOVIEPILOT_URL .env)
+    production_mp_key=$(value_of MOVIEPILOT_API_KEY .env)
     if [ -n "$production_token" ] && [ "$staging_token" = "$production_token" ]; then
       echo "Refusing to reuse the production Telegram bot token" >&2
       exit 1
     fi
-    if [ -n "$production_mp" ] && [ "$staging_mp" = "$production_mp" ]; then
+    if [ -n "$production_mp" ] && [ "$(normalize_endpoint "$staging_mp")" = "$(normalize_endpoint "$production_mp")" ]; then
       echo "Refusing to reuse the production MoviePilot endpoint" >&2
+      exit 1
+    fi
+    if [ -n "$production_mp_key" ] && [ "$staging_mp_key" = "$production_mp_key" ]; then
+      echo "Refusing to reuse the production MoviePilot credential" >&2
       exit 1
     fi
   fi

@@ -29,6 +29,10 @@ logs/
 backup-*/
 backup_*/
 .learnings/
+recovery/
+*.db
+*.db-wal
+*.db-shm
 staging-data/
 staging-reports/
 .staging-state/

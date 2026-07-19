@@ -66,6 +66,9 @@ jobs:
       - name: Staging smoke unit tests
         run: go test ./cmd/smoke -v
 
+      - name: Staging smoke image build
+        run: docker build --target smoke -t yimao:ci-smoke .
+
       - name: Go test
         run: go test ./...
 

@@ -92,3 +92,15 @@ func TestCheckAPIAuth(t *testing.T) {
 		t.Fatalf("checkAPIAuth = %#v", result)
 	}
 }
+
+func TestSmokeExitCodeRejectsRequiredSkippedChecks(t *testing.T) {
+	if got := smokeExitCode(smokeReport{Skipped: 1}, true); got != 1 {
+		t.Fatalf("required skipped check exit code = %d, want 1", got)
+	}
+	if got := smokeExitCode(smokeReport{Skipped: 1}, false); got != 0 {
+		t.Fatalf("optional skipped check exit code = %d, want 0", got)
+	}
+	if got := smokeExitCode(smokeReport{Failed: 1}, false); got != 1 {
+		t.Fatalf("failed check exit code = %d, want 1", got)
+	}
+}

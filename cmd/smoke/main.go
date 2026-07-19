@@ -81,9 +81,14 @@ func main() {
 		_, _ = fmt.Fprintf(os.Stderr, "encode report: %v\n", err)
 		os.Exit(2)
 	}
-	if report.Failed > 0 {
-		os.Exit(1)
+	os.Exit(smokeExitCode(report, cfg.requireChat))
+}
+
+func smokeExitCode(report smokeReport, requireChat bool) int {
+	if report.Failed > 0 || (requireChat && report.Skipped > 0) {
+		return 1
 	}
+	return 0
 }
 
 func loadConfig() (smokeConfig, error) {

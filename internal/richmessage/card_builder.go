@@ -135,6 +135,12 @@ type DailySummarySeries struct {
 	Title string
 }
 
+// TransferDailySummarySeries is one title/season from MoviePilot transfer history.
+type TransferDailySummarySeries struct {
+	Title string
+	Files int
+}
+
 // WeeklyReportData holds data for the weekly report card
 type WeeklyReportData struct {
 	UserName        string
@@ -398,6 +404,41 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 		}
 	}
 
+	return builder.Build()
+}
+
+// BuildTransferDailySummaryCard builds the authoritative natural-day summary
+// from MoviePilot successful transfer history.
+func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDailySummarySeries, fileCount int, firstAt, lastAt string) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("📥 入库日报", 2)
+	builder.BoldParagraph(fmt.Sprintf("%s · 云海影视", dateStr))
+	builder.Divider()
+	rows := make([][]string, 0, 4)
+	if len(movies) > 0 {
+		rows = append(rows, []string{"🎬 电影", fmt.Sprintf("%d 部", len(movies))})
+	}
+	if len(series) > 0 {
+		rows = append(rows, []string{"📺 剧集", fmt.Sprintf("%d 部", len(series))})
+	}
+	rows = append(rows,
+		[]string{"📁 媒体文件", fmt.Sprintf("%d 个", fileCount)},
+		[]string{"🕒 入库时间", fmt.Sprintf("%s–%s", firstAt, lastAt)},
+	)
+	builder.Table([]string{"统计", "结果"}, rows)
+	builder.Divider()
+	if len(movies) > 0 {
+		builder.Heading(fmt.Sprintf("🎬 新增电影（%d 部）", len(movies)), 3)
+		for _, item := range movies {
+			builder.Paragraph(fmt.Sprintf("• %s（%d 个文件）", item.Title, item.Files))
+		}
+	}
+	if len(series) > 0 {
+		builder.Heading(fmt.Sprintf("📺 剧集更新（%d 部）", len(series)), 3)
+	}
+	for _, item := range series {
+		builder.Paragraph(fmt.Sprintf("• %s（%d 个文件）", item.Title, item.Files))
+	}
 	return builder.Build()
 }
 
@@ -715,51 +756,54 @@ type GroupApprovedData struct {
 	SeasonText string // "全季", "第X季", or ""
 	Requester  string // requester display name
 	TMDBID     int
-	ApprovedBy string // admin display name (optional)
+	ApprovedBy string // retained for compatibility; public cards do not expose it
 }
 
-// BuildGroupApprovedCard builds group notification when a request is approved.
-func BuildGroupApprovedCard(data GroupApprovedData) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("🎉 求片已批准", 3)
-
-	titleText := fmt.Sprintf("%s 《%s》", data.MediaIcon, data.Title)
-	if data.Year > 0 {
-		titleText += fmt.Sprintf(" (%d)", data.Year)
-	}
-	builder.BoldParagraph(titleText)
-
-	rows := [][]string{
-		{"📋 类型", data.MediaType},
-		{"👤 求片人", data.Requester},
-	}
-	if data.SeasonText != "" {
-		rows = append(rows, []string{"📺 季", data.SeasonText})
-	}
-	if data.ApprovedBy != "" {
-		rows = append(rows, []string{"✅ 审批", data.ApprovedBy})
-	}
-	builder.Table([]string{"信息", "详情"}, rows)
-
-	builder.Divider()
-	builder.Italic("📥 已提交下载队列，入库后自动通知")
-
-	return builder.Build()
+// ReviewApprovedData holds data for a requester's approval notification.
+type ReviewApprovedData struct {
+	Title      string
+	Year       int
+	MediaType  string // "电影" or "剧集"
+	MediaIcon  string // "🎬" or "📺"
+	SeasonText string // "全季", "第X季", or ""
 }
 
-// BuildReviewApprovedCard builds user notification for approved request.
-func BuildReviewApprovedCard(title string, year int, mediaIcon string) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("✅ 已通过审核", 3)
-
+func approvedMediaTitle(title string, year int, mediaIcon string, seasonText string) string {
 	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, title)
 	if year > 0 {
 		titleText += fmt.Sprintf(" (%d)", year)
 	}
-	builder.BoldParagraph(titleText)
+	if seasonText != "" {
+		titleText += " · " + seasonText
+	}
+	return titleText
+}
+
+// BuildGroupApprovedCard builds a compact public highlight when a request is approved.
+func BuildGroupApprovedCard(data GroupApprovedData) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("🎉 新片上车 · 审核通过", 3)
+	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, data.MediaIcon, data.SeasonText))
+
+	if data.Requester != "" {
+		builder.Paragraph(fmt.Sprintf("👤 %s 的求片已经安排上了", data.Requester))
+	}
+
+	rows := [][]string{{"类型", data.MediaType}, {"当前进度", "正在寻找资源"}}
+	builder.Table([]string{"项目", "状态"}, rows)
+	builder.Italic("找到合适版本后自动下载，入库后通知求片人")
+	return builder.Build()
+}
+
+// BuildReviewApprovedCard builds the requester's approval notification.
+func BuildReviewApprovedCard(data ReviewApprovedData) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("✅ 审核通过，已经安排上了", 3)
+	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, data.MediaIcon, data.SeasonText))
 	builder.Divider()
-	builder.Paragraph("已提交 MoviePilot 下载")
-	builder.Italic("入库后会自动提醒，也可随时查看进度")
+	builder.BoldParagraph("🚦 当前进度：正在寻找资源")
+	builder.Paragraph("接下来会自动完成「匹配资源 → 下载 → 入库」，不用重复提交。")
+	builder.Italic("入库后第一时间通知你")
 	return builder.Build()
 }
 

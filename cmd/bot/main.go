@@ -321,7 +321,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("  [2/11] Basic services created")
 
 	// Initialize Media Notification Service
-	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService, chatID)
+	mediaNotificationSvc := services.NewMediaNotificationService(cfg.DataDir, telegramClient, adminService, chatID, moviepilotClient)
 	logger.Info("  [3/11] Media notification service initialized")
 
 	// Set admin IDs for quota service (admins have unlimited quota)

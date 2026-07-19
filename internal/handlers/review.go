@@ -253,19 +253,34 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	mediaIcon := "🎬"
+	mediaTypeText := "电影"
 	if review.MediaType == services.MediaTypeTV {
 		mediaIcon = "📺"
+		mediaTypeText = "剧集"
+	}
+	seasonText := ""
+	if review.MediaType == services.MediaTypeTV {
+		seasonText = fmt.Sprintf("第 %d 季", season)
 	}
 	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, review.MediaTitle)
 	if review.MediaYear > 0 {
 		titleText += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
+	if seasonText != "" {
+		titleText += " · " + seasonText
+	}
 
 	// Notify user about approval. 如果审批人就是求片人，避免同一聊天重复出现两条通过通知。
 	if ctx.UserID != review.TelegramID {
-		approveCard := richmessage.BuildReviewApprovedCard(review.MediaTitle, review.MediaYear, mediaIcon)
+		approveCard := richmessage.BuildReviewApprovedCard(richmessage.ReviewApprovedData{
+			Title:      review.MediaTitle,
+			Year:       review.MediaYear,
+			MediaType:  mediaTypeText,
+			MediaIcon:  mediaIcon,
+			SeasonText: seasonText,
+		})
 		approveKb := services.NewKeyboardBuilder()
-		approveKb.AddButton("📋 求片进度", "my_requests")
+		approveKb.AddButton("📍 查看求片进度", "my_requests")
 		h.telegram.SendRichMessage(review.TelegramID, approveCard.Markdown, approveKb.Build())
 	}
 
@@ -274,14 +289,6 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	// 通知群组：求片已批准
 	if h.groupChatID != 0 {
-		seasonText := ""
-		if review.MediaType == services.MediaTypeTV && review.Season > 0 {
-			seasonText = fmt.Sprintf("第 %d 季", review.Season)
-		}
-		mediaTypeText := "电影"
-		if review.MediaType == services.MediaTypeTV {
-			mediaTypeText = "剧集"
-		}
 		groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
 			Title:      review.MediaTitle,
 			Year:       review.MediaYear,

@@ -154,6 +154,14 @@ type MoviePilotClient struct {
 	subsCacheTTL  time.Duration
 }
 
+type transferHistoryResponse struct {
+	Success bool `json:"success"`
+	Data    struct {
+		List  []TransferHistoryItem `json:"list"`
+		Total int                   `json:"total"`
+	} `json:"data"`
+}
+
 // NewMoviePilotClient creates a new MoviePilot client with optimized HTTP settings.
 //
 // The client is configured with:
@@ -353,6 +361,49 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 	}
 
 	return respBody, nil
+}
+
+// GetSuccessfulTransferHistory returns all successful transfer records whose
+// timestamps fall inside [start, end). MoviePilot returns newest records first;
+// scanning stops once a page crosses the lower bound.
+func (c *MoviePilotClient) GetSuccessfulTransferHistory(start, end time.Time) ([]TransferHistoryItem, error) {
+	const pageSize = 200
+	result := make([]TransferHistoryItem, 0)
+	for page := 1; ; page++ {
+		endpoint := fmt.Sprintf("/api/v1/history/transfer?page=%d&count=%d&status=true", page, pageSize)
+		body, err := c.makeRequest("GET", endpoint, nil)
+		if err != nil {
+			return nil, fmt.Errorf("get transfer history page %d: %w", page, err)
+		}
+		var response transferHistoryResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("decode transfer history page %d: %w", page, err)
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("transfer history API returned success=false")
+		}
+		if len(response.Data.List) == 0 {
+			break
+		}
+		crossedStart := false
+		for _, row := range response.Data.List {
+			at, err := time.ParseInLocation(transferHistoryTimeLayout, row.Date, start.Location())
+			if err != nil {
+				continue
+			}
+			if at.Before(start) {
+				crossedStart = true
+				continue
+			}
+			if at.Before(end) {
+				result = append(result, row)
+			}
+		}
+		if crossedStart || page*pageSize >= response.Data.Total {
+			break
+		}
+	}
+	return result, nil
 }
 
 // SearchMedia searches for media by query

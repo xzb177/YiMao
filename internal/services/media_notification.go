@@ -62,7 +62,7 @@ type MediaItem struct {
 type AdminNotificationSettings struct {
 	AdminID             int64              `json:"admin_id"`
 	SingleEnabled       bool               `json:"single_enabled"`        // Enable instant notification to group (入库群组通知)
-	DailyTime           string             `json:"daily_time"`            // Format: "HH:MM", default "23:50"
+	DailyTime           string             `json:"daily_time"`            // Format: "HH:MM", default "00:10"
 	DailySummaryEnabled bool               `json:"daily_summary_enabled"` // Enable daily summary notification (private message)
 	Libraries           []string           `json:"libraries"`             // Specific libraries to monitor for daily summary, empty = all
 	Format              NotificationFormat `json:"format"`                // Notification format: simple or detailed
@@ -73,13 +73,16 @@ type MediaNotificationService struct {
 	dataFile     string
 	telegram     *TelegramClient
 	adminService *AdminService
+	moviepilot   *MoviePilotClient
 	groupChatID  int64 // 群组 ChatID，用于发送每日汇总
 
 	// Settings per admin
 	settings map[int64]*AdminNotificationSettings
 
 	// Daily pending items (key: adminID -> date -> items)
-	pendingItems map[string]map[string][]*MediaItem // "adminID" -> "YYYY-MM-DD" -> items
+	pendingItems     map[string]map[string][]*MediaItem // "adminID" -> "YYYY-MM-DD" -> items
+	lastSummarySent  map[int64]string
+	groupSummarySent string
 
 	// Title resolver
 	titleResolver *TitleResolver
@@ -92,19 +95,21 @@ type MediaNotificationService struct {
 }
 
 // NewMediaNotificationService creates a new media notification service
-func NewMediaNotificationService(dataDir string, telegram *TelegramClient, adminService *AdminService, groupChatID int64) *MediaNotificationService {
+func NewMediaNotificationService(dataDir string, telegram *TelegramClient, adminService *AdminService, groupChatID int64, moviepilot *MoviePilotClient) *MediaNotificationService {
 	dataFile := fmt.Sprintf("%s/media_notifications.json", dataDir)
 
 	service := &MediaNotificationService{
-		dataFile:      dataFile,
-		telegram:      telegram,
-		adminService:  adminService,
-		groupChatID:   groupChatID,
-		settings:      make(map[int64]*AdminNotificationSettings),
-		pendingItems:  make(map[string]map[string][]*MediaItem),
-		titleResolver: NewTitleResolver(),
-		itemChan:      make(chan *MediaItem, 100),
-		doneChan:      make(chan struct{}),
+		dataFile:        dataFile,
+		telegram:        telegram,
+		adminService:    adminService,
+		moviepilot:      moviepilot,
+		groupChatID:     groupChatID,
+		settings:        make(map[int64]*AdminNotificationSettings),
+		pendingItems:    make(map[string]map[string][]*MediaItem),
+		lastSummarySent: make(map[int64]string),
+		titleResolver:   NewTitleResolver(),
+		itemChan:        make(chan *MediaItem, 100),
+		doneChan:        make(chan struct{}),
 	}
 
 	service.load()
@@ -148,7 +153,9 @@ func (s *MediaNotificationService) load() error {
 	}
 
 	var fileData struct {
-		Settings map[int64]*AdminNotificationSettings `json:"settings"`
+		Settings         map[int64]*AdminNotificationSettings `json:"settings"`
+		LastSummarySent  map[int64]string                     `json:"last_summary_sent"`
+		GroupSummarySent string                               `json:"group_summary_sent"`
 	}
 
 	if err := json.Unmarshal(data, &fileData); err != nil {
@@ -156,6 +163,16 @@ func (s *MediaNotificationService) load() error {
 	}
 
 	s.settings = fileData.Settings
+	for _, settings := range s.settings {
+		if settings != nil && settings.DailyTime == "23:50" {
+			settings.DailyTime = "00:10"
+			logger.Info("[MediaNotification] Migrated legacy daily summary time from 23:50 to 00:10")
+		}
+	}
+	if fileData.LastSummarySent != nil {
+		s.lastSummarySent = fileData.LastSummarySent
+	}
+	s.groupSummarySent = fileData.GroupSummarySent
 
 	logger.Info("[MediaNotification] Loaded settings for %d admins", len(s.settings))
 	return nil
@@ -167,7 +184,9 @@ func (s *MediaNotificationService) save() error {
 	defer s.mu.Unlock()
 
 	data, err := json.MarshalIndent(map[string]interface{}{
-		"settings": s.settings,
+		"settings":           s.settings,
+		"last_summary_sent":  s.lastSummarySent,
+		"group_summary_sent": s.groupSummarySent,
 	}, "", "  ")
 	if err != nil {
 		logger.Info("[MediaNotification] Failed to marshal settings: %v", err)
@@ -196,7 +215,7 @@ func (s *MediaNotificationService) GetSettings(adminID int64) *AdminNotification
 	return &AdminNotificationSettings{
 		AdminID:             adminID,
 		SingleEnabled:       true, // Default to enabled
-		DailyTime:           "23:50",
+		DailyTime:           "00:10",
 		DailySummaryEnabled: false, // Default to disabled
 		Libraries:           []string{},
 		Format:              FormatDetailed,
@@ -301,7 +320,7 @@ func (s *MediaNotificationService) handleItem(item *MediaItem) {
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:             adminID,
 				SingleEnabled:       true,
-				DailyTime:           "23:50",
+				DailyTime:           "00:10",
 				DailySummaryEnabled: false,
 				Libraries:           []string{},
 				Format:              FormatDetailed,
@@ -596,8 +615,8 @@ func (s *MediaNotificationService) scheduleDailySummaries() {
 // checkAndSendDailySummaries checks if it's time to send daily summaries
 func (s *MediaNotificationService) checkAndSendDailySummaries() {
 	now := time.Now()
-	currentTime := now.Format("15:04")
-	today := now.Format("2006-01-02")
+	reportDay := now.AddDate(0, 0, -1)
+	reportDayKey := reportDay.Format("2006-01-02")
 
 	adminIDs := s.adminService.GetAdminIDs()
 
@@ -612,7 +631,7 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 			adminSettings[adminID] = &AdminNotificationSettings{
 				AdminID:             adminID,
 				SingleEnabled:       true,
-				DailyTime:           "23:50",
+				DailyTime:           "00:10",
 				DailySummaryEnabled: false,
 				Libraries:           []string{},
 				Format:              FormatDetailed,
@@ -636,22 +655,95 @@ func (s *MediaNotificationService) checkAndSendDailySummaries() {
 			continue
 		}
 
-		// Check if it's time to send (within the same minute)
-		if settings.DailyTime == currentTime {
-			adminKey := strconv.FormatInt(adminID, 10)
-
-			// Get pending items for today
-			if items, exists := s.pendingItems[adminKey][today]; exists && len(items) > 0 {
-				// Send summary (unlock before sending to avoid deadlock)
-				s.mu.Unlock()
-				s.sendDailySummary(adminID, items)
-				s.mu.Lock()
-
-				// Clear sent items
-				delete(s.pendingItems[adminKey], today)
+		// Keep retrying after the configured time until this report day is
+		// marked sent. This catches up after restarts and transient failures.
+		if dailySummaryDue(now, settings.DailyTime, s.lastSummarySent[adminID]) {
+			if s.lastSummarySent[adminID] == reportDayKey {
+				continue
 			}
+			sendGroup := s.groupSummarySent != reportDayKey
+			s.mu.Unlock()
+			groupSent, err := s.sendTransferHistorySummary(adminID, reportDay, sendGroup)
+			s.mu.Lock()
+			if groupSent {
+				s.groupSummarySent = reportDayKey
+			}
+			if err != nil {
+				logger.Error("[MediaNotification] 每日汇总生成失败 admin=%d day=%s: %v", adminID, reportDayKey, err)
+				if groupSent {
+					s.mu.Unlock()
+					_ = s.save()
+					s.mu.Lock()
+				}
+				continue
+			}
+			s.lastSummarySent[adminID] = reportDayKey
+			adminKey := strconv.FormatInt(adminID, 10)
+			delete(s.pendingItems[adminKey], reportDayKey)
+			s.mu.Unlock()
+			_ = s.save()
+			s.mu.Lock()
 		}
 	}
+}
+
+func dailySummaryDue(now time.Time, dailyTime, lastSentDay string) bool {
+	reportDay := now.AddDate(0, 0, -1).Format("2006-01-02")
+	if lastSentDay == reportDay {
+		return false
+	}
+	scheduled, err := time.Parse("15:04", dailyTime)
+	if err != nil {
+		return false
+	}
+	return now.Hour()*60+now.Minute() >= scheduled.Hour()*60+scheduled.Minute()
+}
+
+func (s *MediaNotificationService) sendTransferHistorySummary(adminID int64, day time.Time, sendGroup bool) (bool, error) {
+	if s.moviepilot == nil {
+		return false, fmt.Errorf("MoviePilot client is not configured")
+	}
+	start := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
+	rows, err := s.moviepilot.GetSuccessfulTransferHistory(start, start.AddDate(0, 0, 1))
+	if err != nil {
+		return false, err
+	}
+	summary := SummarizeTransferHistory(rows, start)
+	if summary.FileCount == 0 {
+		logger.Info("[MediaNotification] %s 无成功入库记录，跳过汇总", start.Format("2006-01-02"))
+		return false, nil
+	}
+	movies := make([]richmessage.TransferDailySummarySeries, 0, len(summary.Movies))
+	for _, item := range summary.Movies {
+		movies = append(movies, richmessage.TransferDailySummarySeries{Title: item.DisplayTitle(), Files: item.Files})
+	}
+	series := make([]richmessage.TransferDailySummarySeries, 0, len(summary.Series))
+	for _, item := range summary.Series {
+		series = append(series, richmessage.TransferDailySummarySeries{Title: item.DisplayTitle(), Files: item.Files})
+	}
+	richMsg := richmessage.BuildTransferDailySummaryCard(
+		start.Format("2006年1月2日"), movies, series, summary.FileCount,
+		summary.FirstAt.Format("15:04:05"), summary.LastAt.Format("15:04:05"),
+	)
+	sendTo := func(chatID int64, label string) error {
+		if _, err := s.telegram.SendRichMessage(chatID, richMsg.Markdown, nil); err != nil {
+			return fmt.Errorf("send rich summary to %s %d: %w", label, chatID, err)
+		}
+		logger.Info("[MediaNotification] 已发送完整自然日汇总到 %s %d: day=%s movies=%d series=%d files=%d range=%s-%s",
+			label, chatID, start.Format("2006-01-02"), summary.MovieCount, summary.SeriesCount, summary.FileCount,
+			summary.FirstAt.Format("15:04:05"), summary.LastAt.Format("15:04:05"))
+		return nil
+	}
+	if sendGroup && s.groupChatID != 0 && s.groupChatID < -100 {
+		if err := sendTo(s.groupChatID, "群组"); err != nil {
+			return false, err
+		}
+		if err := sendTo(adminID, "管理员"); err != nil {
+			return true, err
+		}
+		return true, nil
+	}
+	return false, sendTo(adminID, "管理员")
 }
 
 // sendDailySummary sends a daily summary notification
