@@ -31,6 +31,11 @@ RUN files=$(find . -type f -name '*.go' -not -path './vendor/*') && \
     go vet ./... && \
     go test ./...
 
+# Staging smoke image; not included in the production runtime image.
+FROM builder AS smoke
+RUN CGO_ENABLED=0 GOOS=linux go build -o /smoke ./cmd/smoke
+ENTRYPOINT ["/smoke"]
+
 # Final stage
 FROM alpine:latest
 

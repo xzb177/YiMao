@@ -131,6 +131,8 @@ curl -fsS http://localhost:8080/health
 
 完整配置：[`.env.example`](.env.example)
 
+上线前请使用隔离测试 Bot 与测试 MoviePilot 执行 [Staging 与真机验收](docs/STAGING.md)，并按 [RC 验收报告模板](docs/RC_ACCEPTANCE_TEMPLATE.md) 留存证据。
+
 ---
 
 ## Webhook 端点

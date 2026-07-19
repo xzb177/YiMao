@@ -1,6 +1,12 @@
 # Environment
 .env
+.env.staging
 .env.backup-*
+
+# Staging runtime artifacts
+staging-data/
+staging-reports/
+.staging-state/
 
 # Data files
 *.json

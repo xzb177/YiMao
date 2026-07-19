@@ -29,6 +29,10 @@ logs/
 backup-*/
 backup_*/
 .learnings/
+staging-data/
+staging-reports/
+.staging-state/
+.env.staging
 
 # Build artifacts
 yimao

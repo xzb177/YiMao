@@ -131,6 +131,8 @@ The service listens on `:8080`; `/health` is the health endpoint. New deployment
 
 Full config: [`.env.example`](.env.example)
 
+Before release, run the isolated [staging and device acceptance workflow](docs/STAGING.md) with a test bot and test MoviePilot instance, then record evidence in the [RC acceptance report](docs/RC_ACCEPTANCE_TEMPLATE.md).
+
 ---
 
 ## Webhook Endpoints

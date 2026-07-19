@@ -45,8 +45,11 @@ jobs:
 
       - name: Deployment script syntax
         run: |
-          sh -n scripts/preflight.sh manage.sh monitor.sh start.sh deploy.sh deploy-docker.sh
+          sh -n scripts/preflight.sh scripts/staging.sh manage.sh monitor.sh start.sh deploy.sh deploy-docker.sh
           bash -n scripts/ops.sh install.sh
+          cp .env.staging.example .env.staging
+          docker compose --env-file .env.staging -f docker-compose.staging.yml config --quiet
+          rm .env.staging
 
       - name: Go vet
         run: go vet ./...
@@ -59,6 +62,9 @@ jobs:
 
       - name: Callback completeness check
         run: go test ./internal/callback/... -run "TestAllMenuButton|TestKnownShort|TestValidActions" -v
+
+      - name: Staging smoke unit tests
+        run: go test ./cmd/smoke -v
 
       - name: Go test
         run: go test ./...

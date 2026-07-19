@@ -1,0 +1,29 @@
+services:
+  yimao-staging:
+    build:
+      context: .
+    container_name: yimao-staging
+    restart: unless-stopped
+    env_file:
+      - .env.staging
+    environment:
+      - HOST=127.0.0.1
+      - PORT=18080
+      - DATA_DIR=/app/data
+      - LOG_PREFIX=YiMao-Staging
+      - LOG_COLOR=false
+      - ENABLE_API_AUTH=true
+      - ENABLE_RATE_LIMIT=true
+      - ENABLE_IP_BLOCKING=true
+    network_mode: host
+    volumes:
+      - ./staging-data:/app/data
+    labels:
+      - com.yimao.environment=staging
+      - com.yimao.production=false
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+        compress: "true"
