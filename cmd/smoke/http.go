@@ -34,14 +34,14 @@ func requireLoopbackURL(raw string) error {
 	}
 }
 
-func requestJSON(timeout time.Duration, method, endpoint string, headers map[string]string, payload interface{}) (int, []byte, error) {
+func requestJSON(timeout time.Duration, method, endpoint string, headers map[string]string, payload interface{}) (status int, raw []byte, err error) {
 	var body io.Reader
 	if payload != nil {
-		raw, err := json.Marshal(payload)
-		if err != nil {
-			return 0, nil, err
+		encoded, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			return 0, nil, marshalErr
 		}
-		body = bytes.NewReader(raw)
+		body = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequest(method, endpoint, body)
 	if err != nil {
@@ -59,17 +59,14 @@ func requestJSON(timeout time.Duration, method, endpoint string, headers map[str
 		return 0, nil, errors.New("request failed")
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxSmokeResponseBytes))
+	raw, err = io.ReadAll(io.LimitReader(resp.Body, maxSmokeResponseBytes))
 	if err != nil {
 		return resp.StatusCode, nil, errors.New("read response")
 	}
 	return resp.StatusCode, raw, nil
 }
 
-func requestJSONWithRetry(timeout time.Duration, method, endpoint string, headers map[string]string, payload interface{}) (int, []byte, error) {
-	var status int
-	var raw []byte
-	var err error
+func requestJSONWithRetry(timeout time.Duration, method, endpoint string, headers map[string]string, payload interface{}) (status int, raw []byte, err error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		status, raw, err = requestJSON(timeout, method, endpoint, headers, payload)
 		if err == nil && status < http.StatusInternalServerError {
