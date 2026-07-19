@@ -53,12 +53,12 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		callback string
 	}{
 		{"🔍 搜索求片", "start_search"},
-		{"🎬 今晚看什么", "start_ai"},
 		{"📊 求片进度", "start_requests"},
 		{"✨ 许愿池", "start_wish"},
-		{"⚙️", "start_settings"},
-		{"❓", "help"},
-		{"↩️ 撤回申请", "myreq_cancel"},
+		{"🎬 今晚看什么", "start_ai"},
+		{"🎮 游戏中心", "game_menu"},
+		{"⚙️ 设置", "start_settings"},
+		{"❓ 帮助", "help"},
 	}
 
 	parser := NewParser()

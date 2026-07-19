@@ -4,29 +4,39 @@ import "testing"
 
 func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 	keyboard := BuildStartKeyboardWithOptions(false, true)
-	if keyboard == nil || len(keyboard.InlineKeyboard) < 3 {
+	if keyboard == nil || len(keyboard.InlineKeyboard) != 4 {
 		t.Fatalf("unexpected start keyboard: %#v", keyboard)
 	}
 
 	first := keyboard.InlineKeyboard[0]
-	if len(first) != 2 {
-		t.Fatalf("first row buttons = %d, want 2", len(first))
-	}
-	if first[0].Text != "🔍 搜索求片" || first[0].CallbackData != "start_search" {
-		t.Fatalf("first button = %#v", first[0])
-	}
-	if first[1].Text != "📊 求片进度" || first[1].CallbackData != "start_requests" {
-		t.Fatalf("second button = %#v", first[1])
+	if len(first) != 1 || first[0].Text != "🔍 搜索求片" || first[0].CallbackData != "start_search" {
+		t.Fatalf("primary row = %#v", first)
 	}
 
-	positions := map[string]int{}
-	for rowIndex, row := range keyboard.InlineKeyboard {
-		for _, button := range row {
-			positions[button.CallbackData] = rowIndex
+	wantRows := [][]string{
+		{"start_search"},
+		{"start_requests", "start_wish"},
+		{"start_ai", "game_menu"},
+		{"start_settings", "help"},
+	}
+	for i, want := range wantRows {
+		row := keyboard.InlineKeyboard[i]
+		if len(row) != len(want) {
+			t.Fatalf("row %d = %#v, want callbacks %v", i, row, want)
+		}
+		for j, callback := range want {
+			if row[j].CallbackData != callback {
+				t.Fatalf("row %d button %d callback=%q want=%q", i, j, row[j].CallbackData, callback)
+			}
 		}
 	}
-	if positions["adventure_start"] <= positions["start_search"] {
-		t.Fatalf("optional adventure row %d must follow request row %d", positions["adventure_start"], positions["start_search"])
+
+	for _, row := range keyboard.InlineKeyboard {
+		for _, button := range row {
+			if button.CallbackData == "adventure_start" || button.CallbackData == "start_portrait" {
+				t.Fatalf("duplicate/low-frequency entry still exposed on home: %#v", button)
+			}
+		}
 	}
 }
 

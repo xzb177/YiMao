@@ -615,9 +615,51 @@ func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 		count = len(h.carpool.Get(tmdbID, mediaType))
 	}
 	if count > 0 {
-		return fmt.Sprintf("🙋 我也想看 +1 (%d人)", count)
+		return fmt.Sprintf("🙋 加入想看 · %d 人", count)
 	}
-	return "🙋 我也想看 +1"
+	return "🙋 加入想看"
+}
+
+func (h *DetailHandler) buildMovieActionKeyboard(tmdbID int, includeResources, includeFeedback bool) *types.TelegramInlineKeyboard {
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", tmdbID))
+	kb.NewRow()
+	kb.AddButton(h.carpoolButtonText(tmdbID, "movie"), fmt.Sprintf("carpool:id:%d:type:movie", tmdbID))
+	if includeResources || includeFeedback {
+		kb.NewRow()
+		if includeResources {
+			kb.AddButton("🔍 候选资源", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": "movie"}))
+		}
+		if includeFeedback {
+			kb.AddButton("🐛 反馈问题", fmt.Sprintf("feedback:id:%d:type:movie", tmdbID))
+		}
+	}
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回结果", "back")
+	return kb.Build()
+}
+
+func (h *DetailHandler) buildTVActionKeyboard(tmdbID, _ int, includeResources, includeFeedback bool) *types.TelegramInlineKeyboard {
+	kb := services.NewKeyboardBuilder()
+	// Season selection is the safer default. Full-show requests get their own
+	// row and are confirmed before reaching the existing submission handler.
+	kb.AddButton("🗂️ 选择季度", fmt.Sprintf("detail_seasons:id:%d", tmdbID))
+	kb.NewRow()
+	kb.AddButton("📺 求全部季度", fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
+	kb.NewRow()
+	kb.AddButton(h.carpoolButtonText(tmdbID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
+	if includeResources || includeFeedback {
+		kb.NewRow()
+		if includeResources {
+			kb.AddButton("🔍 候选资源", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tmdbID), "type": "tv"}))
+		}
+		if includeFeedback {
+			kb.AddButton("🐛 反馈问题", fmt.Sprintf("feedback:id:%d:type:tv", tmdbID))
+		}
+	}
+	kb.NewRow()
+	kb.AddButton("⬅️ 返回结果", "back")
+	return kb.Build()
 }
 
 func buildEphemeralMediaCaption(info richmessage.MediaInfo) string {
@@ -704,29 +746,39 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	}
 
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	internalSource := ctx.Callback.Params["source"]
+	returningFromInternalStep := internalSource == "seasons" || internalSource == "confirm"
+	finalizeDetail := func(resp *callback.Response) *callback.Response {
+		if resp != nil && returningFromInternalStep {
+			resp.DeleteMessage = true
+			resp.Edit = false
+		}
+		return resp
+	}
 
 	// Check if we have cached data from search results first
 	items, _, query, hasSearch := sess.GetSearchResults()
 	if hasSearch {
 		for _, item := range items {
 			if item.ID == mediaID {
-				// Push navigation entry before showing detail
-				if isAIRecommendationQuery(query) {
-					sess.PushNavEntry("ai_recommendation", query, query)
-				} else {
-					// For regular search, also record navigation history
-					sess.PushNavEntry("search", query, query)
+				// Internal season-picker navigation returns to the same detail card and
+				// must not duplicate the search history entry.
+				if !returningFromInternalStep {
+					if isAIRecommendationQuery(query) {
+						sess.PushNavEntry("ai_recommendation", query, query)
+					} else {
+						sess.PushNavEntry("search", query, query)
+					}
 				}
-				// Use search result data - it already has all we need
 				logger.Info("[DetailHandler] Using search result info for: %s", item.Title)
-				return h.buildDetailFromSearch(item, mediaType, sess), nil
+				return finalizeDetail(h.buildDetailFromSearch(item, mediaType, sess)), nil
 			}
 		}
 	}
 
 	// Check if we have cached data from AI
 	if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
-		return h.buildDetailFromCache(cachedItem, sess), nil
+		return finalizeDetail(h.buildDetailFromCache(cachedItem, sess)), nil
 	}
 
 	// Try TMDB API for details
@@ -734,7 +786,7 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		tmdbMedia, err := h.tmdb.GetMediaByType(tmdbID, mediaType)
 		if err == nil && tmdbMedia != nil {
 			logger.Info("[DetailHandler] Got media info from TMDB: %s", tmdbMedia.GetTitle())
-			resp := h.buildDetailFromTMDB(tmdbMedia, sess)
+			resp := finalizeDetail(h.buildDetailFromTMDB(tmdbMedia, sess))
 			if resp != nil {
 				return resp, nil
 			}
@@ -745,7 +797,7 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	}
 
 	// If all else fails, build a simple detail page
-	return h.buildSimpleDetail(tmdbID, mediaType, sess), nil
+	return finalizeDetail(h.buildSimpleDetail(tmdbID, mediaType, sess)), nil
 }
 
 // isAIRecommendationQuery checks if the query is from AI recommendation
@@ -769,11 +821,12 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 		MediaType: item.MediaType,
 	}
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", item.TmdbID, item.MediaType))
-	kb.AddButton("⬅️ 返回", "back")
+	keyboard := h.buildMovieActionKeyboard(item.TmdbID, false, false)
+	if item.MediaType == "tv" {
+		keyboard = h.buildTVActionKeyboard(item.TmdbID, 0, false, false)
+	}
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
 		return resp
 	}
 
@@ -791,15 +844,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false, posterURL)
 	}
 
-	// Build keyboard
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
-	kb.AddButton(h.carpoolButtonText(media.ID, "movie"), fmt.Sprintf("carpool:id:%d:type:movie", media.ID))
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", media.ID), "type": "movie"}))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:movie", media.ID))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
+	keyboard := h.buildMovieActionKeyboard(media.ID, true, true)
 
 	genresList := strings.Split(media.GetGenres(), ", ")
 	info := richmessage.MediaInfo{
@@ -815,7 +860,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 		VoteCount:     media.VoteCount,
 	}
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
 		return resp
 	}
 
@@ -866,42 +911,9 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		EpisodeCount: tvDetails.NumberOfEpisodes,
 	}
 
-	// Season grid (buttons)
-	kb := services.NewKeyboardBuilder()
-	requestButtonText := "📺 求整季"
-	if mpNotAvailable {
-		requestButtonText = "📺 求整季"
-	}
-	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tvDetails.ID))
-	kb.AddButton(h.carpoolButtonText(tvDetails.ID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tvDetails.ID))
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", tvDetails.ID), "type": "tv"}))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%d:type:tv", tvDetails.ID))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
-	if len(tvDetails.Seasons) > 9 {
-		kb.AddButton(fmt.Sprintf("📺 全部 %d 季", regularSeasonCount), fmt.Sprintf("detail_seasons:id:%d", tvDetails.ID))
-	}
-	kb.NewRow()
-	displayCount := len(tvDetails.Seasons)
-	if displayCount > 9 {
-		displayCount = 9
-	}
-	for i, s := range tvDetails.Seasons {
-		if i >= displayCount {
-			break
-		}
-		seasonName := fmt.Sprintf("求第%d季", s.SeasonNumber)
-		if s.SeasonNumber == 0 {
-			seasonName = "特别篇"
-		}
-		kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", tvDetails.ID, s.SeasonNumber))
-		if (i+1)%3 == 0 {
-			kb.NewRow()
-		}
-	}
+	keyboard := h.buildTVActionKeyboard(tvDetails.ID, regularSeasonCount, true, true)
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), posterURL, true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, posterURL, true); resp != nil {
 		return resp
 	}
 
@@ -910,24 +922,16 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
-func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, _ bool, posterURL string) *callback.Response {
 	info := richmessage.MediaInfo{
 		Title:     title,
 		MediaType: "tv",
 		TMDBID:    tmdbID,
 	}
 
-	kb := services.NewKeyboardBuilder()
-	requestButtonText := "📺 求整季"
-	if mpNotAvailable {
-		requestButtonText = "📺 求整季"
-	}
-	kb.AddButton(requestButtonText, fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
-	kb.AddButton(h.carpoolButtonText(tmdbID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
-	kb.NewRow()
-	kb.AddButton("⬅️ 返回", "back")
+	keyboard := h.buildTVActionKeyboard(tmdbID, 0, false, false)
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), posterURL, true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, posterURL, true); resp != nil {
 		return resp
 	}
 	return &callback.Response{Text: "❌ 加载失败", Edit: true}
@@ -952,15 +956,14 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 		MediaType: mediaTypeStr,
 	}
 
-	kb := services.NewKeyboardBuilder()
+	var keyboard *types.TelegramInlineKeyboard
 	if isTV {
-		kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%d:type:tv:season:0", media.ID))
+		keyboard = h.buildTVActionKeyboard(media.ID, 0, false, false)
 	} else {
-		kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", media.ID))
+		keyboard = h.buildMovieActionKeyboard(media.ID, false, false)
 	}
-	kb.AddButton("⬅️ 返回", "back")
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
 		return resp
 	}
 	return &callback.Response{Text: "❌ 加载失败", Edit: true}
@@ -1050,43 +1053,14 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		}
 	}
 
-	// Keyboard
-	kb := services.NewKeyboardBuilder()
+	var keyboard *types.TelegramInlineKeyboard
 	if isTV {
-		kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%d:type:tv:season:0", info.ID))
-		kb.AddButton(h.carpoolButtonText(info.ID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", info.ID))
-		kb.NewRow()
-		if h.tmdb != nil {
-			tmdbDetails, err := h.tmdb.GetTVDetailsWithSeasons(info.ID)
-			if err == nil && len(tmdbDetails.Seasons) > 0 {
-				displayCount := len(tmdbDetails.Seasons)
-				if displayCount > 9 {
-					displayCount = 9
-				}
-				for i, s := range tmdbDetails.Seasons {
-					if i >= displayCount {
-						break
-					}
-					seasonName := fmt.Sprintf("求第%d季", s.SeasonNumber)
-					if s.SeasonNumber == 0 {
-						seasonName = "特别篇"
-					}
-					kb.AddButton(seasonName, fmt.Sprintf("request:id:%d:type:tv:season:%d", info.ID, s.SeasonNumber))
-					if (i+1)%3 == 0 {
-						kb.NewRow()
-					}
-				}
-			}
-		}
+		keyboard = h.buildTVActionKeyboard(info.ID, rmInfo.SeasonCount, true, false)
 	} else {
-		kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", info.ID))
-		kb.AddButton(h.carpoolButtonText(info.ID, "movie"), fmt.Sprintf("carpool:id:%d:type:movie", info.ID))
+		keyboard = h.buildMovieActionKeyboard(info.ID, true, false)
 	}
-	kb.NewRow()
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": fmt.Sprintf("%d", info.ID), "type": string(info.Type)}))
-	kb.AddButton("⬅️ 返回", "back")
 
-	if resp := h.buildRichDetailResponse(rmInfo, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(rmInfo, keyboard, "", true); resp != nil {
 		return resp
 	}
 	return &callback.Response{Text: "❌ 加载失败", Edit: true}
@@ -1104,11 +1078,14 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		MediaType: mediaType,
 	}
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
-	kb.AddButton("⬅️ 返回", "back")
+	var keyboard *types.TelegramInlineKeyboard
+	if mediaType == "tv" {
+		keyboard = h.buildTVActionKeyboard(tmdbID, len(item.Seasons), false, false)
+	} else {
+		keyboard = h.buildMovieActionKeyboard(tmdbID, false, false)
+	}
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
 		return resp
 	}
 	return &callback.Response{Text: "❌ 加载失败", Edit: true}
@@ -1122,11 +1099,14 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 		MediaType: mediaType,
 	}
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:%s", tmdbID, mediaType))
-	kb.AddButton("⬅️ 返回", "back")
+	var keyboard *types.TelegramInlineKeyboard
+	if mediaType == "tv" {
+		keyboard = h.buildTVActionKeyboard(tmdbID, 0, false, false)
+	} else {
+		keyboard = h.buildMovieActionKeyboard(tmdbID, false, false)
+	}
 
-	if resp := h.buildRichDetailResponse(info, kb.Build(), "", true); resp != nil {
+	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
 		return resp
 	}
 	return &callback.Response{Text: "❌ 加载失败", Edit: true}
@@ -1146,91 +1126,97 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 
-	// Try to find the item in search results
+	// Try to find the item in search results first.
 	items, _, _, hasSearch := sess.GetSearchResults()
-	if !hasSearch {
-		return &callback.Response{
-			Text:        "⏰ 搜索结果已过期，请重新搜索",
-			CallbackMsg: "结果已过期",
-			ShowAlert:   true,
-		}, nil
-	}
-
 	var targetItem *session.SearchItem
-	for i := range items {
-		if items[i].ID == mediaID {
-			targetItem = &items[i]
-			break
+	if hasSearch {
+		for i := range items {
+			if items[i].ID == mediaID {
+				targetItem = &items[i]
+				break
+			}
 		}
 	}
 
+	// Search results may not carry seasons after the compact result flow. Fetch
+	// the authoritative season list from TMDB before reporting an error.
 	if targetItem == nil {
+		targetItem = &session.SearchItem{ID: mediaID, Title: "剧集", Type: "tv"}
+	}
+	if len(targetItem.Seasons) == 0 && h.tmdb != nil {
+		tmdbID, err := strconv.Atoi(mediaID)
+		if err == nil && tmdbID > 0 {
+			if details, fetchErr := h.tmdb.GetTVDetailsWithSeasons(tmdbID); fetchErr == nil && details != nil {
+				targetItem.Title = details.Name
+				targetItem.Seasons = make([]session.Season, 0, len(details.Seasons))
+				for _, season := range details.Seasons {
+					targetItem.Seasons = append(targetItem.Seasons, session.Season{
+						SeasonNumber: season.SeasonNumber,
+						EpisodeCount: season.EpisodeCount,
+						Name:         season.Name,
+					})
+				}
+			}
+		}
+	}
+
+	if len(targetItem.Seasons) == 0 {
 		return &callback.Response{
-			Text:        "⏰ 未找到该媒体信息",
-			CallbackMsg: "未找到",
+			Text:        "⏰ 没有可用的季度信息，请重新搜索",
+			CallbackMsg: "无季度信息",
 			ShowAlert:   true,
 		}, nil
 	}
 
-	// Check if it's a TV show with seasons
-	if targetItem.Type != "tv" || len(targetItem.Seasons) == 0 {
+	regularSeasons := make([]session.Season, 0, len(targetItem.Seasons))
+	for _, season := range targetItem.Seasons {
+		if season.SeasonNumber > 0 {
+			regularSeasons = append(regularSeasons, season)
+		}
+	}
+	if len(regularSeasons) == 0 {
 		return &callback.Response{
-			Text:        "⏰ 该媒体没有季信息",
-			CallbackMsg: "无季信息",
+			Text:        "⏰ 没有可用的正式季度，请返回后求整季",
+			CallbackMsg: "无正式季度",
 			ShowAlert:   true,
 		}, nil
 	}
 
 	// Build seasons list page
 	msg := services.NewMessageBuilder()
-	msg.Bold(fmt.Sprintf("📺 %s - 全部季", targetItem.Title)).Newline()
+	msg.Bold(fmt.Sprintf("📺 %s · 选择季度", targetItem.Title)).Newline()
 	msg.Newline()
-	msg.Text(fmt.Sprintf("共 %d 季", len(targetItem.Seasons))).Newline()
+	msg.Text(fmt.Sprintf("共 %d 个正式季度", len(regularSeasons))).Newline()
 	msg.Newline()
 
 	kb := services.NewKeyboardBuilder()
 
-	// List all seasons with buttons
-	for i, season := range targetItem.Seasons {
+	// List regular seasons only. TMDB specials use season=0, which is also the
+	// existing whole-show request contract, so exposing both would be ambiguous.
+	for i, season := range regularSeasons {
 		seasonName := fmt.Sprintf("第%d季", season.SeasonNumber)
-		if season.SeasonNumber == 0 {
-			seasonName = "特别篇"
-		}
 		if season.Name != "" && season.Name != seasonName {
 			seasonName = fmt.Sprintf("%s - %s", seasonName, season.Name)
 		}
 
 		msg.Text(fmt.Sprintf("%d. %s (%d集)", i+1, seasonName, season.EpisodeCount)).Newline()
+		kb.AddButton(fmt.Sprintf("📺 求第%d季", season.SeasonNumber), fmt.Sprintf("request:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
 
-		// Add button for each season
-		buttonLabel := fmt.Sprintf("📺 求第%d季", season.SeasonNumber)
-		if season.SeasonNumber == 0 {
-			buttonLabel = "📺 特别篇"
-		}
-		kb.AddButton(buttonLabel, fmt.Sprintf("request:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
-
-		// Two buttons per row
 		if (i+1)%2 == 0 {
 			kb.NewRow()
 		}
 	}
 
-	if len(targetItem.Seasons)%2 != 0 {
+	if len(regularSeasons)%2 != 0 {
 		kb.NewRow()
 	}
 
-	// Action row: subscribe + feedback
-	kb.AddButton("📺 求整季", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
-	kb.AddButton("🐛 反馈", fmt.Sprintf("feedback:id:%s:type:tv", targetItem.ID))
+	// Keep the season picker focused: season choices first, then one whole-show
+	// shortcut, then a predictable return to the detail card.
+	kb.AddButton("📺 求全部季度", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
 	kb.NewRow()
-
-	// Resource list button
-	kb.AddButton("🔍 候选列表", callback.BuildCallback(callback.ActionResourceList, map[string]string{"id": targetItem.ID, "type": "tv"}))
-	kb.NewRow()
-
-	// Navigation row
-	kb.AddButton("⬅️ 返回", fmt.Sprintf("detail:id:%s:type:tv", targetItem.ID))
-	kb.AddButton("🏠 主菜单", "start")
+	// Return to detail without pushing another search navigation entry.
+	kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:seasons", targetItem.ID))
 
 	return &callback.Response{
 		Text:      msg.Build(),

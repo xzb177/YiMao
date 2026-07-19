@@ -4,8 +4,11 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/internal/session"
 )
 
 type fakeRequestSubmitter struct {
@@ -81,5 +84,41 @@ func TestSubmissionServiceMissingFailsClosed(t *testing.T) {
 	got := serviceConfigurationError()
 	if got.CallbackMsg != "暂时不可用" || !got.ShowAlert {
 		t.Fatalf("response=%+v", got)
+	}
+}
+
+func TestFullShowRequestRequiresConfirmationBeforeSubmission(t *testing.T) {
+	manager := session.NewManager(time.Hour, 10)
+	sess := manager.GetOrCreate(42)
+	sess.Set("user_name", "测试用户")
+	sess.SetSearchResults([]session.SearchItem{{ID: "303", Title: "测试剧集", Year: 2026, Type: "tv"}}, 1, "测试")
+
+	mapping := services.NewUserMappingService(t.TempDir())
+	if err := mapping.AddMapping(42, 7, "tester"); err != nil {
+		t.Fatal(err)
+	}
+	review := services.NewReviewService(t.TempDir(), false)
+	submitter := &fakeRequestSubmitter{}
+	h := NewRequestHandler(manager, nil, nil, nil, nil, nil, mapping, nil, review)
+	h.submissionService = submitter
+
+	resp, err := h.Handle(&callback.Context{
+		UserID: 42,
+		Callback: &callback.Callback{Action: callback.ActionRequest, Params: map[string]string{
+			"id": "303", "type": "tv", "season": "0",
+		}},
+	})
+	if err != nil || resp == nil || resp.Keyboard == nil {
+		t.Fatalf("Handle resp=%#v err=%v", resp, err)
+	}
+	if len(submitter.calls) != 0 {
+		t.Fatalf("full-show request submitted before confirmation: %+v", submitter.calls)
+	}
+	if !strings.Contains(resp.Text, "全部季度") || !strings.Contains(resp.Text, "不是单独一季") {
+		t.Fatalf("confirmation copy=%q", resp.Text)
+	}
+	callbacks := keyboardCallbacks(resp.Keyboard)
+	if callbacks["request:id:303:type:tv:season:0:confirm:1"] != "✅ 确认求全部季度" {
+		t.Fatalf("confirmation callback missing: %#v", callbacks)
 	}
 }

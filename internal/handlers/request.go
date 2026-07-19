@@ -236,6 +236,25 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		mediaTitle = fmt.Sprintf("TMDB:%d", tmdbID)
 	}
 
+	// Full-show requests are materially broader than a single season. Require one
+	// explicit confirmation before the existing quota/review/submission flow.
+	if mediaType == "tv" && season == 0 && ctx.Callback.Params["confirm"] != "1" {
+		message := fmt.Sprintf("📺 确认求全部季度\n\n《%s》", mediaTitle)
+		if mediaYear > 0 {
+			message += fmt.Sprintf(" (%d)", mediaYear)
+		}
+		message += "\n\n这会提交整部剧的全部季度，不是单独一季。"
+		keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
+			{{Text: "✅ 确认求全部季度", CallbackData: fmt.Sprintf("request:id:%d:type:tv:season:0:confirm:1", tmdbID)}},
+			{{Text: "⬅️ 返回详情", CallbackData: fmt.Sprintf("detail:id:%d:type:tv:source:confirm", tmdbID)}},
+		}}
+		return &callback.Response{
+			Text:     message,
+			Edit:     true,
+			Keyboard: convertKeyboard(keyboard),
+		}, nil
+	}
+
 	// Check if media already exists in Emby library
 	// 使用较短的超时 (5秒) 避免阻塞求片流程
 	embyType := services.MediaTypeMovie

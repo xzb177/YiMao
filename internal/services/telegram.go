@@ -1424,17 +1424,23 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
+	// One unmistakable primary action.
 	kb.AddButton("🔍 搜索求片", "start_search")
-	kb.AddButton("📊 求片进度", "start_requests")
 	kb.NewRow()
+
+	// Request lifecycle shortcuts stay together.
+	kb.AddButton("📊 求片进度", "start_requests")
 	if showWish {
 		kb.AddButton("✨ 许愿池", "start_wish")
 	}
-	kb.AddButton("🧠 观影画像", "start_portrait")
 	kb.NewRow()
-	kb.AddButton("⚔️ 电影冒险", "adventure_start")
+
+	// Discovery and optional play are secondary to requesting.
+	kb.AddButton("🎬 今晚看什么", "start_ai")
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
+
+	// Low-frequency utilities use compact, familiar labels.
 	kb.AddButton("⚙️ 设置", "start_settings")
 	kb.AddButton("❓ 帮助", "help")
 
