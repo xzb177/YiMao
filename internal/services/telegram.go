@@ -148,50 +148,136 @@ func richMessageEnabled() bool {
 	return v == "" || !(v == "false" || v == "0" || v == "no" || v == "off")
 }
 
-// SendRichMessage sends a rich message via Telegram Bot API 10.1.
+// SendRichMessage sends markdown through the typed Bot API 10.2 transport.
 // Bot API 10.2 does not document ephemeral targeting for sendRichMessage;
 // callers needing private group output must use SendMessage with send options.
 func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	return c.sendRichMessage(chatID, markdown, nil, keyboard)
+	return c.SendStructuredRichMessage(chatID, &types.TelegramInputRichMessage{Markdown: markdown}, keyboard)
 }
 
 // SendRichMessageWithPhoto embeds a photo in the same Rich Message card. The
 // media is referenced by an internal tg:// ID, so users see one unified card
 // instead of a separate photo message followed by duplicated text.
 func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	media := []map[string]interface{}{{
-		"id": "poster",
-		"media": map[string]interface{}{
-			"type":  "photo",
-			"media": photo,
-		},
-	}}
-	return c.sendRichMessage(chatID, "![](tg://photo?id=poster)\n\n"+markdown, media, keyboard)
+	rich := &types.TelegramInputRichMessage{
+		Markdown: "![](tg://photo?id=poster)\n\n" + markdown,
+		Media: []types.TelegramInputRichMessageMedia{{
+			ID:    "poster",
+			Media: types.TelegramRichPhoto{Type: "photo", Media: photo},
+		}},
+	}
+	return c.SendStructuredRichMessage(chatID, rich, keyboard)
 }
 
-func (c *TelegramClient) sendRichMessage(chatID int64, markdown string, media []map[string]interface{}, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+// SendStructuredRichMessage sends typed InputRichMessage content. The keyboard
+// stays at sendRichMessage top level. Ephemeral parameters are intentionally
+// absent because Bot API 10.2 does not support them for this method.
+func (c *TelegramClient) SendStructuredRichMessage(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
 	if !richMessageEnabled() {
 		return nil, fmt.Errorf("rich message disabled by ENABLE_RICH_MESSAGE")
 	}
-	apiURL := fmt.Sprintf("%s/sendRichMessage", c.baseURL)
-
-	richMessage := map[string]interface{}{
-		"markdown": markdown,
+	if richMessage == nil {
+		return nil, fmt.Errorf("rich message is nil")
 	}
-	if len(media) > 0 {
-		richMessage["media"] = media
+	variants := 0
+	if richMessage.Markdown != "" {
+		variants++
 	}
-
+	if richMessage.HTML != "" {
+		variants++
+	}
+	if len(richMessage.Blocks) > 0 {
+		variants++
+	}
+	if variants != 1 {
+		return nil, fmt.Errorf("InputRichMessage must contain exactly one of markdown, html or blocks")
+	}
 	payload := map[string]interface{}{
 		"chat_id":      chatID,
 		"rich_message": richMessage,
 	}
-
 	if keyboard != nil {
 		payload["reply_markup"] = keyboard
 	}
+	for _, media := range richMessage.Media {
+		if len(media.Upload) > 0 {
+			return c.sendStructuredRichMessageMultipart(chatID, richMessage, keyboard)
+		}
+	}
+	return c.makeRequest(fmt.Sprintf("%s/sendRichMessage", c.baseURL), payload)
+}
 
-	return c.makeRequest(apiURL, payload)
+func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", strconv.FormatInt(chatID, 10)); err != nil {
+		return nil, err
+	}
+	richJSON, err := json.Marshal(richMessage)
+	if err != nil {
+		return nil, fmt.Errorf("marshal rich_message: %w", err)
+	}
+	if err := writer.WriteField("rich_message", string(richJSON)); err != nil {
+		return nil, err
+	}
+	if keyboard != nil {
+		keyboardJSON, err := json.Marshal(keyboard)
+		if err != nil {
+			return nil, fmt.Errorf("marshal reply_markup: %w", err)
+		}
+		if err := writer.WriteField("reply_markup", string(keyboardJSON)); err != nil {
+			return nil, err
+		}
+	}
+	for _, media := range richMessage.Media {
+		if len(media.Upload) == 0 {
+			continue
+		}
+		filename := media.Filename
+		if filename == "" {
+			filename = media.ID + ".jpg"
+		}
+		part, err := writer.CreateFormFile(media.ID, filename)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(media.Upload); err != nil {
+			return nil, err
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/sendRichMessage", c.baseURL), &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram multipart request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	return decodeTelegramMessageResponse(resp)
+}
+
+func decodeTelegramMessageResponse(resp *http.Response) (*types.TelegramMessage, error) {
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 10*1024*1024))
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		OK          bool                   `json:"ok"`
+		Result      *types.TelegramMessage `json:"result"`
+		Description string                 `json:"description"`
+	}
+	if err := json.Unmarshal(responseBody, &result); err != nil {
+		return nil, fmt.Errorf("decode Telegram response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 || !result.OK {
+		return nil, fmt.Errorf("Telegram API error (%d): %s", resp.StatusCode, result.Description)
+	}
+	return result.Result, nil
 }
 
 func applyTelegramSendOptions(payload map[string]interface{}, options []*types.TelegramSendOptions) {

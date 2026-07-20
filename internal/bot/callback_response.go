@@ -29,8 +29,8 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		return
 	}
 
-	if resp.RichMessage != "" {
-		logger.Info("%s Sending Rich Message to chat %d, len=%d", logPrefix, ctx.ChatID, len(resp.RichMessage))
+	if resp.StructuredRichMessage != nil || resp.RichMessage != "" {
+		logger.Info("%s Sending Rich Message to chat %d", logPrefix, ctx.ChatID)
 		deletedOriginal := false
 		if resp.Edit || resp.DeleteMessage {
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
@@ -42,7 +42,9 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		// Photo + Rich Message is one native rich card. Never send a standalone
 		// photo first; that duplicates metadata and leaves buttons on a second card.
 		var sendErr error
-		if resp.Photo != "" {
+		if resp.StructuredRichMessage != nil {
+			_, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, resp.StructuredRichMessage, keyboard)
+		} else if resp.Photo != "" {
 			_, sendErr = telegram.SendRichMessageWithPhoto(ctx.ChatID, resp.RichMessage, resp.Photo, keyboard)
 		} else {
 			_, sendErr = telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard)

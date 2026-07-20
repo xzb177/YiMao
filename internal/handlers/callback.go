@@ -1429,27 +1429,15 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	}
 
 	// Restore the same readable result list and page controls used by SearchHandler.
-	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n第 %d 页 · 本页最多展示 8 条\n\n", query, page)
 	results := make([]services.SearchResult, 0, len(items))
 	for i, item := range items {
 		if i >= 8 {
 			break
 		}
 		mediaType := "movie"
-		mediaLabel := "🎬 电影"
 		if item.Type == "tv" || item.Type == "电视剧" {
 			mediaType = "tv"
-			mediaLabel = "📺 剧集"
 		}
-		year := ""
-		if item.Year > 0 {
-			year = fmt.Sprintf(" (%d)", item.Year)
-		}
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
-		}
-		text += fmt.Sprintf("%d. %s%s · %s%s\n", i+1, item.Title, year, mediaLabel, rating)
 		id, _ := strconv.Atoi(item.ID)
 		results = append(results, services.SearchResult{
 			ID:     id,
@@ -1457,18 +1445,21 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 			Year:   services.FlexibleYear(item.Year),
 			Type:   mediaType,
 			Rating: item.Rating,
+			Poster: item.Poster,
 		})
 	}
+	text := buildSearchResultsText(query, page, results)
 	keyboard := buildSearchResultsKeyboard(results, page, len(items) >= 8)
 
 	logger.Info("[BackHandler] Restoring search results: query=%s, items=%d, page=%d", query, len(items), page)
 	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
-		Text:          text,
-		Edit:          false,
-		DeleteMessage: true,
-		Keyboard:      convertKeyboard(keyboard),
-		ParseMode:     "HTML",
+		Text:                  text,
+		StructuredRichMessage: buildSearchSlideshow(query, page, results),
+		Edit:                  false,
+		DeleteMessage:         false,
+		Keyboard:              convertKeyboard(keyboard),
+		ParseMode:             "HTML",
 	}, nil
 }
 

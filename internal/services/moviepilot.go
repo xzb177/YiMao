@@ -787,6 +787,26 @@ func (c *MoviePilotClient) IsSubscriptionCacheReady() bool {
 	return c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL
 }
 
+// CachedSubscriptionTMDBIDs returns a point-in-time index of fresh cached
+// subscriptions. A positive hit means the title is being followed somewhere in
+// this MoviePilot instance; cards must label it "站内追更", never imply that
+// the current Telegram user personally subscribed. Every other case directs the
+// user to details instead of guessing availability or request eligibility.
+func (c *MoviePilotClient) CachedSubscriptionTMDBIDs() (map[int]struct{}, bool) {
+	c.subsCacheMu.RLock()
+	defer c.subsCacheMu.RUnlock()
+	if c.subsCacheData == nil || time.Since(c.subsCacheTime) >= c.subsCacheTTL {
+		return nil, false
+	}
+	ids := make(map[int]struct{}, len(c.subsCacheData))
+	for _, item := range c.subsCacheData {
+		if item.TMDBID > 0 {
+			ids[item.TMDBID] = struct{}{}
+		}
+	}
+	return ids, true
+}
+
 // getCachedSubscriptions returns cached subscriptions if available.
 // Returns (data, true) if cache hit, (nil, false) if cache miss (caller should trigger warmup).
 func (c *MoviePilotClient) getCachedSubscriptions(pageSize int) ([]SubscribeItem, bool) {

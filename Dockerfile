@@ -26,6 +26,8 @@ RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 # The production image remains lean, while `docker build --target verify .`
 # runs the same source through vet and the full Go test suite first.
 FROM builder AS verify
+RUN apk add --no-cache font-noto-cjk
+ENV YIMAO_CJK_FONT=/usr/share/fonts/noto/NotoSansCJK-Regular.ttc
 RUN files=$(find . -type f -name '*.go' -not -path './vendor/*') && \
     test -z "$(gofmt -l $files)" && \
     go vet ./... && \
@@ -39,7 +41,9 @@ ENTRYPOINT ["/smoke"]
 # Final stage
 FROM alpine:latest
 
-RUN apk add --no-cache ca-certificates tzdata shadow su-exec docker-cli
+# Noto Sans CJK provides modern, high-quality Chinese typography for search cards.
+RUN apk add --no-cache ca-certificates tzdata shadow su-exec docker-cli font-noto-cjk
+ENV YIMAO_CJK_FONT=/usr/share/fonts/noto/NotoSansCJK-Regular.ttc
 
 WORKDIR /app
 

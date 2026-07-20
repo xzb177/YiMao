@@ -202,7 +202,7 @@ func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query 
 	results, err := h.moviepilot.SearchMediaWithCount(query, page, 8)
 	if err != nil {
 		logger.Info("[SearchHandler] Search failed: %v", err)
-		h.telegram.SendMessage(chatID, "❌ 搜索服务暂时不可用，请稍后再试", "", nil)
+		h.sendUserScopedText(userID, chatID, "❌ 搜索服务暂时不可用，请稍后再试", nil)
 		return err
 	}
 
@@ -221,7 +221,7 @@ func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query 
 
 	if len(results.Results) == 0 {
 		if page > 1 {
-			h.telegram.SendMessage(chatID, fmt.Sprintf("🔍 「%s」没有更多结果了", query), "", buildSearchRecoveryKeyboard(page-1))
+			h.sendUserScopedText(userID, chatID, fmt.Sprintf("🔍 「%s」没有更多结果了", query), buildSearchRecoveryKeyboard(page-1))
 			return nil
 		}
 		fallbackResults, fallbackQuery, fbErr := h.trySearchFallback(query)
@@ -230,7 +230,6 @@ func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query 
 		}
 		if fallbackResults != nil && len(fallbackResults) > 0 {
 			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults}, 1)
-			h.telegram.SendMessage(chatID, fmt.Sprintf("💡 已为你启用兜底搜索：%s", fallbackQuery), "", nil)
 			return nil
 		}
 		h.sendNoResultsMessage(userID, chatID, query)
@@ -318,11 +317,42 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 		}, nil
 	}
 
-	// 重新搜索并展示指定页。旧实现固定请求第 1 页，导致内容看似翻页但实际不变。
-	if err := h.handleSearchQueryPage(ctx.UserID, ctx.ChatID, query, page, false); err != nil {
-		return &callback.Response{CallbackMsg: "搜索失败，请稍后重试", ShowAlert: true}, nil
+	// Callback pagination returns a view to the central renderer instead of
+	// sending directly. This lets group callbacks update their existing
+	// ephemeral placeholder and keeps private/public routing fail-closed.
+	results, err := h.moviepilot.SearchMediaWithCount(query, page, 8)
+	if err != nil {
+		logger.Info("[SearchHandler] Page search failed: %v", err)
+		return &callback.Response{Text: "❌ 搜索服务暂时不可用，请稍后再试", CallbackMsg: "搜索失败"}, nil
 	}
-	return &callback.Response{CallbackMsg: fmt.Sprintf("第 %d 页", page)}, nil
+	if results == nil {
+		results = &services.SearchResponse{}
+	}
+	filtered := results.Results[:0]
+	for _, item := range results.Results {
+		if item.ID > 0 {
+			filtered = append(filtered, item)
+		}
+	}
+	results.Results = filtered
+	if len(results.Results) == 0 {
+		return &callback.Response{
+			Text:        fmt.Sprintf("🔍 「%s」没有更多结果了", query),
+			CallbackMsg: "已经到底了",
+			Keyboard:    convertKeyboard(buildSearchRecoveryKeyboard(page - 1)),
+		}, nil
+	}
+	h.storeSearchResults(ctx.UserID, query, results.Results, page)
+	var rich *types.TelegramInputRichMessage
+	if ctx.ChatType == "private" {
+		rich = h.buildVisualSearchSlideshow(query, page, results.Results)
+	}
+	return &callback.Response{
+		Text:                  buildSearchResultsText(query, page, results.Results),
+		StructuredRichMessage: rich,
+		Keyboard:              convertKeyboard(buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)),
+		CallbackMsg:           fmt.Sprintf("第 %d 页", page),
+	}, nil
 }
 
 func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*callback.Response, error) {
@@ -521,7 +551,19 @@ func (h *SearchHandler) sendNoResultsMessage(userID int64, chatID int64, query s
 	kb.AddButton("📜 搜索记录", "search_history_menu")
 	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
-	h.telegram.SendMessage(chatID, msg, "", kb.Build())
+	h.sendUserScopedText(userID, chatID, msg, kb.Build())
+}
+
+func (h *SearchHandler) sendUserScopedText(userID, chatID int64, text string, keyboard *types.TelegramInlineKeyboard) {
+	if chatID < 0 {
+		if _, err := h.telegram.SendMessage(chatID, text, "", keyboard, &types.TelegramSendOptions{ReceiverUserID: userID}); err != nil {
+			logger.Info("[SearchHandler] Ephemeral text send failed; no public fallback: %v", err)
+		}
+		return
+	}
+	if _, err := h.telegram.SendMessage(chatID, text, "", keyboard); err != nil {
+		logger.Info("[SearchHandler] Text send failed: %v", err)
+	}
 }
 
 func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult, string, error) {
@@ -529,36 +571,34 @@ func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult
 }
 
 func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse, page int) {
-	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n第 %d 页 · 本页最多展示 8 条\n\n", query, page)
-	for i, item := range results.Results {
-		if i >= 8 {
-			break
-		}
-		year := ""
-		if item.Year > 0 {
-			year = fmt.Sprintf(" (%d)", item.Year)
-		}
-		mediaType := "🎬 电影"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaType = "📺 剧集"
-		}
-		rating := ""
-		if item.Rating > 0 {
-			rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
-		}
-		text += fmt.Sprintf("%d. %s%s · %s%s\n", i+1, item.Title, year, mediaType, rating)
-	}
-
+	text := buildSearchResultsText(query, page, results.Results)
 	keyboard := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
+	h.storeSearchResults(userID, query, results.Results, page)
 
-	// Save search results to session
+	// Telegram chat IDs for groups/channels are negative. Avoid both rich-message
+	// composition and transport there; community searches remain ephemeral text.
+	if chatID > 0 {
+		if rich := h.buildVisualSearchSlideshow(query, page, results.Results); rich != nil {
+			if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, keyboard); err == nil {
+				return
+			} else {
+				logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)
+			}
+		}
+	}
+	h.sendUserScopedText(userID, chatID, text, keyboard)
+}
+
+func (h *SearchHandler) storeSearchResults(userID int64, query string, results []services.SearchResult, page int) {
+	// Save before delivery so callback buttons remain usable after a transport
+	// fallback or a Telegram retry.
 	sess := h.sessMgr.GetOrCreate(userID)
-	displayCount := len(results.Results)
+	displayCount := len(results)
 	if displayCount > 8 {
 		displayCount = 8
 	}
 	searchItems := make([]session.SearchItem, 0, displayCount)
-	for i, item := range results.Results {
+	for i, item := range results {
 		if i >= 8 {
 			break
 		}
@@ -577,7 +617,127 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 		})
 	}
 	sess.SetSearchResults(searchItems, page, query)
-	h.telegram.SendMessage(chatID, text, "", keyboard)
+}
+
+func buildSearchResultsText(query string, page int, results []services.SearchResult) string {
+	text := fmt.Sprintf("🔍 搜索结果「%s」\n\n第 %d 页 · 本页最多展示 8 条\n\n", query, page)
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+		text += searchResultLine(i, item) + "\n"
+	}
+	return text
+}
+
+func searchResultLine(index int, item services.SearchResult) string {
+	year := ""
+	if item.Year > 0 {
+		year = fmt.Sprintf(" (%d)", item.Year)
+	}
+	mediaType := "🎬 电影"
+	if item.Type == "tv" || item.Type == "电视剧" {
+		mediaType = "📺 剧集"
+	}
+	rating := ""
+	if item.Rating > 0 {
+		rating = fmt.Sprintf(" ⭐%.1f", item.Rating)
+	}
+	return fmt.Sprintf("%d. %s%s · %s%s", index+1, item.Title, year, mediaType, rating)
+}
+
+func searchSlideCaption(index int, item services.SearchResult) string {
+	metadata := make([]string, 0, 3)
+	if item.Year > 0 {
+		metadata = append(metadata, fmt.Sprintf("%d", item.Year))
+	}
+	if item.Type == "tv" || item.Type == "电视剧" {
+		metadata = append(metadata, "剧集")
+	} else {
+		metadata = append(metadata, "电影")
+	}
+	if item.Rating > 0 {
+		metadata = append(metadata, fmt.Sprintf("⭐ %.1f", item.Rating))
+	}
+
+	caption := fmt.Sprintf("%d · %s\n%s", index+1, strings.TrimSpace(item.Title), strings.Join(metadata, " · "))
+	if overview := compactOverview(item.Overview, 90); overview != "" {
+		caption += "\n" + overview
+	}
+	return caption
+}
+
+func compactOverview(overview string, maxRunes int) string {
+	overview = strings.Join(strings.Fields(overview), " ")
+	if overview == "" || maxRunes <= 0 {
+		return ""
+	}
+	runes := []rune(overview)
+	if len(runes) <= maxRunes {
+		return overview
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
+}
+
+// buildSearchSlideshow uses poster URLs already returned by the single search
+// request; it performs no detail lookups and therefore introduces no N+1.
+func buildSearchSlideshow(query string, page int, results []services.SearchResult) *types.TelegramInputRichMessage {
+	blocks := make([]types.TelegramInputRichBlock, 0, 8)
+	for i, item := range results {
+		if i >= 8 {
+			break
+		}
+		poster := getPosterURL(strings.TrimSpace(item.Poster))
+		if poster == "" {
+			continue
+		}
+		blocks = append(blocks, types.TelegramInputRichBlock{
+			Type:    "photo",
+			Photo:   &types.TelegramRichPhoto{Type: "photo", Media: poster},
+			Caption: &types.TelegramRichText{Text: searchSlideCaption(i, item)},
+		})
+	}
+	if len(blocks) < 2 {
+		return nil
+	}
+	caption := fmt.Sprintf("🔍 搜索结果「%s」 · 第 %d 页\n左右滑动看海报，点下方片名看详情。", query, page)
+	return &types.TelegramInputRichMessage{Blocks: []types.TelegramInputRichBlock{{
+		Type: "slideshow", Blocks: blocks, Caption: &types.TelegramRichText{Text: caption},
+	}}}
+}
+
+// buildVisualSearchSlideshow uses one fresh subscription-cache snapshot and
+// composites all slides concurrently. Captions remain as semantic metadata,
+// but the JPEG itself is authoritative because some Telegram clients omit
+// slideshow photo captions.
+func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, results []services.SearchResult) *types.TelegramInputRichMessage {
+	subscribed, _ := h.moviepilot.CachedSubscriptionTMDBIDs()
+	cards := services.BuildSearchVisualCards(results, subscribed)
+	if len(cards) < 2 {
+		return nil
+	}
+	blocks := make([]types.TelegramInputRichBlock, 0, len(cards))
+	media := make([]types.TelegramInputRichMessageMedia, 0, len(cards))
+	for _, card := range cards {
+		item := results[card.ResultIndex]
+		id := fmt.Sprintf("search_card_%d", card.ResultIndex+1)
+		blocks = append(blocks, types.TelegramInputRichBlock{
+			Type:    "photo",
+			Photo:   &types.TelegramRichPhoto{Type: "photo", Media: "attach://" + id},
+			Caption: &types.TelegramRichText{Text: searchSlideCaption(card.ResultIndex, item)},
+		})
+		media = append(media, types.TelegramInputRichMessageMedia{
+			ID:       id,
+			Media:    types.TelegramRichPhoto{Type: "photo", Media: "attach://" + id},
+			Upload:   card.JPEG,
+			Filename: id + ".jpg",
+		})
+	}
+	caption := fmt.Sprintf("🔍 搜索结果「%s」 · 第 %d 页\n左右滑动看视觉卡，点下方片名看详情。", query, page)
+	return &types.TelegramInputRichMessage{
+		Blocks: []types.TelegramInputRichBlock{{Type: "slideshow", Blocks: blocks, Caption: &types.TelegramRichText{Text: caption}}},
+		Media:  media,
+	}
 }
 
 func buildSearchResultsKeyboard(results []services.SearchResult, page int, hasNext bool) *types.TelegramInlineKeyboard {

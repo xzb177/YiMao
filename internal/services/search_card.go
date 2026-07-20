@@ -1,0 +1,482 @@
+package services
+
+import (
+	"bytes"
+	"fmt"
+	"image"
+	"image/color"
+	"image/draw"
+	"image/jpeg"
+	"io"
+	"math"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+	"unicode/utf8"
+
+	xdraw "golang.org/x/image/draw"
+	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
+	"golang.org/x/image/math/fixed"
+)
+
+const (
+	searchCardWidth       = 900
+	searchCardHeight      = 1350
+	searchCardPoster      = 945 // 70% of the card; a 2:3 poster is 630x945 here.
+	searchCardSafeInset   = 72  // 8% of the Telegram image width.
+	searchPosterMaxBytes  = 6 * 1024 * 1024
+	searchPosterMaxPixels = 20_000_000
+)
+
+var searchCardSlots = make(chan struct{}, 4)
+
+// SearchVisualCard is a JPEG that contains all metadata users need even when a
+// Telegram client chooses not to render InputRichBlockPhoto.caption.
+type SearchVisualCard struct {
+	ResultIndex int
+	JPEG        []byte
+}
+
+// BuildSearchVisualCards downloads and composites posters concurrently. It
+// makes no MoviePilot detail calls; status is supplied from the one cache index.
+func BuildSearchVisualCards(results []SearchResult, subscribed map[int]struct{}) []SearchVisualCard {
+	limit := len(results)
+	if limit > 8 {
+		limit = 8
+	}
+	cards := make([]SearchVisualCard, limit)
+	valid := make([]bool, limit)
+	client := &http.Client{Timeout: 12 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 3 || !trustedSearchPosterURL(req.URL) {
+			return fmt.Errorf("untrusted poster redirect")
+		}
+		return nil
+	}}
+	var wg sync.WaitGroup
+	for i := 0; i < limit; i++ {
+		poster := normalizeSearchPoster(results[i].Poster)
+		if poster == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(i int, poster string) {
+			defer wg.Done()
+			searchCardSlots <- struct{}{}
+			defer func() { <-searchCardSlots }()
+			resp, err := client.Get(poster)
+			if err != nil {
+				return
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				return
+			}
+			contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+			if contentType != "" && !strings.HasPrefix(contentType, "image/") {
+				return
+			}
+			data, err := io.ReadAll(io.LimitReader(resp.Body, searchPosterMaxBytes+1))
+			if err != nil || len(data) > searchPosterMaxBytes {
+				return
+			}
+			status := "点详情查看状态"
+			if _, ok := subscribed[results[i].ID]; ok {
+				status = "站内追更"
+			}
+			card, err := RenderSearchVisualCard(data, i, results[i], status)
+			if err == nil {
+				cards[i] = SearchVisualCard{ResultIndex: i, JPEG: card}
+				valid[i] = true
+			}
+		}(i, poster)
+	}
+	wg.Wait()
+	out := make([]SearchVisualCard, 0, limit)
+	for i := range cards {
+		if valid[i] {
+			out = append(out, cards[i])
+		}
+	}
+	return out
+}
+
+func normalizeSearchPoster(poster string) string {
+	poster = strings.TrimSpace(poster)
+	if poster == "" {
+		return ""
+	}
+	if strings.HasPrefix(poster, "http://") || strings.HasPrefix(poster, "https://") {
+		u, err := url.Parse(poster)
+		if err != nil || !trustedSearchPosterURL(u) {
+			return ""
+		}
+		return u.String()
+	}
+	return "https://image.tmdb.org/t/p/w780/" + strings.TrimLeft(poster, "/")
+}
+
+func trustedSearchPosterURL(u *url.URL) bool {
+	return u != nil && u.Scheme == "https" && strings.EqualFold(u.Hostname(), "image.tmdb.org") && u.User == nil
+}
+
+// RenderSearchVisualCard renders a deterministic 2:3 JPEG. Exported for image
+// contract tests and for future transports that already have poster bytes.
+func RenderSearchVisualCard(poster []byte, index int, item SearchResult, status string) ([]byte, error) {
+	_ = index // Ordering belongs to the carousel UI, not the editorial artwork.
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(poster))
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > 8000 || cfg.Height > 8000 || int64(cfg.Width)*int64(cfg.Height) > searchPosterMaxPixels {
+		return nil, fmt.Errorf("unsafe poster dimensions")
+	}
+	src, _, err := image.Decode(bytes.NewReader(poster))
+	if err != nil {
+		return nil, fmt.Errorf("decode poster: %w", err)
+	}
+	faces, err := loadSearchCardFaces()
+	if err != nil {
+		return nil, err
+	}
+	defer faces.close()
+
+	palette := extractSearchCardPalette(src)
+	canvas := image.NewRGBA(image.Rect(0, 0, searchCardWidth, searchCardHeight))
+	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{C: palette.deep}, image.Point{}, draw.Src)
+	// Preserve the complete poster in a 2:3 hero. A deliberately low-resolution
+	// cover copy is enlarged behind it to create soft, same-image side extensions.
+	sb := src.Bounds()
+	stage := image.Rect(0, 0, searchCardWidth, searchCardPoster)
+	coverScale := maxFloat(float64(stage.Dx())/float64(sb.Dx()), float64(stage.Dy())/float64(sb.Dy()))
+	coverW, coverH := int(float64(sb.Dx())*coverScale), int(float64(sb.Dy())*coverScale)
+	coverDst := image.Rect((searchCardWidth-coverW)/2, (searchCardPoster-coverH)/2, (searchCardWidth+coverW)/2, (searchCardPoster+coverH)/2)
+	soft := image.NewRGBA(image.Rect(0, 0, 90, 95))
+	xdraw.ApproxBiLinear.Scale(soft, soft.Bounds(), src, sb, draw.Src, nil)
+	background := image.NewRGBA(stage)
+	xdraw.ApproxBiLinear.Scale(background, coverDst, soft, soft.Bounds(), draw.Src, nil)
+	draw.Draw(background, stage, &image.Uniform{C: color.RGBA{palette.deep.R, palette.deep.G, palette.deep.B, 142}}, image.Point{}, draw.Over)
+	draw.Draw(canvas, stage, background, image.Point{}, draw.Src)
+
+	containScale := minFloat(float64(stage.Dx())/float64(sb.Dx()), float64(stage.Dy())/float64(sb.Dy()))
+	posterW, posterH := int(float64(sb.Dx())*containScale), int(float64(sb.Dy())*containScale)
+	posterX := (searchCardWidth - posterW) / 2
+	posterY := (searchCardPoster - posterH) / 2
+	posterDst := image.Rect(posterX, posterY, posterX+posterW, posterY+posterH)
+	posterLayer := image.NewRGBA(image.Rect(0, 0, posterW, posterH))
+	xdraw.CatmullRom.Scale(posterLayer, posterLayer.Bounds(), src, sb, draw.Src, nil)
+	feather := 28
+	for py := 0; py < posterH; py++ {
+		for px := 0; px < posterW; px++ {
+			a := 255
+			if px < feather {
+				a = px * 255 / feather
+			} else if d := posterW - 1 - px; d < feather {
+				a = d * 255 / feather
+			}
+			c := color.RGBAModel.Convert(posterLayer.At(px, py)).(color.RGBA)
+			c.A = uint8(a)
+			posterLayer.SetRGBA(px, py, c)
+		}
+	}
+	draw.Draw(canvas, posterDst, posterLayer, image.Point{}, draw.Over)
+
+	// The charcoal information layer fades into the art instead of using a hard
+	// separator. Its hue follows the poster, but remains dark enough for WCAG text.
+	for y := 870; y < searchCardHeight; y++ {
+		a := 1.0
+		if y < 985 {
+			a = float64(y-870) / 115
+		}
+		alpha := uint8(245 * a)
+		draw.Draw(canvas, image.Rect(0, y, searchCardWidth, y+1), &image.Uniform{C: color.RGBA{palette.deep.R, palette.deep.G, palette.deep.B, alpha}}, image.Point{}, draw.Over)
+	}
+
+	x := searchCardSafeInset
+	titleColor := ensureTextContrast(color.RGBA{246, 247, 249, 255}, palette.deep, 7)
+	drawWrapped(canvas, faces.title, strings.TrimSpace(item.Title), x, 984, searchCardWidth-2*searchCardSafeInset, 46, titleColor, 2)
+
+	metadata := make([]string, 0, 3)
+	if item.Year > 0 {
+		metadata = append(metadata, fmt.Sprintf("%d", item.Year))
+	}
+	if item.Type == "tv" || item.Type == "电视剧" {
+		metadata = append(metadata, "剧集")
+	} else {
+		metadata = append(metadata, "电影")
+	}
+	if item.Rating > 0 {
+		metadata = append(metadata, fmt.Sprintf("★ %.1f", item.Rating))
+	}
+	metaColor := ensureTextContrast(color.RGBA{194, 199, 207, 255}, palette.deep, 4.5)
+	drawText(canvas, faces.meta, strings.Join(metadata, "  ·  "), x, 1093, metaColor)
+
+	pillText := ensureTextContrast(palette.accent, palette.pill, 4.5)
+	pillWidth := font.MeasureString(faces.status, status).Ceil() + 36
+	drawRoundedRect(canvas, image.Rect(x, 1115, x+pillWidth, 1161), 23, palette.pill)
+	drawText(canvas, faces.status, status, x+18, 1147, pillText)
+
+	overview := compactCardText(item.Overview, 120)
+	if overview == "" {
+		overview = "暂无简介"
+	}
+	bodyColor := ensureTextContrast(color.RGBA{224, 226, 231, 255}, palette.deep, 4.5)
+	drawWrapped(canvas, faces.body, overview, x, 1182, searchCardWidth-2*searchCardSafeInset, 29, bodyColor, 3)
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, canvas, &jpeg.Options{Quality: 88}); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+type cardFaces struct{ title, meta, status, body font.Face }
+
+type searchCardPalette struct {
+	accent color.RGBA
+	deep   color.RGBA
+	pill   color.RGBA
+}
+
+// extractSearchCardPalette follows the overall artwork colour rather than one
+// saturated logo or mark. The averaged colour is gently warmed, brightened and
+// saturation-clamped so the status pill remains editorial instead of neon.
+func extractSearchCardPalette(src image.Image) searchCardPalette {
+	b := src.Bounds()
+	var sumR, sumG, sumB, count uint64
+	for gy := 0; gy < 12; gy++ {
+		for gx := 0; gx < 10; gx++ {
+			x := b.Min.X + (2*gx+1)*b.Dx()/20
+			y := b.Min.Y + (2*gy+1)*b.Dy()/24
+			r16, g16, b16, _ := src.At(x, y).RGBA()
+			r, g, bl := uint8(r16>>8), uint8(g16>>8), uint8(b16>>8)
+			sumR, sumG, sumB, count = sumR+uint64(r), sumG+uint64(g), sumB+uint64(bl), count+1
+		}
+	}
+	avgR, avgG, avgB := uint8(sumR/count), uint8(sumG/count), uint8(sumB/count)
+	accent := restrainedAccent(avgR, avgG, avgB)
+	deep := color.RGBA{uint8(10 + int(avgR)*8/100), uint8(11 + int(avgG)*8/100), uint8(13 + int(avgB)*8/100), 255}
+	pill := color.RGBA{uint8((int(deep.R)*3 + int(accent.R)) / 4), uint8((int(deep.G)*3 + int(accent.G)) / 4), uint8((int(deep.B)*3 + int(accent.B)) / 4), 255}
+	return searchCardPalette{accent: accent, deep: deep, pill: pill}
+}
+
+func restrainedAccent(r, g, b uint8) color.RGBA {
+	rf := .82*float64(r) + .18*176
+	gf := .82*float64(g) + .18*154
+	bf := .82*float64(b) + .18*126
+	maxV := math.Max(rf, math.Max(gf, bf))
+	if maxV < 168 {
+		s := 168 / math.Max(maxV, 1)
+		rf, gf, bf = rf*s, gf*s, bf*s
+	}
+	clamp := func(v float64) uint8 {
+		if v < 72 {
+			return 72
+		}
+		if v > 205 {
+			return 205
+		}
+		return uint8(v)
+	}
+	return color.RGBA{clamp(rf), clamp(gf), clamp(bf), 255}
+}
+
+func relativeLuminance(c color.RGBA) float64 {
+	linear := func(v uint8) float64 {
+		n := float64(v) / 255
+		if n <= .04045 {
+			return n / 12.92
+		}
+		return math.Pow((n+.055)/1.055, 2.4)
+	}
+	return .2126*linear(c.R) + .7152*linear(c.G) + .0722*linear(c.B)
+}
+
+func contrastRatio(a, b color.RGBA) float64 {
+	la, lb := relativeLuminance(a), relativeLuminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + .05) / (lb + .05)
+}
+
+func ensureTextContrast(preferred, background color.RGBA, minimum float64) color.RGBA {
+	if contrastRatio(preferred, background) >= minimum {
+		return preferred
+	}
+	white, black := color.RGBA{255, 255, 255, 255}, color.RGBA{8, 9, 11, 255}
+	if contrastRatio(white, background) >= contrastRatio(black, background) {
+		return white
+	}
+	return black
+}
+
+func drawRoundedRect(dst draw.Image, rect image.Rectangle, radius int, c color.Color) {
+	r2 := radius * radius
+	for y := rect.Min.Y; y < rect.Max.Y; y++ {
+		for x := rect.Min.X; x < rect.Max.X; x++ {
+			dx, dy := 0, 0
+			if x < rect.Min.X+radius {
+				dx = rect.Min.X + radius - x
+			}
+			if x >= rect.Max.X-radius {
+				dx = x - (rect.Max.X - radius - 1)
+			}
+			if y < rect.Min.Y+radius {
+				dy = rect.Min.Y + radius - y
+			}
+			if y >= rect.Max.Y-radius {
+				dy = y - (rect.Max.Y - radius - 1)
+			}
+			if dx*dx+dy*dy <= r2 {
+				dst.Set(x, y, c)
+			}
+		}
+	}
+}
+
+func maxByte(a, b uint8) uint8 {
+	if a > b {
+		return a
+	}
+	return b
+}
+func minByte(a, b uint8) uint8 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+var (
+	searchCardFontOnce   sync.Once
+	searchCardParsedFont *opentype.Font
+	searchCardFontErr    error
+)
+
+func (f cardFaces) close() {
+	_ = f.title.Close()
+	_ = f.meta.Close()
+	_ = f.status.Close()
+	_ = f.body.Close()
+}
+
+func loadSearchCardFaces() (cardFaces, error) {
+	searchCardFontOnce.Do(func() {
+		paths := []string{os.Getenv("YIMAO_CJK_FONT"), "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", "/usr/share/fonts/opentype/unifont/unifont.otf"}
+		var raw []byte
+		var picked string
+		for _, path := range paths {
+			if path == "" {
+				continue
+			}
+			if data, err := os.ReadFile(filepath.Clean(path)); err == nil {
+				raw, picked = data, path
+				break
+			}
+		}
+		if raw == nil {
+			searchCardFontErr = fmt.Errorf("CJK font not found; set YIMAO_CJK_FONT")
+			return
+		}
+		if strings.HasSuffix(strings.ToLower(picked), ".ttc") {
+			collection, err := opentype.ParseCollection(raw)
+			if err != nil {
+				searchCardFontErr = fmt.Errorf("parse CJK font collection: %w", err)
+				return
+			}
+			searchCardParsedFont, searchCardFontErr = collection.Font(0)
+		} else {
+			searchCardParsedFont, searchCardFontErr = opentype.Parse(raw)
+		}
+	})
+	if searchCardFontErr != nil {
+		return cardFaces{}, searchCardFontErr
+	}
+	face := func(size float64) (font.Face, error) {
+		return opentype.NewFace(searchCardParsedFont, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
+	}
+	title, err := face(42)
+	if err != nil {
+		return cardFaces{}, err
+	}
+	meta, err := face(30)
+	if err != nil {
+		_ = title.Close()
+		return cardFaces{}, err
+	}
+	status, err := face(24)
+	if err != nil {
+		_ = title.Close()
+		_ = meta.Close()
+		return cardFaces{}, err
+	}
+	body, err := face(28)
+	if err != nil {
+		_ = title.Close()
+		_ = meta.Close()
+		_ = status.Close()
+		return cardFaces{}, err
+	}
+	return cardFaces{title: title, meta: meta, status: status, body: body}, nil
+}
+
+func drawText(dst draw.Image, face font.Face, text string, x, baseline int, c color.Color) {
+	(&font.Drawer{Dst: dst, Src: image.NewUniform(c), Face: face, Dot: fixed.P(x, baseline)}).DrawString(text)
+}
+
+func drawWrapped(dst draw.Image, face font.Face, text string, x, baseline, width, lineHeight int, c color.Color, maxLines int) int {
+	lines := wrapCardText(face, text, width, maxLines)
+	for _, line := range lines {
+		drawText(dst, face, line, x, baseline, c)
+		baseline += lineHeight
+	}
+	return baseline
+}
+
+func wrapCardText(face font.Face, text string, width, maxLines int) []string {
+	runes := []rune(strings.Join(strings.Fields(text), " "))
+	lines := make([]string, 0, maxLines)
+	for len(runes) > 0 && len(lines) < maxLines {
+		n := 1
+		for n <= len(runes) && font.MeasureString(face, string(runes[:n])).Ceil() <= width {
+			n++
+		}
+		n--
+		if n < 1 {
+			n = 1
+		}
+		line := strings.TrimSpace(string(runes[:n]))
+		runes = runes[n:]
+		if len(lines) == maxLines-1 && len(runes) > 0 {
+			line = strings.TrimRight(line, "…") + "…"
+			runes = nil
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func compactCardText(s string, limit int) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	runes := []rune(s)
+	return strings.TrimSpace(string(runes[:limit])) + "…"
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func minFloat(a, b float64) float64 {
+	if a < b {
+		return a
+	}
+	return b
+}

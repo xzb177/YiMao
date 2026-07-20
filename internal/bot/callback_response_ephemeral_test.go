@@ -9,6 +9,7 @@ import (
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 func callbackTestClient(t *testing.T, handler http.HandlerFunc) *services.TelegramClient {
@@ -61,6 +62,43 @@ func TestRenderCallbackResponseSupergroupRichUsesPrivacySafePlain(t *testing.T) 
 	want := []string{"/sendMessage"}
 	if fmt.Sprint(methods) != fmt.Sprint(want) {
 		t.Fatalf("methods = %#v, want %#v (sendRichMessage has no documented ephemeral parameters)", methods, want)
+	}
+}
+
+func TestRenderCallbackResponseGroupStructuredRichNeverUsesRichOrPublicFallback(t *testing.T) {
+	var methods []string
+	client := callbackTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.URL.Path)
+		body := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(body)
+		if !strings.Contains(string(body), `"receiver_user_id":42`) {
+			t.Fatalf("missing ephemeral receiver: %s", body)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"ok":true,"result":{"ephemeral_message_id":8,"chat":{"id":-1001,"type":"group"},"date":1}}`)
+	})
+	rich := &types.TelegramInputRichMessage{Blocks: []types.TelegramInputRichBlock{{Type: "slideshow"}}}
+	RenderCallbackResponse("test", &callback.Context{UserID: 42, ChatID: -1001, ChatType: "group", CallbackID: "cb-rich"}, &callback.Response{Text: "私密搜索结果", StructuredRichMessage: rich}, client)
+	if fmt.Sprint(methods) != fmt.Sprint([]string{"/sendMessage"}) {
+		t.Fatalf("methods=%v; group must never call sendRichMessage or fall back publicly", methods)
+	}
+}
+
+func TestRenderCallbackResponsePrivateStructuredRichFailureFallsBackOnce(t *testing.T) {
+	var methods []string
+	client := callbackTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/sendRichMessage" {
+			_, _ = fmt.Fprint(w, `{"ok":false,"error_code":400,"description":"unsupported"}`)
+			return
+		}
+		_, _ = fmt.Fprint(w, `{"ok":true,"result":{"message_id":1,"chat":{"id":42,"type":"private"},"date":1}}`)
+	})
+	rich := &types.TelegramInputRichMessage{Blocks: []types.TelegramInputRichBlock{{Type: "slideshow"}}}
+	RenderCallbackResponse("test", &callback.Context{UserID: 42, ChatID: 42, ChatType: "private"}, &callback.Response{Text: "文本兜底", StructuredRichMessage: rich}, client)
+	if fmt.Sprint(methods) != fmt.Sprint([]string{"/sendRichMessage", "/sendMessage"}) {
+		t.Fatalf("methods=%v; want one rich attempt and exactly one text fallback", methods)
 	}
 }
 

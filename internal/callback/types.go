@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // Action represents a callback action
@@ -268,16 +269,17 @@ type Context struct {
 
 // Response represents the result of callback handling
 type Response struct {
-	Text          string
-	Edit          bool
-	ShowAlert     bool
-	Keyboard      *Keyboard
-	CallbackMsg   string
-	Photo         string // Photo URL to send (will send as new message, not edit)
-	PhotoCaption  string // Caption for the photo
-	DeleteMessage bool   // If true, delete the current message before sending new one
-	ParseMode     string // Parse mode for formatting (HTML, Markdown, or empty for none)
-	RichMessage   string // Rich Message markdown content (Bot API 10.1)
+	Text                  string
+	Edit                  bool
+	ShowAlert             bool
+	Keyboard              *Keyboard
+	CallbackMsg           string
+	Photo                 string                          // Photo URL to send (will send as new message, not edit)
+	PhotoCaption          string                          // Caption for the photo
+	DeleteMessage         bool                            // If true, delete the current message before sending new one
+	ParseMode             string                          // Parse mode for formatting (HTML, Markdown, or empty for none)
+	RichMessage           string                          // Rich Message markdown content (legacy-compatible)
+	StructuredRichMessage *types.TelegramInputRichMessage // Typed Bot API 10.2 rich content
 }
 
 // Keyboard represents an inline keyboard
