@@ -187,10 +187,17 @@ func RenderSearchVisualCard(poster []byte, index int, item SearchResult, status 
 	metaColor := paletteTextColor(palette.accent, palette.deep, .48, 4.5)
 	drawText(canvas, faces.meta, strings.Join(metadata, "  ·  "), x, 1087, metaColor)
 
-	pillText := ensureTextContrast(palette.accent, palette.pill, 4.5)
-	pillWidth := font.MeasureString(faces.status, status).Ceil() + 40
-	drawRoundedRect(canvas, image.Rect(x, 1107, x+pillWidth, 1157), 25, palette.pill)
-	drawText(canvas, faces.status, status, x+20, 1142, pillText)
+	statusLabel := formatSearchCardStatus(status)
+	statusFill := mixCardColor(palette.deep, palette.accent, .64)
+	statusBorder := mixCardColor(palette.accent, color.RGBA{255, 255, 255, 255}, .22)
+	pillText := ensureTextContrast(color.RGBA{248, 250, 252, 255}, statusFill, 4.5)
+	pillWidth := font.MeasureString(faces.status, statusLabel).Ceil() + 72
+	pillRect := image.Rect(x, 1107, x+pillWidth, 1157)
+	drawRoundedRect(canvas, pillRect, 25, statusBorder)
+	drawRoundedRect(canvas, pillRect.Inset(2), 23, statusFill)
+	dotColor := ensureTextContrast(palette.accent, statusFill, 3)
+	drawCircle(canvas, x+22, 1132, 6, dotColor)
+	drawText(canvas, faces.status, statusLabel, x+40, 1142, pillText)
 
 	overview := compactCardText(item.Overview, 120)
 	if overview == "" {
@@ -307,6 +314,45 @@ func paletteTextColor(accent, background color.RGBA, whiteMix, minimum float64) 
 		}
 	}
 	return ensureTextContrast(mix(1), background, minimum)
+}
+
+func formatSearchCardStatus(status string) string {
+	status = strings.TrimSpace(status)
+	switch status {
+	case "站内追更":
+		return "状态 · 站内追更"
+	case "点详情查看状态", "点详情查看":
+		return "状态 · 点详情查看"
+	case "":
+		return "状态 · 点详情查看"
+	default:
+		return "状态 · " + status
+	}
+}
+
+func mixCardColor(a, b color.RGBA, amount float64) color.RGBA {
+	if amount < 0 {
+		amount = 0
+	}
+	if amount > 1 {
+		amount = 1
+	}
+	blend := func(x, y uint8) uint8 {
+		return uint8(math.Round(float64(x)*(1-amount) + float64(y)*amount))
+	}
+	return color.RGBA{blend(a.R, b.R), blend(a.G, b.G), blend(a.B, b.B), 255}
+}
+
+func drawCircle(dst draw.Image, cx, cy, radius int, c color.Color) {
+	r2 := radius * radius
+	for y := cy - radius; y <= cy+radius; y++ {
+		for x := cx - radius; x <= cx+radius; x++ {
+			dx, dy := x-cx, y-cy
+			if dx*dx+dy*dy <= r2 {
+				dst.Set(x, y, c)
+			}
+		}
+	}
 }
 
 func drawRoundedRect(dst draw.Image, rect image.Rectangle, radius int, c color.Color) {

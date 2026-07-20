@@ -109,6 +109,33 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 	}
 }
 
+func TestSearchCardStatusLabelAndPillContrast(t *testing.T) {
+	cases := map[string]string{
+		"站内追更":    "状态 · 站内追更",
+		"点详情查看状态": "状态 · 点详情查看",
+		"":        "状态 · 点详情查看",
+	}
+	for input, want := range cases {
+		if got := formatSearchCardStatus(input); got != want {
+			t.Fatalf("status %q => %q, want %q", input, got, want)
+		}
+	}
+	palettes := []searchCardPalette{
+		{accent: color.RGBA{224, 136, 58, 255}, deep: color.RGBA{27, 21, 18, 255}},
+		{accent: color.RGBA{70, 164, 208, 255}, deep: color.RGBA{16, 24, 33, 255}},
+	}
+	for _, palette := range palettes {
+		fill := mixCardColor(palette.deep, palette.accent, .64)
+		text := ensureTextContrast(color.RGBA{248, 250, 252, 255}, fill, 4.5)
+		if ratio := contrastRatio(text, fill); ratio < 4.5 {
+			t.Fatalf("status contrast %.2f below AA: fill=%v text=%v", ratio, fill, text)
+		}
+		if contrastRatio(fill, palette.deep) < 2 {
+			t.Fatalf("status fill not distinct from gradient: fill=%v deep=%v", fill, palette.deep)
+		}
+	}
+}
+
 func TestPaletteTextColorTracksArtworkAndKeepsContrast(t *testing.T) {
 	background := color.RGBA{18, 25, 34, 255}
 	warm := paletteTextColor(color.RGBA{188, 124, 74, 255}, background, .48, 4.5)
