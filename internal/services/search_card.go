@@ -166,8 +166,11 @@ func RenderSearchVisualCard(poster []byte, index int, item SearchResult, status 
 	}
 
 	x := searchCardSafeInset
-	titleColor := ensureTextContrast(color.RGBA{246, 247, 249, 255}, palette.deep, 7)
-	drawWrapped(canvas, faces.title, strings.TrimSpace(item.Title), x, 984, searchCardWidth-2*searchCardSafeInset, 46, titleColor, 2)
+	// Typography follows the artwork palette instead of sitting on top as fixed
+	// white/grey UI. Each role uses a different white mix, then lightens only as
+	// much as needed to preserve contrast against the final dark gradient.
+	titleColor := paletteTextColor(palette.accent, palette.deep, .72, 7)
+	drawWrapped(canvas, faces.title, strings.TrimSpace(item.Title), x, 980, searchCardWidth-2*searchCardSafeInset, 51, titleColor, 2)
 
 	metadata := make([]string, 0, 3)
 	if item.Year > 0 {
@@ -181,20 +184,20 @@ func RenderSearchVisualCard(poster []byte, index int, item SearchResult, status 
 	if item.Rating > 0 {
 		metadata = append(metadata, fmt.Sprintf("★ %.1f", item.Rating))
 	}
-	metaColor := ensureTextContrast(color.RGBA{194, 199, 207, 255}, palette.deep, 4.5)
-	drawText(canvas, faces.meta, strings.Join(metadata, "  ·  "), x, 1093, metaColor)
+	metaColor := paletteTextColor(palette.accent, palette.deep, .48, 4.5)
+	drawText(canvas, faces.meta, strings.Join(metadata, "  ·  "), x, 1087, metaColor)
 
 	pillText := ensureTextContrast(palette.accent, palette.pill, 4.5)
-	pillWidth := font.MeasureString(faces.status, status).Ceil() + 36
-	drawRoundedRect(canvas, image.Rect(x, 1115, x+pillWidth, 1161), 23, palette.pill)
-	drawText(canvas, faces.status, status, x+18, 1147, pillText)
+	pillWidth := font.MeasureString(faces.status, status).Ceil() + 40
+	drawRoundedRect(canvas, image.Rect(x, 1107, x+pillWidth, 1157), 25, palette.pill)
+	drawText(canvas, faces.status, status, x+20, 1142, pillText)
 
 	overview := compactCardText(item.Overview, 120)
 	if overview == "" {
 		overview = "暂无简介"
 	}
-	bodyColor := ensureTextContrast(color.RGBA{224, 226, 231, 255}, palette.deep, 4.5)
-	drawWrapped(canvas, faces.body, overview, x, 1182, searchCardWidth-2*searchCardSafeInset, 29, bodyColor, 3)
+	bodyColor := paletteTextColor(palette.accent, palette.deep, .62, 4.5)
+	drawWrapped(canvas, faces.body, overview, x, 1192, searchCardWidth-2*searchCardSafeInset, 34, bodyColor, 3)
 
 	var out bytes.Buffer
 	if err := jpeg.Encode(&out, canvas, &jpeg.Options{Quality: 88}); err != nil {
@@ -284,6 +287,28 @@ func ensureTextContrast(preferred, background color.RGBA, minimum float64) color
 	return black
 }
 
+func paletteTextColor(accent, background color.RGBA, whiteMix, minimum float64) color.RGBA {
+	if whiteMix < 0 {
+		whiteMix = 0
+	}
+	if whiteMix > 1 {
+		whiteMix = 1
+	}
+	mix := func(amount float64) color.RGBA {
+		blend := func(channel uint8) uint8 {
+			return uint8(math.Round(float64(channel)*(1-amount) + 255*amount))
+		}
+		return color.RGBA{blend(accent.R), blend(accent.G), blend(accent.B), 255}
+	}
+	for amount := whiteMix; amount <= 1.0001; amount += .04 {
+		candidate := mix(math.Min(amount, 1))
+		if contrastRatio(candidate, background) >= minimum {
+			return candidate
+		}
+	}
+	return ensureTextContrast(mix(1), background, minimum)
+}
+
 func drawRoundedRect(dst draw.Image, rect image.Rectangle, radius int, c color.Color) {
 	r2 := radius * radius
 	for y := rect.Min.Y; y < rect.Max.Y; y++ {
@@ -369,22 +394,22 @@ func loadSearchCardFaces() (cardFaces, error) {
 	face := func(size float64) (font.Face, error) {
 		return opentype.NewFace(searchCardParsedFont, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
 	}
-	title, err := face(42)
+	title, err := face(46.2)
 	if err != nil {
 		return cardFaces{}, err
 	}
-	meta, err := face(30)
+	meta, err := face(33)
 	if err != nil {
 		_ = title.Close()
 		return cardFaces{}, err
 	}
-	status, err := face(24)
+	status, err := face(26.4)
 	if err != nil {
 		_ = title.Close()
 		_ = meta.Close()
 		return cardFaces{}, err
 	}
-	body, err := face(28)
+	body, err := face(30.8)
 	if err != nil {
 		_ = title.Close()
 		_ = meta.Close()
@@ -419,6 +444,12 @@ func wrapCardText(face font.Face, text string, width, maxLines int) []string {
 		if n < 1 {
 			n = 1
 		}
+		// Basic CJK kinsoku: do not leave closing punctuation at the start of
+		// the next line. Move one preceding rune with it instead of overfilling
+		// the current line, which keeps the measured width contract intact.
+		if n < len(runes) && n > 1 && isCardLineStartProhibited(runes[n]) {
+			n--
+		}
 		line := strings.TrimSpace(string(runes[:n]))
 		runes = runes[n:]
 		if len(lines) == maxLines-1 && len(runes) > 0 {
@@ -428,6 +459,10 @@ func wrapCardText(face font.Face, text string, width, maxLines int) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func isCardLineStartProhibited(r rune) bool {
+	return strings.ContainsRune("。！？；：，、）》】〕〉」』〗）］…", r)
 }
 
 func compactCardText(s string, limit int) string {

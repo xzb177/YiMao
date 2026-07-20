@@ -109,6 +109,26 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 	}
 }
 
+func TestPaletteTextColorTracksArtworkAndKeepsContrast(t *testing.T) {
+	background := color.RGBA{18, 25, 34, 255}
+	warm := paletteTextColor(color.RGBA{188, 124, 74, 255}, background, .48, 4.5)
+	cool := paletteTextColor(color.RGBA{68, 142, 198, 255}, background, .48, 4.5)
+	if warm == cool {
+		t.Fatalf("different poster palettes produced identical text: %v", warm)
+	}
+	if warm.R <= warm.B {
+		t.Fatalf("warm artwork did not yield warm text: %v", warm)
+	}
+	if cool.B <= cool.R {
+		t.Fatalf("cool artwork did not yield cool text: %v", cool)
+	}
+	for _, got := range []color.RGBA{warm, cool} {
+		if ratio := contrastRatio(got, background); ratio < 4.5 {
+			t.Fatalf("palette text contrast %.2f below minimum: %v", ratio, got)
+		}
+	}
+}
+
 func TestCenterCropBoundsPreservesTwoByThreePoster(t *testing.T) {
 	src := image.Rect(0, 0, 600, 900)
 	if got := centerCropBounds(src, searchCardWidth, searchCardHeight); got != src {
@@ -193,6 +213,22 @@ func TestRenderSearchVisualCardGradientHasNoChromaticCorruption(t *testing.T) {
 			t.Fatalf("unexpected chromatic fringe at y=%d: %v", y, current)
 		}
 		previous = current
+	}
+}
+
+func TestWrapCardTextAvoidsCJKPunctuationAtLineStart(t *testing.T) {
+	t.Setenv("YIMAO_CJK_FONT", "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc")
+	faces, err := loadSearchCardFaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer faces.close()
+	text := "平凡少年韩立出生贫困，为了让家人过上更好的生活，自愿前去七玄门参加入门考核，最终被墨大夫收入门下。随着修炼深入，他逐渐发现了隐藏在门派背后的秘密。"
+	for _, line := range wrapCardText(faces.body, text, searchCardWidth-2*searchCardSafeInset, 3) {
+		runes := []rune(line)
+		if len(runes) > 0 && isCardLineStartProhibited(runes[0]) {
+			t.Fatalf("line starts with prohibited punctuation: %q", line)
+		}
 	}
 }
 
