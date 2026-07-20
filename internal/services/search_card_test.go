@@ -98,14 +98,101 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 	if searchCardSafeInset != searchCardWidth*8/100 {
 		t.Fatalf("safe inset=%d, want 8%% of width", searchCardSafeInset)
 	}
-	if searchCardPoster != searchCardHeight*70/100 {
-		t.Fatalf("poster=%d, want 70%% of height", searchCardPoster)
+	if searchCardGradient >= 984 {
+		t.Fatalf("gradient starts too late: %d", searchCardGradient)
 	}
 	for _, bg := range []color.RGBA{{0, 0, 0, 255}, {255, 255, 255, 255}, {110, 110, 110, 255}, {120, 0, 0, 255}} {
 		fg := ensureTextContrast(color.RGBA{120, 120, 120, 255}, bg, 4.5)
 		if ratio := contrastRatio(fg, bg); ratio < 4.5 {
 			t.Fatalf("contrast %.2f for bg=%v fg=%v", ratio, bg, fg)
 		}
+	}
+}
+
+func TestCenterCropBoundsPreservesTwoByThreePoster(t *testing.T) {
+	src := image.Rect(0, 0, 600, 900)
+	if got := centerCropBounds(src, searchCardWidth, searchCardHeight); got != src {
+		t.Fatalf("2:3 poster was cropped: got=%v want=%v", got, src)
+	}
+	wide := centerCropBounds(image.Rect(0, 0, 1000, 1000), searchCardWidth, searchCardHeight)
+	if wide.Dx() != 667 || wide.Dy() != 1000 || wide.Min.X != 166 {
+		t.Fatalf("unexpected centred wide crop: %v", wide)
+	}
+}
+
+func TestRenderSearchVisualCardKeepsContinuousArtworkAtTop(t *testing.T) {
+	t.Setenv("YIMAO_CJK_FONT", "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc")
+	img := image.NewRGBA(image.Rect(0, 0, 300, 450))
+	for y := 0; y < 450; y++ {
+		for x := 0; x < 300; x++ {
+			c := color.RGBA{200, 35, 30, 255}
+			if x >= 100 && x < 200 {
+				c = color.RGBA{30, 170, 60, 255}
+			} else if x >= 200 {
+				c = color.RGBA{35, 70, 210, 255}
+			}
+			img.SetRGBA(x, y, c)
+		}
+	}
+	var poster bytes.Buffer
+	if err := jpeg.Encode(&poster, img, &jpeg.Options{Quality: 96}); err != nil {
+		t.Fatal(err)
+	}
+	card, err := RenderSearchVisualCard(poster.Bytes(), 0, SearchResult{Title: "连续画面"}, "点详情查看状态")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := jpeg.Decode(bytes.NewReader(card))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []color.RGBA{{200, 35, 30, 255}, {30, 170, 60, 255}, {35, 70, 210, 255}}
+	for i, x := range []int{150, 450, 750} {
+		got := color.RGBAModel.Convert(rendered.At(x, 300)).(color.RGBA)
+		if absInt(int(got.R)-int(want[i].R)) > 18 || absInt(int(got.G)-int(want[i].G)) > 18 || absInt(int(got.B)-int(want[i].B)) > 18 {
+			t.Fatalf("artwork changed at x=%d: got=%v want≈%v", x, got, want[i])
+		}
+	}
+}
+
+func absInt(v int) int {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+func TestRenderSearchVisualCardGradientHasNoChromaticCorruption(t *testing.T) {
+	t.Setenv("YIMAO_CJK_FONT", "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc")
+	img := image.NewRGBA(image.Rect(0, 0, 300, 450))
+	base := color.RGBA{94, 128, 162, 255}
+	for y := 0; y < 450; y++ {
+		for x := 0; x < 300; x++ {
+			img.SetRGBA(x, y, base)
+		}
+	}
+	var poster bytes.Buffer
+	if err := jpeg.Encode(&poster, img, &jpeg.Options{Quality: 98}); err != nil {
+		t.Fatal(err)
+	}
+	card, err := RenderSearchVisualCard(poster.Bytes(), 0, SearchResult{Title: "渐变连续性"}, "点详情查看状态")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered, err := jpeg.Decode(bytes.NewReader(card))
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := color.RGBAModel.Convert(rendered.At(450, searchCardGradient-2)).(color.RGBA)
+	for y := searchCardGradient - 1; y < 900; y++ {
+		current := color.RGBAModel.Convert(rendered.At(450, y)).(color.RGBA)
+		if absInt(int(current.R)-int(previous.R)) > 8 || absInt(int(current.G)-int(previous.G)) > 8 || absInt(int(current.B)-int(previous.B)) > 8 {
+			t.Fatalf("gradient colour jump at y=%d: previous=%v current=%v", y, previous, current)
+		}
+		if int(current.G)-int(current.R) > 90 || int(current.B)-int(current.R) > 120 {
+			t.Fatalf("unexpected chromatic fringe at y=%d: %v", y, current)
+		}
+		previous = current
 	}
 }
 

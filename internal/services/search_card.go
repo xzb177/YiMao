@@ -27,7 +27,7 @@ import (
 const (
 	searchCardWidth       = 900
 	searchCardHeight      = 1350
-	searchCardPoster      = 945 // 70% of the card; a 2:3 poster is 630x945 here.
+	searchCardGradient    = 690 // Gradual information fade starts below the main artwork focus.
 	searchCardSafeInset   = 72  // 8% of the Telegram image width.
 	searchPosterMaxBytes  = 6 * 1024 * 1024
 	searchPosterMaxPixels = 20_000_000
@@ -145,52 +145,24 @@ func RenderSearchVisualCard(poster []byte, index int, item SearchResult, status 
 	palette := extractSearchCardPalette(src)
 	canvas := image.NewRGBA(image.Rect(0, 0, searchCardWidth, searchCardHeight))
 	draw.Draw(canvas, canvas.Bounds(), &image.Uniform{C: palette.deep}, image.Point{}, draw.Src)
-	// Preserve the complete poster in a 2:3 hero. A deliberately low-resolution
-	// cover copy is enlarged behind it to create soft, same-image side extensions.
-	sb := src.Bounds()
-	stage := image.Rect(0, 0, searchCardWidth, searchCardPoster)
-	coverScale := maxFloat(float64(stage.Dx())/float64(sb.Dx()), float64(stage.Dy())/float64(sb.Dy()))
-	coverW, coverH := int(float64(sb.Dx())*coverScale), int(float64(sb.Dy())*coverScale)
-	coverDst := image.Rect((searchCardWidth-coverW)/2, (searchCardPoster-coverH)/2, (searchCardWidth+coverW)/2, (searchCardPoster+coverH)/2)
-	soft := image.NewRGBA(image.Rect(0, 0, 90, 95))
-	xdraw.ApproxBiLinear.Scale(soft, soft.Bounds(), src, sb, draw.Src, nil)
-	background := image.NewRGBA(stage)
-	xdraw.ApproxBiLinear.Scale(background, coverDst, soft, soft.Bounds(), draw.Src, nil)
-	draw.Draw(background, stage, &image.Uniform{C: color.RGBA{palette.deep.R, palette.deep.G, palette.deep.B, 142}}, image.Point{}, draw.Over)
-	draw.Draw(canvas, stage, background, image.Point{}, draw.Src)
+	// Use one continuous artwork plane. Most TMDB posters are already 2:3, so
+	// this preserves the complete poster; unusual ratios receive only a centred
+	// cover crop. Do not add blurred side extensions or alpha-feathered seams:
+	// both made the production card look assembled and could introduce colour
+	// fringes at the blend boundary.
+	artwork := image.Rect(0, 0, searchCardWidth, searchCardHeight)
+	xdraw.CatmullRom.Scale(canvas, artwork, src, centerCropBounds(src.Bounds(), artwork.Dx(), artwork.Dy()), draw.Src, nil)
 
-	containScale := minFloat(float64(stage.Dx())/float64(sb.Dx()), float64(stage.Dy())/float64(sb.Dy()))
-	posterW, posterH := int(float64(sb.Dx())*containScale), int(float64(sb.Dy())*containScale)
-	posterX := (searchCardWidth - posterW) / 2
-	posterY := (searchCardPoster - posterH) / 2
-	posterDst := image.Rect(posterX, posterY, posterX+posterW, posterY+posterH)
-	posterLayer := image.NewRGBA(image.Rect(0, 0, posterW, posterH))
-	xdraw.CatmullRom.Scale(posterLayer, posterLayer.Bounds(), src, sb, draw.Src, nil)
-	feather := 28
-	for py := 0; py < posterH; py++ {
-		for px := 0; px < posterW; px++ {
-			a := 255
-			if px < feather {
-				a = px * 255 / feather
-			} else if d := posterW - 1 - px; d < feather {
-				a = d * 255 / feather
-			}
-			c := color.RGBAModel.Convert(posterLayer.At(px, py)).(color.RGBA)
-			c.A = uint8(a)
-			posterLayer.SetRGBA(px, py, c)
-		}
-	}
-	draw.Draw(canvas, posterDst, posterLayer, image.Point{}, draw.Over)
-
-	// The charcoal information layer fades into the art instead of using a hard
-	// separator. Its hue follows the poster, but remains dark enough for WCAG text.
-	for y := 870; y < searchCardHeight; y++ {
-		a := 1.0
-		if y < 985 {
-			a = float64(y-870) / 115
-		}
-		alpha := uint8(245 * a)
-		draw.Draw(canvas, image.Rect(0, y, searchCardWidth, y+1), &image.Uniform{C: color.RGBA{palette.deep.R, palette.deep.G, palette.deep.B, alpha}}, image.Point{}, draw.Over)
+	// A single continuous tonal gradient carries the information. The easing is
+	// intentionally gradual so poster art and metadata remain one visual object,
+	// without a panel edge or horizontal separator.
+	gradientStart := searchCardGradient
+	for y := gradientStart; y < searchCardHeight; y++ {
+		t := float64(y-gradientStart) / float64(searchCardHeight-gradientStart-1)
+		eased := t * t * (3 - 2*t) // smoothstep
+		alpha := uint8(250 * eased)
+		overlay := color.NRGBA{R: palette.deep.R, G: palette.deep.G, B: palette.deep.B, A: alpha}
+		draw.Draw(canvas, image.Rect(0, y, searchCardWidth, y+1), &image.Uniform{C: overlay}, image.Point{}, draw.Over)
 	}
 
 	x := searchCardSafeInset
@@ -467,16 +439,21 @@ func compactCardText(s string, limit int) string {
 	return strings.TrimSpace(string(runes[:limit])) + "…"
 }
 
-func maxFloat(a, b float64) float64 {
-	if a > b {
-		return a
+func centerCropBounds(src image.Rectangle, dstWidth, dstHeight int) image.Rectangle {
+	if src.Dx() <= 0 || src.Dy() <= 0 || dstWidth <= 0 || dstHeight <= 0 {
+		return src
 	}
-	return b
-}
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
+	srcAspect := float64(src.Dx()) / float64(src.Dy())
+	dstAspect := float64(dstWidth) / float64(dstHeight)
+	if srcAspect > dstAspect {
+		cropWidth := int(math.Round(float64(src.Dy()) * dstAspect))
+		left := src.Min.X + (src.Dx()-cropWidth)/2
+		return image.Rect(left, src.Min.Y, left+cropWidth, src.Max.Y)
 	}
-	return b
+	if srcAspect < dstAspect {
+		cropHeight := int(math.Round(float64(src.Dx()) / dstAspect))
+		top := src.Min.Y + (src.Dy()-cropHeight)/2
+		return image.Rect(src.Min.X, top, src.Max.X, top+cropHeight)
+	}
+	return src
 }
