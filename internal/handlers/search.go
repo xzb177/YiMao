@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
@@ -711,8 +712,8 @@ func buildSearchSlideshow(query string, page int, results []services.SearchResul
 // but the JPEG itself is authoritative because some Telegram clients omit
 // slideshow photo captions.
 func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, results []services.SearchResult) *types.TelegramInputRichMessage {
-	subscribed, _ := h.moviepilot.CachedSubscriptionTMDBIDs()
-	cards := services.BuildSearchVisualCards(results, subscribed)
+	statuses := h.resolveSearchCardStatuses(results)
+	cards := services.BuildSearchVisualCards(results, statuses)
 	if len(cards) < 2 {
 		return nil
 	}
@@ -738,6 +739,37 @@ func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, resul
 		Blocks: []types.TelegramInputRichBlock{{Type: "slideshow", Blocks: blocks, Caption: &types.TelegramRichText{Text: caption}}},
 		Media:  media,
 	}
+}
+
+var searchStatusLookupSlots = make(chan struct{}, 4)
+
+func (h *SearchHandler) resolveSearchCardStatuses(results []services.SearchResult) map[string]string {
+	subscribedKeys, cacheFresh := h.moviepilot.CachedSubscriptionMediaKeys()
+	statuses := make(map[string]string, len(results))
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := range results {
+		item := results[i]
+		key := services.MediaStatusKey(item.ID, item.Type)
+		_, subscribed := subscribedKeys[key]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			searchStatusLookupSlots <- struct{}{}
+			defer func() { <-searchStatusLookupSlots }()
+			mediaType := services.MediaTypeMovie
+			if item.Type == "tv" || item.Type == "电视剧" {
+				mediaType = services.MediaTypeTV
+			}
+			exists, err := h.moviepilot.EmbyMediaAvailabilityByTMDB(item.ID, mediaType)
+			status := services.ResolveSearchCardStatus(exists, err, subscribed, cacheFresh)
+			mu.Lock()
+			statuses[key] = status
+			mu.Unlock()
+		}()
+	}
+	wg.Wait()
+	return statuses
 }
 
 func buildSearchResultsKeyboard(results []services.SearchResult, page int, hasNext bool) *types.TelegramInlineKeyboard {

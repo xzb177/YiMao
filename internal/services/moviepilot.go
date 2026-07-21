@@ -144,6 +144,7 @@ type MoviePilotClient struct {
 	embyURL          string // Optional: Emby URL for checking media availability
 	embyAPIKey       string // Optional: Emby API key for checking media availability
 	embyUserID       string // Optional: Emby user ID for API calls
+	embyUserMu       sync.Mutex
 	httpClient       *http.Client
 	retryConfig      *RetryConfig
 
@@ -787,6 +788,43 @@ func (c *MoviePilotClient) IsSubscriptionCacheReady() bool {
 	return c.subsCacheData != nil && time.Since(c.subsCacheTime) < c.subsCacheTTL
 }
 
+// MediaStatusKey returns a type-qualified TMDB key. Movie and TV identifiers
+// live in separate TMDB namespaces and must never share a status entry.
+func MediaStatusKey(tmdbID int, mediaType string) string {
+	kind := "movie"
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "tv", "series", "电视剧":
+		kind = "tv"
+	}
+	return fmt.Sprintf("%s:%d", kind, tmdbID)
+}
+
+func activeSubscriptionState(state string) bool {
+	switch strings.ToUpper(strings.TrimSpace(state)) {
+	case StatePending, StateRecycled, StateSearching, StateDownloading:
+		return true
+	default:
+		return false
+	}
+}
+
+// CachedSubscriptionMediaKeys returns fresh, active subscriptions keyed by
+// both media type and TMDB ID.
+func (c *MoviePilotClient) CachedSubscriptionMediaKeys() (map[string]struct{}, bool) {
+	c.subsCacheMu.RLock()
+	defer c.subsCacheMu.RUnlock()
+	if c.subsCacheData == nil || time.Since(c.subsCacheTime) >= c.subsCacheTTL {
+		return nil, false
+	}
+	keys := make(map[string]struct{}, len(c.subsCacheData))
+	for _, item := range c.subsCacheData {
+		if item.TMDBID > 0 && activeSubscriptionState(item.State) {
+			keys[MediaStatusKey(item.TMDBID, item.Type)] = struct{}{}
+		}
+	}
+	return keys, true
+}
+
 // CachedSubscriptionTMDBIDs returns a point-in-time index of fresh cached
 // subscriptions. A positive hit means the title is being followed somewhere in
 // this MoviePilot instance; cards must label it "站内追更", never imply that
@@ -1395,11 +1433,74 @@ func (c *MoviePilotClient) SetRetryConfig(cfg *RetryConfig) {
 	c.retryConfig = cfg
 }
 
-// EmbyMediaExists checks if media exists in Emby library by name and year
-// Returns true if media is found in Emby (indicating it's downloaded and available to watch)
-func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType MediaType) bool {
+func (c *MoviePilotClient) resolveEmbyUserID(embyBaseURL string) (string, error) {
+	c.embyUserMu.Lock()
+	defer c.embyUserMu.Unlock()
+	if c.embyUserID != "" {
+		return c.embyUserID, nil
+	}
+	uid, err := c.getEmbyFirstUserID(embyBaseURL)
+	if err != nil {
+		return "", err
+	}
+	c.embyUserID = uid
+	return uid, nil
+}
+
+// EmbyMediaAvailabilityByTMDB checks Emby by the exact TMDB provider ID.
+// This avoids title/year fuzzy matches from overstating availability.
+func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType MediaType) (bool, error) {
+	if tmdbID <= 0 {
+		return false, fmt.Errorf("invalid TMDB ID")
+	}
 	if c.embyURL == "" || c.embyAPIKey == "" {
-		return false
+		return false, fmt.Errorf("Emby availability is not configured")
+	}
+	embyBaseURL := strings.TrimRight(c.embyURL, "/")
+	embyUserID, err := c.resolveEmbyUserID(embyBaseURL)
+	if err != nil {
+		return false, fmt.Errorf("cannot resolve Emby user: %w", err)
+	}
+	includeItemTypes := "Movie"
+	if mediaType == MediaTypeTV {
+		includeItemTypes = "Series"
+	}
+	values := url.Values{}
+	values.Set("AnyProviderIdEquals", fmt.Sprintf("tmdb.%d", tmdbID))
+	values.Set("IncludeItemTypes", includeItemTypes)
+	values.Set("Recursive", "true")
+	values.Set("Limit", "1")
+	itemsURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), values.Encode())
+	req, err := http.NewRequest(http.MethodGet, itemsURL, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Emby-Token", c.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return false, fmt.Errorf("Emby items API returned status %d", resp.StatusCode)
+	}
+	var result struct {
+		TotalRecordCount int `json:"TotalRecordCount"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBodySize)).Decode(&result); err != nil {
+		return false, err
+	}
+	return result.TotalRecordCount > 0, nil
+}
+
+// EmbyMediaAvailability checks whether media exists in Emby and preserves
+// lookup failures so callers can distinguish an unavailable service from a
+// confirmed library miss.
+func (c *MoviePilotClient) EmbyMediaAvailability(name string, year string, mediaType MediaType) (bool, error) {
+	if c.embyURL == "" || c.embyAPIKey == "" {
+		return false, fmt.Errorf("Emby availability is not configured")
 	}
 
 	// Normalize Emby URL
@@ -1421,8 +1522,8 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 		if uid, err := c.getEmbyFirstUserID(embyBaseURL); err == nil {
 			embyUserID = uid
 		} else {
-			logger.Debug("[MoviePilot] EmbyMediaExists: no user ID configured and cannot discover one: %v", err)
-			return false
+			logger.Debug("[MoviePilot] EmbyMediaAvailability: no user ID configured and cannot discover one: %v", err)
+			return false, fmt.Errorf("cannot resolve Emby user: %w", err)
 		}
 	}
 
@@ -1432,7 +1533,7 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	req.Header.Set("X-Emby-Token", c.embyAPIKey)
@@ -1440,17 +1541,17 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		return false
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("Emby items API returned status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
 	if err != nil {
-		return false
+		return false, err
 	}
 
 	// Parse response
@@ -1466,11 +1567,11 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 	}
 
 	if err := json.Unmarshal(body, &result); err != nil {
-		return false
+		return false, err
 	}
 
 	if result.TotalRecordCount == 0 {
-		return false
+		return false, nil
 	}
 
 	// Try to find exact name match
@@ -1485,16 +1586,16 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 				}
 				// Check ProductionYear or PremiereDate
 				if item.ProductionYear == yearInt {
-					return true
+					return true, nil
 				}
 				if item.PremiereDate != "" && strings.HasPrefix(item.PremiereDate, year) {
-					return true
+					return true, nil
 				}
 				// Year mismatch, continue searching
 				continue
 			}
 			// No year check needed or year matches
-			return true
+			return true, nil
 		}
 	}
 
@@ -1510,11 +1611,17 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 			}
 		}
 		if hasChinese {
-			return true
+			return true, nil
 		}
 	}
 
-	return false
+	return false, nil
+}
+
+// EmbyMediaExists retains the historical bool-only API.
+func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType MediaType) bool {
+	exists, err := c.EmbyMediaAvailability(name, year, mediaType)
+	return err == nil && exists
 }
 
 // getEmbyFirstUserID fetches the first admin user ID from Emby.
@@ -1534,28 +1641,26 @@ func (c *MoviePilotClient) getEmbyFirstUserID(embyBaseURL string) (string, error
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		return "", fmt.Errorf("Emby users API returned status %d", resp.StatusCode)
 	}
 
 	var users []struct {
-		ID      string `json:"Id"`
-		Name    string `json:"Name"`
-		IsAdmin bool   `json:"Policy.IsAdministrator"`
+		ID     string `json:"Id"`
+		Name   string `json:"Name"`
+		Policy struct {
+			IsAdministrator bool `json:"IsAdministrator"`
+		} `json:"Policy"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBodySize)).Decode(&users); err != nil {
 		return "", fmt.Errorf("failed to decode Emby users: %w", err)
 	}
 
-	// Prefer admin user, fall back to first user
 	for _, u := range users {
-		if u.IsAdmin {
+		if u.Policy.IsAdministrator {
 			return u.ID, nil
 		}
 	}
-	if len(users) > 0 {
-		return users[0].ID, nil
-	}
-
-	return "", fmt.Errorf("no users found in Emby")
+	return "", fmt.Errorf("no administrator user found in Emby")
 }

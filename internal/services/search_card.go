@@ -42,9 +42,9 @@ type SearchVisualCard struct {
 	JPEG        []byte
 }
 
-// BuildSearchVisualCards downloads and composites posters concurrently. It
-// makes no MoviePilot detail calls; status is supplied from the one cache index.
-func BuildSearchVisualCards(results []SearchResult, subscribed map[int]struct{}) []SearchVisualCard {
+// BuildSearchVisualCards downloads and composites posters concurrently. The
+// caller resolves state first so the JPEG itself carries the reliable answer.
+func BuildSearchVisualCards(results []SearchResult, statuses map[string]string) []SearchVisualCard {
 	limit := len(results)
 	if limit > 8 {
 		limit = 8
@@ -84,9 +84,9 @@ func BuildSearchVisualCards(results []SearchResult, subscribed map[int]struct{})
 			if err != nil || len(data) > searchPosterMaxBytes {
 				return
 			}
-			status := "点详情查看状态"
-			if _, ok := subscribed[results[i].ID]; ok {
-				status = "站内追更"
+			status := statuses[MediaStatusKey(results[i].ID, results[i].Type)]
+			if status == "" {
+				status = "状态暂未确认"
 			}
 			card, err := RenderSearchVisualCard(data, i, results[i], status)
 			if err == nil {
@@ -316,15 +316,30 @@ func paletteTextColor(accent, background color.RGBA, whiteMix, minimum float64) 
 	return ensureTextContrast(mix(1), background, minimum)
 }
 
+func ResolveSearchCardStatus(embyExists bool, embyErr error, subscribed, cacheFresh bool) string {
+	if embyErr == nil && embyExists {
+		return "云海可看"
+	}
+	if cacheFresh && subscribed {
+		return "站内追更"
+	}
+	if embyErr != nil || !cacheFresh {
+		return "状态暂未确认"
+	}
+	return "可求片"
+}
+
 func formatSearchCardStatus(status string) string {
 	status = strings.TrimSpace(status)
 	switch status {
 	case "站内追更":
 		return "状态 · 站内追更"
-	case "点详情查看状态", "点详情查看":
-		return "状态 · 点详情查看"
-	case "":
-		return "状态 · 点详情查看"
+	case "云海可看":
+		return "状态 · 云海可看"
+	case "可求片":
+		return "状态 · 可求片"
+	case "点详情查看状态", "点详情查看", "状态暂未确认", "":
+		return "状态 · 暂未确认"
 	default:
 		return "状态 · " + status
 	}

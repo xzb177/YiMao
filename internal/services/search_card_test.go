@@ -2,9 +2,12 @@ package services
 
 import (
 	"bytes"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -111,9 +114,11 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 
 func TestSearchCardStatusLabelAndPillContrast(t *testing.T) {
 	cases := map[string]string{
-		"站内追更":    "状态 · 站内追更",
-		"点详情查看状态": "状态 · 点详情查看",
-		"":        "状态 · 点详情查看",
+		"站内追更":   "状态 · 站内追更",
+		"云海可看":   "状态 · 云海可看",
+		"可求片":    "状态 · 可求片",
+		"状态暂未确认": "状态 · 暂未确认",
+		"":       "状态 · 暂未确认",
 	}
 	for input, want := range cases {
 		if got := formatSearchCardStatus(input); got != want {
@@ -255,6 +260,114 @@ func TestWrapCardTextAvoidsCJKPunctuationAtLineStart(t *testing.T) {
 		runes := []rune(line)
 		if len(runes) > 0 && isCardLineStartProhibited(runes[0]) {
 			t.Fatalf("line starts with prohibited punctuation: %q", line)
+		}
+	}
+}
+
+func TestResolveSearchCardStatusPriorityAndFailureSemantics(t *testing.T) {
+	cases := []struct {
+		name       string
+		embyExists bool
+		embyErr    error
+		subscribed bool
+		cacheFresh bool
+		want       string
+	}{
+		{name: "emby wins over active subscription", embyExists: true, subscribed: true, cacheFresh: true, want: "云海可看"},
+		{name: "active subscription survives emby failure", embyErr: errors.New("timeout"), subscribed: true, cacheFresh: true, want: "站内追更"},
+		{name: "confirmed miss", cacheFresh: true, want: "可求片"},
+		{name: "emby failure", embyErr: errors.New("timeout"), cacheFresh: true, want: "状态暂未确认"},
+		{name: "stale subscription cache", want: "状态暂未确认"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ResolveSearchCardStatus(tc.embyExists, tc.embyErr, tc.subscribed, tc.cacheFresh); got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEmbyMediaAvailabilityDistinguishesMissFromFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users/test/Items":
+			if got := r.URL.Query().Get("AnyProviderIdEquals"); got != "tmdb.4048" {
+				t.Fatalf("provider filter=%q", got)
+			}
+			_, _ = w.Write([]byte(`{"TotalRecordCount":0,"Items":[]}`))
+		case "/broken/Users/test/Items":
+			http.Error(w, "down", http.StatusBadGateway)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewMoviePilotClient("http://invalid", "", "")
+	client.SetEmbyConfig(server.URL, "test-key")
+	client.SetEmbyUserID("test")
+	client.httpClient = server.Client()
+	exists, err := client.EmbyMediaAvailabilityByTMDB(4048, MediaTypeTV)
+	if err != nil || exists {
+		t.Fatalf("confirmed miss: exists=%v err=%v", exists, err)
+	}
+	client.SetEmbyConfig(server.URL+"/broken", "test-key")
+	if _, err := client.EmbyMediaAvailabilityByTMDB(4048, MediaTypeTV); err == nil {
+		t.Fatal("HTTP failure was collapsed into a confirmed miss")
+	}
+}
+
+func TestEmbyUserDiscoveryPrefersNestedAdminAndCaches(t *testing.T) {
+	var calls int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users":
+			calls++
+			_, _ = w.Write([]byte(`[{"Id":"limited","Policy":{"IsAdministrator":false}},{"Id":"admin","Policy":{"IsAdministrator":true}}]`))
+		case "/Users/admin/Items":
+			_, _ = w.Write([]byte(`{"TotalRecordCount":1}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	client := NewMoviePilotClient("http://invalid", "", "")
+	client.SetEmbyConfig(server.URL, "test-key")
+	client.httpClient = server.Client()
+	for i := 0; i < 2; i++ {
+		exists, err := client.EmbyMediaAvailabilityByTMDB(4048, MediaTypeTV)
+		if err != nil || !exists {
+			t.Fatalf("lookup %d: exists=%v err=%v", i, exists, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("users API calls=%d, want 1", calls)
+	}
+}
+
+func TestCachedSubscriptionMediaKeysFiltersStateAndType(t *testing.T) {
+	client := NewMoviePilotClient("http://invalid", "", "")
+	client.subsCacheData = []SubscribeItem{
+		{TMDBID: 7, Type: "movie", State: StateSearching},
+		{TMDBID: 7, Type: "tv", State: StateCancelled},
+		{TMDBID: 8, Type: "tv", State: StateCompleted},
+		{TMDBID: 9, Type: "tv", State: StateDownloading},
+	}
+	client.subsCacheTime = time.Now()
+	keys, fresh := client.CachedSubscriptionMediaKeys()
+	if !fresh {
+		t.Fatal("fresh cache reported stale")
+	}
+	if _, ok := keys["movie:7"]; !ok {
+		t.Fatal("active movie subscription missing")
+	}
+	if _, ok := keys["tv:9"]; !ok {
+		t.Fatal("active TV subscription missing")
+	}
+	for _, key := range []string{"tv:7", "tv:8"} {
+		if _, ok := keys[key]; ok {
+			t.Fatalf("inactive subscription leaked: %s", key)
 		}
 	}
 }
