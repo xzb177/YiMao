@@ -16,7 +16,42 @@ import (
 
 	xdraw "golang.org/x/image/draw"
 	"golang.org/x/image/font"
+	"golang.org/x/image/font/opentype"
 )
+
+func loadAdventureCardFaces() (cardFaces, error) {
+	if _, err := loadSearchCardFaces(); err != nil {
+		return cardFaces{}, err
+	}
+	face := func(size float64) (font.Face, error) {
+		return opentype.NewFace(searchCardParsedFont, &opentype.FaceOptions{Size: size, DPI: 72, Hinting: font.HintingFull})
+	}
+	title, err := face(54)
+	if err != nil {
+		return cardFaces{}, err
+	}
+	meta, err := face(36)
+	if err != nil {
+		title.Close()
+		return cardFaces{}, err
+	}
+	status, err := face(36)
+	if err != nil {
+		title.Close()
+		meta.Close()
+		return cardFaces{}, err
+	}
+	body, err := face(40)
+	if err != nil {
+		title.Close()
+		meta.Close()
+		status.Close()
+		return cardFaces{}, err
+	}
+	return cardFaces{title: title, meta: meta, status: status, body: body}, nil
+}
+
+func joinCardLines(lines []string) string { return strings.Join(lines, "") }
 
 const (
 	adventureCardWidth       = 900
@@ -149,7 +184,7 @@ func renderAdventureSlide(raw []byte, data AdventureVisualData, variant int) ([]
 	if err != nil {
 		return nil, err
 	}
-	faces, err := loadSearchCardFaces()
+	faces, err := loadAdventureCardFaces()
 	if err != nil {
 		return nil, err
 	}
@@ -177,27 +212,31 @@ func renderAdventureSlide(raw []byte, data AdventureVisualData, variant int) ([]
 	}
 	pageWidth := font.MeasureString(faces.status, pageLabel).Ceil()
 	drawText(canvas, faces.status, pageLabel, adventureCardWidth-x-pageWidth, 92, accent)
-	drawWrapped(canvas, faces.title, strings.TrimSpace(data.MovieTitle), x, 170, 772, 55, white, 2)
+	drawWrapped(canvas, faces.title, strings.TrimSpace(data.MovieTitle), x, 170, 772, 62, white, 2)
 	if data.MovieYear > 0 {
-		drawText(canvas, faces.meta, fmt.Sprintf("%d", data.MovieYear), x, 238, muted)
+		drawText(canvas, faces.meta, fmt.Sprintf("%d", data.MovieYear), x, 244, muted)
 	}
 	if variant == 0 {
-		drawText(canvas, faces.meta, strings.TrimSpace(data.StageName)+"  ·  "+strings.TrimSpace(data.Atmosphere), x, 1035, accent)
-		drawWrapped(canvas, faces.title, strings.TrimSpace(data.SceneTitle), x, 1110, 772, 52, white, 2)
-		drawWrapped(canvas, faces.body, compactCardText(data.Description, 120), x, 1210, 772, 38, muted, 3)
+		drawText(canvas, faces.meta, strings.TrimSpace(data.StageName)+"  ·  "+strings.TrimSpace(data.Atmosphere), x, 815, accent)
+		drawWrapped(canvas, faces.title, strings.TrimSpace(data.SceneTitle), x, 895, 772, 62, white, 2)
+		description := strings.Join(strings.Fields(data.Description), " ")
+		drawWrapped(canvas, faces.body, description, x, 1005, 772, 49, white, 7)
 	} else {
-		drawText(canvas, faces.meta, "观察与抉择", x, 720, accent)
-		drawWrapped(canvas, faces.title, strings.TrimSpace(data.SceneTitle), x, 795, 772, 52, white, 2)
-		base := 905
+		drawText(canvas, faces.meta, "观察与抉择", x, 630, accent)
+		drawWrapped(canvas, faces.title, strings.TrimSpace(data.SceneTitle), x, 710, 772, 62, white, 2)
+		base := 850
 		for i, choice := range data.Choices {
 			if i >= 4 {
 				break
 			}
-			rowTop := base - 45 + i*82
-			fill := color.NRGBA{R: palette.deep.R, G: palette.deep.G, B: palette.deep.B, A: 190}
-			drawRoundedRect(canvas, image.Rect(x-16, rowTop, adventureCardWidth-x, rowTop+62), 18, fill)
-			line := fmt.Sprintf("%d  %s", i+1, compactCardText(choice, 30))
-			drawWrapped(canvas, faces.body, line, x, base+i*82, 772, 34, white, 2)
+			rowTop := base - 49 + i*102
+			border := mixCardColor(palette.accent, color.RGBA{255, 255, 255, 255}, .18)
+			fill := color.NRGBA{R: palette.deep.R, G: palette.deep.G, B: palette.deep.B, A: 220}
+			rect := image.Rect(x-16, rowTop, adventureCardWidth-x, rowTop+78)
+			drawRoundedRect(canvas, rect, 20, border)
+			drawRoundedRect(canvas, rect.Inset(2), 18, fill)
+			line := fmt.Sprintf("%d  %s", i+1, compactCardText(choice, 32))
+			drawWrapped(canvas, faces.body, line, x, base+i*102, 772, 46, white, 2)
 		}
 		status := fmt.Sprintf("HP %d%%   ·   连击 x%d   ·   %d 分", data.HP, data.Combo, data.Score)
 		drawText(canvas, faces.status, status, x, 1280, accent)

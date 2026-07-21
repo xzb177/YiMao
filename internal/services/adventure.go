@@ -85,6 +85,33 @@ func ValidateAdventureScene(scene *AdventureScene) error {
 	return nil
 }
 
+func normalizeAdventureSceneCopy(scene *AdventureScene, descriptionLimit, choiceLimit int) {
+	if scene == nil {
+		return
+	}
+	trimAtSentence := func(text string, limit int) string {
+		text = strings.Join(strings.Fields(text), " ")
+		runes := []rune(text)
+		if limit <= 0 || len(runes) <= limit {
+			return text
+		}
+		cut := runes[:limit]
+		for i := len(cut) - 1; i >= len(cut)/2; i-- {
+			if strings.ContainsRune("。！？；", cut[i]) {
+				return strings.TrimSpace(string(cut[:i+1]))
+			}
+		}
+		if limit == 1 {
+			return "…"
+		}
+		return strings.TrimSpace(string(runes[:limit-1])) + "…"
+	}
+	scene.Description = trimAtSentence(scene.Description, descriptionLimit)
+	for i := range scene.Choices {
+		scene.Choices[i].Text = trimAtSentence(scene.Choices[i].Text, choiceLimit)
+	}
+}
+
 // AdventureService 电影冒险服务
 type AdventureService struct {
 	embyURL    string
@@ -599,7 +626,7 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
 - 必须描述电影中的**一个具体场景/时刻/地点**
 - 用第二人称"你"，让玩家感觉自己就是主角
 - 描述要包含**具体的环境细节**（天气、声音、气味、光线）
-- 150字以内，但要有画面感
+- 110字以内，必须在完整句子处结束，不得输出半句话或省略号
 
 ### result描述要求
 - 选对的result：用电影中的台词风格描述胜利（30字以内）
@@ -625,7 +652,7 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
   "total_levels": %d,
   "title": "4字以内的关卡标题",
   "stage_name": "%s",
-  "description": "场景描述（150字以内）",
+  "description": "场景描述（110字以内，完整句子结束）",
   "atmosphere": "氛围词",
   "choices": [
     {"text": "选项A（15-25字）", "correct": false, "result": "结果（30字）", "is_trap": true, "is_wildcard": false, "hp_change": 0},
@@ -727,6 +754,7 @@ func (s *AdventureService) callAIForScene(prompt string) (*AdventureScene, error
 	if err := ValidateAdventureScene(&scene); err != nil {
 		return nil, err
 	}
+	normalizeAdventureSceneCopy(&scene, 118, 32)
 	return &scene, nil
 }
 
