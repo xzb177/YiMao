@@ -1746,7 +1746,7 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 		TotalLevels: totalLevels,
 		StageName:   scene.StageName,
 		SceneTitle:  scene.Title,
-		Description: scene.Description,
+		Description: scene.CinematicDescription(),
 		Atmosphere:  scene.Atmosphere,
 		Choices:     choices,
 		Hint:        "",
@@ -1789,7 +1789,7 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 	visualData := services.AdventureVisualData{
 		MovieTitle: movie.Title, MovieYear: movie.Year,
 		Level: level, TotalLevels: totalLevels, StageName: scene.StageName,
-		SceneTitle: scene.Title, Atmosphere: scene.Atmosphere, Description: scene.Description,
+		SceneTitle: scene.Title, Atmosphere: scene.Atmosphere, Description: scene.CinematicDescription(),
 		Choices: choiceTexts, HP: hp, Combo: combo, Score: score,
 	}
 	if backdrops := services.DownloadAdventureBackdrops(movie.Backdrops); len(backdrops) > 0 {

@@ -21,9 +21,13 @@ type AdventureScene struct {
 	Level       int               `json:"level"`
 	TotalLevels int               `json:"total_levels"`
 	Title       string            `json:"title"`
-	StageName   string            `json:"stage_name"` // 阶段名：试炼/抉择/深渊/审判/终局
-	Description string            `json:"description"`
-	Atmosphere  string            `json:"atmosphere"` // 氛围词：紧张/诡异/压迫/绝望/史诗
+	StageName   string            `json:"stage_name"`          // 阶段名：试炼/抉择/深渊/审判/终局
+	Setting     string            `json:"setting,omitempty"`   // 地点与环境
+	Role        string            `json:"role,omitempty"`      // 玩家当前身份
+	Situation   string            `json:"situation,omitempty"` // 眼前局势
+	Conflict    string            `json:"conflict,omitempty"`  // 核心冲突
+	Description string            `json:"description"`         // 兼容旧场景；新场景由四个镜头字段合成
+	Atmosphere  string            `json:"atmosphere"`          // 氛围词：紧张/诡异/压迫/绝望/史诗
 	Choices     []AdventureChoice `json:"choices"`
 	Hint        string            `json:"hint,omitempty"`
 	Trap        string            `json:"trap,omitempty"` // 陷阱提示（暗示某选项是陷阱但不指明）
@@ -83,6 +87,90 @@ func ValidateAdventureScene(scene *AdventureScene) error {
 		return fmt.Errorf("adventure scene must have exactly one correct choice")
 	}
 	return nil
+}
+
+func validateGeneratedCinematicScene(scene *AdventureScene) error {
+	if err := ValidateAdventureScene(scene); err != nil {
+		return err
+	}
+	beats := []struct {
+		name  string
+		value string
+		max   int
+	}{
+		{"setting", scene.Setting, 20}, {"role", scene.Role, 20},
+		{"situation", scene.Situation, 24}, {"conflict", scene.Conflict, 24},
+	}
+	structured := 0
+	for _, beat := range beats {
+		value := cinematicBeat(beat.value)
+		if value == "" {
+			continue
+		}
+		if strings.ContainsAny(value, "…⋯") || strings.Contains(value, "...") {
+			return fmt.Errorf("cinematic %s contains ellipsis", beat.name)
+		}
+		structured++
+		if len([]rune(value)) > beat.max {
+			return fmt.Errorf("cinematic %s exceeds %d characters", beat.name, beat.max)
+		}
+	}
+	if structured != len(beats) {
+		return fmt.Errorf("cinematic scene must provide all four decision beats")
+	}
+	if !strings.Contains(cinematicBeat(scene.Role), "你") {
+		return fmt.Errorf("cinematic role must explicitly identify who you are")
+	}
+	conflict := cinematicBeat(scene.Conflict)
+	if !strings.Contains(conflict, "你") || !strings.ContainsAny(conflict, "还或是否要该") {
+		return fmt.Errorf("cinematic conflict must state the player's decision")
+	}
+	shot := scene.CinematicDescription()
+	if n := len([]rune(shot)); n < 60 || n > 90 {
+		return fmt.Errorf("cinematic description must be 60-90 characters, got %d", n)
+	}
+	return nil
+}
+
+func compactCompleteSentences(text string, limit int) string {
+	text = strings.Join(strings.Fields(text), " ")
+	if text == "" || limit <= 0 {
+		return text
+	}
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	cut := runes[:limit]
+	for i := len(cut) - 1; i >= 0; i-- {
+		if strings.ContainsRune("。！？；", cut[i]) {
+			return strings.TrimSpace(string(cut[:i+1]))
+		}
+	}
+	return text
+}
+
+func cinematicBeat(value string) string {
+	value = strings.TrimSpace(strings.Join(strings.Fields(value), " "))
+	return strings.Trim(value, "，。！？；：,.!?;: ")
+}
+
+// CinematicDescription turns structured decision beats into one compact mobile shot.
+// Legacy scenes fall back to complete sentences rather than rune truncation.
+func (scene *AdventureScene) CinematicDescription() string {
+	if scene == nil {
+		return ""
+	}
+	beats := make([]string, 0, 4)
+	for _, value := range []string{scene.Setting, scene.Role, scene.Situation, scene.Conflict} {
+		if beat := cinematicBeat(value); beat != "" {
+			beats = append(beats, beat)
+		}
+	}
+	if len(beats) == 4 {
+		return strings.Join(beats, "；") + "。"
+	}
+	return compactCompleteSentences(scene.Description, 90)
 }
 
 func normalizeAdventureSceneCopy(scene *AdventureScene, descriptionLimit, choiceLimit int) {
@@ -622,11 +710,14 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
 6. **细节替换陷阱**：把电影中的A场景的细节安到B场景上，看起来非常像真的
 7. **近因效应陷阱**：选项文字里包含电影中的真实台词或关键词，但用在了错误的语境里
 
-### 场景描述要求
-- 必须描述电影中的**一个具体场景/时刻/地点**
-- 用第二人称"你"，让玩家感觉自己就是主角
-- 描述要包含**具体的环境细节**（天气、声音、气味、光线）
-- 110字以内，必须在完整句子处结束，不得输出半句话或省略号
+### 剧情镜头要求（固定两张卡的第一张）
+- 不要写一整段小说；分别输出4个决策必需字段，再由服务端组成一段完整镜头
+- setting：具体地点与一个环境信号，12-20字
+- role：必须用“你是某个明确角色/身份”直接说明玩家是谁、处于什么位置，12-20字，不能只写动作让玩家猜身份
+- situation：眼前已发生且会影响判断的局势，15-24字
+- conflict：必须用“你要/你该/你是否/你还……”明确说出玩家正在权衡的两股力量，15-24字，不能只留情绪让玩家猜
+- 四项合成后目标60-90字；每项只承载一个事实，禁止重复、形容词堆叠和省略号
+- description 同步给出四项合成后的完整句子，兼容旧客户端
 
 ### result描述要求
 - 选对的result：用电影中的台词风格描述胜利（30字以内）
@@ -652,7 +743,11 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
   "total_levels": %d,
   "title": "4字以内的关卡标题",
   "stage_name": "%s",
-  "description": "场景描述（110字以内，完整句子结束）",
+  "setting": "地点与环境信号（12-20字）",
+  "role": "你是某个明确角色及所处位置（12-20字）",
+  "situation": "影响判断的眼前局势（15-24字）",
+  "conflict": "你正在权衡的两股力量（15-24字，必须含你）",
+  "description": "以上四项合成的60-90字完整镜头，以句号结束",
   "atmosphere": "氛围词",
   "choices": [
     {"text": "选项A（15-25字）", "correct": false, "result": "结果（30字）", "is_trap": true, "is_wildcard": false, "hp_change": 0},
@@ -667,7 +762,15 @@ func (s *AdventureService) GenerateScene(info *MovieInfo, level int, totalLevels
 		levelFocus, historyStr,
 		level, totalLevels, stageName)
 
-	return s.callAIForScene(prompt)
+	scene, err := s.callAIForScene(prompt)
+	if err == nil || !strings.Contains(err.Error(), "cinematic") {
+		return scene, err
+	}
+	logger.Info("[Adventure] cinematic scene validation failed, retrying once: %s", err)
+	retryPrompt := prompt + `
+
+上一次输出的剧情镜头未通过手机卡校验。请重新生成整份JSON：四个镜头字段必须全部提供，setting/role各不超过20字，situation/conflict各不超过24字，合成后60-90字；禁止切断词语、禁止省略号。`
+	return s.callAIForScene(retryPrompt)
 }
 
 // GenerateEndScene 生成结局
@@ -751,10 +854,11 @@ func (s *AdventureService) callAIForScene(prompt string) (*AdventureScene, error
 		logger.Info("[Adventure] Scene JSON parse failed: %s", truncate(resp, 200))
 		return nil, fmt.Errorf("AI返回格式错误: %w", err)
 	}
-	if err := ValidateAdventureScene(&scene); err != nil {
+	if err := validateGeneratedCinematicScene(&scene); err != nil {
 		return nil, err
 	}
-	normalizeAdventureSceneCopy(&scene, 118, 32)
+	scene.Description = scene.CinematicDescription()
+	normalizeAdventureSceneCopy(&scene, 90, 32)
 	return &scene, nil
 }
 
