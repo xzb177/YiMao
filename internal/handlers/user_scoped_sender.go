@@ -47,6 +47,16 @@ func (s *userScopedSender) SendRichMessage(markdown string, keyboard *types.Tele
 	return s.SendMessage(stripMarkdown(markdown), "", keyboard)
 }
 
+func (s *userScopedSender) SendStructuredRichMessage(rich *types.TelegramInputRichMessage, fallbackText string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	if !s.group {
+		return s.telegram.SendStructuredRichMessage(s.chatID, rich, keyboard)
+	}
+	if strings.TrimSpace(fallbackText) == "" {
+		fallbackText = "当前内容请在私聊中查看"
+	}
+	return s.SendMessage(fallbackText, "Markdown", keyboard)
+}
+
 func (s *userScopedSender) DeleteMessage(msg *types.TelegramMessage) error {
 	if msg == nil {
 		return nil

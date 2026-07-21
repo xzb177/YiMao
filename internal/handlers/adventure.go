@@ -1695,10 +1695,21 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 // sendSceneCard 发送场景卡片
 func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *AdventureState) {
-	scene := state.Scene
-	if scene == nil {
+	state.ChoiceLock.Lock()
+	if state.Scene == nil || state.MovieInfo == nil {
+		state.ChoiceLock.Unlock()
 		return
 	}
+	sceneValue := *state.Scene
+	sceneValue.Choices = append([]services.AdventureChoice(nil), state.Scene.Choices...)
+	movieValue := *state.MovieInfo
+	movieValue.Genres = append([]string(nil), state.MovieInfo.Genres...)
+	movieValue.Backdrops = append([]string(nil), state.MovieInfo.Backdrops...)
+	level, totalLevels, hp, combo, score := state.Level, state.TotalLevels, state.HP, state.Combo, state.Score
+	runID, turn, hintUsed := state.RunID, state.Turn, state.HintUsed
+	state.ChoiceLock.Unlock()
+	scene := &sceneValue
+	movie := &movieValue
 
 	var choices []richmessage.AdventureChoiceView
 	for i, c := range scene.Choices {
@@ -1707,17 +1718,17 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 
 	// 构建内嵌反馈（只在第2关以后显示，表示上一关的结果）
 	lastResult := ""
-	if state.Level > 1 {
+	if level > 1 {
 		switch {
-		case state.Combo >= 6:
-			lastResult = fmt.Sprintf("🔥🔥🔥🔥 六连神话！x%d 连击！你是怎么看的？！", state.Combo)
-		case state.Combo == 5:
+		case combo >= 6:
+			lastResult = fmt.Sprintf("🔥🔥🔥🔥 六连神话！x%d 连击！你是怎么看的？！", combo)
+		case combo == 5:
 			lastResult = "🔥🔥🔥 五连绝世！这部电影你倒背如流吧？"
-		case state.Combo == 4:
+		case combo == 4:
 			lastResult = "🔥🔥 四连超凡！你是不是提前看了剧本？"
-		case state.Combo == 3:
+		case combo == 3:
 			lastResult = "🔥 三连破敌！手感来了！"
-		case state.Combo == 2:
+		case combo == 2:
 			lastResult = "⚡ 双连命中！继续保持"
 		default:
 			lastResult = "✅ 上一关正确"
@@ -1725,24 +1736,24 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 	}
 
 	// 仅保留明确标注为建议的节奏提示，不伪造玩家统计。
-	_, _, timeUrgency := generatePsychoData(state.Level, state.TotalLevels, len(scene.Choices))
+	_, _, timeUrgency := generatePsychoData(level, totalLevels, len(scene.Choices))
 
 	card := richmessage.BuildAdventureSceneCard(richmessage.AdventureSceneCardData{
-		MovieTitle:  state.MovieInfo.Title,
-		MovieYear:   state.MovieInfo.Year,
-		Genres:      state.MovieInfo.Genres,
-		Level:       state.Level,
-		TotalLevels: state.TotalLevels,
+		MovieTitle:  movie.Title,
+		MovieYear:   movie.Year,
+		Genres:      movie.Genres,
+		Level:       level,
+		TotalLevels: totalLevels,
 		StageName:   scene.StageName,
 		SceneTitle:  scene.Title,
 		Description: scene.Description,
 		Atmosphere:  scene.Atmosphere,
 		Choices:     choices,
 		Hint:        "",
-		HP:          state.HP,
-		Combo:       state.Combo,
-		Score:       state.Score,
-		IsBoss:      state.Level == state.TotalLevels,
+		HP:          hp,
+		Combo:       combo,
+		Score:       score,
+		IsBoss:      level == totalLevels,
 		LastResult:  lastResult,
 		DeathRate:   "",
 		OptionStats: "",
@@ -1756,17 +1767,57 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 		if i < len(numbers) {
 			num = numbers[i]
 		}
-		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d:run:%s:turn:%d", i, state.RunID, state.Turn))
+		kb.AddButton(num, fmt.Sprintf("adventure_choice:idx:%d:run:%s:turn:%d", i, runID, turn))
 	}
 	kb.NewRow()
 	// 问导演按钮（每关限用一次，花10HP）
-	cost := AdventureHintCost(state.Level)
-	if !state.HintUsed && state.HP > cost {
-		kb.AddButton(fmt.Sprintf("🎬 问导演 (-%dHP)", cost), fmt.Sprintf("adventure_hint:run:%s:turn:%d", state.RunID, state.Turn))
+	cost := AdventureHintCost(level)
+	if !hintUsed && hp > cost {
+		kb.AddButton(fmt.Sprintf("🎬 问导演 (-%dHP)", cost), fmt.Sprintf("adventure_hint:run:%s:turn:%d", runID, turn))
 	}
 	kb.AddButton("🚪 退出", "adventure_quit")
 
-	newUserScopedSender(h.telegram, chatID, userID).SendRichMessage(card.Markdown, kb.Build())
+	sender := newUserScopedSender(h.telegram, chatID, userID)
+	if sender.group {
+		sender.SendRichMessage(card.Markdown, kb.Build())
+		return
+	}
+	choiceTexts := make([]string, 0, len(scene.Choices))
+	for _, choice := range scene.Choices {
+		choiceTexts = append(choiceTexts, choice.Text)
+	}
+	visualData := services.AdventureVisualData{
+		MovieTitle: movie.Title, MovieYear: movie.Year,
+		Level: level, TotalLevels: totalLevels, StageName: scene.StageName,
+		SceneTitle: scene.Title, Atmosphere: scene.Atmosphere, Description: scene.Description,
+		Choices: choiceTexts, HP: hp, Combo: combo, Score: score,
+	}
+	if backdrops := services.DownloadAdventureBackdrops(movie.Backdrops); len(backdrops) > 0 {
+		if slides, err := services.RenderAdventureVisualSlides(backdrops, visualData); err == nil && len(slides) == 2 {
+			blocks := make([]types.TelegramInputRichBlock, 0, len(slides))
+			media := make([]types.TelegramInputRichMessageMedia, 0, len(slides))
+			for i, slide := range slides {
+				id := fmt.Sprintf("adventure_%d_%d", level, i+1)
+				blocks = append(blocks, types.TelegramInputRichBlock{Type: "photo", Photo: &types.TelegramRichPhoto{Type: "photo", Media: "attach://" + id}})
+				media = append(media, types.TelegramInputRichMessageMedia{ID: id, Media: types.TelegramRichPhoto{Type: "photo", Media: "attach://" + id}, Upload: slide, Filename: id + ".jpg"})
+			}
+			rich := &types.TelegramInputRichMessage{
+				Blocks: []types.TelegramInputRichBlock{{Type: "slideshow", Blocks: blocks, Caption: &types.TelegramRichText{Text: fmt.Sprintf("第 %d/%d 关 · %s", level, totalLevels, scene.StageName)}}},
+				Media:  media,
+			}
+			state.ChoiceLock.Lock()
+			current := state.RunID == runID && state.Turn == turn && state.Phase == AdventurePhasePlaying
+			state.ChoiceLock.Unlock()
+			if !current {
+				return
+			}
+			if _, err := sender.SendStructuredRichMessage(rich, card.Markdown, kb.Build()); err != nil {
+				logger.Info("[Adventure] visual scene send failed without retry to avoid duplicate cards: %v", err)
+			}
+			return
+		}
+	}
+	sender.SendRichMessage(card.Markdown, kb.Build())
 }
 
 // boolStr 条件字符串

@@ -140,6 +140,7 @@ type MovieInfo struct {
 	Director  string   `json:"director,omitempty"`   // 导演
 	Tagline   string   `json:"tagline,omitempty"`    // 一句话宣传语
 	VoteCount int      `json:"vote_count,omitempty"` // 评价人数
+	Backdrops []string `json:"backdrops,omitempty"`  // TMDB backdrop paths, used by visual adventure cards
 }
 
 // SearchMovieInfo 搜索电影信息（带缓存）
@@ -370,6 +371,10 @@ func (s *AdventureService) enrichMovieDetails(info *MovieInfo, mediaType string)
 		}
 	}
 
+	// Fetch images independently: a large images payload must never invalidate
+	// keywords, credits or similar-title enrichment.
+	s.enrichMovieBackdrops(info, mediaType)
+
 	// 类似电影（前5）
 	for i, s2 := range detail.Similar.Results {
 		if i >= 5 {
@@ -381,6 +386,45 @@ func (s *AdventureService) enrichMovieDetails(info *MovieInfo, mediaType string)
 		}
 		if title != "" {
 			info.Similar = append(info.Similar, title)
+		}
+	}
+}
+
+func (s *AdventureService) enrichMovieBackdrops(info *MovieInfo, mediaType string) {
+	if info == nil || info.TMDBID <= 0 || s.tmdbAPIKey == "" {
+		return
+	}
+	kind := "movie"
+	if mediaType == "tv" {
+		kind = "tv"
+	}
+	endpoint := fmt.Sprintf("%s/%s/%d/images?api_key=%s&include_image_language=zh,en,null", TMDBBaseURL, kind, info.TMDBID, s.tmdbAPIKey)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	var images struct {
+		Backdrops []struct {
+			FilePath string `json:"file_path"`
+		} `json:"backdrops"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&images); err != nil {
+		return
+	}
+	for _, backdrop := range images.Backdrops {
+		if len(info.Backdrops) >= 4 {
+			break
+		}
+		if normalized := NormalizeAdventureBackdrop(backdrop.FilePath); normalized != "" {
+			info.Backdrops = append(info.Backdrops, normalized)
 		}
 	}
 }
