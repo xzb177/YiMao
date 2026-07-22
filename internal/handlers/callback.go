@@ -1408,6 +1408,32 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 }
 
+func restoreSearchCardSnapshot(items []session.SearchItem) ([]services.SearchResult, map[string]string) {
+	results := make([]services.SearchResult, 0, len(items))
+	statuses := make(map[string]string, len(items))
+	for i, item := range items {
+		if i >= 8 {
+			break
+		}
+		mediaType := "movie"
+		if item.Type == "tv" || item.Type == "电视剧" {
+			mediaType = "tv"
+		}
+		id, _ := strconv.Atoi(item.ID)
+		result := services.SearchResult{
+			ID: id, Title: item.Title, Year: services.FlexibleYear(item.Year),
+			Type: mediaType, Rating: item.Rating, Poster: item.Poster, Overview: item.Overview,
+		}
+		results = append(results, result)
+		status := strings.TrimSpace(item.Status)
+		if status == "" {
+			status = "状态暂未确认"
+		}
+		statuses[services.MediaStatusKey(id, mediaType)] = status
+	}
+	return results, statuses
+}
+
 // restoreSearchResults restores the search results from session
 func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.Context) (*callback.Response, error) {
 	items, page, query, hasSearch := sess.GetSearchResults()
@@ -1428,26 +1454,9 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 		}, nil
 	}
 
-	// Restore the same readable result list and page controls used by SearchHandler.
-	results := make([]services.SearchResult, 0, len(items))
-	for i, item := range items {
-		if i >= 8 {
-			break
-		}
-		mediaType := "movie"
-		if item.Type == "tv" || item.Type == "电视剧" {
-			mediaType = "tv"
-		}
-		id, _ := strconv.Atoi(item.ID)
-		results = append(results, services.SearchResult{
-			ID:     id,
-			Title:  item.Title,
-			Year:   services.FlexibleYear(item.Year),
-			Type:   mediaType,
-			Rating: item.Rating,
-			Poster: item.Poster,
-		})
-	}
+	// Rebuild the same self-contained visual cards from the complete search
+	// snapshot. Legacy snapshots without status degrade conservatively.
+	results, statuses := restoreSearchCardSnapshot(items)
 	text := buildSearchResultsText(query, page, results)
 	keyboard := buildSearchResultsKeyboard(results, page, len(items) >= 8)
 
@@ -1455,9 +1464,9 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	// Use DeleteMessage=true when returning from photo to text message
 	return &callback.Response{
 		Text:                  text,
-		StructuredRichMessage: buildSearchSlideshow(query, page, results),
+		StructuredRichMessage: buildVisualSearchMessage(query, page, results, statuses),
 		Edit:                  false,
-		DeleteMessage:         false,
+		DeleteMessage:         true,
 		Keyboard:              convertKeyboard(keyboard),
 		ParseMode:             "HTML",
 	}, nil

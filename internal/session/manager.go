@@ -42,6 +42,7 @@ type SearchItem struct {
 	Poster   string   `json:"poster,omitempty"`
 	Rating   float64  `json:"rating,omitempty"`
 	Overview string   `json:"overview,omitempty"`
+	Status   string   `json:"status,omitempty"`
 	Seasons  []Season `json:"seasons,omitempty"`
 }
 
@@ -416,6 +417,9 @@ func (s *Session) GetSearchResults() ([]SearchItem, int, string, bool) {
 				}
 				if overview, ok := itemMap["overview"].(string); ok {
 					item.Overview = overview
+				}
+				if status, ok := itemMap["status"].(string); ok {
+					item.Status = status
 				}
 				items = append(items, item)
 			}

@@ -343,10 +343,11 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 			Keyboard:    convertKeyboard(buildSearchRecoveryKeyboard(page - 1)),
 		}, nil
 	}
-	h.storeSearchResults(ctx.UserID, query, results.Results, page)
+	statuses := h.resolveSearchCardStatuses(results.Results)
+	h.storeSearchResults(ctx.UserID, query, results.Results, page, statuses)
 	var rich *types.TelegramInputRichMessage
 	if ctx.ChatType == "private" {
-		rich = h.buildVisualSearchSlideshow(query, page, results.Results)
+		rich = buildVisualSearchMessage(query, page, results.Results, statuses)
 	}
 	return &callback.Response{
 		Text:                  buildSearchResultsText(query, page, results.Results),
@@ -574,12 +575,13 @@ func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult
 func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse, page int) {
 	text := buildSearchResultsText(query, page, results.Results)
 	keyboard := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
-	h.storeSearchResults(userID, query, results.Results, page)
+	statuses := h.resolveSearchCardStatuses(results.Results)
+	h.storeSearchResults(userID, query, results.Results, page, statuses)
 
 	// Telegram chat IDs for groups/channels are negative. Avoid both rich-message
 	// composition and transport there; community searches remain ephemeral text.
 	if chatID > 0 {
-		if rich := h.buildVisualSearchSlideshow(query, page, results.Results); rich != nil {
+		if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
 			if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, keyboard); err == nil {
 				return
 			} else {
@@ -590,7 +592,7 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 	h.sendUserScopedText(userID, chatID, text, keyboard)
 }
 
-func (h *SearchHandler) storeSearchResults(userID int64, query string, results []services.SearchResult, page int) {
+func (h *SearchHandler) storeSearchResults(userID int64, query string, results []services.SearchResult, page int, statuses map[string]string) {
 	// Save before delivery so callback buttons remain usable after a transport
 	// fallback or a Telegram retry.
 	sess := h.sessMgr.GetOrCreate(userID)
@@ -607,6 +609,10 @@ func (h *SearchHandler) storeSearchResults(userID int64, query string, results [
 		if item.Type == "tv" || item.Type == "电视剧" {
 			mediaType = "tv"
 		}
+		status := strings.TrimSpace(statuses[services.MediaStatusKey(item.ID, mediaType)])
+		if status == "" {
+			status = "状态暂未确认"
+		}
 		searchItems = append(searchItems, session.SearchItem{
 			ID:       fmt.Sprintf("%d", item.ID),
 			Title:    item.Title,
@@ -615,6 +621,7 @@ func (h *SearchHandler) storeSearchResults(userID int64, query string, results [
 			Rating:   item.Rating,
 			Poster:   item.Poster,
 			Overview: item.Overview,
+			Status:   status,
 		})
 	}
 	sess.SetSearchResults(searchItems, page, query)
@@ -712,9 +719,15 @@ func buildSearchSlideshow(query string, page int, results []services.SearchResul
 // but the JPEG itself is authoritative because some Telegram clients omit
 // slideshow photo captions.
 func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, results []services.SearchResult) *types.TelegramInputRichMessage {
-	statuses := h.resolveSearchCardStatuses(results)
-	cards := services.BuildSearchVisualCards(results, statuses)
-	if len(cards) < 2 {
+	return buildVisualSearchMessage(query, page, results, h.resolveSearchCardStatuses(results))
+}
+
+func buildVisualSearchMessage(query string, page int, results []services.SearchResult, statuses map[string]string) *types.TelegramInputRichMessage {
+	return buildVisualSearchMessageFromCards(query, page, results, services.BuildSearchVisualCards(results, statuses))
+}
+
+func buildVisualSearchMessageFromCards(query string, page int, results []services.SearchResult, cards []services.SearchVisualCard) *types.TelegramInputRichMessage {
+	if len(cards) == 0 {
 		return nil
 	}
 	blocks := make([]types.TelegramInputRichBlock, 0, len(cards))
@@ -735,6 +748,10 @@ func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, resul
 		})
 	}
 	caption := fmt.Sprintf("🔍 搜索结果「%s」 · 第 %d 页\n左右滑动看视觉卡，点下方片名看详情。", query, page)
+	if len(blocks) == 1 {
+		blocks[0].Caption = &types.TelegramRichText{Text: caption}
+		return &types.TelegramInputRichMessage{Blocks: blocks, Media: media}
+	}
 	return &types.TelegramInputRichMessage{
 		Blocks: []types.TelegramInputRichBlock{{Type: "slideshow", Blocks: blocks, Caption: &types.TelegramRichText{Text: caption}}},
 		Media:  media,

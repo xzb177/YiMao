@@ -132,4 +132,7 @@ func TestBackToSearchPreservesPageAndReadableKeyboard(t *testing.T) {
 	if !readable || !callbacks["search:page:1"] || callbacks["search:page:3"] {
 		t.Fatalf("restored keyboard missing readable result/previous page or added a false next page: %+v", resp.Keyboard)
 	}
+	if !resp.DeleteMessage || resp.Edit {
+		t.Fatalf("detail return must replace the detail message: delete=%v edit=%v", resp.DeleteMessage, resp.Edit)
+	}
 }
