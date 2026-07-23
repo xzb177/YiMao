@@ -20,6 +20,7 @@ type MediaInfo struct {
 	VoteCount     int      `json:"vote_count,omitempty"`
 	SeasonCount   int      `json:"season_count,omitempty"`
 	EpisodeCount  int      `json:"episode_count,omitempty"`
+	Status        string   `json:"status,omitempty"`
 }
 
 // BuildMediaInfoCard builds a rich media info card
@@ -73,6 +74,9 @@ func BuildMediaInfoCard(info MediaInfo) RichMessage {
 			epText += fmt.Sprintf(" · %d 集", info.EpisodeCount)
 		}
 		rows = append(rows, []string{"季集", epText})
+	}
+	if info.Status != "" {
+		rows = append(rows, []string{"状态", info.Status})
 	}
 	if len(rows) > 0 {
 		builder.Table([]string{"项目", "详情"}, rows)

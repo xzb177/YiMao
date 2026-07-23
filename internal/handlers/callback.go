@@ -682,6 +682,9 @@ func buildEphemeralMediaCaption(info richmessage.MediaInfo) string {
 		meta = append(meta, html.EscapeString(strings.Join(info.Genres, "/")))
 	}
 	b.WriteString(strings.Join(meta, " · "))
+	if info.Status != "" {
+		fmt.Fprintf(&b, "\n📍 %s", html.EscapeString(info.Status))
+	}
 	if info.MediaType == "tv" && info.SeasonCount > 0 {
 		fmt.Fprintf(&b, "\n📚 %d 季", info.SeasonCount)
 		if info.EpisodeCount > 0 {
@@ -815,6 +818,15 @@ func normalizeDetailMediaType(mediaType string) string {
 	}
 }
 
+func normalizeDetailStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case "云海可看", "站内追更", "可求片":
+		return strings.TrimSpace(status)
+	default:
+		return "状态暂未确认"
+	}
+}
+
 func retargetDetailKeyboard(keyboard *callback.Keyboard, returnAction string) {
 	if keyboard == nil {
 		return
@@ -852,6 +864,7 @@ func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem,
 		Overview:  item.Overview,
 		TMDBID:    item.TmdbID,
 		MediaType: item.MediaType,
+		Status:    "状态暂未确认",
 	}
 
 	keyboard := h.buildMovieActionKeyboard(item.TmdbID, false, false)
@@ -874,7 +887,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 	// For TV shows, fetch full details with seasons
 	if media.MediaType == "tv" && h.tmdb != nil {
 		posterURL := getPosterURL(media.PosterPath)
-		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, false, posterURL)
+		return h.buildDetailFromTMDBTV(media.ID, media.GetTitle(), sess, "状态暂未确认", posterURL)
 	}
 
 	keyboard := h.buildMovieActionKeyboard(media.ID, true, true)
@@ -891,6 +904,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 		OriginalTitle: media.OriginalTitle,
 		Runtime:       media.GetRuntime(),
 		VoteCount:     media.VoteCount,
+		Status:        "状态暂未确认",
 	}
 
 	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
@@ -902,12 +916,12 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 }
 
 // buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
-func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, mpNotAvailable bool, posterURL string) *callback.Response {
+func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, status string, posterURL string) *callback.Response {
 	// Fetch TV details with seasons from TMDB
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
 		logger.Info("[DetailHandler] Failed to get TV details from TMDB: %v", err)
-		return h.buildSimpleTVDetail(tmdbID, title, sess, mpNotAvailable, posterURL)
+		return h.buildSimpleTVDetail(tmdbID, title, sess, status, posterURL)
 	}
 
 	// Cache media info for resource list
@@ -942,6 +956,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 		VoteCount:    tvDetails.VoteCount,
 		SeasonCount:  regularSeasonCount,
 		EpisodeCount: tvDetails.NumberOfEpisodes,
+		Status:       normalizeDetailStatus(status),
 	}
 
 	keyboard := h.buildTVActionKeyboard(tvDetails.ID, regularSeasonCount, true, true)
@@ -955,11 +970,12 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
-func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, _ bool, posterURL string) *callback.Response {
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, status string, posterURL string) *callback.Response {
 	info := richmessage.MediaInfo{
 		Title:     title,
 		MediaType: "tv",
 		TMDBID:    tmdbID,
+		Status:    normalizeDetailStatus(status),
 	}
 
 	keyboard := h.buildTVActionKeyboard(tmdbID, 0, false, false)
@@ -987,6 +1003,7 @@ func (h *DetailHandler) buildDetailFromMedia(media *services.MediaInfo, sess *se
 		Overview:  media.Overview,
 		TMDBID:    media.ID,
 		MediaType: mediaTypeStr,
+		Status:    "状态暂未确认",
 	}
 
 	var keyboard *types.TelegramInlineKeyboard
@@ -1020,12 +1037,9 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 			// Get the query from session to determine back button behavior
 			// Note: If GetSearchResults fails, query will be empty string (acceptable for back button)
 			_, _, query, _ := sess.GetSearchResults()
-			return h.buildDetailFromMediaInfo(mediaInfo, sess, query)
+			return h.buildDetailFromMediaInfo(mediaInfo, sess, query, item.Status)
 		}
-		logger.Info("[DetailHandler] Failed to get media info from MoviePilot: %v", err)
-		// Don't mark as unavailable - the search found this media, so it exists
-		// The error might be due to type mismatch or API issue, but the media is in the system
-		logger.Info("[DetailHandler] Media found in search but GetMediaInfo failed, treating as available (error: %v)", err)
+		logger.Info("[DetailHandler] MoviePilot metadata lookup failed; preserving search availability status=%s: %v", normalizeDetailStatus(item.Status), err)
 
 		// Get poster URL from search item
 		posterURL := getPosterURL(item.Poster)
@@ -1033,7 +1047,7 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 		// For TV shows, fallback to TMDB for season info
 		if isTV && h.tmdb != nil {
 			logger.Info("[DetailHandler] Falling back to TMDB for TV show seasons: %s", item.Title)
-			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, false, posterURL) // Treat as available
+			return h.buildDetailFromTMDBTV(mediaID, item.Title, sess, item.Status, posterURL)
 		}
 	}
 
@@ -1048,11 +1062,11 @@ func (h *DetailHandler) buildDetailFromSearch(item session.SearchItem, mediaType
 		cacheMediaInfo(sess, tmdbID, item.Title, item.Year)
 	}
 
-	return h.buildBasicDetailFromSearch(item, mediaType, query, false) // Treat as available
+	return h.buildBasicDetailFromSearch(item, mediaType, query, false)
 }
 
 // buildDetailFromMediaInfo builds rich detail page from MoviePilot media info
-func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query string) *callback.Response {
+func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess *session.Session, query, status string) *callback.Response {
 	cacheMediaInfo(sess, info.ID, info.Title, info.Year.Int())
 
 	isTV := info.Type == services.MediaTypeTV
@@ -1069,6 +1083,7 @@ func (h *DetailHandler) buildDetailFromMediaInfo(info *services.MediaInfo, sess 
 		Overview:  info.Overview,
 		TMDBID:    info.ID,
 		MediaType: mediaTypeStr,
+		Status:    normalizeDetailStatus(status),
 	}
 
 	// Try to get TV season info
@@ -1109,6 +1124,7 @@ func (h *DetailHandler) buildBasicDetailFromSearch(item session.SearchItem, medi
 		Overview:  item.Overview,
 		TMDBID:    tmdbID,
 		MediaType: mediaType,
+		Status:    normalizeDetailStatus(item.Status),
 	}
 
 	var keyboard *types.TelegramInlineKeyboard
@@ -1130,6 +1146,7 @@ func (h *DetailHandler) buildSimpleDetail(tmdbID int, mediaType string, sess *se
 		Title:     "影片详情",
 		TMDBID:    tmdbID,
 		MediaType: mediaType,
+		Status:    "状态暂未确认",
 	}
 
 	var keyboard *types.TelegramInlineKeyboard
