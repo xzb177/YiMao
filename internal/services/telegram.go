@@ -1510,19 +1510,20 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 
-	// One unmistakable primary action.
-	kb.AddButton("🔍 搜索求片", "start_search")
+	// Independent P0 business entries stay above secondary features.
+	kb.AddButton("🎬 求片", "start_search")
+	kb.AddButton("♻️ 洗版", "wash")
+	kb.NewRow()
+	kb.AddButton("📝 遇到问题", "issue")
+	kb.AddButton("📋 我的进度", "start_requests")
 	kb.NewRow()
 
-	// Request lifecycle shortcuts stay together.
-	kb.AddButton("📊 求片进度", "start_requests")
+	// Secondary discovery and entertainment entries remain available.
 	if showWish {
 		kb.AddButton("✨ 许愿池", "start_wish")
 	}
-	kb.NewRow()
-
-	// Discovery is grounded in real request activity, not generic recommendations.
 	kb.AddButton("🔥 大家最近在求", "request_heat")
+	kb.NewRow()
 	kb.AddButton("🎮 游戏中心", "game_menu")
 	kb.NewRow()
 

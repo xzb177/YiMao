@@ -465,7 +465,7 @@ func SendHelpMessage(telegram *services.TelegramClient, chatID int64) {
 	msg.Text("直接把片名发给我，中英文都行，点结果看详情再求片").Newline()
 	msg.Newline()
 	msg.Bold("🎬 求片").Newline()
-	msg.Text("电影详情点「立即求片」；剧集先选季度，求全部季度会再次确认").Newline()
+	msg.Text("电影详情点「立即求片」；剧集请先选择具体季度").Newline()
 	msg.Newline()
 	msg.Bold("✨ 许愿池").Newline()
 	msg.Text("搜不到的片？用 /wish 片名 许个愿，找到源第一时间通知你").Newline()

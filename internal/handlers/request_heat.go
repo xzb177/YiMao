@@ -13,7 +13,7 @@ import (
 const (
 	requestHeatWindow   = 7 * 24 * time.Hour
 	requestHeatLimit    = 8
-	requestHeatMinUsers = 2
+	requestHeatMinUsers = 1
 )
 
 // RequestHeatHandler displays anonymous aggregates of real request activity.
@@ -43,7 +43,7 @@ func (h *RequestHeatHandler) Handle(ctx *callback.Context) (*callback.Response, 
 	text.WriteString("🔥 <b>大家最近在求</b>\n\n")
 
 	if len(items) == 0 {
-		text.WriteString("最近 7 天还没有可展示的求片热度。\n\n搜到想看的影片后，可以直接求片或加入想看。")
+		text.WriteString("最近 7 天还没有正在等待的求片。\n\n搜到想看的影片后，可以直接求片或加入想看。")
 		keyboard.InlineKeyboard = [][]callback.Button{
 			{{Text: "🔍 搜索求片", CallbackData: "start_search"}},
 			{{Text: "🏠 主菜单", CallbackData: "start"}},

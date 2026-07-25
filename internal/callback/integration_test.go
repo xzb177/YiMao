@@ -52,8 +52,10 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		button   string
 		callback string
 	}{
-		{"🔍 搜索求片", "start_search"},
-		{"📊 求片进度", "start_requests"},
+		{"🎬 求片", "start_search"},
+		{"♻️ 洗版", "wash"},
+		{"📝 遇到问题", "issue"},
+		{"📋 我的进度", "start_requests"},
 		{"✨ 许愿池", "start_wish"},
 		{"🔥 大家最近在求", "request_heat"},
 		{"🎮 游戏中心", "game_menu"},

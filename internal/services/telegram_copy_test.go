@@ -4,19 +4,20 @@ import "testing"
 
 func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 	keyboard := BuildStartKeyboardWithOptions(false, true)
-	if keyboard == nil || len(keyboard.InlineKeyboard) != 4 {
+	if keyboard == nil || len(keyboard.InlineKeyboard) != 5 {
 		t.Fatalf("unexpected start keyboard: %#v", keyboard)
 	}
 
 	first := keyboard.InlineKeyboard[0]
-	if len(first) != 1 || first[0].Text != "🔍 搜索求片" || first[0].CallbackData != "start_search" {
+	if len(first) != 2 || first[0].Text != "🎬 求片" || first[0].CallbackData != "start_search" || first[1].CallbackData != "wash" {
 		t.Fatalf("primary row = %#v", first)
 	}
 
 	wantRows := [][]string{
-		{"start_search"},
-		{"start_requests", "start_wish"},
-		{"request_heat", "game_menu"},
+		{"start_search", "wash"},
+		{"issue", "start_requests"},
+		{"start_wish", "request_heat"},
+		{"game_menu"},
 		{"start_settings", "help"},
 	}
 	for i, want := range wantRows {

@@ -29,7 +29,7 @@ func TestMovieDetailKeyboardHasOneClearPrimaryAction(t *testing.T) {
 		t.Fatalf("rows=%d want=4: %#v", len(keyboard.InlineKeyboard), keyboard)
 	}
 	primary := keyboard.InlineKeyboard[0]
-	if len(primary) != 1 || primary[0].Text != "🎬 立即求片" || primary[0].CallbackData != "request:id:101:type:movie" {
+	if len(primary) != 2 || primary[0].Text != "🎬 立即求片" || primary[0].CallbackData != "request:id:101:type:movie" || primary[1].CallbackData != "wash:id:101:type:movie" {
 		t.Fatalf("primary row=%#v", primary)
 	}
 	if len(keyboard.InlineKeyboard[1]) != 1 || !strings.Contains(keyboard.InlineKeyboard[1][0].Text, "加入想看") {
@@ -47,22 +47,19 @@ func TestMovieDetailKeyboardHasOneClearPrimaryAction(t *testing.T) {
 func TestTVDetailKeyboardDefersSeasonGridToPicker(t *testing.T) {
 	h := &DetailHandler{}
 	keyboard := convertKeyboard(h.buildTVActionKeyboard(202, 12, true, true))
-	if len(keyboard.InlineKeyboard) != 5 {
-		t.Fatalf("rows=%d want=5: %#v", len(keyboard.InlineKeyboard), keyboard)
+	if len(keyboard.InlineKeyboard) != 4 {
+		t.Fatalf("rows=%d want=4: %#v", len(keyboard.InlineKeyboard), keyboard)
 	}
-	if row := keyboard.InlineKeyboard[0]; len(row) != 1 || row[0].CallbackData != "detail_seasons:id:202" || row[0].Text != "🗂️ 选择季度" {
+	if row := keyboard.InlineKeyboard[0]; len(row) != 2 || row[0].CallbackData != "detail_seasons:id:202" || row[0].Text != "🗂️ 选择季度" || row[1].CallbackData != "wash:id:202:type:tv" {
 		t.Fatalf("safe primary row=%#v", row)
 	}
-	if row := keyboard.InlineKeyboard[1]; len(row) != 1 || row[0].CallbackData != "request:id:202:type:tv:season:0" || row[0].Text != "📺 求全部季度" {
-		t.Fatalf("full-show row=%#v", row)
-	}
 	callbacks := keyboardCallbacks(keyboard)
-	for data := range callbacks {
-		if strings.Contains(data, ":season:") && data != "request:id:202:type:tv:season:0" {
-			t.Fatalf("season button leaked onto detail page: %q", data)
+	for data, label := range callbacks {
+		if strings.Contains(data, ":season:0") || strings.Contains(label, "全部季度") {
+			t.Fatalf("misleading whole-show action exposed: %q %q", data, label)
 		}
 	}
-	if callbacks["detail_seasons:id:202"] != "🗂️ 选择季度" || callbacks["request:id:202:type:tv:season:0"] != "📺 求全部季度" || callbacks["back"] != "⬅️ 返回结果" {
+	if callbacks["detail_seasons:id:202"] != "🗂️ 选择季度" || callbacks["back"] != "⬅️ 返回结果" {
 		t.Fatalf("callbacks=%#v", callbacks)
 	}
 }
@@ -91,8 +88,8 @@ func TestSeasonPickerStaysFocused(t *testing.T) {
 	if callbacks["request:id:303:type:tv:season:1"] == "" || callbacks["request:id:303:type:tv:season:2"] == "" {
 		t.Fatalf("season choices missing: %#v", callbacks)
 	}
-	if callbacks["request:id:303:type:tv:season:0"] != "📺 求全部季度" {
-		t.Fatalf("specials duplicated season=0 or full-show label wrong: %#v", callbacks)
+	if _, exists := callbacks["request:id:303:type:tv:season:0"]; exists {
+		t.Fatalf("whole-show season=0 action must be hidden: %#v", callbacks)
 	}
 	if callbacks["detail:id:303:type:tv:source:seasons"] != "⬅️ 返回详情" {
 		t.Fatalf("detail return missing: %#v", callbacks)

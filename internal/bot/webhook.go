@@ -265,8 +265,12 @@ func HandleWebhookMessage(
 				logger.Info("[Webhook] User %d sent photo with feedback: file_id=%s", msg.From.ID, photoFileID)
 			}
 
+			feedbackText := msg.Text
+			if strings.TrimSpace(feedbackText) == "" {
+				feedbackText = msg.Caption
+			}
 			// 用户正在反馈流程中，处理反馈文本/图片并返回
-			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, msg.Text, photoFileID); err != nil {
+			if err := deps.FeedbackHandler.HandleFeedbackWithPhoto(msg.From.ID, msg.Chat.ID, feedbackText, photoFileID); err != nil {
 				logger.Info("[Webhook] Failed to handle feedback: %v", err)
 			}
 			w.WriteHeader(http.StatusOK)
@@ -349,6 +353,11 @@ func HandleWebhookMessage(
 	// Handle search queries (non-command text)
 	// 只有在非反馈状态下才执行搜索
 	if len(msg.Text) > 1 {
+		if HandlePrivateTMDBLink(msg, registry, deps.Telegram) {
+			w.WriteHeader(http.StatusOK)
+			fmt.Fprint(w, "OK")
+			return
+		}
 		// 检查是否处于 AI 解说 pending 状态
 		if deps.GameHandler != nil {
 			if deps.GameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, msg.Text) {
@@ -395,6 +404,7 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"feedback_media_type",
 		"feedback_media_title",
 		"feedback_issue_type",
+		"feedback_require_media",
 		// 反馈追问会话
 		"feedback_conversation_issue_id",
 		// 管理员添加管理员 / 自定义时间 / 回复反馈 / 回复问题

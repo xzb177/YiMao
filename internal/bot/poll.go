@@ -42,6 +42,7 @@ type Dependencies struct {
 
 // PollDeps holds dependencies for polling (reduced set)
 type PollDeps struct {
+	Registry         *callback.Registry
 	Telegram         *services.TelegramClient
 	MoviePilot       *services.MoviePilotClient
 	SessionMgr       *session.Manager
@@ -78,6 +79,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
+		Registry:         registry,
 		Telegram:         deps.Telegram,
 		MoviePilot:       deps.MoviePilot,
 		SessionMgr:       deps.SessionMgr,
@@ -160,8 +162,12 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 // HandlePollMessage processes a message update (for polling)
 func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.Config) {
-	// Sanitize input text
-	sanitizedText := validation.SanitizeMessageText(msg.Text)
+	// Sanitize input text (photo descriptions use caption when text is empty).
+	rawText := msg.Text
+	if strings.TrimSpace(rawText) == "" {
+		rawText = msg.Caption
+	}
+	sanitizedText := validation.SanitizeMessageText(rawText)
 	logger.Info("[Poll] Message from %d: %s", msg.From.ID, sanitizedText)
 
 	// Group chat: handle search queries only
@@ -348,8 +354,10 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Check if user is not linked and input looks like credentials (userID + password)
 	// Format: "number password" or "username password"
 	if deps.UserMapping != nil {
+		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
+		intent, _ := sess.GetString("media_search_intent")
 		_, isLinked := deps.UserMapping.GetMoviePilotUserID(msg.From.ID)
-		if !isLinked && sanitizedText != "" && len(sanitizedText) > 1 {
+		if intent != "wash" && !isLinked && sanitizedText != "" && len(sanitizedText) > 1 {
 			parts := strings.Fields(sanitizedText)
 			// Check if format matches: ID (number) + password, or username + password
 			if len(parts) >= 2 {
@@ -380,6 +388,9 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
 		msg.Text = sanitizedText // Update with sanitized text
+		if HandlePrivateTMDBLink(msg, deps.Registry, deps.Telegram) {
+			return
+		}
 
 		// 检查是否处于 AI 解说 pending 状态
 		if deps.GameHandler != nil {
@@ -418,6 +429,7 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		"feedback_media_type",
 		"feedback_media_title",
 		"feedback_issue_type",
+		"feedback_require_media",
 		// 反馈追问会话
 		"feedback_conversation_issue_id",
 		// 管理员添加管理员 / 自定义时间 / 回复反馈 / 回复问题

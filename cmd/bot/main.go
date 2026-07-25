@@ -487,7 +487,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	detailHandler := handlers.NewDetailHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient)
 	detailHandler.SetCarpool(deps.CarpoolService)
 	backHandler := handlers.NewBackHandler(deps.SessionMgr)
-	cancelHandler := handlers.NewCancelHandler()
+	cancelHandler := handlers.NewCancelHandler(deps.SessionMgr)
 	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
 	submissionService := services.NewRequestSubmissionService(deps.UserMapping, deps.ReviewService, deps.QuotaService, requestHandler.NotifyAdminsForReview)
 	requestHandler.SetRequestSubmissionService(submissionService)
@@ -503,6 +503,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService, groupChatID)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
+	washHandler := handlers.NewWashHandler(deps.ReviewService, deps.TMDBClient, deps.WebhookService, requestHandler.NotifyAdminsForReview, deps.SessionMgr)
 
 	// 拼车取消/拒绝通知
 	carpoolNotifyFunc := func(tmdbID int, mediaType, title, reason string) {
@@ -712,6 +713,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	adminHandler.SetReviewService(deps.ReviewService)
 	myRequestsHandler.SetUserMapping(deps.UserMapping)
 	myRequestsHandler.SetReviewService(deps.ReviewService)
+	myRequestsHandler.SetIssueService(deps.IssueService)
 	myRequestsHandler.SetQuotaService(deps.QuotaService)
 	myRequestsHandler.SetWishService(deps.WishService)
 	myRequestsHandler.SetAdminService(deps.AdminService)
@@ -748,6 +750,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
 	logger.Info("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)
 	registry.RegisterFunc(callback.ActionFeedback, feedbackHandler.Handle)
+	registry.RegisterFunc("issue", feedbackHandler.Handle)
+	registry.RegisterFunc("wash", washHandler.Handle)
 	registry.RegisterFunc("my_feedback", feedbackHandler.Handle)
 	registry.RegisterFunc("portrait", startHandler.Handle)
 	logger.Info("[initRegistry] portrait callback registered → startHandler.Handle")
@@ -825,6 +829,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("review_approve", reviewHandler.Handle)
 	registry.RegisterFunc("review_reject", reviewHandler.Handle)
 	registry.RegisterFunc("review_cancel", reviewHandler.Handle)
+	registry.RegisterFunc("review_complete_wash", reviewHandler.Handle)
 	registry.RegisterFunc("my_reviews", reviewHandler.Handle)
 	registry.RegisterFunc("review_list", reviewHandler.Handle)
 	// Short format callbacks (to keep CallbackData under 64 bytes)

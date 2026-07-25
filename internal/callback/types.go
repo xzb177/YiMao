@@ -81,6 +81,8 @@ var validActions = map[Action]bool{
 	"start_ai":          true, // Reserved
 	"ai":                true, // start_ai 剥前缀后的实际 action
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
+	"wash":              true, // 洗版工单
+	"issue":             true, // 首页问题工单入口
 	"wish_cancel":       true, // 许愿撤回
 	"myreq_cancel":      true, // 用户撤回 pending 求片申请
 	"my_requests":       true, // 历史消息中的求片进度按钮
@@ -94,11 +96,12 @@ var validActions = map[Action]bool{
 	ActionMyReqsItem: true,
 
 	// Review system actions
-	"review_approve": true,
-	"review_reject":  true,
-	"review_cancel":  true,
-	"my_reviews":     true,
-	"review_list":    true,
+	"review_approve":       true,
+	"review_reject":        true,
+	"review_cancel":        true,
+	"review_complete_wash": true,
+	"my_reviews":           true,
+	"review_list":          true,
 	// Short format actions (to keep CallbackData under 64 bytes)
 	"rv_a": true, // approve by token
 	"rv_r": true, // reject by token

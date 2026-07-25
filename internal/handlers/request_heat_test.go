@@ -41,7 +41,7 @@ func TestRequestHeatHandlerBuildsDetailLinksWithoutIdentityLeak(t *testing.T) {
 	}
 }
 
-func TestRequestHeatHandlerSuppressesSingleUserTitles(t *testing.T) {
+func TestRequestHeatHandlerShowsSingleUserTitlesAnonymously(t *testing.T) {
 	reviews := services.NewReviewService(t.TempDir(), false)
 	if err := reviews.CreateRequest(&services.ReviewRequest{
 		RequestID: "private-single", TelegramID: 123, TmdbID: 42,
@@ -54,8 +54,11 @@ func TestRequestHeatHandlerSuppressesSingleUserTitles(t *testing.T) {
 	if err != nil || resp == nil {
 		t.Fatalf("resp=%#v err=%v", resp, err)
 	}
-	if strings.Contains(resp.Text, "只有一个人求") || !strings.Contains(resp.Text, "还没有可展示") {
-		t.Fatalf("low-cardinality title leaked: %q", resp.Text)
+	if !strings.Contains(resp.Text, "只有一个人求") || !strings.Contains(resp.Text, "1 人想看") {
+		t.Fatalf("single-user request was hidden: %q", resp.Text)
+	}
+	if strings.Contains(resp.Text, "123") {
+		t.Fatalf("identity leaked: %q", resp.Text)
 	}
 }
 
@@ -66,7 +69,7 @@ func TestRequestHeatHandlerEmptyStatePointsToSearch(t *testing.T) {
 	if err != nil || resp == nil || resp.Keyboard == nil {
 		t.Fatalf("resp=%#v err=%v", resp, err)
 	}
-	if !strings.Contains(resp.Text, "还没有可展示") {
+	if !strings.Contains(resp.Text, "还没有正在等待的求片") {
 		t.Fatalf("text=%q", resp.Text)
 	}
 	callbacks := keyboardCallbacks(resp.Keyboard)

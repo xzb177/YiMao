@@ -80,6 +80,37 @@ func TestFeedbackQuickIndexRecoversSessionContext(t *testing.T) {
 	}
 }
 
+func TestGenericMediaIssueRequiresMediaTitleBeforeDescription(t *testing.T) {
+	manager := session.NewManager(time.Hour, 10)
+	handler := NewFeedbackHandler(manager, nil, nil)
+	response, err := handler.Handle(&callback.Context{UserID: 9, Callback: &callback.Callback{Action: callback.ActionFeedback, Params: map[string]string{"issue_type": "playback", "id": "0", "media_type": "other"}}})
+	if err != nil || response == nil || !strings.Contains(response.Text, "先告诉我是哪部片") {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	sess := manager.GetOrCreate(9)
+	step, _ := sess.GetString("feedback_step")
+	if step != "media_title" || !handler.IsInFeedbackProcess(9) {
+		t.Fatalf("step=%q", step)
+	}
+	quick, err := handler.Handle(&callback.Context{UserID: 9, Callback: &callback.Callback{Action: callback.ActionFeedback, Params: map[string]string{"quick_idx": "2"}}})
+	if err != nil || quick == nil || !quick.ShowAlert || !strings.Contains(quick.CallbackMsg, "先发送片名") {
+		t.Fatalf("quick=%#v err=%v", quick, err)
+	}
+}
+
+func TestDetailMediaIssueKeepsDirectDescriptionFlow(t *testing.T) {
+	manager := session.NewManager(time.Hour, 10)
+	handler := NewFeedbackHandler(manager, nil, nil)
+	response, err := handler.Handle(&callback.Context{UserID: 10, Callback: &callback.Callback{Action: callback.ActionFeedback, Params: map[string]string{"issue_type": "playback", "id": "1425", "media_type": "tv"}}})
+	if err != nil || response == nil || !strings.Contains(response.Text, "快捷选择") {
+		t.Fatalf("response=%#v err=%v", response, err)
+	}
+	step, _ := manager.GetOrCreate(10).GetString("feedback_step")
+	if step != "description" {
+		t.Fatalf("step=%q", step)
+	}
+}
+
 func TestCompactNarrationCallbackParses(t *testing.T) {
 	ref := callback.ShortRef("一部非常非常长的电影名称")
 	data := "game_narrate:ref:" + ref + ":spoiler:1"

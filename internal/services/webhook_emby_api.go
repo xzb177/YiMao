@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -549,7 +550,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	// IncludeItemTypes: Filter by media type (Movie or Series) to prevent false matches
 	// Recursive: Search all library folders
 	// Limit: Get up to 20 results to find the best match
-	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20",
+	searchParams := fmt.Sprintf("?SearchTerm=%s&IncludeItemTypes=%s&Recursive=true&Limit=20&Fields=ProviderIds",
 		url.QueryEscape(title), includeItemTypes)
 	fullURL := fmt.Sprintf("%s/Users/%s/Items%s", s.embyURL, s.embyUserID, searchParams)
 
@@ -675,6 +676,103 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	return best.result, nil
 }
 
+// HasEmbyWashTarget verifies that a wash request points at media which already
+// exists in Emby. TV requests must also point at an existing regular season.
+// The check fails closed: an unavailable Emby API must not create a zero-quota
+// substitute for an ordinary request.
+func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, mediaType MediaType, season int) (bool, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return false, fmt.Errorf("Emby URL or API key not configured")
+	}
+	includeItemTypes := "Movie"
+	if mediaType == MediaTypeTV {
+		includeItemTypes = "Series"
+	}
+	params := url.Values{}
+	params.Set("AnyProviderIdEquals", fmt.Sprintf("Tmdb.%d", tmdbID))
+	params.Set("IncludeItemTypes", includeItemTypes)
+	params.Set("Recursive", "true")
+	params.Set("Fields", "ProviderIds")
+	endpoint := fmt.Sprintf("%s/Users/%s/Items?%s", s.embyURL, url.PathEscape(s.embyUserID), params.Encode())
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("Emby exact provider search returned status %d", resp.StatusCode)
+	}
+	var search struct {
+		Items []map[string]interface{} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&search); err != nil {
+		return false, err
+	}
+	var media *EmbySearchResult
+	wantTMDB := strconv.Itoa(tmdbID)
+	for _, item := range search.Items {
+		candidate, convertErr := s.convertToSearchResult(item)
+		if convertErr == nil && candidate.TMDBID == wantTMDB {
+			media = candidate
+			break
+		}
+	}
+	if media == nil {
+		return false, nil
+	}
+	if mediaType != MediaTypeTV {
+		return true, nil
+	}
+	if season <= 0 {
+		return false, fmt.Errorf("TV wash requires a positive season")
+	}
+
+	params = url.Values{}
+	if s.embyUserID != "" {
+		params.Set("UserId", s.embyUserID)
+	}
+	seasonEndpoint := fmt.Sprintf("%s/Shows/%s/Seasons?%s", s.embyURL, url.PathEscape(media.ID), params.Encode())
+	seasonReq, err := http.NewRequest(http.MethodGet, seasonEndpoint, nil)
+	if err != nil {
+		return false, err
+	}
+	seasonReq.Header.Set("X-Emby-Token", s.embyAPIKey)
+	seasonReq.Header.Set("Accept", "application/json")
+	seasonClient := &http.Client{
+		Timeout:   8 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}},
+	}
+	seasonResp, err := seasonClient.Do(seasonReq)
+	if err != nil {
+		return false, err
+	}
+	defer seasonResp.Body.Close()
+	if seasonResp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("Emby seasons API returned status %d", seasonResp.StatusCode)
+	}
+	var payload struct {
+		Items []struct {
+			IndexNumber int `json:"IndexNumber"`
+		} `json:"Items"`
+	}
+	if err := json.NewDecoder(seasonResp.Body).Decode(&payload); err != nil {
+		return false, err
+	}
+	for _, item := range payload.Items {
+		if item.IndexNumber == season {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (s *WebhookService) convertToSearchResult(item map[string]interface{}) (*EmbySearchResult, error) {
 	result := &EmbySearchResult{}
 
@@ -698,6 +796,13 @@ func (s *WebhookService) convertToSearchResult(item map[string]interface{}) (*Em
 	// Extract Type
 	if itemType, ok := item["Type"].(string); ok {
 		result.Type = itemType
+	}
+	if providerIDs, ok := item["ProviderIds"].(map[string]interface{}); ok {
+		if id, ok := providerIDs["Tmdb"].(string); ok {
+			result.TMDBID = id
+		} else if id, ok := providerIDs["tmdb"].(string); ok {
+			result.TMDBID = id
+		}
 	}
 
 	// Extract Overview

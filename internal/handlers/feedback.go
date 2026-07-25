@@ -78,6 +78,25 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 	logger.Info("[FeedbackHandler] Handle called: action=%s, params=%+v, h=%v, h.sessMgr=%v, h.telegram=%v",
 		ctx.Callback.Action, ctx.Callback.Params, h != nil, h.sessMgr != nil, h.telegram != nil)
 
+	if ctx.Callback.Action == "issue" {
+		return &callback.Response{
+			Text:     "📝 遇到什么问题？\n\n如果是某部电影或剧集的画质、声音、字幕、播放或缺集问题，请选「影视内容问题」。\n\n账号、Bot 功能、求片流程等使用问题或建议，不需要选择影片。",
+			Edit:     true,
+			Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "🎬 影视内容问题", CallbackData: "feedback:scope:media"}}, {{Text: "⚙️ 使用问题或建议", CallbackData: "feedback:scope:general"}}, {{Text: "📋 我的问题", CallbackData: "feedback:view"}}, {{Text: "🏠 主菜单", CallbackData: "start"}}}},
+		}, nil
+	}
+	if scope := ctx.Callback.Params["scope"]; scope != "" {
+		ctx.Callback.Params = map[string]string{"id": "0", "type": "other"}
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		if scope == "general" {
+			sess.Delete("feedback_require_media")
+			ctx.Callback.Params["issue_type"] = "other"
+			return h.handleTypeSelect(ctx)
+		}
+		sess.Set("feedback_require_media", true)
+		return h.handleStart(ctx)
+	}
+
 	// New callbacks carry only a compact option index; legacy callbacks with
 	// URL-escaped text remain supported for messages sent before this release.
 	if quickIndex, hasQuickIndex := ctx.Callback.Params["quick_idx"]; hasQuickIndex {
@@ -154,6 +173,8 @@ func (h *FeedbackHandler) handleStart(ctx *callback.Context) (*callback.Response
 			ShowAlert:   true,
 		}, nil
 	}
+	// id=0 is the homepage generic issue flow; media detail feedback remains bound
+	// to its real TMDB id.
 
 	// Store feedback context in session. Detail pages already cache titles by
 	// TMDB ID, so removing the title from callback_data does not lose context.
@@ -229,9 +250,24 @@ func (h *FeedbackHandler) handleTypeSelect(ctx *callback.Context) (*callback.Res
 	// Store type in session
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	sess.Set("feedback_issue_type", issueType)
-	sess.Set("feedback_step", "description")
 	sess.Set("feedback_tmdb_id", tmdbID)
 	sess.Set("feedback_media_type", mediaType)
+	requireMedia, _ := sess.Get("feedback_require_media")
+	if tmdbID == "0" && (issueType != "other" || requireMedia == true) {
+		sess.Set("feedback_step", "media_title")
+		sess.Set("feedback_media_type", "media")
+		msg := services.NewMessageBuilder()
+		msg.Bold("🎬 先告诉我是哪部片").Newline()
+		msg.Newline()
+		msg.Text("请直接发送片名或剧名，可带季集信息。").Newline()
+		msg.Newline()
+		msg.Text("例如：纸牌屋 S05E03").Newline()
+		msg.Italic("记录媒体后，再选择或输入具体问题。")
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("❌ 取消反馈", "cancel")
+		return &callback.Response{Text: msg.Build(), CallbackMsg: "请先发送片名", Edit: false, Keyboard: convertKeyboard(kb.Build()), ParseMode: "HTML"}, nil
+	}
+	sess.Set("feedback_step", "description")
 
 	// Get type label and quick options
 	typeInfo := getTypeInfo(issueType)
@@ -390,6 +426,10 @@ func (h *FeedbackHandler) handleQuickIndexSelect(ctx *callback.Context, indexTex
 	}
 
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	step, _ := sess.GetString("feedback_step")
+	if step != "description" {
+		return &callback.Response{CallbackMsg: "请先发送片名或剧名", ShowAlert: true}, nil
+	}
 	issueType, _ := sess.GetString("feedback_issue_type")
 	options := getTypeInfo(issueType).quickOptions
 	if index >= len(options) {
@@ -410,8 +450,42 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	// Check if user is in feedback process
 	stepVal, _ := sess.Get("feedback_step")
 	step, _ := stepVal.(string)
-	if step != "description" {
+	if step != "description" && step != "media_title" {
 		return fmt.Errorf("not in feedback process")
+	}
+	if step == "media_title" {
+		mediaTitle := strings.TrimSpace(text)
+		if mediaTitle == "" {
+			h.telegram.SendMessage(chatID, "请先发送片名或剧名，例如：纸牌屋 S05E03", "", nil)
+			return nil
+		}
+		if len([]rune(mediaTitle)) > 100 {
+			h.telegram.SendMessage(chatID, "片名太长了，请只保留片名和季集信息", "", nil)
+			return nil
+		}
+		sess.Set("feedback_media_title", mediaTitle)
+		sess.Set("feedback_step", "description")
+		issueType, _ := sess.GetString("feedback_issue_type")
+		info := getTypeInfo(issueType)
+		msg := services.NewMessageBuilder()
+		msg.Bold(fmt.Sprintf("✅ 已记录：《%s》", mediaTitle)).Newline()
+		msg.Newline()
+		msg.Text("现在请选择常见问题，或直接发送详细描述/截图。")
+		kb := services.NewKeyboardBuilder()
+		for i, option := range info.quickOptions {
+			buttonText := option
+			if len([]rune(buttonText)) > 15 {
+				buttonText = string([]rune(buttonText)[:12]) + "..."
+			}
+			kb.AddButton(buttonText, fmt.Sprintf("feedback:quick_idx:%d", i))
+			if i%2 == 1 {
+				kb.NewRow()
+			}
+		}
+		kb.NewRow()
+		kb.AddButton("❌ 取消反馈", "cancel")
+		h.telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
+		return nil
 	}
 
 	// Get feedback context with type assertions
@@ -439,6 +513,7 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	sess.Delete("feedback_media_type")
 	sess.Delete("feedback_media_title")
 	sess.Delete("feedback_issue_type")
+	sess.Delete("feedback_require_media")
 
 	// Create issue
 	if h.issueService == nil {
@@ -558,7 +633,7 @@ func (h *FeedbackHandler) notifyAdmins(issue *services.Issue, typeLabel string) 
 	if issue.TmdbID > 0 {
 		msg.Textf("🆔 TMDB ID: <code>%d</code>", issue.TmdbID).Newline()
 	}
-	if issue.MediaID != "" {
+	if issue.MediaID != "" && issue.MediaID != "0" {
 		msg.Textf("🆔 Media ID: <code>%s</code>", issue.MediaID).Newline()
 	}
 
@@ -607,7 +682,7 @@ func (h *FeedbackHandler) IsInFeedbackProcess(userID int64) bool {
 	sess := h.sessMgr.GetOrCreate(userID)
 	step, ok := sess.Get("feedback_step")
 	logger.Info("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
-	return ok && step == "description"
+	return ok && (step == "description" || step == "media_title")
 }
 
 // handleViewList handles viewing user's feedback list
@@ -1190,6 +1265,7 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 	sess.Delete("feedback_media_type")
 	sess.Delete("feedback_media_title")
 	sess.Delete("feedback_issue_type")
+	sess.Delete("feedback_require_media")
 
 	// Create issue with quick option text
 	if h.issueService == nil {

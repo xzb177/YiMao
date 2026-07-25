@@ -58,6 +58,8 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		return h.handleReject(ctx)
 	case "review_cancel":
 		return h.handleCancel(ctx)
+	case "review_complete_wash":
+		return h.handleCompleteWash(ctx)
 	case "my_reviews":
 		return h.handleMyReviews(ctx)
 	case "review_list":
@@ -145,6 +147,16 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			CallbackMsg: "失败",
 			ShowAlert:   true,
 		}, err
+	}
+
+	// Wash approvals stay as local work orders. They must never create or
+	// overwrite an ordinary MoviePilot subscription.
+	if review.NormalizedBusinessType() == services.BusinessTypeWash {
+		if ctx.UserID != review.TelegramID {
+			h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ 《%s》\n\n管理员将按工单处理，可在「我的进度」查看。", review.MediaTitle), "", nil)
+		}
+		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版工单已被批准", review.MediaTitle))
+		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ %s\n\n资源处理并验证完成后，请点击下方按钮收口。", review.MediaTitle), CallbackMsg: "已批准", ShowAlert: true, Edit: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "✅ 标记洗版完成", CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}}}}}, nil
 	}
 
 	// Submit to MoviePilot
@@ -287,26 +299,30 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
 
-	// 通知群组：求片已批准
-	if h.groupChatID != 0 {
-		groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
-			Title:      review.MediaTitle,
-			Year:       review.MediaYear,
-			MediaType:  mediaTypeText,
-			MediaIcon:  mediaIcon,
-			SeasonText: seasonText,
-			Requester:  review.TelegramName,
-			TMDBID:     review.TmdbID,
-		})
-		go h.telegram.SendRichMessage(h.groupChatID, groupCard.Markdown, nil)
-	}
-
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n%s\n\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),
 		CallbackMsg: "已批准",
 		ShowAlert:   true,
 		Edit:        true,
 	}, nil
+}
+
+func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
+	}
+	requestID := ctx.Callback.Params["id"]
+	if token := ctx.Callback.Params["token"]; token != "" {
+		if review, ok := h.reviewService.GetRequestByToken(token); ok {
+			requestID = review.RequestID
+		}
+	}
+	review, err := h.reviewService.CompleteWash(requestID, ctx.UserID)
+	if err != nil {
+		return &callback.Response{CallbackMsg: "工单状态不允许完成", ShowAlert: true}, nil
+	}
+	h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版已完成\n\n♻️ 《%s》\n\n新版本已由管理员处理完成，旧版本未由 YiMao 自动删除。", review.MediaTitle), "", nil)
+	return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
 }
 
 // handleReject handles reject callback
@@ -377,12 +393,13 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		}, err
 	}
 
-	// Restore quota since the request was rejected (persisted and idempotent).
-	if _, err := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); err != nil {
-		logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
-		// Don't fail the rejection, just log the error
-	} else {
-		logger.Info("[ReviewHandler] Quota restored for user %d, cost: %d", review.TelegramID, review.QuotaCost)
+	// Restore quota only for ordinary requests; wash work orders never consume it.
+	if review.NormalizedBusinessType() == services.BusinessTypeRequest {
+		if _, err := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); err != nil {
+			logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		} else {
+			logger.Info("[ReviewHandler] Quota restored for user %d, cost: %d", review.TelegramID, review.QuotaCost)
+		}
 	}
 
 	// Notify user about rejection
@@ -509,8 +526,9 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 	}
 
 	pending := h.reviewService.GetPendingRequests()
+	approvedWash := h.reviewService.GetApprovedWashRequests()
 
-	if len(pending) == 0 {
+	if len(pending) == 0 && len(approvedWash) == 0 {
 		return &callback.Response{
 			RichMessage: "📋 待审核求片\n\n暂无待审核请求 ✨",
 			Edit:        true,
@@ -528,9 +546,25 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 		})
 	}
 	card := richmessage.BuildPendingReviewsCard(items)
+	keyboard := &callback.Keyboard{}
+	if len(approvedWash) > 0 {
+		card.Markdown += fmt.Sprintf("\n\n♻️ **待完成洗版：%d 条**", len(approvedWash))
+		limit := len(approvedWash)
+		if limit > 10 {
+			limit = 10
+		}
+		for _, review := range approvedWash[:limit] {
+			label := review.MediaTitle
+			if review.Season > 0 {
+				label += fmt.Sprintf(" S%02d", review.Season)
+			}
+			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "✅ 完成 " + label, CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}})
+		}
+	}
 	return &callback.Response{
 		RichMessage: card.Markdown,
 		Edit:        true,
+		Keyboard:    keyboard,
 	}, nil
 }
 

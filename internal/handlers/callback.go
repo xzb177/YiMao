@@ -279,6 +279,14 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	// /start must be side-effect free. Account creation/binding is handled by the
 	// explicit /link flow so users know their credentials and ownership is clear.
+	// Returning home abandons transient input flows; otherwise the next plain
+	// text could unexpectedly continue an old wash/feedback session.
+	if h.sessMgr != nil {
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+			sess.Delete(key)
+		}
+	}
 
 	// 使用 Rich Message 构建欢迎页（Bot API 10.1）
 	isPrivateChat := ctx.ChatType == "private"
@@ -623,6 +631,7 @@ func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 func (h *DetailHandler) buildMovieActionKeyboard(tmdbID int, includeResources, includeFeedback bool) *types.TelegramInlineKeyboard {
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🎬 立即求片", fmt.Sprintf("request:id:%d:type:movie", tmdbID))
+	kb.AddButton("♻️ 申请洗版", fmt.Sprintf("wash:id:%d:type:movie", tmdbID))
 	kb.NewRow()
 	kb.AddButton(h.carpoolButtonText(tmdbID, "movie"), fmt.Sprintf("carpool:id:%d:type:movie", tmdbID))
 	if includeResources || includeFeedback {
@@ -641,11 +650,10 @@ func (h *DetailHandler) buildMovieActionKeyboard(tmdbID int, includeResources, i
 
 func (h *DetailHandler) buildTVActionKeyboard(tmdbID, _ int, includeResources, includeFeedback bool) *types.TelegramInlineKeyboard {
 	kb := services.NewKeyboardBuilder()
-	// Season selection is the safer default. Full-show requests get their own
-	// row and are confirmed before reaching the existing submission handler.
+	// TV requests are season-exact. The legacy season=0 action is hidden because
+	// approval currently turns it into S01 rather than requesting every season.
 	kb.AddButton("🗂️ 选择季度", fmt.Sprintf("detail_seasons:id:%d", tmdbID))
-	kb.NewRow()
-	kb.AddButton("📺 求全部季度", fmt.Sprintf("request:id:%d:type:tv:season:0", tmdbID))
+	kb.AddButton("♻️ 按季度洗版", fmt.Sprintf("wash:id:%d:type:tv", tmdbID))
 	kb.NewRow()
 	kb.AddButton(h.carpoolButtonText(tmdbID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
 	if includeResources || includeFeedback {
@@ -1262,10 +1270,6 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		kb.NewRow()
 	}
 
-	// Keep the season picker focused: season choices first, then one whole-show
-	// shortcut, then a predictable return to the detail card.
-	kb.AddButton("📺 求全部季度", fmt.Sprintf("request:id:%s:type:tv:season:0", targetItem.ID))
-	kb.NewRow()
 	// Return to detail without pushing another search navigation entry.
 	if returnSource == "request_heat" {
 		kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:request_heat", targetItem.ID))
@@ -1616,16 +1620,22 @@ func convertKeyboard(tk *types.TelegramInlineKeyboard) *callback.Keyboard {
 }
 
 // CancelHandler handles cancel action
-type CancelHandler struct{}
+type CancelHandler struct{ sessMgr *session.Manager }
 
-func NewCancelHandler() *CancelHandler {
-	return &CancelHandler{}
+func NewCancelHandler(sessMgr *session.Manager) *CancelHandler {
+	return &CancelHandler{sessMgr: sessMgr}
 }
 
 func (h *CancelHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
+	if h.sessMgr != nil {
+		sess := h.sessMgr.GetOrCreate(ctx.UserID)
+		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+			sess.Delete(key)
+		}
+	}
 	return &callback.Response{
-		Text:     "✖️ 已取消",
+		Text:     "✅ 已取消，这次还没有提交任何内容。",
 		Edit:     true,
-		Keyboard: &callback.Keyboard{},
+		Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "🏠 主菜单", CallbackData: "start"}}}},
 	}, nil
 }

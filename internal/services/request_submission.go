@@ -50,6 +50,7 @@ type submissionQuota interface {
 }
 
 type RequestSubmission struct {
+	BusinessType   string
 	TelegramID     int64
 	TelegramName   string
 	TmdbID         int
@@ -125,7 +126,7 @@ func (s *RequestSubmissionService) SubmitResult(in RequestSubmission) (Submissio
 }
 
 func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64) (SubmissionResult, error) {
-	if existing, duplicate := s.reviews.HasActiveSimilarContent(in.TmdbID, in.MediaType, in.Season); duplicate {
+	if existing, duplicate := s.reviews.HasActiveSimilarContentForBusiness(in.TmdbID, in.MediaType, in.Season, in.BusinessType); duplicate {
 		status := SubmissionDuplicateOther
 		if existing.TelegramID == in.TelegramID {
 			status = SubmissionDuplicateOwn
@@ -151,7 +152,7 @@ func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64
 	if origin == "" {
 		origin = "normal"
 	}
-	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade}
+	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade}
 	if in.UseQuota {
 		review.QuotaCost = quotaCost
 	}

@@ -18,6 +18,7 @@ type TelegramMessage struct {
 	Chat                 *TelegramChat                 `json:"chat"`
 	Date                 int64                         `json:"date"`
 	Text                 string                        `json:"text,omitempty"`
+	Caption              string                        `json:"caption,omitempty"`
 	Photo                []*TelegramPhotoSize          `json:"photo,omitempty"`
 	CommunityChatAdded   *TelegramCommunityChatAdded   `json:"community_chat_added,omitempty"`
 	CommunityChatRemoved *TelegramCommunityChatRemoved `json:"community_chat_removed,omitempty"`

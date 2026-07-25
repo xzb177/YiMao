@@ -20,6 +20,7 @@ type MyRequestsHandler struct {
 	moviepilot  *services.MoviePilotClient
 	userMapping services.UserMappingStore
 	reviewSvc   *services.ReviewService
+	issueSvc    *services.IssueService
 	quotaSvc    *services.QuotaService
 	adminSvc    *services.AdminService
 	// OnCarpoolNotify 拼车用户通知回调（撤回时触发）。
@@ -59,6 +60,10 @@ func (h *MyRequestsHandler) SetReviewService(rs *services.ReviewService) {
 	h.reviewSvc = rs
 }
 
+func (h *MyRequestsHandler) SetIssueService(svc *services.IssueService) {
+	h.issueSvc = svc
+}
+
 // SetQuotaService 注入配额服务（撤回请求时退配额）。
 func (h *MyRequestsHandler) SetQuotaService(qs *services.QuotaService) {
 	h.quotaSvc = qs
@@ -84,7 +89,7 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 	reviews := h.reviewSvc.GetUserRequests(ctx.UserID)
 	var target *services.ReviewRequest
 	for _, rv := range reviews {
-		if rv.Status == "pending" {
+		if rv.Status == "pending" && rv.NormalizedBusinessType() == services.BusinessTypeRequest {
 			target = rv
 			break // GetUserRequests 已按时间倒序，第一条就是最近的
 		}
@@ -223,7 +228,13 @@ func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback
 	}
 
 	if moviepilotID == 0 {
-		return "🔗 请先绑定账号后使用 /link", &callback.Keyboard{
+		requests := h.mergePendingReviews(telegramID, nil)
+		if len(requests) > 0 {
+			totalPages := (len(requests) + requestsPerPage - 1) / requestsPerPage
+			msg, _, kb := h.buildRequestsMessage(requests, 1, totalPages, len(requests))
+			return msg + "\n\n💡 以上为本地工单；绑定账号后还可合并 MoviePilot 下载进度。", kb
+		}
+		return "📋 我的进度\n\n暂无本地工单。求片需要绑定账号，问题和洗版工单无需绑定即可查看。", &callback.Keyboard{
 			InlineKeyboard: [][]callback.Button{
 				{{Text: "🔗 立即绑定", CallbackData: "link"}},
 				{{Text: "🏠 主菜单", CallbackData: "start"}},
@@ -263,8 +274,17 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 	}
 
 	if moviepilotID == 0 {
+		requests := h.mergePendingReviews(ctx.UserID, nil)
+		if len(requests) > 0 {
+			totalPages := (len(requests) + requestsPerPage - 1) / requestsPerPage
+			if page > totalPages {
+				page = totalPages
+			}
+			msg, rich, kb := h.buildRequestsMessage(requests, page, totalPages, len(requests))
+			return &callback.Response{Text: msg + "\n\n💡 以上为本地工单；绑定后还可合并下载进度。", RichMessage: rich, Edit: true, Keyboard: kb}, nil
+		}
 		return &callback.Response{
-			Text: "🔗 请先绑定账号后使用",
+			Text: "📋 我的进度\n\n暂无本地工单。求片需要绑定账号，问题和洗版工单无需绑定即可查看。",
 			Edit: true,
 			Keyboard: &callback.Keyboard{
 				InlineKeyboard: [][]callback.Button{
@@ -374,7 +394,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	// Header
 	msg.Bold("📊 求片进度").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
-	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{stateReviewing, stateStuck, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
+	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{stateReviewing, stateStuck, stateWorkOrder, stateIssueOpen, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
 	msg.Text("────────").Newline()
 	msg.Newline()
 
@@ -391,7 +411,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		Label  string
 		States map[string]bool
 	}{
-		{Key: "processing", Label: "进行中", States: map[string]bool{stateReviewing: true, stateStuck: true, services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
+		{Key: "processing", Label: "进行中", States: map[string]bool{stateReviewing: true, stateStuck: true, stateWorkOrder: true, stateIssueOpen: true, services.StatePending: true, services.StateRecycled: true, services.StateSearching: true, services.StateDownloading: true}},
 		{Key: "wish", Label: "许愿中", States: map[string]bool{"WISH": true}},
 		{Key: "done", Label: "已完成", States: map[string]bool{services.StateCompleted: true}},
 		{Key: "failed", Label: "异常/失败", States: map[string]bool{services.StateFailed: true, services.StateCancelled: true}},
@@ -467,7 +487,7 @@ func (h *MyRequestsHandler) buildRequestsRichMessage(requests []services.Subscri
 		Total:      totalRequests,
 		Page:       page,
 		TotalPages: totalPages,
-		Running:    countStates(requests, []string{stateReviewing, stateStuck, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading, "WISH"}),
+		Running:    countStates(requests, []string{stateReviewing, stateStuck, stateWorkOrder, stateIssueOpen, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading, "WISH"}),
 		Done:       countStates(requests, []string{services.StateCompleted}),
 		Problem:    countStates(requests, []string{services.StateFailed, services.StateCancelled}),
 		Items:      items,
@@ -530,68 +550,74 @@ func (h *MyRequestsHandler) buildRequestLine(index int, req services.SubscribeIt
 
 // 合成状态：仅用于「求片进度」聚合视图，区分尚未进入 MP 的审核单。
 const (
-	stateReviewing = "REVIEWING" // ReviewService pending：审核中
-	stateStuck     = "STUCK"     // 已审核但提交 MP 失败：同步中/重试
+	stateReviewing = "REVIEWING"  // ReviewService pending：审核中
+	stateStuck     = "STUCK"      // 已审核但提交 MP 失败：同步中/重试
+	stateWorkOrder = "WORK_ORDER" // 洗版/问题工单已受理
+	stateIssueOpen = "ISSUE_OPEN" // 问题工单待处理
 )
 
 // mergePendingReviews 把 ReviewService 中尚未成为 MP 订阅的审核单合并进 MP 列表。
 // 去重规则：若审核单已记录 SubscriptionID（即已成功提交 MP），则以 MP 为准、不重复加入；
 // 否则按 (TMDBID, Season) 与 MP 列表比对，MP 已有就跳过，没有才用审核单兜底。
 func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []services.SubscribeItem) []services.SubscribeItem {
-	if h.reviewSvc == nil {
+	if h.reviewSvc == nil && h.issueSvc == nil {
 		return mpItems
 	}
 
-	// MP 已存在的 (tmdbid, season) 集合，用于去重
+	// Review and issue work orders remain authoritative local progress even when
+	// MoviePilot is unavailable or the user is not bound.
 	existing := make(map[string]bool, len(mpItems))
 	for _, it := range mpItems {
-		existing[fmt.Sprintf("%d:%d", it.TMDBID, it.Season)] = true
+		existing[fmt.Sprintf("request:%d:%d", it.TMDBID, it.Season)] = true
 	}
 
 	var extra []services.SubscribeItem
-	for _, rv := range h.reviewSvc.GetUserRequests(telegramID) {
-		// 只关心还在流程内、且尚未真正落进 MP 的审核单
-		if rv.SubscriptionID != 0 {
-			continue // 已提交 MP，交给 MP 列表展示（执行层为准）
-		}
-		key := fmt.Sprintf("%d:%d", rv.TmdbID, rv.Season)
-		if existing[key] {
-			continue
-		}
-
-		var synthState string
-		switch {
-		case rv.Status == "pending":
-			synthState = stateReviewing
-		case rv.Status == "approved" && rv.Stuck:
-			synthState = stateStuck
-		default:
-			// approved 但未 stuck 且无 SubscriptionID 的极短暂中间态，按同步中显示
-			if rv.Status == "approved" {
-				synthState = stateStuck
-			} else {
-				continue // rejected / 其他已终结状态不在「求片进度」进行中列表里展示
+	if h.reviewSvc != nil {
+		for _, rv := range h.reviewSvc.GetUserRequests(telegramID) {
+			business := rv.NormalizedBusinessType()
+			key := fmt.Sprintf("%s:%d:%d", business, rv.TmdbID, rv.Season)
+			if existing[key] || (business == services.BusinessTypeRequest && rv.SubscriptionID != 0) {
+				continue
 			}
+			state := stateReviewing
+			switch rv.Status {
+			case "approved":
+				if business == services.BusinessTypeWash {
+					state = stateWorkOrder
+				} else {
+					state = stateStuck
+				}
+			case "rejected", "cancelled":
+				if business == services.BusinessTypeRequest {
+					continue
+				}
+				state = services.StateCancelled
+			case "completed":
+				state = services.StateCompleted
+			}
+			kind := "电影"
+			if rv.MediaType == services.MediaTypeTV {
+				kind = "电视剧"
+			}
+			prefix := ""
+			if business == services.BusinessTypeWash {
+				prefix = "[洗版] "
+			}
+			extra = append(extra, services.SubscribeItem{ID: 0, Name: prefix + rv.MediaTitle, Year: fmt.Sprintf("%d", rv.MediaYear), Type: kind, State: state, Season: rv.Season, TMDBID: rv.TmdbID, Date: rv.CreatedAt.Format("2006-01-02 15:04")})
+			existing[key] = true
 		}
-
-		typeStr := "电影"
-		if rv.MediaType == services.MediaTypeTV {
-			typeStr = "电视剧"
-		}
-		extra = append(extra, services.SubscribeItem{
-			ID:     0, // 合成项无 MP ID
-			Name:   rv.MediaTitle,
-			Year:   fmt.Sprintf("%d", rv.MediaYear),
-			Type:   typeStr,
-			State:  synthState,
-			Season: rv.Season,
-			TMDBID: rv.TmdbID,
-			Date:   rv.CreatedAt.Format("2006-01-02 15:04"),
-		})
-		existing[key] = true
 	}
-
-	// 审核中的放最前面（用户最关心刚提交的有没有进系统）
+	if h.issueSvc != nil {
+		for _, issue := range h.issueSvc.GetUserIssues(telegramID) {
+			state := stateIssueOpen
+			if issue.Status == services.IssueStatusFixed || issue.Status == services.IssueStatusClosed {
+				state = services.StateCompleted
+			} else if issue.Status == services.IssueStatusProcessing || issue.Status == services.IssueStatusReply {
+				state = stateWorkOrder
+			}
+			extra = append(extra, services.SubscribeItem{ID: 0, Name: fmt.Sprintf("[问题 #%d] %s", issue.ID, issue.Title), Type: "问题", State: state, Date: issue.CreatedAt.Format("2006-01-02 15:04")})
+		}
+	}
 	return append(extra, mpItems...)
 }
 
@@ -604,6 +630,10 @@ func getStateEmoji(state string) string {
 		return "📝"
 	case stateStuck:
 		return "⚠️"
+	case stateWorkOrder:
+		return "🔧"
+	case stateIssueOpen:
+		return "📝"
 	case services.StatePending:
 		return "⏳"
 	case services.StateRecycled:

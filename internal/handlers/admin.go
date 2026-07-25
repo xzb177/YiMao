@@ -386,8 +386,9 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 
 	// Update issue status
 	if h.issueService != nil {
-		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusFixed); err != nil {
+		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusFixed); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
+			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -448,8 +449,9 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 
 	// Update issue status
 	if h.issueService != nil {
-		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusProcessing); err != nil {
+		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusProcessing); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
+			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -510,8 +512,9 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 
 	// Update issue status
 	if h.issueService != nil {
-		if err := h.issueService.UpdateStatus(issueID, services.IssueStatusClosed); err != nil {
+		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusClosed); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
+			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -1878,7 +1881,7 @@ func (h *AdminHandler) handleFeedbackDetail(ctx *callback.Context) (*callback.Re
 	if issue.TmdbID > 0 {
 		msg.Textf("TMDB ID: %d", issue.TmdbID).Newline()
 	}
-	if issue.MediaID != "" {
+	if issue.MediaID != "" && issue.MediaID != "0" {
 		msg.Textf("Media ID: %s", issue.MediaID).Newline()
 	}
 

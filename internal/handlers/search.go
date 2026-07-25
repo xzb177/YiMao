@@ -574,6 +574,9 @@ func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult
 
 func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse, page int) {
 	text := buildSearchResultsText(query, page, results.Results)
+	if intent, _ := h.sessMgr.GetOrCreate(userID).GetString("media_search_intent"); intent == "wash" {
+		text = fmt.Sprintf("♻️ 为洗版选择影片\n\n找到以下结果，请点正确的片名打开详情。确认后点「申请洗版」。\n\n%s", text)
+	}
 	keyboard := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
 	statuses := h.resolveSearchCardStatuses(results.Results)
 	h.storeSearchResults(userID, query, results.Results, page, statuses)
@@ -581,11 +584,14 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 	// Telegram chat IDs for groups/channels are negative. Avoid both rich-message
 	// composition and transport there; community searches remain ephemeral text.
 	if chatID > 0 {
-		if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
-			if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, keyboard); err == nil {
-				return
-			} else {
-				logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)
+		intent, _ := h.sessMgr.GetOrCreate(userID).GetString("media_search_intent")
+		if intent != "wash" {
+			if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
+				if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, keyboard); err == nil {
+					return
+				} else {
+					logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)
+				}
 			}
 		}
 	}

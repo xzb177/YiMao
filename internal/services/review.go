@@ -7,6 +7,7 @@ import (
 	"github.com/xzb177/yimao/pkg/logger"
 	"math/big"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,8 @@ import (
 
 // ReviewRequest represents a media request awaiting review
 type ReviewRequest struct {
-	RequestID       string            `json:"request_id"` // Unique ID for this review
+	BusinessType    string            `json:"business_type,omitempty"` // request (legacy empty) | wash
+	RequestID       string            `json:"request_id"`              // Unique ID for this review
 	TelegramID      int64             `json:"telegram_id"`
 	TelegramName    string            `json:"telegram_name"`
 	MoviePilotID    int64             `json:"moviepilot_id"`
@@ -58,6 +60,26 @@ type ReviewRequest struct {
 
 	QuotaCost     int  `json:"quota_cost,omitempty"`     // 创建时实际扣除配额；0 表示旧 JSON
 	QuotaRestored bool `json:"quota_restored,omitempty"` // 已返还，持久化保证幂等
+}
+
+const (
+	BusinessTypeRequest = "request"
+	BusinessTypeWash    = "wash"
+)
+
+// NormalizedBusinessType treats legacy records without business_type as requests.
+func (r *ReviewRequest) NormalizedBusinessType() string {
+	if r != nil && r.BusinessType == BusinessTypeWash {
+		return BusinessTypeWash
+	}
+	return BusinessTypeRequest
+}
+
+func normalizeBusinessType(value string) string {
+	if value == BusinessTypeWash {
+		return BusinessTypeWash
+	}
+	return BusinessTypeRequest
 }
 
 // ReviewService manages review requests
@@ -347,7 +369,7 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	review.CreatedAt = time.Now()
 	review.Status = "pending"
 	// 冒险通关不消耗配额；普通/旧入口缺失成本时按媒体类型补齐。
-	if review.QuotaCost <= 0 && review.RequestOrigin != "adventure" {
+	if review.QuotaCost <= 0 && review.RequestOrigin != "adventure" && review.NormalizedBusinessType() == BusinessTypeRequest {
 		review.QuotaCost = 1
 		if review.MediaType == MediaTypeTV {
 			review.QuotaCost = 3
@@ -390,6 +412,63 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	return nil
 }
 
+// CreateRequestIfNoActiveSimilar atomically checks the business duplicate key
+// and creates the request. This prevents concurrent Telegram callbacks from
+// notifying administrators twice for the same work order.
+func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*ReviewRequest, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, current := range s.reviews {
+		if current == nil || current.TmdbID != review.TmdbID || current.MediaType != review.MediaType || current.NormalizedBusinessType() != review.NormalizedBusinessType() {
+			continue
+		}
+		if review.MediaType == MediaTypeTV && current.Season != review.Season {
+			continue
+		}
+		if current.Status == "pending" || current.Status == "approved" {
+			return current, false, nil
+		}
+	}
+	review.CreatedAt = time.Now()
+	review.Status = "pending"
+	if review.Priority == "" {
+		review.Priority = "normal"
+	}
+	review.ApproveToken = generateApproveToken()
+	previous, existed := s.reviews[review.RequestID]
+	s.reviews[review.RequestID] = review
+	if err := s.saveLocked(); err != nil {
+		if existed {
+			s.reviews[review.RequestID] = previous
+		} else {
+			delete(s.reviews, review.RequestID)
+		}
+		return nil, false, err
+	}
+	return review, true, nil
+}
+
+// CompleteWash closes an approved wash work order without touching MoviePilot
+// subscriptions or existing Emby media versions.
+func (s *ReviewService) CompleteWash(requestID string, adminID int64) (*ReviewRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review == nil {
+		return nil, fmt.Errorf("review request not found")
+	}
+	if review.NormalizedBusinessType() != BusinessTypeWash || review.Status != "approved" {
+		return nil, fmt.Errorf("wash work order is not completable")
+	}
+	previousStatus, previousBy, previousAt := review.Status, review.ReviewedBy, review.ReviewedAt
+	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", adminID, time.Now()
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.ReviewedBy, review.ReviewedAt = previousStatus, previousBy, previousAt
+		return nil, err
+	}
+	return review, nil
+}
+
 // RestoreQuotaOnce 按请求记录的实际成本返还，持久化标记保证重试及重启后幂等。
 // 旧 JSON 缺少 quota_cost 时按历史规则推断：电影 1、剧集 3。
 func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) (bool, error) {
@@ -400,6 +479,16 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 		return false, fmt.Errorf("review request not found: %s", requestID)
 	}
 	if review.QuotaRestored {
+		return false, nil
+	}
+	// Work orders such as wash never consume request quota. Marking the no-op
+	// persistently keeps retries idempotent and prevents legacy fallback costs.
+	if review.NormalizedBusinessType() != BusinessTypeRequest {
+		review.QuotaRestored = true
+		if err := s.saveLocked(); err != nil {
+			review.QuotaRestored = false
+			return false, err
+		}
 		return false, nil
 	}
 	cost := review.QuotaCost
@@ -502,6 +591,21 @@ func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	return pending
 }
 
+// GetApprovedWashRequests returns active wash work orders which administrators
+// can reopen after the original approval message is no longer available.
+func (s *ReviewService) GetApprovedWashRequests() []*ReviewRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	var approved []*ReviewRequest
+	for _, review := range s.reviews {
+		if review != nil && review.NormalizedBusinessType() == BusinessTypeWash && review.Status == "approved" {
+			approved = append(approved, review)
+		}
+	}
+	sort.Slice(approved, func(i, j int) bool { return approved[i].ReviewedAt.After(approved[j].ReviewedAt) })
+	return approved
+}
+
 // GetUserRequests returns all review requests for a user
 func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	s.mu.RLock()
@@ -550,6 +654,11 @@ func (s *ReviewService) GetActiveUserIDs(since time.Time) []int64 {
 
 // HasActiveSimilarRequest checks if user already has a similar active request
 func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
+	return s.HasActiveSimilarRequestForBusiness(telegramID, tmdbID, mediaType, season, BusinessTypeRequest)
+}
+
+// HasActiveSimilarRequestForBusiness includes business type in the duplicate key.
+func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmdbID int, mediaType MediaType, season int, businessType string) (*ReviewRequest, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -561,6 +670,9 @@ func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, me
 			continue
 		}
 		if review.TmdbID != tmdbID || review.MediaType != mediaType {
+			continue
+		}
+		if review.NormalizedBusinessType() != normalizeBusinessType(businessType) {
 			continue
 		}
 
@@ -581,10 +693,18 @@ func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, me
 // HasActiveSimilarContent checks active requests across users. Callers that need
 // check+create atomicity provide their own transaction lock; no external I/O occurs here.
 func (s *ReviewService) HasActiveSimilarContent(tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
+	return s.HasActiveSimilarContentForBusiness(tmdbID, mediaType, season, BusinessTypeRequest)
+}
+
+// HasActiveSimilarContentForBusiness includes business type in the duplicate key.
+func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType MediaType, season int, businessType string) (*ReviewRequest, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, review := range s.reviews {
 		if review == nil || review.TmdbID != tmdbID || review.MediaType != mediaType {
+			continue
+		}
+		if review.NormalizedBusinessType() != normalizeBusinessType(businessType) {
 			continue
 		}
 		if mediaType == MediaTypeTV && review.Season != season {
@@ -625,13 +745,18 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 
 	// Don't clear the token - keep it for status tracking
 	// The status check above prevents duplicate approvals
+	previousStatus, previousReviewedAt, previousReviewedBy := review.Status, review.ReviewedAt, review.ReviewedBy
 	review.Status = "approved"
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
 
 	logger.Info("[ReviewService] Approved review request: %s by admin: %d", requestID, reviewedBy)
 
-	return review, s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.ReviewedAt, review.ReviewedBy = previousStatus, previousReviewedAt, previousReviewedBy
+		return nil, err
+	}
+	return review, nil
 }
 
 // UpdateSubscriptionInfo updates the MoviePilot subscription info for a review

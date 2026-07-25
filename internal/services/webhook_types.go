@@ -224,4 +224,5 @@ type EmbySearchResult struct {
 	PosterURL string
 	Overview  string
 	RunTime   int64 // in ticks
+	TMDBID    string
 }

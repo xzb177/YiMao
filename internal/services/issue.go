@@ -496,6 +496,7 @@ func (s *IssueService) UpdateStatusWithNotify(issueID int64, status IssueStatus)
 		return fmt.Errorf("issue not found: %d", issueID)
 	}
 
+	previousStatus, previousUpdatedAt, previousResolvedAt := issue.Status, issue.UpdatedAt, issue.ResolvedAt
 	issue.Status = status
 	issue.UpdatedAt = time.Now()
 
@@ -505,7 +506,11 @@ func (s *IssueService) UpdateStatusWithNotify(issueID int64, status IssueStatus)
 		issue.ResolvedAt = &now
 	}
 
-	return s.save()
+	if err := s.save(); err != nil {
+		issue.Status, issue.UpdatedAt, issue.ResolvedAt = previousStatus, previousUpdatedAt, previousResolvedAt
+		return err
+	}
+	return nil
 }
 
 // ReplyTemplate represents a quick reply template
