@@ -52,7 +52,8 @@ Telegram (long polling) → internal/bot/poll.go
 | `menu.go` | 主菜单、求片进度、帮助 |
 | `review.go` | 审核系统 |
 | `admin.go` | 管理员功能 |
-| `feedback.go` | 用户反馈 |
+| `feedback.go` | 问题工单、用户反馈与追问 |
+| `wash.go` | 洗版工单、媒体库目标核验与季度选择 |
 | `link.go` | 账号绑定 |
 | `search_history.go` | 搜索历史展示 |
 
@@ -69,13 +70,15 @@ Telegram (long polling) → internal/bot/poll.go
 | `search.go` | 搜索业务逻辑 |
 | `search_fallback.go` | 兜底搜索策略 |
 | `search_history*.go` | 搜索历史管理（内存/缓存/数据库） |
-| `review.go` | 审核业务逻辑 |
+| `review.go` | 求片审核与洗版工单状态 |
+| `request_submission.go` | 求片提交编排与幂等控制 |
 | `quota.go` | 配额管理 |
 | `notification.go` | 通知发送 |
-| `user_mapping.go` | 用户映射 |
+| `user_mapping*.go` | 用户映射（SQLite 为主，兼容旧 JSON） |
 | `admin.go` | 管理员功能 |
-| `issue.go` | Issue/反馈处理 |
+| `issue.go` | 问题工单与反馈处理 |
 | `preferences.go` | 用户偏好 |
+| `adventure*.go` | 可选电影冒险与视觉场景 |
 
 ### Session (`internal/session/`)
 
@@ -88,67 +91,36 @@ Telegram (long polling) → internal/bot/poll.go
 | `webhook.go` | Webhook 模式接收 Telegram 更新 |
 | `poll.go` | Polling 模式接收 Telegram 更新 |
 | `command.go` | 命令处理 |
+| `callback_response.go` | 统一渲染回调响应 |
+| `tmdb_link.go` | 私聊 TMDB 链接直达详情 |
 
-### UI (`internal/ui/`)
+### UI 与富消息 (`internal/ui/`、`internal/richmessage/`)
 
-消息构建器和键盘构建器。
+- `internal/ui/`：文本降级样式、搜索结果和通用键盘构建。
+- `internal/richmessage/`：Telegram Rich Message 卡片、欢迎页、详情、审核与游戏内容。
+- `internal/services/search_card.go`、`adventure_visual.go`：海报与冒险视觉图片渲染。
 
 ## 5. 目录结构
 
 ```
 YiMao/
 ├── cmd/
-│   └── bot/
-│       └── main.go              # 程序入口
+│   ├── bot/                      # Bot 程序入口
+│   └── smoke/                    # Staging smoke 检查
 ├── internal/
-│   ├── bot/                      # Telegram 消息接收
-│   │   ├── webhook.go
-│   │   ├── poll.go
-│   │   └── command.go
-│   ├── callback/                 # 回调解析与分发
-│   │   └── types.go
-│   ├── config/                   # 配置管理
-│   │   └── config.go
-│   ├── handlers/                 # 回调处理器
-│   │   ├── callback.go
-│   │   ├── search.go
-│   │   ├── request.go
-│   │   ├── menu.go
-│   │   ├── review.go
-│   │   ├── admin.go
-│   │   ├── feedback.go
-│   │   ├── link.go
-│   │   └── search_history.go
-│   ├── middleware/               # HTTP 中间件
+│   ├── api/                      # HTTP API 路由
+│   ├── bot/                      # Telegram 更新接收与响应渲染
+│   ├── callback/                 # 回调解析、白名单与分发
+│   ├── config/                   # 环境变量与安全配置
+│   ├── handlers/                 # 搜索、求片、洗版、反馈与管理交互
+│   ├── richmessage/              # Telegram Rich Message 卡片
 │   ├── server/                   # HTTP 服务器
-│   │   └── server.go
-│   ├── services/                 # 业务服务层
-│   │   ├── telegram.go
-│   │   ├── moviepilot.go
-│   │   ├── tmdb.go
-│   │   ├── webhook.go
-│   │   ├── search.go
-│   │   ├── search_fallback.go
-│   │   ├── search_history.go
-│   │   ├── search_history_cache.go
-│   │   ├── search_history_db.go
-│   │   ├── review.go
-│   │   ├── quota.go
-│   │   ├── notification.go
-│   │   ├── user_mapping.go
-│   │   ├── admin.go
-│   │   ├── issue.go
-│   │   └── preferences.go
+│   ├── services/                 # MoviePilot、TMDB、Emby 与业务服务
 │   ├── session/                  # 会话管理
-│   │   └── manager.go
-│   └── ui/                       # UI 构建
-│       ├── message_builder.go
-│       └── keyboard_builder.go
-├── ai/                           # AI 推荐模块
-│   └── search.go
-├── pkg/                          # 公共包
-│   └── types/
-└── data/                         # 运行时数据
+│   └── ui/                       # 文本降级样式与通用键盘
+├── pkg/                          # 公共类型、日志、错误与输入验证
+├── scripts/                      # 验收、运维与安全脚本
+└── docs/                         # 架构、部署、运维与 Staging 文档
 ```
 
 ## 6. 代码分层
@@ -201,14 +173,16 @@ YiMao/
 - 通知：`services/notification.go` + `services/webhook.go`
 
 ### 增强模块（可选）
-- AI 推荐：`ai/` 目录
-- 审核系统：`handlers/review.go` + `services/review.go`
+- 电影冒险与 AI 场景：`handlers/adventure.go` + `services/adventure*.go`
+- 游戏中心与观影画像：`handlers/game.go` + `services/game.go` + `services/portrait.go`
+- 洗版工单：`handlers/wash.go` + `services/review.go` + `services/webhook_emby_api.go`
 - 搜索历史：`handlers/search_history.go` + `services/search_history*.go`
 
 ### 管理运维模块
 - 管理员面板：`handlers/admin.go`
+- 求片与洗版审核：`handlers/review.go` + `services/review.go`
 - 配额管理：`services/quota.go`
-- 用户反馈：`handlers/feedback.go` + `services/issue.go`
+- 问题工单：`handlers/feedback.go` + `services/issue.go`
 
 ## 8. Callback 格式规范
 
@@ -219,7 +193,10 @@ YiMao/
 | `start` | `start` | 打开开始菜单 |
 | `search` | `search` 或 `search:type:trending` | 搜索/推荐 |
 | `detail` | `detail:id:123:type:movie` | 显示媒体详情 |
-| `request` | `request:id:123:type:movie` | 创建媒体请求 |
+| `request` | `request:id:123:type:movie` | 创建普通求片请求 |
+| `wash` | `wash:id:123:type:movie` | 创建洗版工单 |
+| `issue` | `issue` | 打开问题工单入口 |
+| `review_complete_wash` | `review_complete_wash:token:<short>` | 管理员完成洗版工单 |
 | `back` | `back` | 返回上一页 |
 | `cancel` | `cancel` | 取消当前操作 |
 | `ai` | `ai:type:trending` | AI 推荐 |
@@ -241,7 +218,11 @@ YiMao/
 |------|----------|------|
 | 会话数据 | 内存 | `session.Manager` |
 | 搜索历史 | SQLite | `data/search_history.db` |
-| 用户配额 | JSON | `user_quotas.json` |
-| 用户偏好 | JSON | `preferences.json` |
-| 用户映射 | JSON | `user_mappings.json` |
-| 绑定请求 | JSON | `binding_requests.json` |
+| 用户映射 | SQLite（自动迁移旧 JSON） | `data/user_mappings.db` |
+| 许愿池 | SQLite | `data/wishpool.db` |
+| 游戏与社交数据 | SQLite | `data/social.db` |
+| 用户配额 | JSON | `data/user_quotas.json` |
+| 用户偏好 | JSON | `data/preferences.json` |
+| 求片/洗版审核工单 | JSON | `data/review_requests.json` |
+| 问题工单 | JSON | `data/feedback.json` |
+| 绑定请求 | JSON | `data/binding_requests.json` |

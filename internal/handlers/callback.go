@@ -924,7 +924,7 @@ func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess 
 }
 
 // buildDetailFromTMDBTV builds detail page for TV show from TMDB with season info
-func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, status string, posterURL string) *callback.Response {
+func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *session.Session, status, posterURL string) *callback.Response {
 	// Fetch TV details with seasons from TMDB
 	tvDetails, err := h.tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil {
@@ -978,7 +978,7 @@ func (h *DetailHandler) buildDetailFromTMDBTV(tmdbID int, title string, sess *se
 }
 
 // buildSimpleTVDetail builds a simple TV detail page (fallback)
-func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, status string, posterURL string) *callback.Response {
+func (h *DetailHandler) buildSimpleTVDetail(tmdbID int, title string, sess *session.Session, status, posterURL string) *callback.Response {
 	info := richmessage.MediaInfo{
 		Title:     title,
 		MediaType: "tv",

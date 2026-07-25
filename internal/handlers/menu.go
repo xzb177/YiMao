@@ -587,7 +587,7 @@ func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []serv
 				} else {
 					state = stateStuck
 				}
-			case "rejected", "cancelled":
+			case "rejected", "cancelled": //nolint:misspell // "cancelled" is a persisted legacy review status.
 				if business == services.BusinessTypeRequest {
 					continue
 				}

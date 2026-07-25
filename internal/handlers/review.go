@@ -153,7 +153,9 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// overwrite an ordinary MoviePilot subscription.
 	if review.NormalizedBusinessType() == services.BusinessTypeWash {
 		if ctx.UserID != review.TelegramID {
-			h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ 《%s》\n\n管理员将按工单处理，可在「我的进度」查看。", review.MediaTitle), "", nil)
+			if _, sendErr := h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ 《%s》\n\n管理员将按工单处理，可在「我的进度」查看。", review.MediaTitle), "", nil); sendErr != nil {
+				logger.Warn("[ReviewHandler] 洗版批准通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+			}
 		}
 		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版工单已被批准", review.MediaTitle))
 		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ %s\n\n资源处理并验证完成后，请点击下方按钮收口。", review.MediaTitle), CallbackMsg: "已批准", ShowAlert: true, Edit: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "✅ 标记洗版完成", CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}}}}}, nil
@@ -321,7 +323,9 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 	if err != nil {
 		return &callback.Response{CallbackMsg: "工单状态不允许完成", ShowAlert: true}, nil
 	}
-	h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版已完成\n\n♻️ 《%s》\n\n新版本已由管理员处理完成，旧版本未由 YiMao 自动删除。", review.MediaTitle), "", nil)
+	if _, sendErr := h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版已完成\n\n♻️ 《%s》\n\n新版本已由管理员处理完成，旧版本未由 YiMao 自动删除。", review.MediaTitle), "", nil); sendErr != nil {
+		logger.Warn("[ReviewHandler] 洗版完成通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+	}
 	return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
 }
 

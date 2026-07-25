@@ -694,7 +694,7 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	params.Set("Recursive", "true")
 	params.Set("Fields", "ProviderIds")
 	endpoint := fmt.Sprintf("%s/Users/%s/Items?%s", s.embyURL, url.PathEscape(s.embyUserID), params.Encode())
-	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
 		return false, err
 	}
@@ -739,7 +739,7 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 		params.Set("UserId", s.embyUserID)
 	}
 	seasonEndpoint := fmt.Sprintf("%s/Shows/%s/Seasons?%s", s.embyURL, url.PathEscape(media.ID), params.Encode())
-	seasonReq, err := http.NewRequest(http.MethodGet, seasonEndpoint, nil)
+	seasonReq, err := http.NewRequest(http.MethodGet, seasonEndpoint, http.NoBody)
 	if err != nil {
 		return false, err
 	}

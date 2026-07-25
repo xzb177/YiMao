@@ -456,12 +456,12 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	if step == "media_title" {
 		mediaTitle := strings.TrimSpace(text)
 		if mediaTitle == "" {
-			h.telegram.SendMessage(chatID, "请先发送片名或剧名，例如：纸牌屋 S05E03", "", nil)
-			return nil
+			_, err := h.telegram.SendMessage(chatID, "请先发送片名或剧名，例如：纸牌屋 S05E03", "", nil)
+			return err
 		}
 		if len([]rune(mediaTitle)) > 100 {
-			h.telegram.SendMessage(chatID, "片名太长了，请只保留片名和季集信息", "", nil)
-			return nil
+			_, err := h.telegram.SendMessage(chatID, "片名太长了，请只保留片名和季集信息", "", nil)
+			return err
 		}
 		sess.Set("feedback_media_title", mediaTitle)
 		sess.Set("feedback_step", "description")
@@ -484,8 +484,8 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 		}
 		kb.NewRow()
 		kb.AddButton("❌ 取消反馈", "cancel")
-		h.telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
-		return nil
+		_, err := h.telegram.SendMessage(chatID, msg.Build(), "HTML", kb.Build())
+		return err
 	}
 
 	// Get feedback context with type assertions
@@ -570,7 +570,9 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	}
 	if err != nil {
 		logger.Info("[FeedbackHandler] Failed to create issue: %v", err)
-		h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil)
+		if _, sendErr := h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil); sendErr != nil {
+			logger.Warn("[FeedbackHandler] 提交失败提示发送失败 chat=%d: %v", chatID, sendErr)
+		}
 		return err
 	}
 
@@ -586,9 +588,11 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🏠 主菜单", "start")
 
-	h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", kb.Build())
+	if _, sendErr := h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", kb.Build()); sendErr != nil {
+		logger.Warn("[FeedbackHandler] 反馈确认发送失败 chat=%d issue=%d: %v", chatID, issue.ID, sendErr)
+	}
 
-	// Notify admins
+	// Notify admins even if the user confirmation could not be delivered.
 	go h.notifyAdmins(issue, typeLabel)
 
 	return nil
@@ -1032,9 +1036,11 @@ func (h *FeedbackHandler) HandleUserFollowUp(userID int64, chatID int64, text st
 	confirmMsg.Textf("问题编号: #%d", issueID).Newline()
 	confirmMsg.Italic("管理员已收到您的追问，会尽快回复").Newline()
 
-	h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", nil)
+	if _, sendErr := h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", nil); sendErr != nil {
+		logger.Warn("[FeedbackHandler] 追问确认发送失败 chat=%d issue=%d: %v", chatID, issueID, sendErr)
+	}
 
-	// Notify admins
+	// Notify admins even if the user confirmation could not be delivered.
 	go h.notifyAdminFollowUp(issueID, text, userName)
 
 	return nil
