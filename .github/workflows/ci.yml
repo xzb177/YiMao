@@ -69,6 +69,12 @@ jobs:
       - name: Staging smoke image build
         run: docker build --target smoke -t yimao:ci-smoke .
 
+      - name: Install CJK font for card render tests
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+          ls /usr/share/fonts/opentype/noto/ | head -5
+
       - name: Go test
         run: go test ./...
 
