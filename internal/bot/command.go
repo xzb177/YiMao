@@ -111,13 +111,13 @@ func HandleCommand(
 		}
 		// 解绑是高影响操作：误触后要重走绑定流程，先二次确认。
 		if _, bound := userMapping.GetMoviePilotUserID(msg.From.ID); !bound {
-			telegram.SendMessage(msg.Chat.ID, "现在没有绑定任何账号，无需解绑", "", nil)
+			_, _ = telegram.SendMessage(msg.Chat.ID, "现在没有绑定任何账号，无需解绑", "", nil)
 			return
 		}
 		confirmKb := services.NewKeyboardBuilder()
 		confirmKb.AddButton("✅ 确认解绑", "unlink_confirm")
 		confirmKb.AddButton("↩️ 我点错了", "cancel")
-		telegram.SendMessage(msg.Chat.ID,
+		_, _ = telegram.SendMessage(msg.Chat.ID,
 			"⚠️ 确认解绑 MoviePilot 账号？\n\n解绑后求片、进度查询都会失效，需要重新 /link 绑定。",
 			"", confirmKb.Build())
 	case "/quota":
