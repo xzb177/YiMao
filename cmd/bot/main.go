@@ -268,7 +268,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		})
 	}
 	logger.Info("    - SeasonRadarService...")
-	seasonRadar := services.NewSeasonRadarService(cfg.DataDir, tmdbClient)
+	seasonRadar := services.NewSeasonRadarService(cfg.DataDir, nil)
 	seasonRadar.SetEnabled(func(userID int64) bool {
 		return preferencesService.IsNotifyEnabled(userID, services.NotifySeason)
 	})
@@ -495,6 +495,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
+	seasonRadar.SetTMDB(tmdbClient)
 	logger.Info("  [7/11] TMDB client created")
 
 	// Initialize Notification Service

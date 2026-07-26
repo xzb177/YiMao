@@ -41,6 +41,13 @@ func NewSeasonRadarService(dataDir string, tmdb *TMDBClient) *SeasonRadarService
 	return s
 }
 
+// SetTMDB 注入 TMDB 客户端（主程序里雷达先于 TMDB 客户端创建）。
+func (s *SeasonRadarService) SetTMDB(tmdb *TMDBClient) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tmdb = tmdb
+}
+
 func (s *SeasonRadarService) SetNotifier(fn func(userID int64, tmdbID int, title string, season TVSeason) bool) {
 	s.notify = fn
 }
@@ -51,12 +58,19 @@ func (s *SeasonRadarService) SetEnabled(fn func(userID int64) bool) {
 
 func radarKey(userID int64, tmdbID int) string { return fmt.Sprintf("%d:%d", userID, tmdbID) }
 
+func (s *SeasonRadarService) tmdbClient() *TMDBClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.tmdb
+}
+
 // TrackTV 查询并记录当前已播季数，首次建立基线，不会把旧季误报为新季。
 func (s *SeasonRadarService) TrackTV(userID int64, tmdbID int, title string) {
-	if s.tmdb == nil {
+	tmdb := s.tmdbClient()
+	if tmdb == nil {
 		return
 	}
-	details, err := s.tmdb.GetTVDetailsWithSeasons(tmdbID)
+	details, err := tmdb.GetTVDetailsWithSeasons(tmdbID)
 	if err != nil || details == nil {
 		return
 	}
@@ -95,7 +109,8 @@ func (s *SeasonRadarService) Track(userID int64, tmdbID int, title string, known
 // Scan 查询所有追踪剧集。首次扫描只建立基线，不给用户补发旧季通知。
 // 每次最多处理 100 条，避免 TMDB 故障时占满调度协程。
 func (s *SeasonRadarService) Scan() {
-	if s.tmdb == nil || s.notify == nil {
+	tmdb := s.tmdbClient()
+	if tmdb == nil || s.notify == nil {
 		return
 	}
 	s.mu.Lock()
@@ -113,7 +128,7 @@ func (s *SeasonRadarService) Scan() {
 	sort.Slice(items, func(i, j int) bool { return items[i].LastChecked.Before(items[j].LastChecked) })
 
 	for _, item := range items {
-		details, err := s.tmdb.GetTVDetailsWithSeasons(item.TmdbID)
+		details, err := tmdb.GetTVDetailsWithSeasons(item.TmdbID)
 		if err != nil || details == nil {
 			logger.Info("[SeasonRadar] 查询失败: tmdb=%d err=%v", item.TmdbID, err)
 			continue
