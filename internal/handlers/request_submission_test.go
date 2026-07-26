@@ -30,18 +30,24 @@ func TestRequestHandlerSubmissionResultMapping(t *testing.T) {
 		result       services.SubmissionResult
 		wantCallback string
 		wantText     string
+		wantAlert    bool
+		wantKeyboard bool
 	}{
-		{"duplicate own", services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: review}, "请勿重复提交", "已通过审核"},
-		{"duplicate other", services.SubmissionResult{Status: services.SubmissionDuplicateOther, Review: review}, "已加入拼车", "不重复扣配额"},
-		{"not bound", services.SubmissionResult{Status: services.SubmissionNotBound}, "需要绑定账号", "请先绑定账号"},
-		{"quota", services.SubmissionResult{Status: services.SubmissionQuotaExceeded}, "今日求片次数已用完", "求片次数用完"},
-		{"unknown", services.SubmissionResult{}, "操作失败", "求片没有提交成功"},
+		{"duplicate own", services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: review}, "请勿重复提交", "已通过审核", true, true},
+		{"duplicate other", services.SubmissionResult{Status: services.SubmissionDuplicateOther, Review: review}, "已加入拼车", "不重复扣配额", true, true},
+		// not-bound 是引导消息（带绑定按钮），不再是转瞬即逝的 alert。
+		{"not bound", services.SubmissionResult{Status: services.SubmissionNotBound}, "需要绑定账号", "需要绑定账号", false, true},
+		{"quota", services.SubmissionResult{Status: services.SubmissionQuotaExceeded}, "今日求片次数已用完", "求片次数用完", true, true},
+		{"unknown", services.SubmissionResult{}, "操作失败", "求片没有提交成功", true, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := h.mapSubmissionResult(tt.result, 42, 123, "movie", false)
-			if got.CallbackMsg != tt.wantCallback || !strings.Contains(got.Text, tt.wantText) || !got.ShowAlert {
+			if got.CallbackMsg != tt.wantCallback || !strings.Contains(got.Text, tt.wantText) || got.ShowAlert != tt.wantAlert {
 				t.Fatalf("response=%+v", got)
+			}
+			if hasKb := got.Keyboard != nil && len(got.Keyboard.InlineKeyboard) > 0; hasKb != tt.wantKeyboard {
+				t.Fatalf("keyboard presence=%v want=%v response=%+v", hasKb, tt.wantKeyboard, got)
 			}
 		})
 	}
