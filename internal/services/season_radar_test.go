@@ -53,6 +53,7 @@ func TestSeasonRadarDisabledAdvancesBaselineWithoutNotification(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(TVDetailsWithSeasons{ID: 123, Seasons: []TVSeason{
 			{SeasonNumber: 1, AirDate: "2024-01-01"},
 			{SeasonNumber: 2, AirDate: "2025-01-01"},
+			{SeasonNumber: 3, AirDate: "2999-01-01"},
 		}})
 	}))
 	defer srv.Close()
@@ -63,6 +64,6 @@ func TestSeasonRadarDisabledAdvancesBaselineWithoutNotification(t *testing.T) {
 	radar.items[radarKey(1, 123)] = SeasonRadarItem{UserID: 1, TmdbID: 123, Title: "剧", KnownSeasons: 1}
 	radar.Scan()
 	if got := radar.items[radarKey(1, 123)].KnownSeasons; got != 2 {
-		t.Fatalf("disabled baseline=%d want 2", got)
+		t.Fatalf("disabled baseline=%d want latest aired 2 (future season must remain pending)", got)
 	}
 }

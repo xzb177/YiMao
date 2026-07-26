@@ -133,20 +133,27 @@ func (s *SeasonRadarService) Scan() {
 			logger.Info("[SeasonRadar] 查询失败: tmdb=%d err=%v", item.TmdbID, err)
 			continue
 		}
-		latest := item.KnownSeasons
-		for _, season := range details.Seasons {
-			if season.SeasonNumber > latest {
-				latest = season.SeasonNumber
-			}
-		}
+		latestAired := item.KnownSeasons
 		newSeasons := make([]TVSeason, 0)
+		now := time.Now()
 		for _, season := range details.Seasons {
-			if season.SeasonNumber > item.KnownSeasons && season.SeasonNumber > 0 && season.AirDate != "" {
-				if air, err := time.Parse("2006-01-02", season.AirDate); err == nil && !air.After(time.Now()) {
-					newSeasons = append(newSeasons, season)
-				}
+			if season.SeasonNumber <= 0 || season.AirDate == "" {
+				continue
+			}
+			air, err := time.Parse("2006-01-02", season.AirDate)
+			if err != nil || air.After(now) {
+				continue
+			}
+			if season.SeasonNumber > latestAired {
+				latestAired = season.SeasonNumber
+			}
+			if season.SeasonNumber > item.KnownSeasons {
+				newSeasons = append(newSeasons, season)
 			}
 		}
+		sort.Slice(newSeasons, func(i, j int) bool {
+			return newSeasons[i].SeasonNumber < newSeasons[j].SeasonNumber
+		})
 		if s.enabled == nil || s.enabled(item.UserID) {
 			// 按季顺序通知；中间某一条发送失败就停住，下一轮从失败季重试，
 			// 不跳过用户没收到的季数。
@@ -157,8 +164,9 @@ func (s *SeasonRadarService) Scan() {
 				item.KnownSeasons = season.SeasonNumber
 			}
 		} else {
-			// 用户关闭时仍推进基线，重新打开后只接收未来新季，不补发历史通知。
-			item.KnownSeasons = latest
+			// 用户关闭时仍推进到最新已开播季；未来季不能提前吞掉，
+			// 重新打开后仍应在真正开播时收到提醒。
+			item.KnownSeasons = latestAired
 		}
 		item.LastChecked = time.Now()
 		s.mu.Lock()
