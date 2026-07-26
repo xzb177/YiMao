@@ -109,12 +109,17 @@ func HandleCommand(
 			telegram.SendMessage(msg.Chat.ID, "⚠️ 服务未就绪", "", nil)
 			return
 		}
-		if err := userMapping.RemoveMapping(msg.From.ID); err != nil {
-			logger.Info("[Command] Unlink failed for user %d: %v", msg.From.ID, err)
-			_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 解绑失败，请稍后再试或联系管理员", "", nil)
-		} else {
-			telegram.SendMessage(msg.Chat.ID, "✅ 已解绑 MoviePilot 账号", "", nil)
+		// 解绑是高影响操作：误触后要重走绑定流程，先二次确认。
+		if _, bound := userMapping.GetMoviePilotUserID(msg.From.ID); !bound {
+			telegram.SendMessage(msg.Chat.ID, "现在没有绑定任何账号，无需解绑", "", nil)
+			return
 		}
+		confirmKb := services.NewKeyboardBuilder()
+		confirmKb.AddButton("✅ 确认解绑", "unlink_confirm")
+		confirmKb.AddButton("↩️ 我点错了", "cancel")
+		telegram.SendMessage(msg.Chat.ID,
+			"⚠️ 确认解绑 MoviePilot 账号？\n\n解绑后求片、进度查询都会失效，需要重新 /link 绑定。",
+			"", confirmKb.Build())
 	case "/quota":
 		// 群组隐私保护：群内不暴露配额
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {

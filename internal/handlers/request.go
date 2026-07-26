@@ -150,15 +150,10 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}, nil
 	}
 
-	// Get media info from session for better display
-	sess := h.sessMgr.Get(ctx.UserID)
-	if sess == nil {
-		return &callback.Response{
-			Text:        "⏰ 会话已过期，请重新搜索",
-			CallbackMsg: "会话过期",
-			ShowAlert:   true,
-		}, nil
-	}
+	// Get media info from session for better display.
+	// 会话过期不再是死路：GetOrCreate 重建空会话，媒体信息由下方
+	// 搜索缓存 → AI 缓存 → TMDB API 三级兜底补齐，旧消息按钮永远可点。
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 
 	// Get user name from session
 	userName := "用户"
@@ -534,24 +529,13 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	moviepilotID, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	logger.Info("[HandleForceSubscribe] User mapping: moviepilotID=%d, exists=%v", moviepilotID, exists)
 	if !exists || moviepilotID == 0 {
-		return &callback.Response{
-			Text:        "🔗 请先绑定账号",
-			CallbackMsg: "需要绑定账号",
-			ShowAlert:   true,
-		}, nil
+		return bindGuideResponse(), nil
 	}
 
 	// Quota is consumed only after session/media/duplicate validation below.
 
-	// Get session info
-	sess := h.sessMgr.Get(ctx.UserID)
-	if sess == nil {
-		return &callback.Response{
-			Text:        "⏰ 会话已过期，请重新搜索",
-			CallbackMsg: "会话过期",
-			ShowAlert:   true,
-		}, nil
-	}
+	// 会话过期不再拦路：重建空会话，标题走 TMDB 兜底（tmdbID 就在回调参数里）。
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 
 	// Get media info from session
 	var mediaTitle string
@@ -683,12 +667,17 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 			statusText = "已通过审核"
 		}
 	}
+	// 终态反馈统一带行动按钮：alert 弹窗几秒就消失，
+	// 消息里必须留下一条能点的路（进度/绑定/许愿），不让用户自己找入口。
+	progressKb := services.NewKeyboardBuilder()
+	progressKb.AddButton("📊 查看进度", "requests")
+	progressKb.AddButton("🏠 主菜单", "start")
 	switch result.Status {
 	case services.SubmissionDuplicateOwn:
 		if force {
-			return &callback.Response{Text: fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s\n请到“求片进度”查看。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+			return &callback.Response{Text: fmt.Sprintf("⚠️ 你已提交过该内容\n\n《%s》当前状态：%s", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true, Keyboard: convertKeyboard(progressKb.Build())}
 		}
-		return &callback.Response{Text: fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）\n请在“求片进度”查看进度。", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true}
+		return &callback.Response{Text: fmt.Sprintf("⚠️ 检测到重复请求\n\n《%s》已存在一条记录（状态：%s）", title, statusText), CallbackMsg: "请勿重复提交", ShowAlert: true, Keyboard: convertKeyboard(progressKb.Build())}
 	case services.SubmissionDuplicateOther:
 		people := 1
 		if h.carpoolService != nil {
@@ -697,17 +686,44 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 		if people < 1 {
 			people = 1
 		}
-		return &callback.Response{Text: fmt.Sprintf("🙋 已加入拼车\n\n《%s》已有用户提交求片，当前共 %d 人想看。\n审核和下载进度会跟随原请求推进，不重复扣配额。", title, people), CallbackMsg: "已加入拼车", ShowAlert: true}
+		return &callback.Response{Text: fmt.Sprintf("🙋 已加入拼车\n\n《%s》已有用户提交求片，当前共 %d 人想看。\n审核和下载进度会跟随原请求推进，不重复扣配额。", title, people), CallbackMsg: "已加入拼车", ShowAlert: true, Keyboard: convertKeyboard(progressKb.Build())}
 	case services.SubmissionNotBound:
-		return &callback.Response{Text: "🔗 请先绑定账号", CallbackMsg: "需要绑定账号", ShowAlert: true}
+		return bindGuideResponse()
 	case services.SubmissionQuotaExceeded:
 		quotaText := ""
 		if h.quotaService != nil {
 			quotaText = h.quotaService.GetQuotaText(userID)
 		}
-		return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦\n\n%s\n\n明天 00:00 会恢复", quotaText), CallbackMsg: "今日求片次数已用完", ShowAlert: true}
+		// 配额用尽给出路：许愿不扣配额，出源后自动提醒。
+		quotaKb := services.NewKeyboardBuilder()
+		quotaKb.AddButton("✨ 去许愿池", "wish")
+		quotaKb.AddButton("🏠 主菜单", "start")
+		return &callback.Response{Text: fmt.Sprintf("今天的求片次数用完啦\n\n%s\n\n明天 00:00 会恢复。等不及的话可以先把片子放进许愿池，不占配额，出源后会提醒你。", quotaText), CallbackMsg: "今日求片次数已用完", ShowAlert: true, Keyboard: convertKeyboard(quotaKb.Build())}
 	default:
 		return operationFailedResponse()
+	}
+}
+
+// bindGuideResponse 统一的「未绑定」引导：给按钮、给命令示例，
+// 不再只丢一句"请先绑定账号"让用户自己摸索。
+func bindGuideResponse() *callback.Response {
+	msg := services.NewMessageBuilder()
+	msg.Bold("🔗 需要绑定账号").Newline()
+	msg.Newline()
+	msg.Text("求片功能需要绑定账号后才能使用哦").Newline()
+	msg.Newline()
+	msg.Text("绑定方法：").Newline()
+	msg.Code("/link 用户名 密码").Newline()
+	msg.Newline()
+	msg.Italic("没有账号也没关系，首次绑定会自动创建").Newline()
+
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔗 立即绑定", "link")
+	kb.AddButton("🏠 主菜单", "start")
+	return &callback.Response{
+		Text:        msg.Build(),
+		CallbackMsg: "需要绑定账号",
+		Keyboard:    convertKeyboard(kb.Build()),
 	}
 }
 

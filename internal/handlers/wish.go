@@ -19,13 +19,14 @@ import (
 
 // WishHandler 处理许愿池命令与回调。
 type WishHandler struct {
-	wish       *services.WishService
-	tmdb       *services.TMDBClient
-	moviepilot *services.MoviePilotClient
-	telegram   *services.TelegramClient
-	sessMgr    *session.Manager
-	submission wishRequestSubmitter
-	carpool    *services.CarpoolService
+	wish          *services.WishService
+	tmdb          *services.TMDBClient
+	moviepilot    *services.MoviePilotClient
+	telegram      *services.TelegramClient
+	sessMgr       *session.Manager
+	submission    wishRequestSubmitter
+	carpool       *services.CarpoolService
+	searchHistory *services.SearchHistoryService
 }
 
 type wishRequestSubmitter interface {
@@ -55,6 +56,9 @@ func (h *WishHandler) SetRequestSubmissionService(s wishRequestSubmitter) { h.su
 
 // SetCarpoolService 注入拼车服务。
 func (h *WishHandler) SetCarpoolService(c *services.CarpoolService) { h.carpool = c }
+
+// SetSearchHistoryService 注入搜索历史服务：session 丢词时兜底取最近搜索词。
+func (h *WishHandler) SetSearchHistoryService(s *services.SearchHistoryService) { h.searchHistory = s }
 
 // BuildWishRequestButton 构造出源喜报「立即求片」按钮的回调串（注入给 WishScheduler）。
 // 格式沿用项目 colon 编码：wish_request:id:<wishItemID>
@@ -93,12 +97,19 @@ func (h *WishHandler) HandleAddFromSearch(ctx *callback.Context) (*callback.Resp
 		return &callback.Response{CallbackMsg: "许愿池服务未就绪", ShowAlert: true}, nil
 	}
 	if h.sessMgr == nil {
-		return &callback.Response{CallbackMsg: "会话已过期，请重新搜索后再试", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "许愿池服务未就绪，请稍后再试", ShowAlert: true}, nil
 	}
 
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	query, _ := sess.GetString(pendingWishQueryKey)
 	query = strings.TrimSpace(query)
+	if query == "" && h.searchHistory != nil {
+		// session 过期丢词时兜底：搜索历史持久化在磁盘上，最近一条
+		// 就是触发「无结果 → 许愿」按钮的那次搜索，别让用户重搜一遍。
+		if entries := h.searchHistory.GetHistory(ctx.UserID); len(entries) > 0 {
+			query = strings.TrimSpace(entries[0].Query)
+		}
+	}
 	if query == "" {
 		return &callback.Response{
 			CallbackMsg: "没拿到要许愿的片名了，麻烦重新搜一次再点～",
@@ -480,7 +491,13 @@ func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		markFulfilled()
 		return &callback.Response{CallbackMsg: fmt.Sprintf("已加入拼车，共 %d 人想看", people)}, nil
 	case services.SubmissionNotBound:
-		return &callback.Response{CallbackMsg: "请先绑定账号后再求片", ShowAlert: true}, nil
+		return &callback.Response{
+			Text:        "🔗 需要先绑定账号\n\n绑定后就能求片了，命令：/link 用户名 密码\n没有账号也没关系，首次绑定会自动创建。",
+			CallbackMsg: "请先绑定账号后再求片",
+			Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{
+				{{Text: "🔗 立即绑定", CallbackData: "link"}},
+			}},
+		}, nil
 	case services.SubmissionQuotaExceeded:
 		return &callback.Response{CallbackMsg: "求片额度不足，请稍后再试", ShowAlert: true}, nil
 	default:

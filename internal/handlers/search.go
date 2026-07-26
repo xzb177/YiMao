@@ -230,6 +230,11 @@ func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query 
 			logger.Info("[SearchHandler] Fallback search failed: %v", fbErr)
 		}
 		if fallbackResults != nil && len(fallbackResults) > 0 {
+			// 换词兜底命中时明确告知用户，避免「结果和我搜的对不上」的困惑。
+			if fallbackQuery != query {
+				h.sendUserScopedText(userID, chatID,
+					fmt.Sprintf("💡 「%s」没有直接结果，已按「%s」帮你搜索：", query, fallbackQuery), nil)
+			}
 			h.sendSearchResults(userID, chatID, fallbackQuery, &services.SearchResponse{Results: fallbackResults}, 1)
 			return nil
 		}
@@ -309,7 +314,14 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	// 从 session 读取之前的搜索上下文（query 存在 session 里，不走 callback data，避免 64 字节超限）
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	_, _, query, ok := sess.GetSearchResults()
-	if !ok || query == "" {
+	if (!ok || query == "") && h.searchHistory != nil {
+		// session 过期丢词兜底：搜索历史持久化在磁盘，最近一条即当前上下文，
+		// 让旧消息上的翻页按钮依然可用。
+		if entries := h.searchHistory.GetHistory(ctx.UserID); len(entries) > 0 {
+			query = strings.TrimSpace(entries[0].Query)
+		}
+	}
+	if query == "" {
 		return &callback.Response{
 			Text:        "⚠️ 搜索会话已过期，点下面重新搜索",
 			CallbackMsg: "会话过期",

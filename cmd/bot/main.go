@@ -297,6 +297,52 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
 	}
+	// P1 中间态：开始下载（用户可关，走同一 NotifyDownload 偏好）
+	reviewService.OnDownloadStart = func(telegramID int64, title string, year int, mediaType string) {
+		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
+			return
+		}
+		mediaEmoji := "🎬"
+		if mediaType == "tv" {
+			mediaEmoji = "📺"
+		}
+		yearStr := ""
+		if year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", year)
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold("⬇️ 开始下载").Newline()
+		msg.Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Newline()
+		msg.Text("找到资源了，正在下载，入库后会再通知你")
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📊 求片进度", "my_requests")
+		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
+		logger.Info("[ReviewService] 已通知用户 %d: %s%s 开始下载", telegramID, title, yearStr)
+	}
+	// P1 中间态：暂未找到资源，转入持续搜索（预期管理，用户可关）
+	reviewService.OnSearchStall = func(telegramID int64, title string, year int, mediaType string) {
+		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
+			return
+		}
+		mediaEmoji := "🎬"
+		if mediaType == "tv" {
+			mediaEmoji = "📺"
+		}
+		yearStr := ""
+		if year > 0 {
+			yearStr = fmt.Sprintf(" (%d)", year)
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold("🔍 暂时没找到资源").Newline()
+		msg.Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Newline()
+		msg.Text("已转入持续搜索，出了资源会自动下载，不用重新求片")
+		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", nil)
+		logger.Info("[ReviewService] 已通知用户 %d: %s%s 暂未找到资源", telegramID, title, yearStr)
+	}
 	// B4: stuck 告警 — 审核通过但 MP 提交失败时通知管理员
 	reviewService.Alert = func(requestID, title string, retryCount int, lastError string) {
 		if lastError == "自动重试成功" {
@@ -528,6 +574,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		)
 		wishHandler.SetRequestSubmissionService(submissionService)
 		wishHandler.SetCarpoolService(deps.CarpoolService)
+		wishHandler.SetSearchHistoryService(deps.SearchHistory)
 	}
 
 	// Initialize site adapter registry for resource candidates
@@ -746,6 +793,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc("my_requests", myRequestsHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
+	registry.RegisterFunc("unlink_confirm", linkHandler.HandleUnlinkConfirm)
 	registry.RegisterFunc("resetpw", linkHandler.HandleResetPW)
 	registry.RegisterFunc(callback.ActionHelp, helpHandler.Handle)
 	logger.Info("[initRegistry] Registering FeedbackHandler: feedbackHandler=%v", feedbackHandler != nil)

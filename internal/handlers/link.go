@@ -136,6 +136,35 @@ func (h *LinkHandler) HandleUnlink(telegramID int64) error {
 	return h.userMapping.RemoveMapping(telegramID)
 }
 
+// HandleUnlinkConfirm 处理 /unlink 二次确认按钮的回调。
+func (h *LinkHandler) HandleUnlinkConfirm(ctx *callback.Context) (*callback.Response, error) {
+	if h.userMapping == nil {
+		return &callback.Response{CallbackMsg: "服务未就绪", ShowAlert: true}, nil
+	}
+	if _, bound := h.userMapping.GetMoviePilotUserID(ctx.UserID); !bound {
+		return &callback.Response{
+			Text: "现在没有绑定任何账号，无需解绑",
+			Edit: true,
+		}, nil
+	}
+	if err := h.userMapping.RemoveMapping(ctx.UserID); err != nil {
+		logger.Info("[LinkHandler] Unlink failed for user %d: %v", ctx.UserID, err)
+		return &callback.Response{
+			Text:        "❌ 解绑失败，请稍后再试或联系管理员",
+			CallbackMsg: "解绑失败",
+			ShowAlert:   true,
+		}, nil
+	}
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🔗 重新绑定", "link")
+	kb.AddButton("🏠 主菜单", "start")
+	return &callback.Response{
+		Text:     "✅ 已解绑 MoviePilot 账号\n\n随时可以用 /link 重新绑定。",
+		Edit:     true,
+		Keyboard: convertKeyboard(kb.Build()),
+	}, nil
+}
+
 // IsLinked checks if user is linked
 func (h *LinkHandler) IsLinked(telegramID int64) bool {
 	_, exists := h.userMapping.GetMoviePilotUserID(telegramID)

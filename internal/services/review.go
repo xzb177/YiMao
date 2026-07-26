@@ -43,6 +43,10 @@ type ReviewRequest struct {
 	LastResubscribeAt time.Time  `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
 	LibraryNotifiedAt *time.Time `json:"library_notified_at,omitempty"` // Emby 入库后已私聊通知时间，防重复通知
 
+	// 中间态通知去重标记（P1 体验：等待期不再是黑箱）。
+	DownloadNotified bool `json:"download_notified,omitempty"` // 「开始下载」已通知
+	StallNotified    bool `json:"stall_notified,omitempty"`    // 「暂未找到资源」已通知
+
 	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
 	// 当 Status=="approved" 但提交 MP 失败时，进入 stuck 兜底（而不是凭空消失），
 	// 让管理员可见、可手动重试，用户在「求片进度」也能看到「同步中/重试」。
@@ -98,6 +102,15 @@ type ReviewService struct {
 	// 参数：telegramID, mediaTitle, year, mediaType。
 	// 解耦 ReviewService 与 Telegram client，Emby 不可用时用 MP 轮询触发此回调即可。
 	OnSubscriptionComplete func(telegramID int64, title string, year int, mediaType string)
+
+	// OnDownloadStart 订阅从等待/搜索转入下载中（state → "D"）时的用户通知回调
+	// （由 main 注入）。「已通过审核」到「已入库」之间可能隔数小时到数天，
+	// 这个中间态推送让用户不必反复戳「求片进度」。每个请求只触发一次。
+	OnDownloadStart func(telegramID int64, title string, year int, mediaType string)
+
+	// OnSearchStall 订阅进入回收/长时间搜索（state → "R"）时的用户预期管理回调
+	// （由 main 注入）。告知「暂时没找到资源，已转入持续搜索」。每个请求只触发一次。
+	OnSearchStall func(telegramID int64, title string, year int, mediaType string)
 
 	// Alert 当 review 进入 stuck（MP 提交失败）时的告警回调（由 main 注入）。
 	// 参数：requestID, mediaTitle, retryCount, lastError。
@@ -1288,6 +1301,32 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 								}
 							}()
 							s.OnSubscriptionComplete(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
+						}(review)
+					}
+
+					// P1 中间态：开始下载（每请求一次）。完成态跳过（避免 C 前一刻的抖动）。
+					if actualState == "D" && !review.DownloadNotified && s.OnDownloadStart != nil {
+						review.DownloadNotified = true
+						go func(r *ReviewRequest) {
+							defer func() {
+								if rec := recover(); rec != nil {
+									logger.Info("[ReviewService] Panic in download-start notification: %v", rec)
+								}
+							}()
+							s.OnDownloadStart(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
+						}(review)
+					}
+
+					// P1 中间态：进入回收/持续搜索，做预期管理（每请求一次）。
+					if actualState == "R" && oldState != "" && !review.StallNotified && s.OnSearchStall != nil {
+						review.StallNotified = true
+						go func(r *ReviewRequest) {
+							defer func() {
+								if rec := recover(); rec != nil {
+									logger.Info("[ReviewService] Panic in search-stall notification: %v", rec)
+								}
+							}()
+							s.OnSearchStall(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
 						}(review)
 					}
 

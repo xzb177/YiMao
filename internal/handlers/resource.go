@@ -625,14 +625,15 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 		}, nil
 	}
 
-	// Get resource list from session
+	// Get resource list from session.
+	// 过期时不删消息：列表底部的「🔄 刷新」自带 id+type、全新拉取不依赖会话，
+	// 引导用户点它即可原地复活，不必回头重新搜索。
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 	rlInterface, ok := sess.Get(resourceListSessionKey)
 	if !ok {
 		return &callback.Response{
-			Text:          "❌ 会话已过期，请重新搜索",
-			Edit:          false,
-			DeleteMessage: true,
+			CallbackMsg: "列表已过期，点下方「🔄 刷新」重新加载后再选",
+			ShowAlert:   true,
 		}, nil
 	}
 
@@ -718,7 +719,7 @@ func (h *ResourceHandler) handlePage(ctx *callback.Context, delta int) (*callbac
 	rlInterface, ok := sess.Get(resourceListSessionKey)
 	if !ok {
 		return &callback.Response{
-			CallbackMsg: "❌ 会话已过期",
+			CallbackMsg: "列表已过期，点下方「🔄 刷新」重新加载",
 			ShowAlert:   true,
 		}, nil
 	}
