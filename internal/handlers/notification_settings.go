@@ -31,6 +31,8 @@ func (h *NotificationSettingsHandler) Handle(ctx *callback.Context) (*callback.R
 	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
 	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
+	kb.AddButton(notifyToggle("📺 续季提醒", status[services.NotifySeason]), "notify_toggle:key:season")
+	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
@@ -74,6 +76,8 @@ func (h *NotificationSettingsHandler) HandleToggle(ctx *callback.Context) (*call
 	kb.AddButton(notifyToggle("📊 观影周报", status[services.NotifyWeekly]), "notify_toggle:key:weekly")
 	kb.AddButton(notifyToggle("📢 系统公告", status[services.NotifyAnnounce]), "notify_toggle:key:announce")
 	kb.NewRow()
+	kb.AddButton(notifyToggle("📺 续季提醒", status[services.NotifySeason]), "notify_toggle:key:season")
+	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 
 	return &callback.Response{
@@ -102,6 +106,8 @@ func notifyName(key string) string {
 		return "观影周报"
 	case services.NotifyAnnounce:
 		return "系统公告"
+	case services.NotifySeason:
+		return "续季提醒"
 	default:
 		return key
 	}

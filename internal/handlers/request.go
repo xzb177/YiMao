@@ -30,6 +30,7 @@ type RequestHandler struct {
 	submissionService requestSubmitter
 	fulfillmentStats  *services.FulfillmentStatsService
 	seriesHandler     *SeriesHandler
+	seasonRadar       *services.SeasonRadarService
 	enableReview      bool // Enable review system
 }
 
@@ -79,6 +80,11 @@ func (h *RequestHandler) SetFulfillmentStats(fs *services.FulfillmentStatsServic
 // SetSeriesHandler 注入系列补全处理器（电影回执异步发现系列缺片）。
 func (h *RequestHandler) SetSeriesHandler(sh *SeriesHandler) {
 	h.seriesHandler = sh
+}
+
+// SetSeasonRadar 注入剧集续季雷达。
+func (h *RequestHandler) SetSeasonRadar(radar *services.SeasonRadarService) {
+	h.seasonRadar = radar
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -353,6 +359,8 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	// 回执先返回；系列检查走后台，不让 TMDB/Emby 查询拖慢按钮响应。
 	if review.MediaType == services.MediaTypeMovie {
 		go h.sendSeriesSuggestion(ctx.ChatID, ctx.UserID, tmdbID)
+	} else if h.seasonRadar != nil {
+		go h.seasonRadar.TrackTV(ctx.UserID, tmdbID, review.MediaTitle)
 	}
 	return &callback.Response{
 		Text:        receiptMsg,
@@ -697,6 +705,9 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("🏠 主菜单", "start")
+	if review.MediaType == services.MediaTypeTV && h.seasonRadar != nil {
+		go h.seasonRadar.TrackTV(ctx.UserID, tmdbID, review.MediaTitle)
+	}
 	return &callback.Response{
 		Text:        receiptMsg,
 		CallbackMsg: "请求已提交",

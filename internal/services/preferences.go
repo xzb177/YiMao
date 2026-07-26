@@ -44,6 +44,7 @@ type UserPreferences struct {
 	NotifyRecommend *bool `json:"notify_recommend,omitempty"` // 每日推荐
 	NotifyWeekly    *bool `json:"notify_weekly,omitempty"`    // 观影周报
 	NotifyAnnounce  *bool `json:"notify_announce,omitempty"`  // 系统公告
+	NotifySeason    *bool `json:"notify_season,omitempty"`    // 剧集续季提醒
 }
 
 // 通知类型常量
@@ -52,6 +53,7 @@ const (
 	NotifyRecommend = "recommend" // 每日推荐
 	NotifyWeekly    = "weekly"    // 观影周报
 	NotifyAnnounce  = "announce"  // 系统公告
+	NotifySeason    = "season"    // 剧集续季提醒
 )
 
 // PreferencesService manages user preferences
@@ -134,6 +136,10 @@ func clonePreferences(p *UserPreferences) *UserPreferences {
 	if p.NotifyAnnounce != nil {
 		v := *p.NotifyAnnounce
 		c.NotifyAnnounce = &v
+	}
+	if p.NotifySeason != nil {
+		v := *p.NotifySeason
+		c.NotifySeason = &v
 	}
 	return &c
 }
@@ -374,6 +380,8 @@ func (s *PreferencesService) IsNotifyEnabled(userID int64, notifyKey string) boo
 		return prefs.NotifyWeekly == nil || *prefs.NotifyWeekly
 	case NotifyAnnounce:
 		return prefs.NotifyAnnounce == nil || *prefs.NotifyAnnounce
+	case NotifySeason:
+		return prefs.NotifySeason == nil || *prefs.NotifySeason
 	default:
 		return true
 	}
@@ -395,6 +403,8 @@ func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled b
 		prefs.NotifyWeekly = &enabled
 	case NotifyAnnounce:
 		prefs.NotifyAnnounce = &enabled
+	case NotifySeason:
+		prefs.NotifySeason = &enabled
 	default:
 		s.mu.Unlock()
 		return fmt.Errorf("unknown notify key: %s", notifyKey)
@@ -412,5 +422,6 @@ func (s *PreferencesService) GetNotifyStatus(userID int64) map[string]bool {
 		NotifyRecommend: s.IsNotifyEnabled(userID, NotifyRecommend),
 		NotifyWeekly:    s.IsNotifyEnabled(userID, NotifyWeekly),
 		NotifyAnnounce:  s.IsNotifyEnabled(userID, NotifyAnnounce),
+		NotifySeason:    s.IsNotifyEnabled(userID, NotifySeason),
 	}
 }

@@ -202,6 +202,7 @@ type Dependencies struct {
 	WishService       *services.WishService             // #6 许愿池存储
 	WishScheduler     *services.WishScheduler           // #6 许愿池 DailyRescan task
 	FulfillmentStats  *services.FulfillmentStatsService // 履约统计（ETA + 入库回访）
+	SeasonRadar       *services.SeasonRadarService      // 剧集续季雷达
 	WishHandler       *handlers.WishHandler             // #6 许愿池命令/回调处理器
 	MyRequestsHandler *handlers.MyRequestsHandler       // 求片进度聚合视图（/requests 命令复用）
 	GameHandler       *handlers.GameHandler             // 游戏化功能处理器
@@ -266,6 +267,50 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			Year: year, MediaType: mediaType, CompletedAt: completedAt,
 		})
 	}
+	logger.Info("    - SeasonRadarService...")
+	seasonRadar := services.NewSeasonRadarService(cfg.DataDir, tmdbClient)
+	seasonRadar.SetEnabled(func(userID int64) bool {
+		return preferencesService.IsNotifyEnabled(userID, services.NotifySeason)
+	})
+	seasonRadar.SetNotifier(func(userID int64, tmdbID int, title string, season services.TVSeason) bool {
+		if !preferencesService.IsNotifyEnabled(userID, services.NotifySeason) {
+			return true
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold("📺 追更提醒").Newline()
+		msg.Newline()
+		msg.Textf("《%s》出了第 %d 季", html.EscapeString(title), season.SeasonNumber).Newline()
+		if season.AirDate != "" {
+			msg.Textf("开播日期：%s", season.AirDate).Newline()
+		}
+		msg.Newline()
+		msg.Text("想继续追的话，可以直接提交这一季的求片申请。")
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📥 求第 "+strconv.Itoa(season.SeasonNumber)+" 季", fmt.Sprintf("request:id:%d:type:tv:season:%d", tmdbID, season.SeasonNumber))
+		kb.NewRow()
+		kb.AddButton("📊 求片进度", "requests")
+		if _, err := telegramClient.SendMessage(userID, msg.Build(), "HTML", kb.Build()); err != nil {
+			logger.Info("[SeasonRadar] 续季通知发送失败: user=%d tmdb=%d err=%v", userID, tmdbID, err)
+			return false
+		}
+		return true
+	})
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[SeasonRadar] routine panic: %v", r)
+			}
+		}()
+		timer := time.NewTimer(5 * time.Minute)
+		defer timer.Stop()
+		<-timer.C
+		seasonRadar.Scan()
+		ticker := time.NewTicker(12 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			seasonRadar.Scan()
+		}
+	}()
 
 	// A4: 数据自动备份（每 24h 备份一次，保留 7 天，启动时立即执行一次）
 	backupService := services.NewDataBackupService(cfg.DataDir, 24*time.Hour, 7*24*time.Hour)
@@ -554,6 +599,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		WishService:       wishService,
 		WishScheduler:     wishScheduler,
 		FulfillmentStats:  fulfillmentStats,
+		SeasonRadar:       seasonRadar,
 	}
 }
 
@@ -582,6 +628,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	cancelHandler := handlers.NewCancelHandler(deps.SessionMgr)
 	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
 	requestHandler.SetFulfillmentStats(deps.FulfillmentStats)
+	requestHandler.SetSeasonRadar(deps.SeasonRadar)
 	submissionService := services.NewRequestSubmissionService(deps.UserMapping, deps.ReviewService, deps.QuotaService, requestHandler.NotifyAdminsForReview)
 	requestHandler.SetRequestSubmissionService(submissionService)
 	requestHandler.SetCarpoolService(deps.CarpoolService)
@@ -1038,6 +1085,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		WishService:       deps.WishService,
 		WishScheduler:     deps.WishScheduler,
 		FulfillmentStats:  deps.FulfillmentStats,
+		SeasonRadar:       deps.SeasonRadar,
 		WishHandler:       wishHandler,
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,
