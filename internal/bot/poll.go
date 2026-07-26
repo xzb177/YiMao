@@ -147,7 +147,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 						logger.Info("[Poll] Update %d ignored: message has no sender", update.UpdateID)
 						return
 					}
-					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, update.Message.Text)
+					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, validation.RedactSensitiveText(update.Message.Text))
 					HandlePollMessage(update.Message, pollDeps, cfg)
 				} else if update.CallbackQuery != nil {
 					logger.Info("[Poll] Update %d: Callback from %d", update.UpdateID, update.CallbackQuery.From.ID)
@@ -168,7 +168,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		rawText = msg.Caption
 	}
 	sanitizedText := validation.SanitizeMessageText(rawText)
-	logger.Info("[Poll] Message from %d: %s", msg.From.ID, sanitizedText)
+	logger.Info("[Poll] Message from %d: %s", msg.From.ID, validation.RedactSensitiveText(sanitizedText))
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {

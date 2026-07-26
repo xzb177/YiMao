@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -171,14 +172,7 @@ func (s *ViewingHistoryService) fetchFromEmby(userID, userName string) (*UserVie
 	for genre, count := range genreMap {
 		profile.TopGenres = append(profile.TopGenres, ViewingGenreCount{Genre: genre, Count: count})
 	}
-	// 排序（简单冒泡，数据量小）
-	for i := 0; i < len(profile.TopGenres); i++ {
-		for j := i + 1; j < len(profile.TopGenres); j++ {
-			if profile.TopGenres[j].Count > profile.TopGenres[i].Count {
-				profile.TopGenres[i], profile.TopGenres[j] = profile.TopGenres[j], profile.TopGenres[i]
-			}
-		}
-	}
+	sort.Slice(profile.TopGenres, func(i, j int) bool { return profile.TopGenres[i].Count > profile.TopGenres[j].Count })
 
 	profile.LastUpdated = time.Now()
 	return profile, nil

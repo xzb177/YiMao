@@ -1,7 +1,7 @@
 package services
 
 import (
-	"crypto/tls"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -563,16 +563,10 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
 
-	// Skip TLS verification only when explicitly enabled for trusted
-	// self-signed/origin certificates (EMBY_SKIP_TLS_VERIFY). Default: verify.
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify},
-	}
-	client := &http.Client{
-		Timeout:   5 * time.Second, // 降低超时避免阻塞求片流程，5秒足够正常响应
-		Transport: tr,
-	}
-	resp, err := client.Do(req)
+	// 5 秒盖帽避免阻塞求片流程；连接与 TLS 会话复用共享 embyClient。
+	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+	defer cancel()
+	resp, err := s.embyClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -663,13 +657,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	}
 
 	// Sort by score descending
-	for i := 0; i < len(candidates); i++ {
-		for j := i + 1; j < len(candidates); j++ {
-			if candidates[j].score > candidates[i].score {
-				candidates[i], candidates[j] = candidates[j], candidates[i]
-			}
-		}
-	}
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
 
 	best := candidates[0]
 	logger.Info("[SearchEmby] Best match: %s (%d) score=%.1f", best.result.Title, best.year, best.score)
@@ -704,8 +692,9 @@ func (s *WebhookService) SearchEmbyMediaByTMDB(tmdbID int, mediaType MediaType) 
 	}
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+	defer cancel()
+	resp, err := s.embyClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -833,8 +822,9 @@ func (s *WebhookService) getEmbyJSON(endpoint string, dst interface{}) error {
 	}
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
+	defer cancel()
+	resp, err := s.embyClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -869,8 +859,9 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	}
 	req.Header.Set("X-Emby-Token", s.embyAPIKey)
 	req.Header.Set("Accept", "application/json")
-	client := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
-	resp, err := client.Do(req)
+	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
+	defer cancel()
+	resp, err := s.embyClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return false, err
 	}
@@ -914,11 +905,9 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	}
 	seasonReq.Header.Set("X-Emby-Token", s.embyAPIKey)
 	seasonReq.Header.Set("Accept", "application/json")
-	seasonClient := &http.Client{
-		Timeout:   8 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}},
-	}
-	seasonResp, err := seasonClient.Do(seasonReq)
+	seasonCtx, seasonCancel := context.WithTimeout(seasonReq.Context(), 8*time.Second)
+	defer seasonCancel()
+	seasonResp, err := s.embyClient.Do(seasonReq.WithContext(seasonCtx))
 	if err != nil {
 		return false, err
 	}

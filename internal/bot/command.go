@@ -37,11 +37,11 @@ func HandleCommand(
 	dreamHandler *handlers.DreamHandler,
 	adventureHandler *handlers.AdventureHandler,
 ) {
-	logger.Info("[Command] Received command: %s from user %d", msg.Text, msg.From.ID)
+	logger.Info("[Command] Received command: %s from user %d", validation.RedactSensitiveText(msg.Text), msg.From.ID)
 
 	// 全局限流：超过每分钟 60 条命令则忽略
 	if checkCommandRateLimit(msg.From.ID) {
-		logger.Warn("[Command] Rate limit exceeded for user %d, dropping command: %s", msg.From.ID, msg.Text)
+		logger.Warn("[Command] Rate limit exceeded for user %d, dropping command: %s", msg.From.ID, validation.RedactSensitiveText(msg.Text))
 		return
 	}
 
@@ -248,6 +248,18 @@ func resetLinkAttempts(userID int64) {
 // New MoviePilot users can be auto-created; existing MoviePilot users must verify password.
 func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, bindingRequest *services.BindingRequestService, cfg *config.Config, userMapping services.UserMappingStore) {
 	logger.Info("[LinkCommand] Processing /link command from user %d", msg.From.ID)
+
+	// 用户消息里带明文密码，处理完立刻删除，不让凭据留在聊天记录里。
+	// 私聊里 bot 始终有权删除自己会话内的消息；失败只记日志（老消息或权限受限）。
+	if msg.MessageID > 0 && strings.Contains(msg.Text, " ") {
+		defer func(chatID, messageID int64) {
+			go func() {
+				if err := telegram.DeleteMessage(chatID, messageID); err != nil {
+					logger.Info("[LinkCommand] 无法删除含密码的用户消息 chat=%d msg=%d: %v", chatID, messageID, err)
+				}
+			}()
+		}(msg.Chat.ID, msg.MessageID)
+	}
 
 	if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
 		telegram.SendMessage(msg.Chat.ID, "🔒 为了保护账号安全，请私聊机器人绑定 MoviePilot 账号", "", nil)

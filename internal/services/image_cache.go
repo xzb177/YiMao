@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -255,13 +256,7 @@ func (c *ImageCache) Cleanup() {
 	// 超过大小限制时，按时间从旧到新删除
 	if totalSize > c.maxSize && len(allFiles) > 1 {
 		// 按修改时间排序（旧的在前）
-		for i := 0; i < len(allFiles)-1; i++ {
-			for j := i + 1; j < len(allFiles); j++ {
-				if allFiles[i].modTime.After(allFiles[j].modTime) {
-					allFiles[i], allFiles[j] = allFiles[j], allFiles[i]
-				}
-			}
-		}
+		sort.Slice(allFiles, func(i, j int) bool { return allFiles[i].modTime.Before(allFiles[j].modTime) })
 		for _, fi := range allFiles {
 			if totalSize <= c.maxSize {
 				break

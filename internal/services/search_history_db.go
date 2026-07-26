@@ -3,8 +3,10 @@ package services
 import (
 	"database/sql"
 	"fmt"
-	"github.com/xzb177/yimao/pkg/logger"
+	"sort"
 	"time"
+
+	"github.com/xzb177/yimao/pkg/logger"
 
 	_ "modernc.org/sqlite"
 )
@@ -254,13 +256,7 @@ func (s *SearchHistoryDB) GetStats(userID int64) (*SearchStats, error) {
 	}
 
 	// Sort by count (descending)
-	for i := 0; i < len(sorted); i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[i].Count < sorted[j].Count {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Count > sorted[j].Count })
 
 	// Get top 5
 	for i := 0; i < len(sorted) && i < 5; i++ {
@@ -391,13 +387,7 @@ func (s *SearchHistoryDB) GetSearchTrends(days int) ([]TrendItem, error) {
 	}
 
 	// Sort by growth (descending)
-	for i := 0; i < len(trends); i++ {
-		for j := i + 1; j < len(trends); j++ {
-			if trends[i].Growth < trends[j].Growth {
-				trends[i], trends[j] = trends[j], trends[i]
-			}
-		}
-	}
+	sort.Slice(trends, func(i, j int) bool { return trends[i].Growth > trends[j].Growth })
 
 	return trends, nil
 }

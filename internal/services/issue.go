@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
+	"sort"
 	"sync"
 	"time"
 )
@@ -392,13 +393,7 @@ func (s *IssueService) GetFilteredIssues(statuses []IssueStatus, limit int) []*I
 	}
 
 	// Sort by created date (newest first)
-	for i := 0; i < len(filtered); i++ {
-		for j := i + 1; j < len(filtered); j++ {
-			if filtered[i].CreatedAt.Before(filtered[j].CreatedAt) {
-				filtered[i], filtered[j] = filtered[j], filtered[i]
-			}
-		}
-	}
+	sort.Slice(filtered, func(i, j int) bool { return filtered[i].CreatedAt.After(filtered[j].CreatedAt) })
 
 	if limit > 0 && len(filtered) > limit {
 		filtered = filtered[:limit]
@@ -418,13 +413,7 @@ func (s *IssueService) GetAllIssues() []*Issue {
 	}
 
 	// Sort by created date (newest first)
-	for i := 0; i < len(all); i++ {
-		for j := i + 1; j < len(all); j++ {
-			if all[i].CreatedAt.Before(all[j].CreatedAt) {
-				all[i], all[j] = all[j], all[i]
-			}
-		}
-	}
+	sort.Slice(all, func(i, j int) bool { return all[i].CreatedAt.After(all[j].CreatedAt) })
 
 	return all
 }

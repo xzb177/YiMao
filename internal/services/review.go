@@ -655,13 +655,7 @@ func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	}
 
 	// Sort by created time desc (newer first)
-	for i := 0; i < len(pending); i++ {
-		for j := i + 1; j < len(pending); j++ {
-			if pending[i].CreatedAt.Before(pending[j].CreatedAt) {
-				pending[i], pending[j] = pending[j], pending[i]
-			}
-		}
-	}
+	sort.Slice(pending, func(i, j int) bool { return pending[i].CreatedAt.After(pending[j].CreatedAt) })
 
 	return pending
 }
@@ -694,13 +688,7 @@ func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	}
 
 	// Sort by created time desc
-	for i := 0; i < len(userReviews); i++ {
-		for j := i + 1; j < len(userReviews); j++ {
-			if userReviews[i].CreatedAt.Before(userReviews[j].CreatedAt) {
-				userReviews[i], userReviews[j] = userReviews[j], userReviews[i]
-			}
-		}
-	}
+	sort.Slice(userReviews, func(i, j int) bool { return userReviews[i].CreatedAt.After(userReviews[j].CreatedAt) })
 
 	return userReviews
 }

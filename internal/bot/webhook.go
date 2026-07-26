@@ -15,6 +15,7 @@ import (
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
+	"github.com/xzb177/yimao/pkg/validation"
 )
 
 // HandleWebhook handles incoming Telegram webhook
@@ -216,7 +217,7 @@ func HandleWebhookMessage(
 		fmt.Fprint(w, "OK")
 		return
 	}
-	logger.Info("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, msg.Text)
+	logger.Info("[Webhook] Message from user %d (chat: %d, type: %s): %s", msg.From.ID, msg.Chat.ID, msg.Chat.Type, validation.RedactSensitiveText(msg.Text))
 
 	// 群聊处理 @mention 搜索
 	if msg.Chat.Type != "private" {

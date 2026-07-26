@@ -3,6 +3,7 @@ package handlers
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
@@ -758,14 +759,7 @@ func (h *FeedbackHandler) handleViewList(ctx *callback.Context) (*callback.Respo
 	}
 
 	// Sort by created date (newest first)
-	// Use simple sort
-	for i := 0; i < len(issues); i++ {
-		for j := i + 1; j < len(issues); j++ {
-			if issues[i].CreatedAt.Before(issues[j].CreatedAt) {
-				issues[i], issues[j] = issues[j], issues[i]
-			}
-		}
-	}
+	sort.Slice(issues, func(i, j int) bool { return issues[i].CreatedAt.After(issues[j].CreatedAt) })
 
 	msg.Textf("共 %d 条反馈记录", len(issues)).Newline()
 	msg.Newline()

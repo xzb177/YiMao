@@ -157,16 +157,18 @@ func New(
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/mp", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 
-	// Register additional API routes (protected with API auth if enabled)
+	// Register additional API routes. These are management endpoints, NOT
+	// webhooks: without API auth they must stay localhost-only (the previous
+	// fallback exposed them publicly with only IP rate limiting).
 	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook
 	if cfg.EnableAPIAuth {
 		mux.HandleFunc("/api/stats", securityService.Middleware(apiHandler))
 		mux.HandleFunc("/api/admins", securityService.Middleware(apiHandler))
 		mux.HandleFunc("/api/admins/", securityService.Middleware(apiHandler))
 	} else {
-		mux.HandleFunc("/api/stats", securityService.PublicMiddleware(apiHandler))
-		mux.HandleFunc("/api/admins", securityService.PublicMiddleware(apiHandler))
-		mux.HandleFunc("/api/admins/", securityService.PublicMiddleware(apiHandler))
+		mux.HandleFunc("/api/stats", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
+		mux.HandleFunc("/api/admins", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
+		mux.HandleFunc("/api/admins/", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
 	}
 
 	return &http.Server{

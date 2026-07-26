@@ -143,6 +143,9 @@ type WebhookService struct {
 	notificationFormat   string       // "simple" or "detailed"
 	tmdbAPIKey           string       // TMDB API key for fetching images
 	tmdbClient           *http.Client // 共享 TMDB HTTP 客户端
+	// embyClient 共享 Emby HTTP 客户端：复用连接池与 TLS 会话，
+	// 每个调用方用 context/deadline 控制自己的超时，不再各建 client。
+	embyClient *http.Client
 	// Episode aggregation - 每个剧集独立的防抖动机制
 	epAggregation    map[string]*EpisodeAggregation // key: seriesName_season
 	epAggregationMu  sync.RWMutex
