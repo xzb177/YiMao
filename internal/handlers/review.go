@@ -190,7 +190,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if review.MediaType == services.MediaTypeTV {
 			embyType = services.MediaTypeTV
 		}
-		existingMedia, embyErr := h.webhookService.SearchEmbyMedia(review.MediaTitle, review.MediaYear, embyType)
+		existingMedia, embyErr := h.webhookService.SearchEmbyMediaByTMDB(review.TmdbID, embyType)
 		if embyErr == nil && existingMedia != nil {
 			blockedCard := richmessage.BuildReviewBlockedCard(
 				existingMedia.Title,

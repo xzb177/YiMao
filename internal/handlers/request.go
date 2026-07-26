@@ -262,8 +262,8 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		embyType = services.MediaTypeTV
 	}
 
-	logger.Info("[RequestHandler] Checking Emby for: %s (%d) %s (5s timeout)", mediaTitle, mediaYear, embyType)
-	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
+	logger.Info("[RequestHandler] Checking Emby by exact TMDB ID: %d %s (5s timeout)", tmdbID, embyType)
+	existingMedia, err := h.webhookService.SearchEmbyMediaByTMDB(tmdbID, embyType)
 	if err != nil {
 		logger.Info("[RequestHandler] Emby search timeout/failed (continuing): %v", err)
 		// 继续创建请求 - Emby 慢时不阻塞求片
@@ -619,7 +619,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		embyType = services.MediaTypeTV
 	}
 
-	existingMedia, err := h.webhookService.SearchEmbyMedia(mediaTitle, mediaYear, embyType)
+	existingMedia, err := h.webhookService.SearchEmbyMediaByTMDB(tmdbID, embyType)
 	if err == nil && existingMedia != nil {
 		embyInfo = existingMedia
 		logger.Info("[HandleForceSubscribe] Media found in Emby: %s", existingMedia.Title)

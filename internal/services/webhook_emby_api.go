@@ -677,6 +677,69 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	return best.result, nil
 }
 
+// SearchEmbyMediaByTMDB checks library identity using the authoritative TMDB
+// provider ID. Request and review gates must use this method rather than title
+// fuzzy search, otherwise similarly named media can block the wrong request.
+func (s *WebhookService) SearchEmbyMediaByTMDB(tmdbID int, mediaType MediaType) (*EmbySearchResult, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby URL or API key not configured")
+	}
+	if tmdbID <= 0 {
+		return nil, fmt.Errorf("invalid TMDB ID")
+	}
+	includeItemTypes := "Movie"
+	if mediaType == MediaTypeTV {
+		includeItemTypes = "Series"
+	}
+	params := url.Values{}
+	params.Set("AnyProviderIdEquals", fmt.Sprintf("Tmdb.%d", tmdbID))
+	params.Set("IncludeItemTypes", includeItemTypes)
+	params.Set("Recursive", "true")
+	params.Set("Fields", "ProviderIds,MediaSources")
+	params.Set("Limit", "20")
+	endpoint := fmt.Sprintf("%s/Users/%s/Items?%s", s.embyURL, url.PathEscape(s.embyUserID), params.Encode())
+	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 5 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+	var response struct {
+		Items []map[string]interface{} `json:"Items"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return nil, err
+	}
+	want := strconv.Itoa(tmdbID)
+	for _, item := range response.Items {
+		providerIDs, _ := item["ProviderIds"].(map[string]interface{})
+		got := ""
+		if value, ok := providerIDs["Tmdb"].(string); ok {
+			got = value
+		} else if value, ok := providerIDs["tmdb"].(string); ok {
+			got = value
+		}
+		if got != want {
+			continue
+		}
+		result, err := s.convertToSearchResult(item)
+		if err != nil {
+			return nil, err
+		}
+		return result, nil
+	}
+	return nil, nil
+}
+
 // CaptureEmbyWashBaseline returns the exact MediaSource paths currently bound
 // to the requested movie or TV season. The result is suitable for persistent
 // comparison when an administrator later marks the wash complete.
