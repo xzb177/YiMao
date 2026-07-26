@@ -46,6 +46,10 @@ type ReviewRequest struct {
 	// 中间态通知去重标记（P1 体验：等待期不再是黑箱）。
 	DownloadNotified bool `json:"download_notified,omitempty"` // 「开始下载」已通知
 	StallNotified    bool `json:"stall_notified,omitempty"`    // 「暂未找到资源」已通知
+	// CompletedNoticeAt 完成通知发出时间；入库回访（看完了吗）以此为基准。
+	CompletedNoticeAt *time.Time `json:"completed_notice_at,omitempty"`
+	// WatchFollowupSent 入库回访已发送（每请求一次）。
+	WatchFollowupSent bool `json:"watch_followup_sent,omitempty"`
 
 	// 审核通过后向 MoviePilot 提交订阅的兜底状态。
 	// 当 Status=="approved" 但提交 MP 失败时，进入 stuck 兜底（而不是凭空消失），
@@ -111,6 +115,18 @@ type ReviewService struct {
 	// OnSearchStall 订阅进入回收/长时间搜索（state → "R"）时的用户预期管理回调
 	// （由 main 注入）。告知「暂时没找到资源，已转入持续搜索」。每个请求只触发一次。
 	OnSearchStall func(telegramID int64, title string, year int, mediaType string)
+
+	// Fulfillment 履约统计服务（可选注入）：完成时抽样记录 提交→完成 耗时，
+	// 供求片回执展示 ETA 参考；同时驱动入库回访。
+	Fulfillment *FulfillmentStatsService
+
+	// OnWatchFollowup 入库回访回调（由 main 注入）：完成通知发出 3 天后
+	// 问一句「看了吗」。返回 true 表示已发送或用户已关闭通知，可标记完成；
+	// 返回 false 表示传输失败，下个小时自动重试。
+	OnWatchFollowup func(telegramID int64, requestID, title string) bool
+
+	// OnFulfillmentComplete 完成时写入长期账本（由 main 注入）。
+	OnFulfillmentComplete func(requestID string, telegramID int64, title string, year int, mediaType string, completedAt time.Time)
 
 	// Alert 当 review 进入 stuck（MP 提交失败）时的告警回调（由 main 注入）。
 	// 参数：requestID, mediaTitle, retryCount, lastError。
@@ -1043,6 +1059,56 @@ func (s *ReviewService) CancelByUser(requestID string, telegramID int64) error {
 	return nil
 }
 
+// watchFollowupDelay 完成通知 → 入库回访的间隔。
+// 必须明显小于 cleanup 的 7 天保留期，否则单据先被清走。
+const watchFollowupDelay = 3 * 24 * time.Hour
+
+// sendWatchFollowups 给完成已满 3 天且未回访过的请求发「看了吗」回访。
+func (s *ReviewService) sendWatchFollowups() {
+	if s.OnWatchFollowup == nil {
+		return
+	}
+	type followup struct {
+		telegramID int64
+		requestID  string
+		title      string
+	}
+	var due []followup
+
+	s.mu.RLock()
+	for id, review := range s.reviews {
+		if review.WatchFollowupSent || review.CompletedNoticeAt == nil || review.CompletedNoticeAt.IsZero() {
+			continue
+		}
+		if time.Since(*review.CompletedNoticeAt) < watchFollowupDelay {
+			continue
+		}
+		due = append(due, followup{review.TelegramID, id, review.MediaTitle})
+	}
+	s.mu.RUnlock()
+
+	for _, f := range due {
+		func(fu followup) {
+			defer func() {
+				if r := recover(); r != nil {
+					logger.Info("[ReviewService] Panic in watch followup: %v", r)
+				}
+			}()
+			if !s.OnWatchFollowup(fu.telegramID, fu.requestID, fu.title) {
+				return
+			}
+			s.mu.Lock()
+			if review, ok := s.reviews[fu.requestID]; ok && review != nil && !review.WatchFollowupSent {
+				review.WatchFollowupSent = true
+				if err := s.saveLocked(); err != nil {
+					logger.Info("[ReviewService] 保存回访标记失败: %v", err)
+				}
+			}
+			s.mu.Unlock()
+		}(f)
+	}
+}
+
 // cleanupRoutine periodically removes old completed reviews
 func (s *ReviewService) cleanupRoutine() {
 	ticker := time.NewTicker(1 * time.Hour)
@@ -1055,6 +1121,7 @@ func (s *ReviewService) cleanupRoutine() {
 					logger.Info("[ReviewService] Panic in cleanup routine: %v, recovering...", r)
 				}
 			}()
+			s.sendWatchFollowups()
 			s.cleanup()
 		}()
 	}
@@ -1069,6 +1136,15 @@ func (s *ReviewService) cleanup() {
 	var toDelete []string
 
 	for id, review := range s.reviews {
+		// 已完成单据至少保留完成后 14 天：第 3 天发回访，给用户留足回答窗口。
+		// 否则旧逻辑按 ReviewedAt 7 天清理，审批较早的单据可能在回访前消失。
+		if review.CompletedNoticeAt != nil && !review.CompletedNoticeAt.IsZero() {
+			if time.Since(*review.CompletedNoticeAt) < 14*24*time.Hour {
+				continue
+			}
+			toDelete = append(toDelete, id)
+			continue
+		}
 		// Approved wash work orders remain active until explicitly completed;
 		// deleting them here would remove the only safe recovery path.
 		if review.NormalizedBusinessType() == BusinessTypeWash && review.Status == "approved" {
@@ -1292,16 +1368,29 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 					review.SubscriptionState = actualState
 					logger.Info("[ReviewService] Updated %s: %s -> %s (lack=%d/%d)", item.requestID, oldState, actualState, sub.LackEpisode, sub.TotalEpisode)
 
-					// P1 通知：订阅完成时通知用户（替代 Emby webhook，用 MP 轮询触发）
-					if actualState == "C" && oldState != "C" && s.OnSubscriptionComplete != nil {
-						go func(r *ReviewRequest) {
-							defer func() {
-								if rec := recover(); rec != nil {
-									logger.Info("[ReviewService] Panic in completion notification: %v", rec)
-								}
-							}()
-							s.OnSubscriptionComplete(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
-						}(review)
+					// 完成跃迁：统计/回访账本不应依赖用户是否开启通知。
+					if actualState == "C" && oldState != "C" {
+						// 履约样本：提交 → 完成 的耗时（驱动求片回执里的 ETA 参考）。
+						if s.Fulfillment != nil && !review.CreatedAt.IsZero() {
+							s.Fulfillment.AddSample(string(review.MediaType), review.MediaYear,
+								int64(time.Since(review.CreatedAt).Seconds()))
+						}
+						// 记录完成时间，为入库回访与长期冷片盘点提供基准。
+						now := time.Now()
+						review.CompletedNoticeAt = &now
+						if s.OnFulfillmentComplete != nil {
+							s.OnFulfillmentComplete(review.RequestID, review.TelegramID, review.MediaTitle, review.MediaYear, string(review.MediaType), now)
+						}
+						if s.OnSubscriptionComplete != nil {
+							go func(r *ReviewRequest) {
+								defer func() {
+									if rec := recover(); rec != nil {
+										logger.Info("[ReviewService] Panic in completion notification: %v", rec)
+									}
+								}()
+								s.OnSubscriptionComplete(r.TelegramID, r.MediaTitle, r.MediaYear, string(r.MediaType))
+							}(review)
+						}
 					}
 
 					// P1 中间态：开始下载（每请求一次）。完成态跳过（避免 C 前一刻的抖动）。

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -27,6 +28,8 @@ type RequestHandler struct {
 	reviewService     *services.ReviewService
 	carpoolService    *services.CarpoolService
 	submissionService requestSubmitter
+	fulfillmentStats  *services.FulfillmentStatsService
+	seriesHandler     *SeriesHandler
 	enableReview      bool // Enable review system
 }
 
@@ -66,6 +69,16 @@ func NewRequestHandler(
 
 func (h *RequestHandler) SetCarpoolService(carpool *services.CarpoolService) {
 	h.carpoolService = carpool
+}
+
+// SetFulfillmentStats 注入履约统计服务（求片回执展示 ETA 参考）。
+func (h *RequestHandler) SetFulfillmentStats(fs *services.FulfillmentStatsService) {
+	h.fulfillmentStats = fs
+}
+
+// SetSeriesHandler 注入系列补全处理器（电影回执异步发现系列缺片）。
+func (h *RequestHandler) SetSeriesHandler(sh *SeriesHandler) {
+	h.seriesHandler = sh
 }
 
 func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
@@ -329,15 +342,51 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	}
 	receiptMsg += fmt.Sprintf(
 		"\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你")
+	if h.fulfillmentStats != nil {
+		if eta := h.fulfillmentStats.EstimateText(string(review.MediaType), review.MediaYear); eta != "" {
+			receiptMsg += "\n" + eta
+		}
+	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("🏠 主菜单", "start")
+	// 回执先返回；系列检查走后台，不让 TMDB/Emby 查询拖慢按钮响应。
+	if review.MediaType == services.MediaTypeMovie {
+		go h.sendSeriesSuggestion(ctx.ChatID, ctx.UserID, tmdbID)
+	}
 	return &callback.Response{
 		Text:        receiptMsg,
 		CallbackMsg: "请求已提交",
 		ShowAlert:   false,
 		Keyboard:    convertKeyboard(kb.Build()),
 	}, nil
+}
+
+// sendSeriesSuggestion 异步检查电影系列缺片，不阻塞求片回执。
+func (h *RequestHandler) sendSeriesSuggestion(chatID, userID int64, tmdbID int) {
+	if h.seriesHandler == nil || h.sessMgr == nil || chatID <= 0 || tmdbID <= 0 {
+		return
+	}
+	sess := h.sessMgr.GetOrCreate(userID)
+	key := fmt.Sprintf("series_suggested_%d", tmdbID)
+	if _, already := sess.GetString(key); already {
+		return
+	}
+	text, button := h.seriesHandler.BuildSuggestion(tmdbID)
+	if text == "" || button == nil {
+		return
+	}
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton(button.Text, button.CallbackData)
+	kb.NewRow()
+	kb.AddButton("📊 求片进度", "requests")
+	_, err := h.telegram.SendMessage(chatID, text, "HTML", kb.Build())
+	if err != nil {
+		logger.Info("[RequestHandler] 系列缺片提示发送失败: %v", err)
+		return
+	}
+	sess.Set(key, time.Now().UTC().Format(time.RFC3339))
+	logger.Info("[RequestHandler] 已向用户 %d 发送系列缺片提示", userID)
 }
 
 // notifyAdminsForReview notifies all admins about a new review request
@@ -640,6 +689,11 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		receiptMsg += "\n📺 剧集"
 	}
 	receiptMsg += "\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你"
+	if h.fulfillmentStats != nil {
+		if eta := h.fulfillmentStats.EstimateText(string(review.MediaType), review.MediaYear); eta != "" {
+			receiptMsg += "\n" + eta
+		}
+	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("🏠 主菜单", "start")

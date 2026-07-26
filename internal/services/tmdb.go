@@ -86,6 +86,29 @@ type TMDBMediaInfo struct {
 		IMDBID string `json:"imdb_id"`
 	} `json:"external_ids"`
 	MediaType string `json:"media_type"`
+	// BelongsToCollection 电影所属系列（TMDB collection），剧集无此字段。
+	BelongsToCollection *TMDBCollectionRef `json:"belongs_to_collection,omitempty"`
+}
+
+// TMDBCollectionRef 电影详情里的系列引用。
+type TMDBCollectionRef struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+// TMDBCollectionPart 系列中的一部电影。
+type TMDBCollectionPart struct {
+	ID          int     `json:"id"`
+	Title       string  `json:"title"`
+	ReleaseDate string  `json:"release_date"`
+	VoteAverage float64 `json:"vote_average"`
+}
+
+// TMDBCollection 系列详情（含全部影片）。
+type TMDBCollection struct {
+	ID    int                  `json:"id"`
+	Name  string               `json:"name"`
+	Parts []TMDBCollectionPart `json:"parts"`
 }
 
 // TMDBGenre represents a genre from TMDB
@@ -412,6 +435,33 @@ func (m *TMDBTrendingMediaInfo) GetYear() int {
 		return year
 	}
 	return 0
+}
+
+// GetCollection 获取电影系列详情（含全部影片列表）。
+func (c *TMDBClient) GetCollection(collectionID int) (*TMDBCollection, error) {
+	url := c.buildURL(fmt.Sprintf("/collection/%d", collectionID))
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.doRequest(req)
+	if err != nil {
+		return nil, fmt.Errorf("TMDB collection request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		return nil, fmt.Errorf("TMDB collection error: status %d", resp.StatusCode)
+	}
+
+	var collection TMDBCollection
+	if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
+		return nil, fmt.Errorf("failed to decode collection: %w", err)
+	}
+	return &collection, nil
 }
 
 // GetTrendingMovies gets trending movies from TMDB

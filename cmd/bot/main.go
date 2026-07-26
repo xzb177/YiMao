@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"os"
@@ -197,16 +198,17 @@ type Dependencies struct {
 	SearchHistoryDB   *services.SearchHistoryDB
 	FeedbackHandler   *handlers.FeedbackHandler
 	WeeklyReportSvc   *services.WeeklyReportService
-	CarpoolService    *services.CarpoolService    // #3 拼车 +1 服务
-	WishService       *services.WishService       // #6 许愿池存储
-	WishScheduler     *services.WishScheduler     // #6 许愿池 DailyRescan task
-	WishHandler       *handlers.WishHandler       // #6 许愿池命令/回调处理器
-	MyRequestsHandler *handlers.MyRequestsHandler // 求片进度聚合视图（/requests 命令复用）
-	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler  *handlers.AdventureHandler  // 电影冒险
-	RankHandler       *handlers.RankHandler       // 冒险排行
-	StatsHandler      *handlers.StatsHandler      // 个人冒险战绩
-	DreamHandler      *handlers.DreamHandler      // 本周挑战
+	CarpoolService    *services.CarpoolService          // #3 拼车 +1 服务
+	WishService       *services.WishService             // #6 许愿池存储
+	WishScheduler     *services.WishScheduler           // #6 许愿池 DailyRescan task
+	FulfillmentStats  *services.FulfillmentStatsService // 履约统计（ETA + 入库回访）
+	WishHandler       *handlers.WishHandler             // #6 许愿池命令/回调处理器
+	MyRequestsHandler *handlers.MyRequestsHandler       // 求片进度聚合视图（/requests 命令复用）
+	GameHandler       *handlers.GameHandler             // 游戏化功能处理器
+	AdventureHandler  *handlers.AdventureHandler        // 电影冒险
+	RankHandler       *handlers.RankHandler             // 冒险排行
+	StatsHandler      *handlers.StatsHandler            // 个人冒险战绩
+	DreamHandler      *handlers.DreamHandler            // 本周挑战
 }
 
 // initServices initializes all services
@@ -255,6 +257,15 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
 	reviewService.SetUserMapping(userMappingService) // Issue #1: 全量检测需要 MP 用户名→TG ID 反查
+	logger.Info("    - FulfillmentStatsService...")
+	fulfillmentStats := services.NewFulfillmentStatsService(cfg.DataDir)
+	reviewService.Fulfillment = fulfillmentStats
+	reviewService.OnFulfillmentComplete = func(requestID string, telegramID int64, title string, year int, mediaType string, completedAt time.Time) {
+		fulfillmentStats.AddCompletion(services.CompletionRecord{
+			RequestID: requestID, TelegramID: telegramID, Title: title,
+			Year: year, MediaType: mediaType, CompletedAt: completedAt,
+		})
+	}
 
 	// A4: 数据自动备份（每 24h 备份一次，保留 7 天，启动时立即执行一次）
 	backupService := services.NewDataBackupService(cfg.DataDir, 24*time.Hour, 7*24*time.Hour)
@@ -288,13 +299,15 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		msg := services.NewMessageBuilder()
 		msg.Bold("🎉 求片已完成！").Newline()
 		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
 		msg.Newline()
 		msg.Text("🍿 快去 Emby 观看吧～")
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("📊 求片进度", "my_requests")
-		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
+		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
+			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
+		}
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
 	}
 	// P1 中间态：开始下载（用户可关，走同一 NotifyDownload 偏好）
@@ -313,12 +326,14 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		msg := services.NewMessageBuilder()
 		msg.Bold("⬇️ 开始下载").Newline()
 		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
 		msg.Newline()
 		msg.Text("找到资源了，正在下载，入库后会再通知你")
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("📊 求片进度", "my_requests")
-		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build())
+		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
+			logger.Info("[ReviewService] 开始下载通知发送失败: user=%d err=%v", telegramID, err)
+		}
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 开始下载", telegramID, title, yearStr)
 	}
 	// P1 中间态：暂未找到资源，转入持续搜索（预期管理，用户可关）
@@ -337,17 +352,45 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		msg := services.NewMessageBuilder()
 		msg.Bold("🔍 暂时没找到资源").Newline()
 		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, title, yearStr).Newline()
+		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
 		msg.Newline()
 		msg.Text("已转入持续搜索，出了资源会自动下载，不用重新求片")
-		telegramClient.SendMessage(telegramID, msg.Build(), "HTML", nil)
+		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
+			logger.Info("[ReviewService] 持续搜索通知发送失败: user=%d err=%v", telegramID, err)
+		}
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 暂未找到资源", telegramID, title, yearStr)
+	}
+	// 入库回访：完成 3 天后询问是否看过，按钮回答写入本地统计。
+	reviewService.OnWatchFollowup = func(telegramID int64, requestID, title string) bool {
+		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
+			// 用户明确关闭此类通知，视为已处理，避免每小时反复扫描。
+			return true
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold("🍿 片子已经到库几天啦").Newline()
+		msg.Newline()
+		msg.Textf("《%s》看完了吗？你的反馈会帮助我以后推荐得更准。", html.EscapeString(title)).Newline()
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("🎉 看完了", fmt.Sprintf("watch_fb:id:%s:a:w", requestID))
+		kb.AddButton("🍿 还没看", fmt.Sprintf("watch_fb:id:%s:a:l", requestID))
+		kb.NewRow()
+		kb.AddButton("👌 不想看了", fmt.Sprintf("watch_fb:id:%s:a:d", requestID))
+		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
+			logger.Info("[ReviewService] 入库回访发送失败: user=%d request=%s err=%v", telegramID, requestID, err)
+			return false
+		}
+		logger.Info("[ReviewService] 已发送入库回访: user=%d request=%s", telegramID, requestID)
+		return true
 	}
 	// B4: stuck 告警 — 审核通过但 MP 提交失败时通知管理员
 	reviewService.Alert = func(requestID, title string, retryCount int, lastError string) {
 		if lastError == "自动重试成功" {
 			// 自动重试成功：用户会通过 OnSubscriptionComplete 收到通知，这里仅记日志
 			logger.Info("[Alert] 求片自动重试成功: %s, 请求 %s, 第 %d 次", title, requestID, retryCount)
+			return
+		}
+		if alertService == nil {
+			logger.Info("[Alert] review_stuck 未发送：没有可用管理员告警接收人，request=%s", requestID)
 			return
 		}
 		alertService.Warn("review_stuck",
@@ -360,7 +403,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
 			return
 		}
-		telegramClient.SendMessage(telegramID, message, "", nil)
+		if _, err := telegramClient.SendMessage(telegramID, message, "", nil); err != nil {
+			logger.Info("[ReviewService] 每日汇总发送失败: user=%d err=%v", telegramID, err)
+		}
 	}
 	logger.Info("    - CarpoolService...")
 	carpoolService := services.NewCarpoolService(cfg.DataDir) // #3 拼车 +1 持久化服务
@@ -508,6 +553,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		CarpoolService:    carpoolService,
 		WishService:       wishService,
 		WishScheduler:     wishScheduler,
+		FulfillmentStats:  fulfillmentStats,
 	}
 }
 
@@ -535,6 +581,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	backHandler := handlers.NewBackHandler(deps.SessionMgr)
 	cancelHandler := handlers.NewCancelHandler(deps.SessionMgr)
 	requestHandler := handlers.NewRequestHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.TMDBClient, deps.AdminService, deps.WebhookService, deps.UserMapping, deps.QuotaService, deps.ReviewService)
+	requestHandler.SetFulfillmentStats(deps.FulfillmentStats)
 	submissionService := services.NewRequestSubmissionService(deps.UserMapping, deps.ReviewService, deps.QuotaService, requestHandler.NotifyAdminsForReview)
 	requestHandler.SetRequestSubmissionService(submissionService)
 	requestHandler.SetCarpoolService(deps.CarpoolService)
@@ -547,6 +594,10 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	linkHandler := handlers.NewLinkHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
+	adminHandler.SetFulfillmentStats(deps.FulfillmentStats)
+	seriesHandler := handlers.NewSeriesHandler(deps.TMDBClient, deps.MoviePilot, deps.WebhookService)
+	requestHandler.SetSeriesHandler(seriesHandler)
+	watchFollowupHandler := handlers.NewWatchFollowupHandler(deps.FulfillmentStats, deps.ReviewService)
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService, groupChatID)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
 	washHandler := handlers.NewWashHandler(deps.ReviewService, deps.TMDBClient, deps.WebhookService, requestHandler.NotifyAdminsForReview, deps.SessionMgr)
@@ -792,6 +843,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionCancel, cancelHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequests, myRequestsHandler.Handle)
 	registry.RegisterFunc("my_requests", myRequestsHandler.Handle)
+	registry.RegisterFunc("series_view", seriesHandler.Handle)
+	registry.RegisterFunc("watch_fb", watchFollowupHandler.Handle)
 	registry.RegisterFunc(callback.ActionLink, linkHandler.Handle)
 	registry.RegisterFunc("unlink_confirm", linkHandler.HandleUnlinkConfirm)
 	registry.RegisterFunc("resetpw", linkHandler.HandleResetPW)
@@ -984,6 +1037,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		CarpoolService:    deps.CarpoolService,
 		WishService:       deps.WishService,
 		WishScheduler:     deps.WishScheduler,
+		FulfillmentStats:  deps.FulfillmentStats,
 		WishHandler:       wishHandler,
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,

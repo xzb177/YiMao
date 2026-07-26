@@ -14,6 +14,17 @@ import (
 	"github.com/xzb177/yimao/pkg/types"
 )
 
+// escapeAdminMarkdown 转义拼进 RichMessage Markdown 的外部片名。
+func escapeAdminMarkdown(text string) string {
+	replacer := strings.NewReplacer(
+		"\\", "\\\\", "*", "\\*", "_", "\\_", "[", "\\[", "]", "\\]",
+		"(", "\\(", ")", "\\)", "~", "\\~", "`", "\\`", "#", "\\#",
+		"+", "\\+", "-", "\\-", "=", "\\=", "|", "\\|", "{", "\\{",
+		"}", "\\}", ".", "\\.", "!", "\\!",
+	)
+	return replacer.Replace(text)
+}
+
 // AdminHandler handles admin-related callbacks
 type AdminHandler struct {
 	cfg                  *config.Config
@@ -25,6 +36,12 @@ type AdminHandler struct {
 	mediaNotificationSvc *services.MediaNotificationService
 	issueService         *services.IssueService
 	reviewService        *services.ReviewService
+	fulfillmentStats     *services.FulfillmentStatsService
+}
+
+// SetFulfillmentStats 注入履约统计（求片统计页展示回访分布与清理线索）。
+func (h *AdminHandler) SetFulfillmentStats(fs *services.FulfillmentStatsService) {
+	h.fulfillmentStats = fs
 }
 
 // NewAdminHandler creates a new admin handler
@@ -696,11 +713,25 @@ func (h *AdminHandler) handleAdminRequestStats(ctx *callback.Context) (*callback
 		Failed:           stats.Failed,
 		AverageDoneHours: stats.AverageDoneHours,
 	})
+	// 入库回访概览 + 清理线索（有数据才追加，不打扰空库）
+	extra := ""
+	if h.fulfillmentStats != nil {
+		counts := h.fulfillmentStats.WatchFeedbackCounts()
+		if counts["w"]+counts["l"]+counts["d"] > 0 {
+			extra = fmt.Sprintf("\n\n📮 入库回访：看完 %d · 还没看 %d · 不想看 %d", counts["w"], counts["l"], counts["d"])
+			if unwanted := h.fulfillmentStats.StaleUnwatchedTitles(90, 5); len(unwanted) > 0 {
+				for i := range unwanted {
+					unwanted[i] = escapeAdminMarkdown(unwanted[i])
+				}
+				extra += "\n🗑 可盘点（入库超过 90 天且未确认看完）：\n  · " + strings.Join(unwanted, "\n  · ")
+			}
+		}
+	}
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("🔄 刷新", "admin_request_stats")
 	kb.NewRow()
 	kb.AddButton("⬅️ 返回管理中心", "admin_menu")
-	return &callback.Response{RichMessage: richMsg.Markdown, Edit: true, Keyboard: convertKeyboard(kb.Build())}, nil
+	return &callback.Response{RichMessage: richMsg.Markdown + extra, Edit: true, Keyboard: convertKeyboard(kb.Build())}, nil
 }
 
 // handleAdminDashboard shows data overview dashboard

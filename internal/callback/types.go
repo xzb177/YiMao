@@ -159,6 +159,8 @@ var validActions = map[Action]bool{
 	"wish_request":    true, // #6 许愿池：出源喜报「立即求片」按钮（走现有 request 流程 + 确认）
 	"wish_add":        true, // #1 搜索无结果「🌟 加入许愿池」按钮（片名存 session，回调不带超长参数）
 	"unlink_confirm":  true, // /unlink 二次确认按钮（防误触解绑）
+	"watch_fb":        true, // 入库回访「看了吗」按钮（w=看完 l=还没 d=不想看）
+	"series_view":     true, // 电影系列补全清单
 
 	// Admin Feedback Panel actions
 	"admin_feedback":          true, // Feedback management main panel
