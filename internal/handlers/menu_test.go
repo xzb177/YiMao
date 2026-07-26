@@ -101,9 +101,11 @@ func TestMergePendingReviews_SkipsRejected(t *testing.T) {
 		MediaTitle: "被拒的片",
 		CreatedAt:  time.Now(),
 	})
-	// CreateRequest 强制设为 pending，需要手动改 status
+	// 通过服务层转换状态；读取 API 返回的是隔离快照。
 	req, _ := rs.GetRequest("req-rejected")
-	req.Status = "rejected"
+	if _, err := rs.Reject(req.RequestID, 999, "测试拒绝"); err != nil {
+		t.Fatal(err)
+	}
 
 	h := &MyRequestsHandler{reviewSvc: rs}
 	result := h.mergePendingReviews(123, nil)
@@ -125,10 +127,14 @@ func TestMergePendingReviews_StuckApproved(t *testing.T) {
 		MediaType:  services.MediaTypeMovie,
 		CreatedAt:  time.Now(),
 	})
-	// CreateRequest 强制设为 pending，需要手动改 status + stuck
+	// 通过服务层转换状态；读取 API 返回的是隔离快照。
 	req, _ := rs.GetRequest("req-stuck")
-	req.Status = "approved"
-	req.Stuck = true
+	if _, err := rs.Approve(req.RequestID, 999, req.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.MarkStuck(req.RequestID, "测试故障"); err != nil {
+		t.Fatal(err)
+	}
 
 	h := &MyRequestsHandler{reviewSvc: rs}
 	result := h.mergePendingReviews(123, nil)

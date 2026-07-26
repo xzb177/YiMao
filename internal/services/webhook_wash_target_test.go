@@ -81,3 +81,35 @@ func TestHasEmbyWashTargetFailsClosed(t *testing.T) {
 		t.Fatalf("got ok=%v err=%v, want fail closed", ok, err)
 	}
 }
+
+func TestCaptureEmbyWashBaselineMovieSources(t *testing.T) {
+	svc := newWashTargetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"Items":[{"Id":"movie-1","ProviderIds":{"Tmdb":"550"},"MediaSources":[{"Path":"/media/old-a.mkv"},{"Path":"/media/old-b.mkv"}]}]}`))
+	}))
+	baseline, err := svc.CaptureEmbyWashBaseline(550, MediaTypeMovie, 0)
+	if err != nil || len(baseline) != 2 || baseline[0] != "/media/old-a.mkv" || baseline[1] != "/media/old-b.mkv" {
+		t.Fatalf("baseline=%v err=%v", baseline, err)
+	}
+}
+
+func TestCaptureEmbyWashBaselineTVUsesExactSeasonEpisodes(t *testing.T) {
+	svc := newWashTargetService(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/Users/user-1/Items":
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"series-1","ProviderIds":{"Tmdb":"1425"}}]}`))
+		case "/Shows/series-1/Episodes":
+			if got := r.URL.Query().Get("Season"); got != "2" {
+				t.Fatalf("Season=%q, want 2", got)
+			}
+			_, _ = w.Write([]byte(`{"Items":[{"Id":"ep-1","ParentIndexNumber":2,"MediaSources":[{"Path":"/tv/s02e01-old.mkv"}]},{"Id":"wrong-season","ParentIndexNumber":3,"MediaSources":[{"Path":"/tv/s03e01.mkv"}]}]}`))
+		default:
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	baseline, err := svc.CaptureEmbyWashBaseline(1425, MediaTypeTV, 2)
+	if err != nil || len(baseline) != 1 || baseline[0] != "/tv/s02e01-old.mkv" {
+		t.Fatalf("baseline=%v err=%v", baseline, err)
+	}
+}

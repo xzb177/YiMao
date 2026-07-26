@@ -152,9 +152,20 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// Wash approvals stay as local work orders. They must never create or
 	// overwrite an ordinary MoviePilot subscription.
 	if review.NormalizedBusinessType() == services.BusinessTypeWash {
-		if ctx.UserID != review.TelegramID {
-			if _, sendErr := h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ 《%s》\n\n管理员将按工单处理，可在「我的进度」查看。", review.MediaTitle), "", nil); sendErr != nil {
-				logger.Warn("[ReviewHandler] 洗版批准通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+		icon := "🎬"
+		if review.MediaType == services.MediaTypeTV {
+			icon = "📺"
+		}
+		privateCard := richmessage.BuildWashStatusCard(richmessage.WashStatusData{Title: review.MediaTitle, Year: review.MediaYear, MediaIcon: icon, Season: review.Season, Status: "approved"})
+		if h.telegram != nil {
+			if _, sendErr := h.telegram.SendRichMessage(review.TelegramID, privateCard.Markdown, nil); sendErr != nil {
+				logger.Warn("[ReviewHandler] 洗版批准私聊通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+			}
+			if h.groupChatID != 0 {
+				publicCard := richmessage.BuildWashStatusCard(richmessage.WashStatusData{Title: review.MediaTitle, Year: review.MediaYear, MediaIcon: icon, Season: review.Season, Status: "approved", Public: true})
+				if _, sendErr := h.telegram.SendRichMessage(h.groupChatID, publicCard.Markdown, nil); sendErr != nil {
+					logger.Warn("[ReviewHandler] 洗版批准群通知发送失败 group=%d: %v", h.groupChatID, sendErr)
+				}
 			}
 		}
 		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版工单已被批准", review.MediaTitle))
@@ -314,19 +325,46 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
 	}
 	requestID := ctx.Callback.Params["id"]
+	var review *services.ReviewRequest
 	if token := ctx.Callback.Params["token"]; token != "" {
-		if review, ok := h.reviewService.GetRequestByToken(token); ok {
-			requestID = review.RequestID
+		if found, ok := h.reviewService.GetRequestByToken(token); ok {
+			review, requestID = found, found.RequestID
 		}
 	}
-	review, err := h.reviewService.CompleteWash(requestID, ctx.UserID)
+	if review == nil {
+		review, _ = h.reviewService.GetRequest(requestID)
+	}
+	if review == nil {
+		return &callback.Response{CallbackMsg: "找不到洗版工单", ShowAlert: true}, nil
+	}
+	if review.Status == "completed" {
+		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
+	}
+	if len(review.WashBaseline) == 0 {
+		return &callback.Response{Text: "⚠️ 这是旧版洗版工单，缺少创建时的媒体基线，无法安全验证完成。\n\n请保留当前资源，并让用户重新创建洗版工单；新工单会自动采集基线后再验证。", CallbackMsg: "缺少基线，已安全拒绝", ShowAlert: true}, nil
+	}
+	if h.webhookService == nil {
+		return &callback.Response{Text: "⚠️ 暂时无法连接媒体库核验，工单仍保持已批准状态，请恢复 Emby 连接后重试。", CallbackMsg: "媒体库核验不可用", ShowAlert: true}, nil
+	}
+	currentSources, verifyErr := h.webhookService.CaptureEmbyWashBaseline(review.TmdbID, review.MediaType, review.Season)
+	if verifyErr != nil {
+		return &callback.Response{Text: "⚠️ 媒体库核验失败，未标记完成。请确认 Emby 已扫描新旧版本后重试。", CallbackMsg: "核验失败", ShowAlert: true}, nil
+	}
+	review, err := h.reviewService.CompleteWash(requestID, ctx.UserID, currentSources)
 	if err != nil {
-		return &callback.Response{CallbackMsg: "工单状态不允许完成", ShowAlert: true}, nil
+		return &callback.Response{Text: fmt.Sprintf("⚠️ 洗版尚未通过安全验证，未标记完成。\n\n%s\n\n请保留旧版、等待 Emby 扫描出新增版本后重试。", err.Error()), CallbackMsg: "验证未通过", ShowAlert: true}, nil
 	}
-	if _, sendErr := h.telegram.SendMessage(review.TelegramID, fmt.Sprintf("✅ 洗版已完成\n\n♻️ 《%s》\n\n新版本已由管理员处理完成，旧版本未由 YiMao 自动删除。", review.MediaTitle), "", nil); sendErr != nil {
-		logger.Warn("[ReviewHandler] 洗版完成通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+	icon := "🎬"
+	if review.MediaType == services.MediaTypeTV {
+		icon = "📺"
 	}
-	return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
+	card := richmessage.BuildWashStatusCard(richmessage.WashStatusData{Title: review.MediaTitle, Year: review.MediaYear, MediaIcon: icon, Season: review.Season, Status: "completed"})
+	if h.telegram != nil {
+		if _, sendErr := h.telegram.SendRichMessage(review.TelegramID, card.Markdown, nil); sendErr != nil {
+			logger.Warn("[ReviewHandler] 洗版完成通知发送失败 user=%d: %v", review.TelegramID, sendErr)
+		}
+	}
+	return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s\n\n已验证新增版本且旧版仍保留。", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
 }
 
 // handleReject handles reject callback

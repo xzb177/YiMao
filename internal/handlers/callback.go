@@ -283,7 +283,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	// text could unexpectedly continue an old wash/feedback session.
 	if h.sessMgr != nil {
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
-		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media", "feedback_draft_description", "feedback_draft_photo_file_id"} {
 			sess.Delete(key)
 		}
 	}
@@ -1629,7 +1629,7 @@ func NewCancelHandler(sessMgr *session.Manager) *CancelHandler {
 func (h *CancelHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
 	if h.sessMgr != nil {
 		sess := h.sessMgr.GetOrCreate(ctx.UserID)
-		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+		for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media", "feedback_draft_description", "feedback_draft_photo_file_id"} {
 			sess.Delete(key)
 		}
 	}

@@ -405,6 +405,8 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"feedback_media_title",
 		"feedback_issue_type",
 		"feedback_require_media",
+		"feedback_draft_description",
+		"feedback_draft_photo_file_id",
 		// 反馈追问会话
 		"feedback_conversation_issue_id",
 		// 管理员添加管理员 / 自定义时间 / 回复反馈 / 回复问题

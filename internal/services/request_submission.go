@@ -180,5 +180,10 @@ func cloneReview(in *ReviewRequest) *ReviewRequest {
 	}
 	out := *in
 	out.EmbyInfo = cloneEmby(in.EmbyInfo)
+	out.WashBaseline = append([]string(nil), in.WashBaseline...)
+	if in.LibraryNotifiedAt != nil {
+		notifiedAt := *in.LibraryNotifiedAt
+		out.LibraryNotifiedAt = &notifiedAt
+	}
 	return &out
 }

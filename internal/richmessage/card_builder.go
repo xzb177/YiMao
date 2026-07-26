@@ -799,6 +799,65 @@ func BuildGroupApprovedCard(data GroupApprovedData) RichMessage {
 	return builder.Build()
 }
 
+// WashStatusData describes a dedicated wash workflow card. Public cards omit
+// requester information by construction.
+type WashStatusData struct {
+	Title     string
+	Year      int
+	MediaIcon string
+	Season    int
+	Status    string
+	Requester string
+	Public    bool
+}
+
+// BuildWashStatusCard builds wash-specific approval/completion messaging.
+func BuildWashStatusCard(data WashStatusData) RichMessage {
+	builder := NewBuilder()
+	statusText := "已批准"
+	heading := "✅ 洗版工单已批准"
+	progress := "管理员处理并验证新版本；旧版须继续保留。"
+	if data.Status == "completed" {
+		statusText = "已完成"
+		heading = "✅ 洗版验证完成"
+		progress = "已确认新增不同版本，且创建工单时的旧版仍在媒体库中。"
+	}
+	builder.Heading(heading, 3)
+	icon := data.MediaIcon
+	if icon == "" {
+		icon = "♻️"
+	}
+	seasonText := ""
+	if data.Season > 0 {
+		seasonText = fmt.Sprintf("第%d季", data.Season)
+	}
+	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, icon, seasonText))
+	builder.Table([]string{"项目", "状态"}, [][]string{{"洗版状态", statusText}})
+	builder.Paragraph(progress)
+	if !data.Public && data.Requester != "" {
+		builder.Italic(fmt.Sprintf("申请人：%s", data.Requester))
+	}
+	if !data.Public && data.Status != "completed" {
+		builder.Italic("可在「我的进度」查看，完成后通知你")
+	}
+	return builder.Build()
+}
+
+// BuildWashReviewNotifyCard builds the administrator-only creation card.
+func BuildWashReviewNotifyCard(data ReviewNotifyData) RichMessage {
+	builder := NewBuilder()
+	builder.Heading("♻️ 新洗版工单", 3)
+	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, data.MediaIcon, data.SeasonText))
+	builder.Table([]string{"信息", "详情"}, [][]string{{"类型", data.MediaType}, {"申请人", fmt.Sprintf("%s (%d)", data.UserName, data.UserID)}})
+	builder.Paragraph("仅管理员可处理；批准或拒绝前请核对目标。处理期间必须保留现有版本。")
+	return builder.Build()
+}
+
+// BuildWashApprovedCard preserves the older call shape for private approvals.
+func BuildWashApprovedCard(title string, year int, mediaIcon string) RichMessage {
+	return BuildWashStatusCard(WashStatusData{Title: title, Year: year, MediaIcon: mediaIcon, Status: "approved"})
+}
+
 // BuildReviewApprovedCard builds the requester's approval notification.
 func BuildReviewApprovedCard(data ReviewApprovedData) RichMessage {
 	builder := NewBuilder()

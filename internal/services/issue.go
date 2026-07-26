@@ -162,10 +162,13 @@ func (s *IssueService) CreateIssueWithPhoto(userID int64, userName, title, descr
 		Replies:     []IssueReply{},
 	}
 
-	s.issues[s.nextID] = issue
+	issueID := s.nextID
+	s.issues[issueID] = issue
 	s.nextID++
 
 	if err := s.save(); err != nil {
+		delete(s.issues, issueID)
+		s.nextID = issueID
 		return nil, err
 	}
 

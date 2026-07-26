@@ -66,6 +66,10 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	if !exists {
 		return &callback.Response{Text: "♻️ 媒体库里暂时没有这部影片或所选季度，因此不能申请洗版。\n\n洗版用于更换已有资源；如果想新增内容，请使用「🎬 求片」。", CallbackMsg: "媒体库中未找到", ShowAlert: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "🎬 改为求片", CallbackData: fmt.Sprintf("request:id:%d:type:%s", id, mediaType)}}, {{Text: "🔍 重选影片", CallbackData: "wash"}, {Text: "🏠 主菜单", CallbackData: "start"}}}}}, nil
 	}
+	baseline, err := h.emby.CaptureEmbyWashBaseline(id, kind, season)
+	if err != nil {
+		return &callback.Response{Text: "♻️ 无法记录当前版本基线，已安全停止提交。请确认 Emby 已扫描出该影片或季度的文件后重试。", CallbackMsg: "基线采集失败", ShowAlert: true}, nil
+	}
 	seasonText := ""
 	if season > 0 {
 		seasonText = fmt.Sprintf(" · 第%d季", season)
@@ -85,7 +89,7 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		RequestID: fmt.Sprintf("wash_%d_%d_%d_%d", ctx.UserID, id, season, time.Now().UnixNano()), BusinessType: services.BusinessTypeWash,
 		TelegramID: ctx.UserID, TelegramName: fmt.Sprintf("用户%d", ctx.UserID), TmdbID: id,
 		MediaTitle: media.GetTitle(), MediaYear: media.GetYear(), MediaType: kind, Season: season,
-		PosterPath: media.PosterPath, Overview: media.Overview, QuotaCost: 0, RequestOrigin: "wash",
+		PosterPath: media.PosterPath, Overview: media.Overview, QuotaCost: 0, RequestOrigin: "wash", WashBaseline: baseline,
 	}
 	existing, created, err := h.reviews.CreateRequestIfNoActiveSimilar(review)
 	if err != nil {

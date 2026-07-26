@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -334,7 +335,7 @@ func (s *WebhookService) getTMDBBackdrop(tmdbID string, mediaType string) string
 	// 【关键】添加 include_image_language=zh,null 优先中文图片
 	url := fmt.Sprintf("https://api.themoviedb.org/3/%s/%s/images?api_key=%s&include_image_language=zh,null", mediaType, tmdbID, apiKey)
 
-	logger.Info("[TMDB] Fetching images from %s", url)
+	logger.Info("[TMDB] Fetching images for %s ID %s", mediaType, tmdbID)
 	resp, err := client.Get(url)
 	if err != nil {
 		logger.Info("[TMDB] API request failed for %s ID %s: %v", mediaType, tmdbID, err)
@@ -676,6 +677,111 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	return best.result, nil
 }
 
+// CaptureEmbyWashBaseline returns the exact MediaSource paths currently bound
+// to the requested movie or TV season. The result is suitable for persistent
+// comparison when an administrator later marks the wash complete.
+func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType, season int) ([]string, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby URL or API key not configured")
+	}
+	if mediaType == MediaTypeTV && season <= 0 {
+		return nil, fmt.Errorf("TV wash requires a positive season")
+	}
+	includeItemTypes := "Movie"
+	if mediaType == MediaTypeTV {
+		includeItemTypes = "Series"
+	}
+	params := url.Values{}
+	params.Set("AnyProviderIdEquals", fmt.Sprintf("Tmdb.%d", tmdbID))
+	params.Set("IncludeItemTypes", includeItemTypes)
+	params.Set("Recursive", "true")
+	params.Set("Fields", "ProviderIds,MediaSources")
+	endpoint := fmt.Sprintf("%s/Users/%s/Items?%s", s.embyURL, url.PathEscape(s.embyUserID), params.Encode())
+	var search struct {
+		Items []struct {
+			ID           string            `json:"Id"`
+			ProviderIDs  map[string]string `json:"ProviderIds"`
+			MediaSources []EmbyMediaSource `json:"MediaSources"`
+		} `json:"Items"`
+	}
+	if err := s.getEmbyJSON(endpoint, &search); err != nil {
+		return nil, err
+	}
+	var targetID string
+	var sources []EmbyMediaSource
+	wantTMDB := strconv.Itoa(tmdbID)
+	for _, item := range search.Items {
+		if item.ProviderIDs["Tmdb"] == wantTMDB || item.ProviderIDs["tmdb"] == wantTMDB {
+			targetID, sources = item.ID, item.MediaSources
+			break
+		}
+	}
+	if targetID == "" {
+		return nil, fmt.Errorf("Emby wash target not found")
+	}
+	if mediaType == MediaTypeTV {
+		params = url.Values{}
+		params.Set("Season", strconv.Itoa(season))
+		params.Set("Fields", "MediaSources")
+		if s.embyUserID != "" {
+			params.Set("UserId", s.embyUserID)
+		}
+		episodesEndpoint := fmt.Sprintf("%s/Shows/%s/Episodes?%s", s.embyURL, url.PathEscape(targetID), params.Encode())
+		var episodes struct {
+			Items []struct {
+				ParentIndexNumber int               `json:"ParentIndexNumber"`
+				MediaSources      []EmbyMediaSource `json:"MediaSources"`
+			} `json:"Items"`
+		}
+		if err := s.getEmbyJSON(episodesEndpoint, &episodes); err != nil {
+			return nil, err
+		}
+		sources = nil
+		for _, episode := range episodes.Items {
+			// Do not trust server-side filtering alone: retain exact-season safety.
+			if episode.ParentIndexNumber == season {
+				sources = append(sources, episode.MediaSources...)
+			}
+		}
+	}
+	seen := make(map[string]struct{})
+	paths := make([]string, 0, len(sources))
+	for _, source := range sources {
+		path := strings.TrimSpace(source.Path)
+		if path == "" {
+			continue
+		}
+		if _, exists := seen[path]; !exists {
+			seen[path] = struct{}{}
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("Emby wash target has no MediaSource paths")
+	}
+	sort.Strings(paths)
+	return paths, nil
+}
+
+func (s *WebhookService) getEmbyJSON(endpoint string, dst interface{}) error {
+	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	client := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}}}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(dst)
+}
+
 // HasEmbyWashTarget verifies that a wash request points at media which already
 // exists in Emby. TV requests must also point at an existing regular season.
 // The check fails closed: an unavailable Emby API must not create a zero-quota
@@ -692,7 +798,7 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	params.Set("AnyProviderIdEquals", fmt.Sprintf("Tmdb.%d", tmdbID))
 	params.Set("IncludeItemTypes", includeItemTypes)
 	params.Set("Recursive", "true")
-	params.Set("Fields", "ProviderIds")
+	params.Set("Fields", "ProviderIds,MediaSources")
 	endpoint := fmt.Sprintf("%s/Users/%s/Items?%s", s.embyURL, url.PathEscape(s.embyUserID), params.Encode())
 	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {

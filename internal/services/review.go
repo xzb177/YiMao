@@ -60,6 +60,11 @@ type ReviewRequest struct {
 
 	QuotaCost     int  `json:"quota_cost,omitempty"`     // 创建时实际扣除配额；0 表示旧 JSON
 	QuotaRestored bool `json:"quota_restored,omitempty"` // 已返还，持久化保证幂等
+
+	// WashBaseline captures the exact Emby media-source paths present when a
+	// wash work order is created. Legacy work orders intentionally have no
+	// baseline and therefore cannot be marked complete without recovery.
+	WashBaseline []string `json:"wash_baseline,omitempty"`
 }
 
 const (
@@ -385,7 +390,7 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 	review.ApproveToken = generateApproveToken()
 
 	previous, hadPrevious := s.reviews[review.RequestID]
-	s.reviews[review.RequestID] = review
+	s.reviews[review.RequestID] = cloneReview(review)
 
 	// Map priority to Chinese for logging
 	priorityText := map[string]string{
@@ -426,7 +431,7 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 			continue
 		}
 		if current.Status == "pending" || current.Status == "approved" {
-			return current, false, nil
+			return cloneReview(current), false, nil
 		}
 	}
 	review.CreatedAt = time.Now()
@@ -436,7 +441,7 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 	}
 	review.ApproveToken = generateApproveToken()
 	previous, existed := s.reviews[review.RequestID]
-	s.reviews[review.RequestID] = review
+	s.reviews[review.RequestID] = cloneReview(review)
 	if err := s.saveLocked(); err != nil {
 		if existed {
 			s.reviews[review.RequestID] = previous
@@ -445,28 +450,69 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 		}
 		return nil, false, err
 	}
-	return review, true, nil
+	return cloneReview(review), true, nil
 }
 
-// CompleteWash closes an approved wash work order without touching MoviePilot
-// subscriptions or existing Emby media versions.
-func (s *ReviewService) CompleteWash(requestID string, adminID int64) (*ReviewRequest, error) {
+// CompleteWash closes an approved wash work order only after verifying that
+// every baseline source is still present and at least one different source was
+// added. A completed work order is returned unchanged to make retries safe.
+func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSources []string) (*ReviewRequest, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	review, ok := s.reviews[requestID]
 	if !ok || review == nil {
 		return nil, fmt.Errorf("review request not found")
 	}
-	if review.NormalizedBusinessType() != BusinessTypeWash || review.Status != "approved" {
+	if review.NormalizedBusinessType() != BusinessTypeWash {
 		return nil, fmt.Errorf("wash work order is not completable")
 	}
+	if review.Status == "completed" {
+		return cloneReview(review), nil
+	}
+	if review.Status != "approved" {
+		return nil, fmt.Errorf("wash work order is not completable")
+	}
+	if len(review.WashBaseline) == 0 {
+		return nil, fmt.Errorf("缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线")
+	}
+	current := make(map[string]struct{}, len(currentSources))
+	for _, source := range currentSources {
+		if source = strings.TrimSpace(source); source != "" {
+			current[source] = struct{}{}
+		}
+	}
+	baseline := make(map[string]struct{}, len(review.WashBaseline))
+	for _, source := range review.WashBaseline {
+		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
+		baseline[source] = struct{}{}
+		if _, preserved := current[source]; !preserved {
+			return nil, fmt.Errorf("旧版未保留：缺少基线 MediaSource %q", source)
+		}
+	}
+	if len(baseline) == 0 {
+		return nil, fmt.Errorf("缺少创建时基线：请重新创建洗版工单以采集基线")
+	}
+	newSource := false
+	for source := range current {
+		if _, existed := baseline[source]; !existed {
+			newSource = true
+			break
+		}
+	}
+	if !newSource {
+		return nil, fmt.Errorf("未发现新增的不同 MediaSource")
+	}
+
 	previousStatus, previousBy, previousAt := review.Status, review.ReviewedBy, review.ReviewedAt
 	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", adminID, time.Now()
 	if err := s.saveLocked(); err != nil {
 		review.Status, review.ReviewedBy, review.ReviewedAt = previousStatus, previousBy, previousAt
 		return nil, err
 	}
-	return review, nil
+	return cloneReview(review), nil
 }
 
 // RestoreQuotaOnce 按请求记录的实际成本返还，持久化标记保证重试及重启后幂等。
@@ -550,7 +596,7 @@ func (s *ReviewService) GetRequest(requestID string) (*ReviewRequest, bool) {
 	defer s.mu.RUnlock()
 
 	review, exists := s.reviews[requestID]
-	return review, exists
+	return cloneReview(review), exists
 }
 
 // GetRequestByToken retrieves a review request by approve token
@@ -561,7 +607,7 @@ func (s *ReviewService) GetRequestByToken(token string) (*ReviewRequest, bool) {
 
 	for _, review := range s.reviews {
 		if review.ApproveToken == token {
-			return review, true
+			return cloneReview(review), true
 		}
 	}
 	return nil, false
@@ -575,7 +621,7 @@ func (s *ReviewService) GetPendingRequests() []*ReviewRequest {
 	var pending []*ReviewRequest
 	for _, review := range s.reviews {
 		if review.Status == "pending" {
-			pending = append(pending, review)
+			pending = append(pending, cloneReview(review))
 		}
 	}
 
@@ -599,7 +645,7 @@ func (s *ReviewService) GetApprovedWashRequests() []*ReviewRequest {
 	var approved []*ReviewRequest
 	for _, review := range s.reviews {
 		if review != nil && review.NormalizedBusinessType() == BusinessTypeWash && review.Status == "approved" {
-			approved = append(approved, review)
+			approved = append(approved, cloneReview(review))
 		}
 	}
 	sort.Slice(approved, func(i, j int) bool { return approved[i].ReviewedAt.After(approved[j].ReviewedAt) })
@@ -614,7 +660,7 @@ func (s *ReviewService) GetUserRequests(telegramID int64) []*ReviewRequest {
 	var userReviews []*ReviewRequest
 	for _, review := range s.reviews {
 		if review.TelegramID == telegramID {
-			userReviews = append(userReviews, review)
+			userReviews = append(userReviews, cloneReview(review))
 		}
 	}
 
@@ -683,7 +729,7 @@ func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmd
 
 		// Active statuses considered duplicate to prevent repeated submissions
 		if review.Status == "pending" || review.Status == "approved" {
-			return review, true
+			return cloneReview(review), true
 		}
 	}
 
@@ -711,7 +757,7 @@ func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType
 			continue
 		}
 		if review.Status == "pending" || review.Status == "approved" {
-			return review, true
+			return cloneReview(review), true
 		}
 	}
 	return nil, false
@@ -732,7 +778,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 		// Return the review without error so caller can handle duplicate approval gracefully
 		if review.Status == "approved" {
 			logger.Info("[ReviewService] 请求已被批准: %s, 由: %d", requestID, review.ReviewedBy)
-			return review, fmt.Errorf("already_approved")
+			return cloneReview(review), fmt.Errorf("already_approved")
 		}
 		return nil, fmt.Errorf("请求状态为 %s, 无法批准", review.Status)
 	}
@@ -756,7 +802,7 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 		review.Status, review.ReviewedAt, review.ReviewedBy = previousStatus, previousReviewedAt, previousReviewedBy
 		return nil, err
 	}
-	return review, nil
+	return cloneReview(review), nil
 }
 
 // UpdateSubscriptionInfo updates the MoviePilot subscription info for a review
@@ -878,7 +924,7 @@ func (s *ReviewService) GetStuckRequests() []*ReviewRequest {
 	var stuck []*ReviewRequest
 	for _, review := range s.reviews {
 		if review.Stuck {
-			stuck = append(stuck, review)
+			stuck = append(stuck, cloneReview(review))
 		}
 	}
 	return stuck
@@ -919,6 +965,7 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 		return nil, fmt.Errorf("请求状态为 %s, 无法拒绝", review.Status)
 	}
 
+	previousStatus, previousReviewedAt, previousReviewedBy, previousReason := review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason
 	review.Status = "rejected"
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
@@ -926,7 +973,11 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 
 	logger.Info("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
 
-	return review, s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason = previousStatus, previousReviewedAt, previousReviewedBy, previousReason
+		return nil, err
+	}
+	return cloneReview(review), nil
 }
 
 // DeleteRequest deletes a review request
@@ -964,6 +1015,7 @@ func (s *ReviewService) CancelByUser(requestID string, telegramID int64) error {
 		return fmt.Errorf("cannot cancel: status is %s, only pending can be cancelled", review.Status)
 	}
 
+	previousStatus, previousReason, previousReviewedAt := review.Status, review.RejectionReason, review.ReviewedAt
 	review.Status = "cancelled"
 	review.RejectionReason = "用户主动撤回"
 	review.ReviewedAt = time.Now()
@@ -971,7 +1023,11 @@ func (s *ReviewService) CancelByUser(requestID string, telegramID int64) error {
 	logger.Info("[ReviewService] 用户撤回请求: %s, 用户: %d, 影片: %s",
 		requestID, telegramID, review.MediaTitle)
 
-	return s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.RejectionReason, review.ReviewedAt = previousStatus, previousReason, previousReviewedAt
+		return err
+	}
+	return nil
 }
 
 // cleanupRoutine periodically removes old completed reviews
@@ -1000,6 +1056,11 @@ func (s *ReviewService) cleanup() {
 	var toDelete []string
 
 	for id, review := range s.reviews {
+		// Approved wash work orders remain active until explicitly completed;
+		// deleting them here would remove the only safe recovery path.
+		if review.NormalizedBusinessType() == BusinessTypeWash && review.Status == "approved" {
+			continue
+		}
 		// Also delete approved reviews without subscription ID (old data before tracking)
 		if review.Status == "approved" && review.SubscriptionID == 0 && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
 			toDelete = append(toDelete, id)
@@ -1542,16 +1603,7 @@ func (s *ReviewService) GetAllRequests() []*ReviewRequest {
 		if r == nil {
 			continue
 		}
-		clone := *r
-		if r.EmbyInfo != nil {
-			embyClone := *r.EmbyInfo
-			clone.EmbyInfo = &embyClone
-		}
-		if r.LibraryNotifiedAt != nil {
-			notifiedAt := *r.LibraryNotifiedAt
-			clone.LibraryNotifiedAt = &notifiedAt
-		}
-		result = append(result, &clone)
+		result = append(result, cloneReview(r))
 	}
 	return result
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // FeedbackHandler handles user feedback callbacks
@@ -95,6 +96,10 @@ func (h *FeedbackHandler) Handle(ctx *callback.Context) (*callback.Response, err
 		}
 		sess.Set("feedback_require_media", true)
 		return h.handleStart(ctx)
+	}
+
+	if _, confirm := ctx.Callback.Params["confirm"]; confirm {
+		return h.handleConfirm(ctx)
 	}
 
 	// New callbacks carry only a compact option index; legacy callbacks with
@@ -450,6 +455,9 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 	// Check if user is in feedback process
 	stepVal, _ := sess.Get("feedback_step")
 	step, _ := stepVal.(string)
+	if step == "confirm" {
+		return fmt.Errorf("feedback draft awaiting confirmation")
+	}
 	if step != "description" && step != "media_title" {
 		return fmt.Errorf("not in feedback process")
 	}
@@ -488,114 +496,140 @@ func (h *FeedbackHandler) HandleFeedbackWithPhoto(userID int64, chatID int64, te
 		return err
 	}
 
-	// Get feedback context with type assertions
-	tmdbIDVal, ok := sess.Get("feedback_tmdb_id")
-	if !ok {
-		return fmt.Errorf("missing feedback context: tmdb_id")
+	// Store the description/photo as a draft. Every input path must pass through
+	// the same explicit confirmation before an issue is persisted.
+	return h.storeDraftAndSendConfirmation(userID, chatID, text, photoFileID)
+}
+
+// feedbackTypeLabel returns the user-facing label for a stored issue type.
+func feedbackTypeLabel(issueType string) string {
+	if label := getTypeInfo(issueType).label; label != "" {
+		return label
 	}
-	tmdbID, ok := tmdbIDVal.(string)
+	return "问题反馈"
+}
+
+func clearFeedbackDraft(sess *session.Session) {
+	for _, key := range []string{
+		"feedback_step", "feedback_tmdb_id", "feedback_media_type",
+		"feedback_media_title", "feedback_issue_type", "feedback_require_media",
+		"feedback_draft_description", "feedback_draft_photo_file_id",
+	} {
+		sess.Delete(key)
+	}
+}
+
+func (h *FeedbackHandler) buildDraftConfirmation(userID int64, description, photoFileID string) (*callback.Response, error) {
+	sess := h.sessMgr.GetOrCreate(userID)
+	tmdbID, ok := sess.GetString("feedback_tmdb_id")
 	if !ok || tmdbID == "" {
-		return fmt.Errorf("invalid feedback context: tmdb_id")
+		return nil, fmt.Errorf("missing feedback context: tmdb_id")
+	}
+	issueType, _ := sess.GetString("feedback_issue_type")
+	mediaTitle, _ := sess.GetString("feedback_media_title")
+	requireMedia, _ := sess.Get("feedback_require_media")
+	if requireMedia == true && strings.TrimSpace(mediaTitle) == "" {
+		return &callback.Response{CallbackMsg: "请先填写片名或剧名", ShowAlert: true}, nil
+	}
+	description = strings.TrimSpace(description)
+	if description == "" && photoFileID == "" {
+		return &callback.Response{CallbackMsg: "请填写问题描述或发送截图", ShowAlert: true}, nil
+	}
+	if description == "" {
+		description = "用户发送了问题截图"
 	}
 
-	mediaTypeVal, _ := sess.Get("feedback_media_type")
-	mediaType, _ := mediaTypeVal.(string)
+	sess.Set("feedback_draft_description", description)
+	sess.Set("feedback_draft_photo_file_id", photoFileID)
+	sess.Set("feedback_step", "confirm")
 
-	mediaTitleVal, _ := sess.Get("feedback_media_title")
-	mediaTitle, _ := mediaTitleVal.(string)
-
-	issueTypeVal, _ := sess.Get("feedback_issue_type")
-	issueType, _ := issueTypeVal.(string)
-
-	// Clear feedback session
-	sess.Delete("feedback_step")
-	sess.Delete("feedback_tmdb_id")
-	sess.Delete("feedback_media_type")
-	sess.Delete("feedback_media_title")
-	sess.Delete("feedback_issue_type")
-	sess.Delete("feedback_require_media")
-
-	// Create issue
-	if h.issueService == nil {
-		return fmt.Errorf("issue service not available")
+	msg := services.NewMessageBuilder()
+	msg.Bold("🧾 确认提交问题").Newline().Newline()
+	if mediaTitle != "" {
+		msg.Textf("🎬 媒体：%s", mediaTitle).Newline()
 	}
-
-	// Get type label
-	typeLabels := map[string]string{
-		"quality":   "画质问题",
-		"audio":     "音频问题",
-		"subtitle":  "字幕问题",
-		"not_found": "搜索不到",
-		"playback":  "播放问题",
-		"other":     "其他问题",
-	}
-	typeLabel := typeLabels[issueType]
-	if typeLabel == "" {
-		typeLabel = "问题反馈"
-	}
-
-	// Get user name
-	userName := "用户"
-	if nameVal, ok := sess.Get("name"); ok && nameVal != "" {
-		if name, ok := nameVal.(string); ok {
-			userName = name
-		}
-	}
-
-	// Get media title - fetch from TMDB if not provided
-	mediaTitle = h.getMediaTitle(tmdbID, mediaType, mediaTitle)
-	var issue *services.Issue
-	var err error
+	msg.Textf("🏷️ 类型：%s", feedbackTypeLabel(issueType)).Newline()
+	msg.Textf("📝 描述：%s", description).Newline()
 	if photoFileID != "" {
-		issue, err = h.issueService.CreateIssueWithPhoto(
-			userID,
-			userName,
-			typeLabel,
-			text,
-			mediaType,
-			tmdbID,
-			mediaTitle,
-			photoFileID,
-		)
-	} else {
-		issue, err = h.issueService.CreateIssue(
-			userID,
-			userName,
-			typeLabel,
-			text,
-			mediaType,
-			tmdbID,
-			mediaTitle,
-		)
+		msg.Text("📷 已附带截图").Newline()
 	}
+	msg.Newline().Italic("确认后才会提交给管理员。")
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("✅ 确认提交", "feedback:confirm:1")
+	kb.AddButton("❌ 取消", "cancel")
+	return &callback.Response{Text: msg.Build(), Edit: false, Keyboard: convertKeyboard(kb.Build()), ParseMode: "HTML"}, nil
+}
+
+func (h *FeedbackHandler) storeDraftAndSendConfirmation(userID, chatID int64, description, photoFileID string) error {
+	resp, err := h.buildDraftConfirmation(userID, description, photoFileID)
 	if err != nil {
-		logger.Info("[FeedbackHandler] Failed to create issue: %v", err)
-		if _, sendErr := h.telegram.SendMessage(chatID, "❌ 提交失败，请稍后重试", "", nil); sendErr != nil {
-			logger.Warn("[FeedbackHandler] 提交失败提示发送失败 chat=%d: %v", chatID, sendErr)
-		}
 		return err
 	}
+	if h.telegram == nil {
+		return fmt.Errorf("telegram client not available")
+	}
+	_, err = h.telegram.SendMessage(chatID, resp.Text, resp.ParseMode, callbackKeyboardToTelegram(resp.Keyboard))
+	return err
+}
 
-	// Confirm to user
-	confirmMsg := services.NewMessageBuilder()
-	confirmMsg.Bold("✅ 反馈已提交").Newline()
-	confirmMsg.Newline()
-	confirmMsg.Textf("问题编号: #%d", issue.ID).Newline()
-	confirmMsg.Textf("问题类型: %s", typeLabel).Newline()
-	confirmMsg.Newline()
-	confirmMsg.Italic("💡 管理员已收到通知，会尽快处理").Newline()
+func callbackKeyboardToTelegram(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
+	if kb == nil {
+		return nil
+	}
+	rows := make([][]types.TelegramInlineKeyboardButton, len(kb.InlineKeyboard))
+	for i, row := range kb.InlineKeyboard {
+		rows[i] = make([]types.TelegramInlineKeyboardButton, len(row))
+		for j, button := range row {
+			rows[i][j] = types.TelegramInlineKeyboardButton{Text: button.Text, CallbackData: button.CallbackData, URL: button.URL}
+		}
+	}
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
+}
 
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🏠 主菜单", "start")
-
-	if _, sendErr := h.telegram.SendMessage(chatID, confirmMsg.Build(), "HTML", kb.Build()); sendErr != nil {
-		logger.Warn("[FeedbackHandler] 反馈确认发送失败 chat=%d issue=%d: %v", chatID, issue.ID, sendErr)
+func (h *FeedbackHandler) handleConfirm(ctx *callback.Context) (*callback.Response, error) {
+	sess := h.sessMgr.GetOrCreate(ctx.UserID)
+	step, _ := sess.GetString("feedback_step")
+	if step != "confirm" {
+		// A completed or stale callback is acknowledged without creating another issue.
+		return &callback.Response{CallbackMsg: "该反馈已处理，请勿重复提交", ShowAlert: true}, nil
+	}
+	if h.issueService == nil {
+		return &callback.Response{CallbackMsg: "功能暂不可用", ShowAlert: true}, nil
+	}
+	description, ok := sess.GetString("feedback_draft_description")
+	if !ok || description == "" {
+		return &callback.Response{CallbackMsg: "反馈草稿已失效，请重新填写", ShowAlert: true}, nil
+	}
+	photoFileID, _ := sess.GetString("feedback_draft_photo_file_id")
+	tmdbID, ok := sess.GetString("feedback_tmdb_id")
+	if !ok || tmdbID == "" {
+		return &callback.Response{CallbackMsg: "反馈状态已过期，请重新打开反馈", ShowAlert: true}, nil
+	}
+	mediaType, _ := sess.GetString("feedback_media_type")
+	mediaTitle, _ := sess.GetString("feedback_media_title")
+	issueType, _ := sess.GetString("feedback_issue_type")
+	mediaTitle = h.getMediaTitle(tmdbID, mediaType, mediaTitle)
+	userName := "用户"
+	if name, ok := sess.GetString("name"); ok && name != "" {
+		userName = name
 	}
 
-	// Notify admins even if the user confirmation could not be delivered.
-	go h.notifyAdmins(issue, typeLabel)
+	issue, err := h.issueService.CreateIssueWithPhoto(ctx.UserID, userName, feedbackTypeLabel(issueType), description, mediaType, tmdbID, mediaTitle, photoFileID)
+	if err != nil {
+		logger.Info("[FeedbackHandler] Failed to create confirmed issue: %v", err)
+		return &callback.Response{CallbackMsg: "提交失败，草稿已保留，请稍后重试", ShowAlert: true}, nil
+	}
+	clearFeedbackDraft(sess)
+	go h.notifyAdmins(issue, feedbackTypeLabel(issueType))
 
-	return nil
+	msg := services.NewMessageBuilder()
+	msg.Bold("✅ 反馈已提交").Newline().Newline()
+	msg.Textf("问题编号: <code>#%d</code>", issue.ID).Newline()
+	msg.Textf("问题类型: %s", feedbackTypeLabel(issueType)).Newline().Newline()
+	msg.Italic("💡 管理员已收到通知，会尽快处理")
+	kb := services.NewKeyboardBuilder()
+	kb.AddButton("🏠 主菜单", "start")
+	return &callback.Response{Text: msg.Build(), CallbackMsg: "反馈已提交", Edit: false, Keyboard: convertKeyboard(kb.Build()), ParseMode: "HTML"}, nil
 }
 
 // notifyAdmins sends notification to admins about new issue
@@ -686,7 +720,7 @@ func (h *FeedbackHandler) IsInFeedbackProcess(userID int64) bool {
 	sess := h.sessMgr.GetOrCreate(userID)
 	step, ok := sess.Get("feedback_step")
 	logger.Info("[FeedbackHandler] IsInFeedbackProcess for user %d: step=%v, ok=%v", userID, step, ok)
-	return ok && (step == "description" || step == "media_title")
+	return ok && (step == "description" || step == "media_title" || step == "confirm")
 }
 
 // handleViewList handles viewing user's feedback list
@@ -1228,105 +1262,9 @@ func (h *FeedbackHandler) handleQuickSelect(ctx *callback.Context, encodedText s
 		}, nil
 	}
 
-	// Get feedback context from session
-	sess := h.sessMgr.GetOrCreate(ctx.UserID)
-
-	issueTypeVal, _ := sess.Get("feedback_issue_type")
-	issueType, _ := issueTypeVal.(string)
-
-	mediaTypeVal, _ := sess.Get("feedback_media_type")
-	mediaType, _ := mediaTypeVal.(string)
-
-	mediaTitleVal, _ := sess.Get("feedback_media_title")
-	mediaTitle, _ := mediaTitleVal.(string)
-
-	// Get type label
-	typeLabels := map[string]string{
-		"quality":   "画质问题",
-		"audio":     "音频问题",
-		"subtitle":  "字幕问题",
-		"not_found": "搜索不到",
-		"playback":  "播放问题",
-		"other":     "其他问题",
-	}
-	typeLabel := typeLabels[issueType]
-	if typeLabel == "" {
-		typeLabel = "问题反馈"
-	}
-
-	// Get user name
-	userName := "用户"
-	if nameVal, ok := sess.Get("name"); ok && nameVal != "" {
-		if name, ok := nameVal.(string); ok {
-			userName = name
-		}
-	}
-
-	// Get media title - fetch from TMDB if not provided
-	mediaTitle = h.getMediaTitle(tmdbID, mediaType, mediaTitle)
-
-	// Clear feedback session
-	sess.Delete("feedback_step")
-	sess.Delete("feedback_tmdb_id")
-	sess.Delete("feedback_media_type")
-	sess.Delete("feedback_media_title")
-	sess.Delete("feedback_issue_type")
-	sess.Delete("feedback_require_media")
-
-	// Create issue with quick option text
-	if h.issueService == nil {
-		return &callback.Response{
-			CallbackMsg: "功能暂不可用",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	issue, err := h.issueService.CreateIssue(
-		ctx.UserID,
-		userName,
-		typeLabel,
-		decodedText,
-		mediaType,
-		tmdbID,
-		mediaTitle,
-	)
-	if err != nil {
-		logger.Info("[FeedbackHandler] Failed to create issue: %v", err)
-		return &callback.Response{
-			CallbackMsg: "提交失败，请稍后重试",
-			ShowAlert:   true,
-		}, nil
-	}
-
-	// Build confirmation message
-	msg := services.NewMessageBuilder()
-	msg.Bold("✅ 反馈已提交").Newline()
-	msg.Newline()
-	msg.Textf("问题编号: <code>#%d</code>", issue.ID).Newline()
-	msg.Textf("问题类型: %s", typeLabel).Newline()
-	msg.Newline()
-	msg.Bold("📝 已选择:").Newline()
-	msg.Text(decodedText).Newline()
-	msg.Newline()
-	msg.Italic("💡 您可以继续发送图片或补充说明").Newline()
-	msg.Newline()
-	msg.Italic("💡 管理员已收到通知，会尽快处理").Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📷 添加图片", fmt.Sprintf("feedback:add_photo:id:%d", issue.ID))
-	kb.NewRow()
-	kb.AddButton("🏠 主菜单", "start")
-
-	// Notify admins
-	go h.notifyAdmins(issue, typeLabel)
-
-	return &callback.Response{
-		Text:        msg.Build(),
-		CallbackMsg: "反馈已提交",
-		Edit:        false,
-		Keyboard:    convertKeyboard(kb.Build()),
-		ParseMode:   "HTML",
-	}, nil
+	// Quick choices are drafts too; old URL-escaped callbacks safely enter the
+	// same confirmation path instead of creating an issue immediately.
+	return h.buildDraftConfirmation(ctx.UserID, decodedText, "")
 }
 
 // handleStopFollowUp handles user request to stop follow-up mode

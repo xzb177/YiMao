@@ -41,6 +41,11 @@ ENTRYPOINT ["/smoke"]
 # Final stage
 FROM alpine:latest
 
+# Supply the immutable source commit in production builds:
+# docker build --build-arg REVISION="$(git rev-parse HEAD)" .
+ARG REVISION=unknown
+LABEL org.opencontainers.image.revision=$REVISION
+
 # Noto Sans CJK provides modern, high-quality Chinese typography for search cards.
 RUN apk add --no-cache ca-certificates tzdata shadow su-exec docker-cli font-noto-cjk
 ENV YIMAO_CJK_FONT=/usr/share/fonts/noto/NotoSansCJK-Regular.ttc

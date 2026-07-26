@@ -53,3 +53,75 @@ func TestCreateRequestRollsBackMemoryWhenPersistenceFails(t *testing.T) {
 		t.Fatal("failed request remained in memory")
 	}
 }
+
+func TestReviewReadAPIsReturnDetachedSnapshots(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	review := &ReviewRequest{RequestID: "detached", TelegramID: 1, TmdbID: 550, MediaType: MediaTypeMovie, MediaTitle: "原名", EmbyInfo: &EmbySearchResult{Title: "媒体库原名"}}
+	if err := s.CreateRequest(review); err != nil {
+		t.Fatal(err)
+	}
+
+	assertDetached := func(name string, got *ReviewRequest, ok bool) {
+		t.Helper()
+		if !ok || got == nil {
+			t.Fatalf("%s did not return request", name)
+		}
+		got.MediaTitle = "被修改"
+		got.EmbyInfo.Title = "被修改"
+		stored := s.reviews[review.RequestID]
+		if stored.MediaTitle != "原名" || stored.EmbyInfo.Title != "媒体库原名" {
+			t.Fatalf("%s exposed internal state: %#v", name, stored)
+		}
+	}
+
+	got, ok := s.GetRequest(review.RequestID)
+	assertDetached("GetRequest", got, ok)
+	got, ok = s.GetRequestByToken(review.ApproveToken)
+	assertDetached("GetRequestByToken", got, ok)
+	assertDetached("GetPendingRequests", s.GetPendingRequests()[0], true)
+	assertDetached("GetUserRequests", s.GetUserRequests(review.TelegramID)[0], true)
+	got, ok = s.HasActiveSimilarRequest(review.TelegramID, review.TmdbID, review.MediaType, review.Season)
+	assertDetached("HasActiveSimilarRequest", got, ok)
+	got, ok = s.HasActiveSimilarContent(review.TmdbID, review.MediaType, review.Season)
+	assertDetached("HasActiveSimilarContent", got, ok)
+
+	if _, err := s.Approve(review.RequestID, 99, review.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	s.mu.Lock()
+	s.reviews[review.RequestID].Stuck = true
+	s.mu.Unlock()
+	assertDetached("GetStuckRequests", s.GetStuckRequests()[0], true)
+}
+
+func TestRejectRollsBackWhenPersistenceFails(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	review := &ReviewRequest{RequestID: "reject-rollback", TelegramID: 7, MediaType: MediaTypeMovie}
+	if err := s.CreateRequest(review); err != nil {
+		t.Fatal(err)
+	}
+	s.reviewsFile = filepath.Join(t.TempDir(), "missing", "review_requests.json")
+	if _, err := s.Reject(review.RequestID, 99, "bad"); err == nil {
+		t.Fatal("expected persistence error")
+	}
+	stored := s.GetUserRequests(review.TelegramID)[0]
+	if stored.Status != "pending" || stored.ReviewedBy != 0 || !stored.ReviewedAt.IsZero() || stored.RejectionReason != "" {
+		t.Fatalf("rejection state was not rolled back: %#v", stored)
+	}
+}
+
+func TestCancelByUserRollsBackWhenPersistenceFails(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	review := &ReviewRequest{RequestID: "cancel-rollback", TelegramID: 7, MediaType: MediaTypeMovie}
+	if err := s.CreateRequest(review); err != nil {
+		t.Fatal(err)
+	}
+	s.reviewsFile = filepath.Join(t.TempDir(), "missing", "review_requests.json")
+	if err := s.CancelByUser(review.RequestID, review.TelegramID); err == nil {
+		t.Fatal("expected persistence error")
+	}
+	stored := s.GetUserRequests(review.TelegramID)[0]
+	if stored.Status != "pending" || !stored.ReviewedAt.IsZero() || stored.RejectionReason != "" {
+		t.Fatalf("cancellation state was not rolled back: %#v", stored)
+	}
+}

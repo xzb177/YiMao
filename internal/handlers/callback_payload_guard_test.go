@@ -75,8 +75,11 @@ func TestFeedbackQuickIndexRecoversSessionContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response == nil || response.CallbackMsg != "功能暂不可用" {
+	if response == nil || !strings.Contains(response.Text, "确认提交问题") {
 		t.Fatalf("unexpected response: %#v", response)
+	}
+	if step, _ := sess.GetString("feedback_step"); step != "confirm" {
+		t.Fatalf("feedback_step=%q, want confirm", step)
 	}
 }
 

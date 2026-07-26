@@ -28,14 +28,14 @@ func TestWashEntryUsesNaturalLanguageAndStartsIntent(t *testing.T) {
 func TestCancelClearsWorkflowState(t *testing.T) {
 	manager := session.NewManager(time.Hour, 10)
 	sess := manager.GetOrCreate(42)
-	for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+	for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media", "feedback_draft_description", "feedback_draft_photo_file_id"} {
 		sess.Set(key, "stale")
 	}
 	resp, err := NewCancelHandler(manager).Handle(&callback.Context{UserID: 42})
 	if err != nil || resp == nil || !strings.Contains(resp.Text, "还没有提交") {
 		t.Fatalf("resp=%#v err=%v", resp, err)
 	}
-	for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media"} {
+	for _, key := range []string{"media_search_intent", "feedback_step", "feedback_tmdb_id", "feedback_media_type", "feedback_media_title", "feedback_issue_type", "feedback_require_media", "feedback_draft_description", "feedback_draft_photo_file_id"} {
 		if _, ok := sess.Get(key); ok {
 			t.Fatalf("state %q not cleared", key)
 		}

@@ -379,7 +379,7 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		embyMins = minutes % 60
 	}
 
-	notifyCard := richmessage.BuildReviewNotifyCard(richmessage.ReviewNotifyData{
+	notifyData := richmessage.ReviewNotifyData{
 		Title:      review.MediaTitle,
 		Year:       review.MediaYear,
 		MediaType:  mediaTypeLabel,
@@ -392,7 +392,11 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		EmbyExists: review.EmbyExists,
 		EmbyHours:  embyHours,
 		EmbyMins:   embyMins,
-	})
+	}
+	notifyCard := richmessage.BuildReviewNotifyCard(notifyData)
+	if review.NormalizedBusinessType() == services.BusinessTypeWash {
+		notifyCard = richmessage.BuildWashReviewNotifyCard(notifyData)
+	}
 
 	// Add action buttons with approve token
 	for _, adminID := range adminIDs {
@@ -406,7 +410,11 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 		}
 		if _, err := h.telegram.SendRichMessage(adminID, notifyCard.Markdown, keyboard); err != nil {
 			logger.Info("[审核] Rich Message 通知管理员 %d 失败，回退到普通消息: %v", adminID, err)
-			plainText := fmt.Sprintf("📋 新的求片审核\n\n🎬 《%s》", review.MediaTitle)
+			plainTitle := "📋 新的求片审核"
+			if review.NormalizedBusinessType() == services.BusinessTypeWash {
+				plainTitle = "♻️ 新洗版工单"
+			}
+			plainText := fmt.Sprintf("%s\n\n🎬 《%s》", plainTitle, review.MediaTitle)
 			if review.MediaYear > 0 {
 				plainText += fmt.Sprintf(" (%d)", review.MediaYear)
 			}
@@ -419,7 +427,11 @@ func (h *RequestHandler) notifyAdminsForReview(review *services.ReviewRequest) {
 			if review.Season > 0 {
 				plainText += fmt.Sprintf(" · 第%d季", review.Season)
 			}
-			plainText += "\n查看详情后决定批准或拒绝。"
+			if review.NormalizedBusinessType() == services.BusinessTypeWash {
+				plainText += "\n批准或拒绝前请核对目标；处理期间必须保留现有版本。"
+			} else {
+				plainText += "\n查看详情后决定批准或拒绝。"
+			}
 			if _, msgErr := h.telegram.SendMessage(adminID, plainText, "", keyboard); msgErr != nil {
 				logger.Info("[审核] 普通消息通知管理员 %d 也失败: %v", adminID, msgErr)
 			}
