@@ -1530,18 +1530,18 @@ func (h *AdminHandler) handleFeedbackPanel(ctx *callback.Context) (*callback.Res
 	msg.Newline()
 
 	// Statistics section
-	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("──────────────────").Newline()
 	msg.Bold("📈 统计数据").Newline()
-	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("──────────────────").Newline()
 	msg.Textf("总反馈: %d  |  待处理: %d", stats.Total, stats.Open).Newline()
 	msg.Textf("处理中: %d   |  已解决: %d", stats.Processing, stats.Fixed).Newline()
 	msg.Textf("已关闭: %d   |  本周新增: %d", stats.Closed, stats.ThisWeek).Newline()
 	msg.Newline()
 
 	// Type distribution
-	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("──────────────────").Newline()
 	msg.Bold("🏷️ 类型分布").Newline()
-	msg.Bold("━━━━━━━━━━━━━━━━━━━━").Newline()
+	msg.Bold("──────────────────").Newline()
 
 	typeIcons := map[string]string{
 		"画质问题": "🎬",

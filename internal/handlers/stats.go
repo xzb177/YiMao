@@ -51,7 +51,7 @@ func (h *StatsHandler) HandleCommand(chatID, userID int64) {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("📈 我的冒险战绩 · @%s\n", userName))
-	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n")
+	sb.WriteString("──────────────────\n")
 	sb.WriteString(fmt.Sprintf("🏆 称号：%s（%d天连胜中）\n", title, streakDays))
 	sb.WriteString(fmt.Sprintf("⚔️ 参与：%d 次 · 通关：%d 次\n", total, wins))
 	sb.WriteString(fmt.Sprintf("🎯 SSS次数：%d | 最高分：%d\n", sss, maxScore))
@@ -62,7 +62,7 @@ func (h *StatsHandler) HandleCommand(chatID, userID int64) {
 	if sssRank > 0 {
 		sb.WriteString(fmt.Sprintf("📊 本周 SSS 排名：#%d\n", sssRank))
 	}
-	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n")
+	sb.WriteString("──────────────────\n")
 
 	// 再次挑战记录
 	nemeses, err := h.socialDB.GetAllNemeses(userID)

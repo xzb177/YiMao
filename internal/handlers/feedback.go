@@ -936,7 +936,7 @@ func (h *FeedbackHandler) handleViewDetail(ctx *callback.Context, issueIDStr str
 		kb.AddButton("⏹️ 停止追问", fmt.Sprintf("feedback:stop_follow:%d", issue.ID))
 
 		msg.Newline()
-		msg.Text("━━━━━━━━━━━━━━━━━━━━━━━━").Newline()
+		msg.Text("──────────────────").Newline()
 
 		// 如果有管理员回复，显示追问提示
 		hasAdminReply := false

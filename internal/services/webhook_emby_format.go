@@ -86,7 +86,7 @@ func (s *WebhookService) formatAggregatedEpisodeMessage(agg *EpisodeAggregation,
 	builder.WriteString("✅ 入库成功：")
 	builder.WriteString(title)
 	builder.WriteString("\n")
-	builder.WriteString("──────\n")
+	builder.WriteString("──────────────────\n")
 
 	// Name line - only series name (with year), no season/episode
 	builder.WriteString("\n")
@@ -378,7 +378,7 @@ func (s *WebhookService) formatEmbyNotificationEnhanced(payload EmbyWebhookPaylo
 		builder.WriteString(title)
 	}
 	builder.WriteString("\n")
-	builder.WriteString("───────────────────\n")
+	builder.WriteString("──────────────────\n")
 
 	// 3. Empty line after separator
 	builder.WriteString("\n")
@@ -587,7 +587,7 @@ func (s *WebhookService) formatPhotoCaption(payload EmbyWebhookPayload, enhanced
 	builder.WriteString("✅ 入库成功：")
 	builder.WriteString(title)
 	builder.WriteString("\n")
-	builder.WriteString("──────\n")
+	builder.WriteString("──────────────────\n")
 
 	// Name line
 	builder.WriteString("\n")
@@ -651,7 +651,7 @@ func (s *WebhookService) formatEpisodePhotoCaption(agg *EpisodeAggregation, epRa
 	builder.WriteString("✅ 入库成功：")
 	builder.WriteString(title)
 	builder.WriteString("\n")
-	builder.WriteString("──────\n")
+	builder.WriteString("──────────────────\n")
 
 	// Name line
 	builder.WriteString("\n")

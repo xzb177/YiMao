@@ -395,7 +395,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 	msg.Bold("📊 求片进度").Newline()
 	msg.Text(fmt.Sprintf("共 %d 条，第 %d/%d 页", totalRequests, page, totalPages)).Newline()
 	msg.Textf("进行中 %d · 已完成 %d · 异常 %d", countStates(requests, []string{stateReviewing, stateStuck, stateWorkOrder, stateIssueOpen, services.StatePending, services.StateRecycled, services.StateSearching, services.StateDownloading}), countStates(requests, []string{services.StateCompleted}), countStates(requests, []string{services.StateFailed, services.StateCancelled})).Newline()
-	msg.Text("────────").Newline()
+	msg.Text("──────────────────").Newline()
 	msg.Newline()
 
 	// Calculate slice bounds

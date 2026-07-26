@@ -348,11 +348,12 @@ func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
 	sb.WriteString(fmt.Sprintf("📅 %s - %s\n\n", weekStr, toStr))
 
 	// 1. 数据仪表盘
-	sb.WriteString("╭── 📈 <b>本周数据</b> ────────────────╮\n")
-	sb.WriteString(fmt.Sprintf("│  🔍 搜索: <b>%d</b> 次\n", report.SearchCount))
-	sb.WriteString(fmt.Sprintf("│  📋 求片: <b>%d</b> 次\n", report.RequestCount))
+	sb.WriteString("📈 <b>本周数据</b>\n")
+	sb.WriteString("──────────────────\n")
+	sb.WriteString(fmt.Sprintf("  🔍 搜索: <b>%d</b> 次\n", report.SearchCount))
+	sb.WriteString(fmt.Sprintf("  📋 求片: <b>%d</b> 次\n", report.RequestCount))
 	if report.ApprovedCount > 0 {
-		sb.WriteString(fmt.Sprintf("│  ✅ 通过: <b>%d</b> 个\n", report.ApprovedCount))
+		sb.WriteString(fmt.Sprintf("  ✅ 通过: <b>%d</b> 个\n", report.ApprovedCount))
 	}
 	// 配额信息
 	if s.quotaService != nil {
@@ -374,10 +375,10 @@ func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
 			if tvRemain >= 0 {
 				tvStr = fmt.Sprintf("%d", tvRemain)
 			}
-			sb.WriteString(fmt.Sprintf("│  💎 剩余配额: <code>电影 %s / 剧集 %s</code>\n", movieStr, tvStr))
+			sb.WriteString(fmt.Sprintf("  💎 剩余配额: <code>电影 %s / 剧集 %s</code>\n", movieStr, tvStr))
 		}
 	}
-	sb.WriteString("╰──────────────────────────────────────╯\n\n")
+	sb.WriteString("\n")
 
 	// 2. 行为标签
 	if len(report.BehaviorTags) > 0 {
@@ -390,11 +391,12 @@ func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
 
 	// 3. 热搜关键词
 	if len(report.TopSearches) > 0 {
-		sb.WriteString("╭── 🔥 <b>热搜关键词</b> ────────────────╮\n")
+		sb.WriteString("🔥 <b>热搜关键词</b>\n")
+		sb.WriteString("──────────────────\n")
 		for _, search := range report.TopSearches {
-			sb.WriteString(fmt.Sprintf("│  • %s\n", html.EscapeString(search)))
+			sb.WriteString(fmt.Sprintf("  • %s\n", html.EscapeString(search)))
 		}
-		sb.WriteString("╰──────────────────────────────────────╯\n\n")
+		sb.WriteString("\n")
 	}
 
 	// 4. 类型偏好
@@ -416,7 +418,7 @@ func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
 		sb.WriteString("</blockquote>\n")
 	}
 
-	sb.WriteString("──────────────────────────────────────")
+	sb.WriteString("──────────────────")
 	return sb.String()
 }
 

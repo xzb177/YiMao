@@ -48,7 +48,7 @@ func (h *RankHandler) handleCommand(sender *userScopedSender) {
 
 	var sb strings.Builder
 	sb.WriteString("📊 电影冒险 · 本周排行\n")
-	sb.WriteString("━━━━━━━━━━━━━━━━━━━━\n\n")
+	sb.WriteString("──────────────────\n\n")
 
 	sb.WriteString("🏆 SSS 评级\n")
 	if len(sssEntries) == 0 {
@@ -88,7 +88,7 @@ func (h *RankHandler) handleCommand(sender *userScopedSender) {
 		}
 	}
 
-	sb.WriteString("\n━━━━━━━━━━━━━━━━━━━━\n")
+	sb.WriteString("\n──────────────────\n")
 	sb.WriteString("📅 每周一凌晨重置")
 
 	sender.SendMessage(sb.String(), "", nil)

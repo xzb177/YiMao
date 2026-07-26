@@ -511,7 +511,7 @@ func (s *MediaNotificationService) formatDetailedMessage(item *MediaItem) string
 
 	// Header line
 	builder.WriteString(fmt.Sprintf("✅ 入库成功：%s\n", title))
-	builder.WriteString("───────────────────\n\n")
+	builder.WriteString("──────────────────\n\n")
 
 	// Name line
 	builder.WriteString(fmt.Sprintf("🎬 名称：`%s`\n", title))

@@ -10,15 +10,20 @@ import (
 // ─────────────────────────────────────
 // 云海求片助手 · 文本卡片 UI
 // 设计理念：管家迎门、信息有层次、文案有人味
+//
+// 排版约定（全局唯一一套，勿再引入新的画线风格）：
+//   - 不使用 ASCII 边框：中文与 emoji 是双宽字符，固定宽度的框在
+//     手机窄屏上必定错位、换行，观感廉价。层次改由 HTML 粗体 +
+//     缩进 + 空行表达。
+//   - 分隔线统一使用 sep 一种规格，其余长度/字符一律不再新增。
 // ─────────────────────────────────────
 
 const (
-	sep     = "─────────────────────────"
-	boxTop  = "╭──────────────────────────╮"
-	boxMid  = "├──────────────────────────┤"
-	boxBot  = "╰──────────────────────────╯"
-	boxLine = "│"
-	dot     = "·"
+	// sep 是全局唯一的主分隔线（章节之间）。
+	sep = "──────────────────"
+	dot = "·"
+	// indent 用于正文相对标题的层次缩进。
+	indent = "  "
 )
 
 // DashBuilder 仪表盘风格构建器
@@ -27,12 +32,10 @@ type DashBuilder struct{}
 // BuildMenu 首页仪表盘
 func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
-	sb.WriteString(fmt.Sprintf("%s  🌊 %s\n", boxLine, title))
+	sb.WriteString(fmt.Sprintf("🌊 <b>%s</b>\n", escapeText(title)))
 	if subtitle != "" {
-		sb.WriteString(fmt.Sprintf("%s  %s\n", boxLine, subtitle))
+		sb.WriteString(fmt.Sprintf("%s\n", escapeText(subtitle)))
 	}
-	sb.WriteString(fmt.Sprintf("%s\n", boxBot))
 	sb.WriteString("\n")
 	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
 	return sb.String()
@@ -41,14 +44,12 @@ func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 // BuildMenuWithName 带用户名的首页。
 func (b *DashBuilder) BuildMenuWithName(name string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%s\n", boxTop))
-	sb.WriteString(fmt.Sprintf("%s  🌊 云海求片助手\n", boxLine))
+	sb.WriteString("🌊 <b>云海求片助手</b>\n")
 	if name != "" {
-		sb.WriteString(fmt.Sprintf("%s  你好，%s 👋\n", boxLine, name))
+		sb.WriteString(fmt.Sprintf("你好，%s 👋\n", escapeText(name)))
 	} else {
-		sb.WriteString(fmt.Sprintf("%s  你的私人选片师\n", boxLine))
+		sb.WriteString("你的私人选片师\n")
 	}
-	sb.WriteString(fmt.Sprintf("%s\n", boxBot))
 	sb.WriteString("\n")
 	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
 	return sb.String()
@@ -58,8 +59,8 @@ func (b *DashBuilder) BuildMenuWithName(name string) string {
 func (b *DashBuilder) BuildSearchResults(query string, results []services.SearchResult, page, total int) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("🔍 %s\n", query))
-	sb.WriteString(fmt.Sprintf("%s\n", sep))
+	sb.WriteString(fmt.Sprintf("🔍 <b>%s</b>\n", escapeText(query)))
+	sb.WriteString(sep + "\n")
 
 	if len(results) == 0 {
 		sb.WriteString("\n" + emptySearchCopy + "\n")
@@ -88,28 +89,30 @@ func (b *DashBuilder) BuildSearchResults(query string, results []services.Search
 	return sb.String()
 }
 
-// buildResultCard 单条搜索结果卡片
+// buildResultCard 单条搜索结果卡片。
+// 采用「序号 + 粗体标题」起头、简介缩进一层的层次结构，
+// 不再绘制固定宽度边框（中文/emoji 双宽会错位）。
 func (b *DashBuilder) buildResultCard(index int, item services.SearchResult) string {
 	var sb strings.Builder
 
 	icon := getMediaTypeIcon(item.Type)
 	year := ""
 	if item.Year > 0 {
-		year = fmt.Sprintf(" · %d", item.Year)
+		year = fmt.Sprintf(" %s %d", dot, item.Year)
 	}
 	rating := ""
 	if item.Rating > 0 {
 		rating = fmt.Sprintf("  ⭐%.1f", item.Rating)
 	}
 
-	sb.WriteString(fmt.Sprintf("╭─ %d ──────────────────────╮\n", index))
-	sb.WriteString(fmt.Sprintf("│ %s %s%s%s\n", icon, escapeText(item.Title), year, rating))
+	sb.WriteString(fmt.Sprintf("<b>%d.</b> %s <b>%s</b>%s%s\n",
+		index, icon, escapeText(item.Title), year, rating))
 
 	if item.Overview != "" {
 		overview := truncateAndEscape(item.Overview, 48)
-		sb.WriteString(fmt.Sprintf("│ %s\n", overview))
+		sb.WriteString(fmt.Sprintf("%s%s\n", indent, overview))
 	}
-	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
+	sb.WriteString("\n")
 
 	return sb.String()
 }
@@ -121,20 +124,19 @@ func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
 	icon := getMediaTypeIcon(result.Type)
 	year := ""
 	if result.Year > 0 {
-		year = fmt.Sprintf(" · %d", result.Year)
+		year = fmt.Sprintf(" %s %d", dot, result.Year)
 	}
 
-	sb.WriteString(fmt.Sprintf("╭──────────────────────────╮\n"))
-	sb.WriteString(fmt.Sprintf("│ %s %s%s\n", icon, escapeText(result.Title), year))
+	sb.WriteString(fmt.Sprintf("%s <b>%s</b>%s\n", icon, escapeText(result.Title), year))
 
 	// 评分行
 	if result.Rating > 0 {
 		stars := getStarDisplay(result.Rating)
-		sb.WriteString(fmt.Sprintf("│ %s %.1f/10\n", stars, result.Rating))
+		sb.WriteString(fmt.Sprintf("%s %.1f/10\n", stars, result.Rating))
 	}
 
-	sb.WriteString(fmt.Sprintf("│ %s\n", getMediaTypeLabel(result.Type)))
-	sb.WriteString(fmt.Sprintf("╰──────────────────────────╯\n"))
+	sb.WriteString(fmt.Sprintf("%s\n", getMediaTypeLabel(result.Type)))
+	sb.WriteString(sep + "\n")
 
 	// 简介
 	if result.Overview != "" {
@@ -150,11 +152,11 @@ func (b *DashBuilder) BuildMediaDetail(result *services.SearchResult) string {
 func (b *DashBuilder) BuildRecommendation(title string, results []services.SearchResult, mood string) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("🎬 %s\n", title))
-	sb.WriteString(fmt.Sprintf("%s\n\n", sep))
+	sb.WriteString(fmt.Sprintf("🎬 <b>%s</b>\n", escapeText(title)))
+	sb.WriteString(sep + "\n\n")
 
 	if mood != "" {
-		sb.WriteString(fmt.Sprintf("%s\n\n", mood))
+		sb.WriteString(fmt.Sprintf("%s\n\n", escapeText(mood)))
 	}
 
 	if len(results) == 0 {
@@ -181,8 +183,8 @@ func (b *DashBuilder) BuildRecommendation(title string, results []services.Searc
 func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, totalPages, total int) string {
 	var sb strings.Builder
 
-	sb.WriteString("📊 求片进度\n")
-	sb.WriteString(fmt.Sprintf("%s\n", sep))
+	sb.WriteString("📊 <b>求片进度</b>\n")
+	sb.WriteString(sep + "\n")
 
 	if total == 0 {
 		sb.WriteString("\n" + emptyRequestCopy + "\n")
@@ -191,9 +193,9 @@ func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 
 	// 统计
 	pending, completed, failed := countRequestStates(requests)
-	sb.WriteString(fmt.Sprintf("共 %d 条  ·  ", total))
-	sb.WriteString(fmt.Sprintf("进行中 %d · 完成 %d · 异常 %d", pending, completed, failed))
-	sb.WriteString(fmt.Sprintf("\n%s\n\n", sep))
+	sb.WriteString(fmt.Sprintf("共 %d 条  %s  ", total, dot))
+	sb.WriteString(fmt.Sprintf("进行中 %d %s 完成 %d %s 异常 %d", pending, dot, completed, dot, failed))
+	sb.WriteString("\n" + sep + "\n\n")
 
 	requestsPerPage := 10
 	startIdx := (page - 1) * requestsPerPage
@@ -206,25 +208,25 @@ func (b *DashBuilder) BuildRequestList(requests []services.SubscribeItem, page, 
 	pendingItems, doneItems, failedItems := groupRequests(requests, startIdx, endIdx)
 
 	if len(pendingItems) > 0 {
-		sb.WriteString("⏳ 进行中\n")
+		sb.WriteString("⏳ <b>进行中</b>\n")
 		for _, req := range pendingItems {
-			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
+			sb.WriteString(fmt.Sprintf("%s%s\n", indent, formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(doneItems) > 0 {
-		sb.WriteString("✅ 已完成\n")
+		sb.WriteString("✅ <b>已完成</b>\n")
 		for _, req := range doneItems {
-			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
+			sb.WriteString(fmt.Sprintf("%s%s\n", indent, formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
 
 	if len(failedItems) > 0 {
-		sb.WriteString("⚠️ 异常\n")
+		sb.WriteString("⚠️ <b>异常</b>\n")
 		for _, req := range failedItems {
-			sb.WriteString(fmt.Sprintf("  %s\n", formatRequestLine(req)))
+			sb.WriteString(fmt.Sprintf("%s%s\n", indent, formatRequestLine(req)))
 		}
 		sb.WriteString("\n")
 	}
@@ -266,13 +268,13 @@ func groupRequests(requests []services.SubscribeItem, startIdx, endIdx int) (pen
 func formatRequestLine(req services.SubscribeItem) string {
 	emoji := getRequestStatusEmoji(req.State)
 	icon := getMediaTypeIcon(req.Type)
-	title := req.Name
+	title := escapeText(req.Name)
 	if req.Year != "" && req.Year != "0" {
-		title = fmt.Sprintf("%s (%s)", title, req.Year)
+		title = fmt.Sprintf("%s (%s)", title, escapeText(req.Year))
 	}
 	line := fmt.Sprintf("%s %s %s", emoji, title, icon)
 	if req.Date != "" && len(req.Date) >= 10 {
-		line += fmt.Sprintf(" · %s", req.Date[:10])
+		line += fmt.Sprintf(" %s %s", dot, escapeText(req.Date[:10]))
 	}
 	return line
 }
