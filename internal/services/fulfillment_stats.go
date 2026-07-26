@@ -246,15 +246,16 @@ func (s *FulfillmentStatsService) AddWatchFeedbackTitled(requestID, title, answe
 	now := time.Now()
 	// 同一个请求只保留最后一次回答；按钮重试/重复点击不会污染分布。
 	for i := range s.feedback {
-		if s.feedback[i].RequestID == requestID {
-			s.feedback[i].Answer = answer
-			s.feedback[i].At = now
-			if title != "" {
-				s.feedback[i].Title = title
-			}
-			s.saveFeedbackLocked()
-			return
+		if s.feedback[i].RequestID != requestID {
+			continue
 		}
+		s.feedback[i].Answer = answer
+		s.feedback[i].At = now
+		if title != "" {
+			s.feedback[i].Title = title
+		}
+		s.saveFeedbackLocked()
+		return
 	}
 	s.feedback = append(s.feedback, WatchFeedback{RequestID: requestID, Title: title, Answer: answer, At: now})
 	if len(s.feedback) > maxWatchFeedback {

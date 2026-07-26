@@ -441,7 +441,7 @@ func (m *TMDBTrendingMediaInfo) GetYear() int {
 func (c *TMDBClient) GetCollection(collectionID int) (*TMDBCollection, error) {
 	url := c.buildURL(fmt.Sprintf("/collection/%d", collectionID))
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest(http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
