@@ -175,6 +175,9 @@ func (h *SeriesHandler) Handle(ctx *callback.Context) (*callback.Response, error
 			parts = append(parts, part)
 		}
 	}
+	// 候选列表中的 Emby 查询也必须 fail-closed：查询错误代表身份状态未知，
+	// 不能把未知项目显示成可求片，否则会制造重复请求。
+	libraryUnknown := make(map[int]bool, len(parts))
 	library := make(map[int]bool, len(parts))
 	var libraryMu sync.Mutex
 	var wg sync.WaitGroup
@@ -188,11 +191,14 @@ func (h *SeriesHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		go func() {
 			defer wg.Done()
 			existing, err := h.webhook.SearchEmbyMediaByTMDB(part.ID, services.MediaTypeMovie)
-			// 仅明确命中才标记已在库；查询错误仍显示为可求片。
-			if err == nil && existing != nil {
-				libraryMu.Lock()
+			libraryMu.Lock()
+			defer libraryMu.Unlock()
+			if err != nil {
+				libraryUnknown[part.ID] = true
+				return
+			}
+			if existing != nil {
 				library[part.ID] = true
-				libraryMu.Unlock()
 			}
 		}()
 	}
@@ -208,6 +214,10 @@ func (h *SeriesHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		escapedTitle := html.EscapeString(part.Title)
 		if library[part.ID] {
 			sb.WriteString(fmt.Sprintf("✅ %s%s\n", escapedTitle, year))
+			continue
+		}
+		if libraryUnknown[part.ID] {
+			sb.WriteString(fmt.Sprintf("❔ %s%s · 状态暂无法确认\n", escapedTitle, year))
 			continue
 		}
 		missing++

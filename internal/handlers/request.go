@@ -352,7 +352,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	kb.AddButton("🏠 主菜单", "start")
 	// 回执先返回；系列检查走后台，不让 TMDB/Emby 查询拖慢按钮响应。
 	if review.MediaType == services.MediaTypeMovie {
-		go h.sendSeriesSuggestion(ctx.ChatID, ctx.UserID, tmdbID)
+		go h.sendSeriesSuggestion(ctx.UserID, tmdbID)
 	}
 	return &callback.Response{
 		Text:        receiptMsg,
@@ -363,8 +363,10 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 }
 
 // sendSeriesSuggestion 异步检查电影系列缺片，不阻塞求片回执。
-func (h *RequestHandler) sendSeriesSuggestion(chatID, userID int64, tmdbID int) {
-	if h.seriesHandler == nil || h.sessMgr == nil || chatID <= 0 || tmdbID <= 0 {
+// 系列建议属于个人内容，只发送申请人私聊；私聊不可达时静默失败，
+// 不允许回退到公开群聊。
+func (h *RequestHandler) sendSeriesSuggestion(userID int64, tmdbID int) {
+	if h.seriesHandler == nil || h.sessMgr == nil || userID <= 0 || tmdbID <= 0 {
 		return
 	}
 	sess := h.sessMgr.GetOrCreate(userID)
@@ -380,7 +382,7 @@ func (h *RequestHandler) sendSeriesSuggestion(chatID, userID int64, tmdbID int) 
 	kb.AddButton(button.Text, button.CallbackData)
 	kb.NewRow()
 	kb.AddButton("📊 求片进度", "requests")
-	_, err := h.telegram.SendMessage(chatID, text, "HTML", kb.Build())
+	_, err := h.telegram.SendMessage(userID, text, "HTML", kb.Build())
 	if err != nil {
 		logger.Info("[RequestHandler] 系列缺片提示发送失败: %v", err)
 		return
