@@ -2,8 +2,8 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/xzb177/yimao/internal/api"
@@ -112,16 +112,8 @@ func New(
 	if cfg.EnableAPIAuth {
 		mux.HandleFunc("/debug", securityService.Middleware(debugHandler))
 	} else {
-		// When API auth is disabled, restrict to localhost only
-		localOnly := func(w http.ResponseWriter, r *http.Request) {
-			host, _, _ := strings.Cut(r.RemoteAddr, ":")
-			if host != "127.0.0.1" && host != "::1" {
-				http.Error(w, "Forbidden", http.StatusForbidden)
-				return
-			}
-			debugHandler(w, r)
-		}
-		mux.HandleFunc("/debug", securityService.PublicMiddleware(localOnly))
+		// When API auth is disabled, restrict to localhost only.
+		mux.HandleFunc("/debug", securityService.PublicMiddleware(localOnlyHandler(debugHandler)))
 	}
 
 	// Webhook endpoints (for Telegram bot updates) - public with rate limiting
@@ -183,8 +175,9 @@ func New(
 
 func localOnlyHandler(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := strings.Cut(r.RemoteAddr, ":")
-		if err || (host != "127.0.0.1" && host != "::1") {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		ip := net.ParseIP(host)
+		if err != nil || ip == nil || !ip.IsLoopback() {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 			return
 		}
