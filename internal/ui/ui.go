@@ -143,7 +143,7 @@ func getRequestStatusEmoji(state string) string {
 		return "✅"
 	case "failed":
 		return "❌"
-	case "cancelled":
+	case "cancelled": //nolint:misspell // cancelled is a persisted legacy state
 		return "🚫"
 	default:
 		return "❓"
@@ -156,11 +156,10 @@ func wrapText(text string, maxLen int) string {
 		return text
 	}
 
-	runes := []rune(text)
 	var result []string
 	current := strings.Builder{}
 
-	for _, r := range runes {
+	for _, r := range text {
 		if current.Len()+1 > maxLen {
 			result = append(result, current.String())
 			current.Reset()
