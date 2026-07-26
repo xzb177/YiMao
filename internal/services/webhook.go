@@ -1,7 +1,6 @@
 package services
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,11 +30,6 @@ func NewWebhookService(telegram *TelegramClient, moviepilot *MoviePilotClient, u
 		notificationFormat:   notificationFormat,
 		tmdbAPIKey:           tmdbAPIKey,
 		tmdbClient:           &http.Client{Timeout: 10 * time.Second},
-		embyClient: &http.Client{
-			// 上限取各调用点最大超时；更短的路径用 context deadline 收紧。
-			Timeout:   10 * time.Second,
-			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: embySkipTLSVerify}},
-		},
 		epAggregation:        make(map[string]*EpisodeAggregation),
 		aggregationDelay:     60 * time.Second, // 默认60秒聚合延迟
 		fileInfoCache:        make(map[string]*cachedFileInfo),

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -566,7 +567,7 @@ func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType Media
 	// 5 秒盖帽避免阻塞求片流程；连接与 TLS 会话复用共享 embyClient。
 	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 	defer cancel()
-	resp, err := s.embyClient.Do(req.WithContext(ctx))
+	resp, err := s.embyHTTPClient().Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -694,7 +695,7 @@ func (s *WebhookService) SearchEmbyMediaByTMDB(tmdbID int, mediaType MediaType) 
 	req.Header.Set("Accept", "application/json")
 	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
 	defer cancel()
-	resp, err := s.embyClient.Do(req.WithContext(ctx))
+	resp, err := s.embyHTTPClient().Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -815,6 +816,18 @@ func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType
 	return paths, nil
 }
 
+// embyHTTPClient 返回共享的 Emby HTTP 客户端（惰性初始化，一次创建）。
+// 复用连接池与 TLS 会话；每个调用点用 context deadline 控制自身超时。
+func (s *WebhookService) embyHTTPClient() *http.Client {
+	s.embyClientOnce.Do(func() {
+		s.embyClient = &http.Client{
+			Timeout:   10 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}},
+		}
+	})
+	return s.embyClient
+}
+
 func (s *WebhookService) getEmbyJSON(endpoint string, dst interface{}) error {
 	req, err := http.NewRequest(http.MethodGet, endpoint, http.NoBody)
 	if err != nil {
@@ -824,7 +837,7 @@ func (s *WebhookService) getEmbyJSON(endpoint string, dst interface{}) error {
 	req.Header.Set("Accept", "application/json")
 	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
 	defer cancel()
-	resp, err := s.embyClient.Do(req.WithContext(ctx))
+	resp, err := s.embyHTTPClient().Do(req.WithContext(ctx))
 	if err != nil {
 		return err
 	}
@@ -861,7 +874,7 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	req.Header.Set("Accept", "application/json")
 	ctx, cancel := context.WithTimeout(req.Context(), 8*time.Second)
 	defer cancel()
-	resp, err := s.embyClient.Do(req.WithContext(ctx))
+	resp, err := s.embyHTTPClient().Do(req.WithContext(ctx))
 	if err != nil {
 		return false, err
 	}
@@ -907,7 +920,7 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	seasonReq.Header.Set("Accept", "application/json")
 	seasonCtx, seasonCancel := context.WithTimeout(seasonReq.Context(), 8*time.Second)
 	defer seasonCancel()
-	seasonResp, err := s.embyClient.Do(seasonReq.WithContext(seasonCtx))
+	seasonResp, err := s.embyHTTPClient().Do(seasonReq.WithContext(seasonCtx))
 	if err != nil {
 		return false, err
 	}
