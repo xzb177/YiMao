@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"html"
 	"strings"
 
@@ -19,15 +18,14 @@ func truncateAndEscape(text string, maxLen int) string {
 	return escapeText(truncateText(text, maxLen))
 }
 
-// UI 风格类型
+// UI 风格类型。
+// 历史上曾有 neon/film/pop/cinema 多套主题，均从未在生产路径启用，
+// 已于 2026-07 清理；现仅保留唯一的 StyleCard。类型与常量保留，
+// 以兼容配置层可能残留的字符串值（未知值一律回退 StyleCard）。
 type UIStyle string
 
 const (
-	StyleNeon   UIStyle = "neon"   // 暗黑霓虹风
-	StyleFilm   UIStyle = "film"   // 文艺胶片风
-	StylePop    UIStyle = "pop"    // 波普艺术风
-	StyleCard   UIStyle = "card"   // 极简卡片风
-	StyleCinema UIStyle = "cinema" // 沉浸电影风
+	StyleCard UIStyle = "card" // 极简卡片风（唯一生效主题）
 )
 
 // MessageBuilder 消息构建器接口
@@ -63,22 +61,10 @@ func getRequestStatusLabel(state string) string {
 	}
 }
 
-// NewBuilder 根据风格类型创建对应的构建器
-func NewBuilder(style UIStyle) MessageBuilder {
-	switch style {
-	case StyleNeon:
-		return &NeonBuilder{}
-	case StyleFilm:
-		return &FilmBuilder{}
-	case StylePop:
-		return &PopBuilder{}
-	case StyleCard:
-		return &DashBuilder{}
-	case StyleCinema:
-		return &CinemaBuilder{}
-	default:
-		return &NeonBuilder{} // 默认使用暗黑霓虹风
-	}
+// NewBuilder 根据风格类型创建对应的构建器。
+// 未知/历史遗留风格值一律回退到唯一的卡片主题。
+func NewBuilder(_ UIStyle) MessageBuilder {
+	return &DashBuilder{}
 }
 
 // BuildMenuWith 构建主菜单（指定风格）
@@ -130,23 +116,61 @@ func getMediaTypeIcon(mediaType string) string {
 	}
 }
 
-// 辅助函数：获取评分显示
-func getRatingDisplay(rating float64) string {
-	if rating > 0 {
-		return strings.Repeat("★", int(rating/2)) + strings.Repeat("☆", 5-int(rating/2)) + fmt.Sprintf(" %.1f", rating)
+// 辅助函数：获取媒体类型标签
+func getMediaTypeLabel(mediaType string) string {
+	switch strings.ToLower(mediaType) {
+	case "movie", "mov", "电影":
+		return "电影"
+	case "tv", "电视剧", "剧集":
+		return "剧集"
+	default:
+		return mediaType
 	}
-	return "暂无评分"
 }
 
-// 辅助函数：构建进度条
-func buildProgressBar(current, total int, length int) string {
-	if total <= 0 {
-		return strings.Repeat("░", length)
+// 辅助函数：获取请求状态图标
+func getRequestStatusEmoji(state string) string {
+	switch state {
+	case "pending":
+		return "⏳"
+	case "recycled":
+		return "🔄"
+	case "searching":
+		return "🔍"
+	case "downloading":
+		return "⬇️"
+	case "completed":
+		return "✅"
+	case "failed":
+		return "❌"
+	case "cancelled":
+		return "🚫"
+	default:
+		return "❓"
 	}
-	filled := float64(current) / float64(total) * float64(length)
-	filledLen := int(filled)
-	if filledLen > length {
-		filledLen = length
+}
+
+// 辅助函数：文本换行
+func wrapText(text string, maxLen int) string {
+	if len(text) <= maxLen {
+		return text
 	}
-	return strings.Repeat("█", filledLen) + strings.Repeat("░", length-filledLen)
+
+	runes := []rune(text)
+	var result []string
+	current := strings.Builder{}
+
+	for _, r := range runes {
+		if current.Len()+1 > maxLen {
+			result = append(result, current.String())
+			current.Reset()
+		}
+		current.WriteRune(r)
+	}
+
+	if current.Len() > 0 {
+		result = append(result, current.String())
+	}
+
+	return strings.Join(result, "\n   ")
 }

@@ -1721,11 +1721,11 @@ func (h *AdventureHandler) sendSceneCard(userID int64, chatID int64, state *Adve
 	if level > 1 {
 		switch {
 		case combo >= 6:
-			lastResult = fmt.Sprintf("🔥🔥🔥🔥 六连神话！x%d 连击！你是怎么看的？！", combo)
+			lastResult = fmt.Sprintf("🔥 六连神话！x%d 连击！你是怎么看的？！", combo)
 		case combo == 5:
-			lastResult = "🔥🔥🔥 五连绝世！这部电影你倒背如流吧？"
+			lastResult = "🔥 五连绝世！这部电影你倒背如流吧？"
 		case combo == 4:
-			lastResult = "🔥🔥 四连超凡！你是不是提前看了剧本？"
+			lastResult = "🔥 四连超凡！你是不是提前看了剧本？"
 		case combo == 3:
 			lastResult = "🔥 三连破敌！手感来了！"
 		case combo == 2:

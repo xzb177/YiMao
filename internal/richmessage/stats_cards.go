@@ -66,11 +66,6 @@ func BuildAdventureStatsCard(data AdventureStatsCardData) RichMessage {
 	if data.CurrentStreak > 0 {
 		b.Divider()
 		streakEmoji := "🔥"
-		if data.CurrentStreak >= 7 {
-			streakEmoji = "🔥🔥🔥"
-		} else if data.CurrentStreak >= 3 {
-			streakEmoji = "🔥🔥"
-		}
 		b.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天", streakEmoji, data.CurrentStreak))
 		if data.BestStreak > data.CurrentStreak {
 			b.Italic(fmt.Sprintf("最佳纪录：%d 天", data.BestStreak))

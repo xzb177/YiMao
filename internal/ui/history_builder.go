@@ -21,71 +21,7 @@ func NewHistoryBuilder(style UIStyle) *HistoryBuilder {
 
 // BuildHistoryUI 构建搜索历史界面
 func (b *HistoryBuilder) BuildHistoryUI(userID int64, stats *services.SearchStats, groupedHistory map[string][]services.SearchEntry, popularSearches []services.PopularSearch, trends []services.TrendItem) string {
-	switch b.style {
-	case StyleCard:
-		return b.buildCardHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
-	case StyleNeon:
-		return b.buildNeonHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
-	default:
-		return b.buildCardHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
-	}
-}
-
-// buildNeonHistoryUI 暗黑霓虹风格
-func (b *HistoryBuilder) buildNeonHistoryUI(userID int64, stats *services.SearchStats, groupedHistory map[string][]services.SearchEntry, popularSearches []services.PopularSearch, trends []services.TrendItem) string {
-	var sb strings.Builder
-
-	sb.WriteString(NeonLine + "\n")
-	sb.WriteString("🔮 搜索历史 · 你的观影足迹\n")
-	sb.WriteString(NeonLine + "\n\n")
-	sb.WriteString("✨ 记录每一次搜索，随时重温观影记忆\n\n")
-
-	// 统计数据
-	sb.WriteString("📊 统计数据\n")
-	sb.WriteString(NeonSeparator + "\n\n")
-
-	// 处理 nil stats
-	if stats == nil {
-		sb.WriteString("• 暂无统计数据\n")
-	} else {
-		sb.WriteString(fmt.Sprintf("• 总搜索次数：%d 次\n", stats.Total))
-		sb.WriteString(fmt.Sprintf("• 本周搜索：%d 次\n", stats.Week))
-		sb.WriteString(fmt.Sprintf("• 本月搜索：%d 次\n", stats.Month))
-		if len(stats.Top5) > 0 {
-			sb.WriteString(fmt.Sprintf("• 最常搜索：%s (%d次)\n", stats.Top5[0], stats.Total/len(stats.Top5)))
-		}
-	}
-
-	sb.WriteString("\n")
-	sb.WriteString(NeonSeparator + "\n\n")
-
-	// 分组历史记录
-	groupOrder := []string{"今天", "本周", "本月", "更早"}
-	for _, group := range groupOrder {
-		entries, exists := groupedHistory[group]
-		if !exists || len(entries) == 0 {
-			continue
-		}
-
-		sb.WriteString(fmt.Sprintf("📅 %s (%d条)\n\n", group, len(entries)))
-
-		for i, entry := range entries {
-			countText := ""
-			if entry.Count > 1 {
-				countText = fmt.Sprintf(" [%d次]", entry.Count)
-			}
-
-			timeText := formatTimeAgo(entry.Timestamp)
-
-			sb.WriteString(fmt.Sprintf("%d. 🔍 %s%s\n", i+1, entry.Query, countText))
-			sb.WriteString(fmt.Sprintf("   %s\n", timeText))
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(NeonLine + "\n")
-
-	return sb.String()
+	return b.buildCardHistoryUI(userID, stats, groupedHistory, popularSearches, trends)
 }
 
 // buildCardHistoryUI 极简卡片风格
@@ -151,75 +87,11 @@ func (b *HistoryBuilder) buildCardHistoryUI(userID int64, stats *services.Search
 
 // BuildHistoryKeyboard 构建历史记录键盘
 func (b *HistoryBuilder) BuildHistoryKeyboard(history []services.SearchEntry, userID int64) *callback.Keyboard {
-	switch b.style {
-	case StyleCard:
-		return b.buildCardHistoryKeyboard(history, userID)
-	case StyleNeon:
-		return b.buildNeonHistoryKeyboard(history, userID)
-	default:
-		return b.buildCardHistoryKeyboard(history, userID)
-	}
+	return b.buildCardHistoryKeyboard(history, userID)
 }
 
 // buildCardHistoryKeyboard 极简卡片风格键盘
 func (b *HistoryBuilder) buildCardHistoryKeyboard(history []services.SearchEntry, userID int64) *callback.Keyboard {
-	var rows [][]callback.Button
-
-	displayCount := len(history)
-	if displayCount > 10 {
-		displayCount = 10
-	}
-
-	// 数字按钮（每行2个）
-	const buttonsPerRow = 2
-	for i := 0; i < displayCount; i++ {
-		if i%buttonsPerRow == 0 {
-			rows = append(rows, []callback.Button{})
-		}
-
-		query := history[i].Query
-		// Limit query length for button text
-		buttonText := fmt.Sprintf("%d. %s", i+1, truncateText(query, 12))
-
-		// Build callback with escape
-		callbackData := fmt.Sprintf("search:hist:%d", i)
-
-		rows[len(rows)-1] = append(rows[len(rows)-1], callback.Button{
-			Text:         buttonText,
-			CallbackData: callbackData,
-		})
-	}
-
-	// 操作按钮行 - 只有统计按钮
-	actionRow := []callback.Button{
-		{Text: "📊 查看统计", CallbackData: "search_stats"},
-	}
-	rows = append(rows, actionRow)
-
-	// 管理按钮行
-	manageRow := []callback.Button{}
-	if len(history) > 0 {
-		manageRow = append(manageRow, callback.Button{
-			Text:         "🗑️ 清空历史",
-			CallbackData: "search_clear_all",
-		})
-	}
-	manageRow = append(manageRow, callback.Button{
-		Text:         "⚙️ 管理历史",
-		CallbackData: "search_manage",
-	})
-	rows = append(rows, manageRow)
-
-	// 返回按钮
-	rows = append(rows, []callback.Button{
-		{Text: "🏠 主菜单", CallbackData: "start"},
-	})
-
-	return &callback.Keyboard{InlineKeyboard: rows}
-}
-
-// buildNeonHistoryKeyboard 暗黑霓虹风格键盘
-func (b *HistoryBuilder) buildNeonHistoryKeyboard(history []services.SearchEntry, userID int64) *callback.Keyboard {
 	var rows [][]callback.Button
 
 	displayCount := len(history)

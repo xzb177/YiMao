@@ -562,9 +562,9 @@ func BuildAdventureComboCard(data AdventureComboCardData) RichMessage {
 	comboText := ""
 	switch {
 	case data.Combo >= 5:
-		comboText = "🔥🔥🔥 五连绝世！"
+		comboText = "🔥 五连绝世！"
 	case data.Combo >= 4:
-		comboText = "🔥🔥 四连超凡！"
+		comboText = "🔥 四连超凡！"
 	case data.Combo >= 3:
 		comboText = "🔥 三连破敌！"
 	case data.Combo >= 2:

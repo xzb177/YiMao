@@ -8,7 +8,7 @@ import (
 )
 
 func TestThemeCriticalCopyIsConsistent(t *testing.T) {
-	styles := []UIStyle{StyleNeon, StyleFilm, StylePop, StyleCard, StyleCinema}
+	styles := []UIStyle{StyleCard}
 	for _, style := range styles {
 		t.Run(string(style), func(t *testing.T) {
 			builder := NewBuilder(style)
