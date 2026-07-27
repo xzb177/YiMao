@@ -99,10 +99,36 @@ func TestSanitizeInlineKeyboardAppliesSemanticStyles(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, telegramButtonStylePrimary}
+	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, ""}
 	for i, button := range row {
 		if button.Style != want[i] {
 			t.Fatalf("button %q style = %q, want %q", button.Text, button.Style, want[i])
+		}
+	}
+}
+
+func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
+	tests := []struct {
+		text, action, want string
+	}{
+		{"🎬 求片", "start_search", telegramButtonStylePrimary},
+		{"♻️ 洗版", "wash", telegramButtonStylePrimary},
+		{"📝 遇到问题", "issue", ""},
+		{"📋 我的进度", "start_requests", ""},
+		{"🎮 游戏中心", "game_menu", ""},
+		{"⚙️ 设置", "start_settings", ""},
+		{"✅ 待办中心", "admin_todo", telegramButtonStylePrimary},
+		{"📊 求片统计", "admin_request_stats", ""},
+		{"🔔 通知设置", "admin_notif_settings", ""},
+		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", ""},
+		{"🚫 关闭", "admin_issue_close:id:1", telegramButtonStyleDanger},
+		{"✅ 已解决", "admin_issue_fixed:id:1", telegramButtonStyleSuccess},
+	}
+
+	for _, test := range tests {
+		button := types.TelegramInlineKeyboardButton{Text: test.text, CallbackData: test.action}
+		if got := telegramButtonStyle(button); got != test.want {
+			t.Errorf("button %q (%s) style = %q, want %q", test.text, test.action, got, test.want)
 		}
 	}
 }
@@ -115,8 +141,8 @@ func TestSanitizeInlineKeyboardKeepsOnlyValidExplicitStyle(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	if row[0].Style != telegramButtonStylePrimary {
-		t.Fatalf("invalid explicit style = %q, want fallback %q", row[0].Style, telegramButtonStylePrimary)
+	if row[0].Style != "" {
+		t.Fatalf("invalid explicit style = %q, want neutral fallback", row[0].Style)
 	}
 	if row[1].Style != telegramButtonStylePrimary {
 		t.Fatalf("valid explicit style = %q, want %q", row[1].Style, telegramButtonStylePrimary)

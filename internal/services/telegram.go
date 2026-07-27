@@ -1285,54 +1285,65 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 }
 
 // telegramButtonStyle returns an explicit valid style unchanged and otherwise
-// infers a semantic style from the action. Telegram supports only primary
-// (blue), success (green), and danger (red). Every actionable button receives
-// a style; unknown actions fall back to primary instead of remaining gray.
+// applies a restrained semantic palette. Telegram supports only primary,
+// success and danger; an empty style deliberately keeps auxiliary navigation
+// in the client's neutral gray.
 func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
-	switch strings.ToLower(strings.TrimSpace(button.Style)) {
+	explicit := strings.ToLower(strings.TrimSpace(button.Style))
+	switch explicit {
 	case telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger:
-		return strings.ToLower(strings.TrimSpace(button.Style))
+		return explicit
 	}
 
 	text := strings.ToLower(strings.TrimSpace(button.Text))
 	action := strings.ToLower(strings.TrimSpace(button.CallbackData))
+	actionName := action
+	if index := strings.IndexByte(actionName, ':'); index >= 0 {
+		actionName = actionName[:index]
+	}
 
-	// Destructive or abort actions take priority over their visible wording.
+	// Destructive or abort actions take priority over every other category.
 	for _, marker := range []string{
-		"取消", "删除", "清空", "解绑", "撤回", "拒绝", "放弃", "移除", "danger",
-		"cancel", "delete", "clear", "unlink", "withdraw", "reject", "remove", "abandon",
+		"取消", "删除", "清空", "解绑", "撤回", "拒绝", "关闭", "放弃", "移除", "注销",
+		"cancel", "delete", "clear", "unlink", "withdraw", "reject", "close", "remove", "abandon",
 	} {
-		if strings.Contains(text, marker) || strings.Contains(action, marker) {
+		if strings.Contains(text, marker) || strings.Contains(actionName, marker) {
 			return telegramButtonStyleDanger
 		}
 	}
 
-	// Explicit confirmations and successful state transitions are green.
+	// Confirmations and successful state transitions use success green.
 	for _, marker := range []string{
-		"确认", "提交", "完成", "批准", "保存", "启用", "开启", "标记",
-		"confirm", "submit", "complete", "approve", "save", "enable", "bind_confirm",
-		"review_complete",
+		"确认", "提交", "完成", "批准", "已解决", "保存", "启用", "开启", "标记",
+		"confirm", "submit", "complete", "approve", "fixed", "save", "enable",
 	} {
-		if strings.Contains(text, marker) || strings.Contains(action, marker) {
+		if strings.Contains(text, marker) || strings.Contains(actionName, marker) {
 			return telegramButtonStyleSuccess
 		}
 	}
 
-	// Main navigation and discovery actions are blue.
+	// Navigation and utilities stay neutral even when they point back to a core
+	// handler (for example, a refresh button whose callback is requests).
 	for _, marker := range []string{
-		"求片", "洗版", "搜索", "查看", "进度", "绑定", "许愿", "刷新", "重试", "换一批", "立即",
-		"request", "search", "select", "detail", "requests", "myreqs", "start_requests",
-		"start_search", "start_link", "link", "wish", "wash", "feedback", "series_view",
-		"request_heat", "review",
+		"主菜单", "返回", "刷新", "上一页", "下一页", "重选", "换一批",
+		"设置", "帮助", "游戏中心", "数据概览", "通知设置", "管理员列表",
 	} {
-		if strings.Contains(text, marker) || strings.Contains(action, marker) {
-			return telegramButtonStylePrimary
+		if strings.Contains(text, marker) {
+			return ""
 		}
 	}
 
-	// Every callback or URL is an actionable control. Never leave it gray
-	// merely because a newly added action has not been classified yet.
-	return telegramButtonStylePrimary
+	// Only core business entries and decisive workflow actions are primary.
+	switch actionName {
+	case "start_search", "request", "force_subscribe", "wash", "wish_add",
+		"start_link", "link", "admin_todo", "admin_pending", "admin_feedback",
+		"admin_issue_processing", "admin_issue_reply", "admin_feedback_reply", "admin_add_start",
+		"adventure_start", "game_daily_challenge", "game_blindbox", "game_blindbox_open",
+		"game_blindbox_horror", "game_review":
+		return telegramButtonStylePrimary
+	default:
+		return ""
+	}
 }
 
 // KeyboardBuilder helps build inline keyboards
