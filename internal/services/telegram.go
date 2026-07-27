@@ -1250,9 +1250,9 @@ const (
 )
 
 // sanitizeInlineKeyboard enforces Telegram's callback_data contract and adds
-// semantic button colours at the final transport boundary. Keeping styling
+// semantic button colors at the final transport boundary. Keeping styling
 // here means every send/edit path gets the same visual language without
-// changing button layout or callback behaviour.
+// changing button layout or callback behavior.
 func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.TelegramInlineKeyboard {
 	if keyboard == nil {
 		return nil
