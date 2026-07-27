@@ -119,6 +119,7 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		{"⚙️ 设置", "start_settings", ""},
 		{"✅ 待办中心", "admin_todo", telegramButtonStylePrimary},
 		{"📊 求片统计", "admin_request_stats", ""},
+		{"📊 统计面板", "admin_feedback", ""},
 		{"🔔 通知设置", "admin_notif_settings", ""},
 		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", ""},
 		{"🚫 关闭", "admin_issue_close:id:1", telegramButtonStyleDanger},

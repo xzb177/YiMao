@@ -1326,7 +1326,7 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	// handler (for example, a refresh button whose callback is requests).
 	for _, marker := range []string{
 		"主菜单", "返回", "刷新", "上一页", "下一页", "重选", "换一批",
-		"设置", "帮助", "游戏中心", "数据概览", "通知设置", "管理员列表",
+		"设置", "帮助", "游戏中心", "概览", "统计", "通知设置", "管理员列表",
 	} {
 		if strings.Contains(text, marker) {
 			return ""
