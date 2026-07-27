@@ -595,6 +595,10 @@ func requestStateText(state string) string {
 		return "📝 审核"
 	case "STUCK":
 		return "⚠️ 同步"
+	case "WORK_ORDER":
+		return "🔧 处理中"
+	case "ISSUE_OPEN":
+		return "📝 待处理"
 	case "P":
 		return "⏳ 排队"
 	case "R":
