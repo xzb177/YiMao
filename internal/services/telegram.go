@@ -1244,6 +1244,7 @@ func (c *TelegramClient) SetMyCommandsForScope(commands []BotCommand, languageCo
 const (
 	telegramCallbackDataMaxBytes = 64
 
+	telegramButtonStyleNeutral = "neutral"
 	telegramButtonStylePrimary = "primary"
 	telegramButtonStyleSuccess = "success"
 	telegramButtonStyleDanger  = "danger"
@@ -1286,11 +1287,13 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 
 // telegramButtonStyle returns an explicit valid style unchanged and otherwise
 // applies a restrained semantic palette. Telegram supports only primary,
-// success and danger; an empty style deliberately keeps auxiliary navigation
-// in the client's neutral gray.
+// success and danger; neutral is an internal override that is omitted on the
+// wire so Telegram can use the client's default gray style.
 func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	explicit := strings.ToLower(strings.TrimSpace(button.Style))
 	switch explicit {
+	case telegramButtonStyleNeutral:
+		return ""
 	case telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger:
 		return explicit
 	}
@@ -1302,10 +1305,11 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 		actionName = actionName[:index]
 	}
 
-	// Destructive or abort actions take priority over every other category.
+	// Only irreversible or state-destroying actions use danger red. Ordinary
+	// draft-flow cancellation is intentionally neutral.
 	for _, marker := range []string{
-		"取消", "删除", "清空", "解绑", "撤回", "拒绝", "关闭", "放弃", "移除", "注销",
-		"cancel", "delete", "clear", "unlink", "withdraw", "reject", "close", "remove", "abandon",
+		"删除", "清空", "解绑", "撤回", "拒绝", "关闭", "移除", "注销", "取消订阅", "退出冒险", "停止追问",
+		"delete", "clear", "unlink", "withdraw", "reject", "close", "remove", "abandon", "cancel_subscription", "adventure_quit", "stop_follow",
 	} {
 		if strings.Contains(text, marker) || strings.Contains(actionName, marker) {
 			return telegramButtonStyleDanger

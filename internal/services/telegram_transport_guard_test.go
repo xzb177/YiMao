@@ -99,7 +99,7 @@ func TestSanitizeInlineKeyboardAppliesSemanticStyles(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, ""}
+	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, "", ""}
 	for i, button := range row {
 		if button.Style != want[i] {
 			t.Fatalf("button %q style = %q, want %q", button.Text, button.Style, want[i])
@@ -122,6 +122,11 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		{"📊 统计面板", "admin_feedback", ""},
 		{"🔔 通知设置", "admin_notif_settings", ""},
 		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", ""},
+		{"❌ 取消", "cancel", ""},
+		{"❌ 取消反馈", "cancel", ""},
+		{"🚪 退出冒险", "adventure_quit", telegramButtonStyleDanger},
+		{"⏹️ 停止追问", "feedback:stop_follow:1", telegramButtonStyleDanger},
+		{"🚫 取消订阅", "cancel_subscription:1", telegramButtonStyleDanger},
 		{"🚫 关闭", "admin_issue_close:id:1", telegramButtonStyleDanger},
 		{"✅ 已解决", "admin_issue_fixed:id:1", telegramButtonStyleSuccess},
 	}
@@ -131,6 +136,17 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		if got := telegramButtonStyle(button); got != test.want {
 			t.Errorf("button %q (%s) style = %q, want %q", test.text, test.action, got, test.want)
 		}
+	}
+}
+
+func TestTelegramButtonStyleSupportsExplicitNeutralOverride(t *testing.T) {
+	button := types.TelegramInlineKeyboardButton{
+		Text:         "❌ 取消订阅",
+		CallbackData: "cancel_subscription:1",
+		Style:        telegramButtonStyleNeutral,
+	}
+	if got := telegramButtonStyle(button); got != "" {
+		t.Fatalf("explicit neutral style = %q, want omitted wire style", got)
 	}
 }
 
