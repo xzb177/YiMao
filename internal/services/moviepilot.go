@@ -227,8 +227,9 @@ const (
 	MediaTypeMovie MediaType = "movie"
 	MediaTypeTV    MediaType = "tv"
 
-	// maxResponseBodySize 防止恶意/异常响应导致 OOM
-	maxResponseBodySize = 10 * 1024 * 1024 // 10MB
+	// Response limits prevent abnormal upstream payloads from causing OOM.
+	maxResponseBodySize             = 10 * 1024 * 1024 // 10MB
+	maxSubscriptionResponseBodySize = 32 * 1024 * 1024 // Large MP installations can exceed the generic limit.
 )
 
 // MediaInfo represents media information from MoviePilot
@@ -324,6 +325,10 @@ type User struct {
 
 // makeRequest makes an API request to MoviePilot
 func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
+	return c.makeRequestWithLimit(method, endpoint, body, maxResponseBodySize)
+}
+
+func (c *MoviePilotClient) makeRequestWithLimit(method, endpoint string, body interface{}, maxBodySize int64) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
@@ -350,9 +355,15 @@ func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodySize))
+	if resp.ContentLength > maxBodySize {
+		return nil, fmt.Errorf("response body exceeds %d bytes: content-length %d", maxBodySize, resp.ContentLength)
+	}
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxBodySize+1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if int64(len(respBody)) > maxBodySize {
+		return nil, fmt.Errorf("response body exceeds %d bytes", maxBodySize)
 	}
 
 	logger.Debug("[MoviePilot] Response status: %d", resp.StatusCode)
@@ -725,7 +736,7 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
 	endpoint := "/api/v1/subscribe/?page=1&count=1000"
 
-	body, err := c.makeRequest("GET", endpoint, nil)
+	body, err := c.makeRequestWithLimit("GET", endpoint, nil, maxSubscriptionResponseBodySize)
 	if err != nil {
 		return nil, err
 	}
@@ -765,7 +776,7 @@ func (c *MoviePilotClient) preWarmSubscriptionCache() error {
 
 	logger.Info("[MoviePilot] preWarmSubscriptionCache: 开始拉取全量订阅...")
 	endpoint := "/api/v1/subscribe/?page=1&count=1000"
-	body, err := c.makeRequest("GET", endpoint, nil)
+	body, err := c.makeRequestWithLimit("GET", endpoint, nil, maxSubscriptionResponseBodySize)
 	if err != nil {
 		return fmt.Errorf("拉取订阅列表失败: %w", err)
 	}
