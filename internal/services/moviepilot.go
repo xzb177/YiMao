@@ -1127,7 +1127,7 @@ func (c *MoviePilotClient) FindExistingSubscription(tmdbID int, mediaType MediaT
 
 	for i := range items {
 		it := &items[i]
-		if it.MediaID != tmdbID {
+		if it.MediaID.Int64() != int64(tmdbID) {
 			continue
 		}
 		if normalizeType(it.Type) != targetType {
@@ -1236,21 +1236,21 @@ func (c *MoviePilotClient) CancelSubscription(subscriptionID string) error {
 
 // SubscribeStatus represents the detailed status of a subscription
 type SubscribeStatus struct {
-	ID             int    `json:"id"`
-	Name           string `json:"name"`
-	Year           string `json:"year"`
-	Type           string `json:"type"`
-	State          string `json:"state"`
-	StatusText     string `json:"status_text,omitempty"`
-	MediaID        int    `json:"media_id"`
-	SavePath       string `json:"save_path"`
-	Username       string `json:"username"`
-	Downloader     string `json:"downloader"`
-	TotalEpisode   int    `json:"total_episode"`
-	CurrentEpisode int    `json:"current_episode"`
-	LackEpisode    int    `json:"lack_episode"` // Missing episodes
-	Percent        int    `json:"percent"`
-	ErrorMessage   string `json:"error_message,omitempty"`
+	ID             int           `json:"id"`
+	Name           string        `json:"name"`
+	Year           string        `json:"year"`
+	Type           string        `json:"type"`
+	State          string        `json:"state"`
+	StatusText     string        `json:"status_text,omitempty"`
+	MediaID        FlexibleInt64 `json:"media_id"`
+	SavePath       string        `json:"save_path"`
+	Username       string        `json:"username"`
+	Downloader     string        `json:"downloader"`
+	TotalEpisode   int           `json:"total_episode"`
+	CurrentEpisode int           `json:"current_episode"`
+	LackEpisode    int           `json:"lack_episode"` // Missing episodes
+	Percent        int           `json:"percent"`
+	ErrorMessage   string        `json:"error_message,omitempty"`
 }
 
 // NotifyUser sends a notification to a user about their request status update

@@ -11,7 +11,7 @@ func TestGetAllSubscriptionsAllowsResponseAboveGenericLimit(t *testing.T) {
 	padding := strings.Repeat("x", maxResponseBodySize+1024)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"id":1,"name":"large","extra":"` + padding + `"}]`))
+		_, _ = w.Write([]byte(`[{"id":1,"name":"large","media_id":"223911","extra":"` + padding + `"}]`))
 	}))
 	defer server.Close()
 
@@ -22,6 +22,9 @@ func TestGetAllSubscriptionsAllowsResponseAboveGenericLimit(t *testing.T) {
 	}
 	if len(subscriptions) != 1 || subscriptions[0].ID != 1 {
 		t.Fatalf("unexpected subscriptions: %#v", subscriptions)
+	}
+	if subscriptions[0].MediaID.Int64() != 223911 {
+		t.Fatalf("media_id = %d, want 223911", subscriptions[0].MediaID.Int64())
 	}
 }
 
