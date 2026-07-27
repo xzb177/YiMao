@@ -85,6 +85,8 @@ type TelegramInlineKeyboardButton struct {
 	Text         string `json:"text"`
 	CallbackData string `json:"callback_data,omitempty"`
 	URL          string `json:"url,omitempty"`
+	// Style is an optional Bot API button style: primary, success or danger.
+	Style string `json:"style,omitempty"`
 }
 
 // SendMessageRequest represents a send message request

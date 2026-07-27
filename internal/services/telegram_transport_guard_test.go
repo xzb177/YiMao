@@ -88,3 +88,37 @@ func TestSanitizeUTF8RemovesNullAndInvalidBytes(t *testing.T) {
 		t.Fatalf("sanitizeUTF8 = %q", got)
 	}
 }
+
+func TestSanitizeInlineKeyboardAppliesSemanticStyles(t *testing.T) {
+	keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: [][]types.TelegramInlineKeyboardButton{{
+		{Text: "🎬 求片", CallbackData: "request:id:1:type:movie"},
+		{Text: "✅ 确认提交", CallbackData: "feedback:confirm:1"},
+		{Text: "❌ 取消", CallbackData: "cancel"},
+		{Text: "🏠 主菜单", CallbackData: "start"},
+	}}}
+
+	got := sanitizeInlineKeyboard(keyboard)
+	row := got.InlineKeyboard[0]
+	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, ""}
+	for i, button := range row {
+		if button.Style != want[i] {
+			t.Fatalf("button %q style = %q, want %q", button.Text, button.Style, want[i])
+		}
+	}
+}
+
+func TestSanitizeInlineKeyboardKeepsOnlyValidExplicitStyle(t *testing.T) {
+	keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: [][]types.TelegramInlineKeyboardButton{{
+		{Text: "普通操作", CallbackData: "custom_action", Style: "purple"},
+		{Text: "主操作", CallbackData: "custom_action", Style: " PRIMARY "},
+	}}}
+
+	got := sanitizeInlineKeyboard(keyboard)
+	row := got.InlineKeyboard[0]
+	if row[0].Style != "" {
+		t.Fatalf("invalid explicit style = %q, want empty", row[0].Style)
+	}
+	if row[1].Style != telegramButtonStylePrimary {
+		t.Fatalf("valid explicit style = %q, want %q", row[1].Style, telegramButtonStylePrimary)
+	}
+}

@@ -581,7 +581,7 @@ func callbackKeyboardToTelegram(kb *callback.Keyboard) *types.TelegramInlineKeyb
 	for i, row := range kb.InlineKeyboard {
 		rows[i] = make([]types.TelegramInlineKeyboardButton, len(row))
 		for j, button := range row {
-			rows[i][j] = types.TelegramInlineKeyboardButton{Text: button.Text, CallbackData: button.CallbackData, URL: button.URL}
+			rows[i][j] = types.TelegramInlineKeyboardButton{Text: button.Text, CallbackData: button.CallbackData, URL: button.URL, Style: button.Style}
 		}
 	}
 	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}

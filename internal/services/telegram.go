@@ -221,7 +221,7 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 		return nil, err
 	}
 	if keyboard != nil {
-		keyboardJSON, err := json.Marshal(keyboard)
+		keyboardJSON, err := json.Marshal(sanitizeInlineKeyboard(keyboard))
 		if err != nil {
 			return nil, fmt.Errorf("marshal reply_markup: %w", err)
 		}
@@ -1241,11 +1241,18 @@ func (c *TelegramClient) SetMyCommandsForScope(commands []BotCommand, languageCo
 	return nil
 }
 
-const telegramCallbackDataMaxBytes = 64
+const (
+	telegramCallbackDataMaxBytes = 64
 
-// sanitizeInlineKeyboard enforces Telegram's callback_data contract at the
-// final transport boundary. Invalid callback-only buttons are dropped so one
-// bad dynamic value cannot make the entire message fail.
+	telegramButtonStylePrimary = "primary"
+	telegramButtonStyleSuccess = "success"
+	telegramButtonStyleDanger  = "danger"
+)
+
+// sanitizeInlineKeyboard enforces Telegram's callback_data contract and adds
+// semantic button colours at the final transport boundary. Keeping styling
+// here means every send/edit path gets the same visual language without
+// changing button layout or callback behaviour.
 func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.TelegramInlineKeyboard {
 	if keyboard == nil {
 		return nil
@@ -1257,6 +1264,7 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 		for _, button := range row {
 			button.Text = sanitizeUTF8(button.Text)
 			button.CallbackData = sanitizeUTF8(button.CallbackData)
+			button.Style = telegramButtonStyle(button)
 			if button.Text == "" {
 				continue
 			}
@@ -1274,6 +1282,55 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 		}
 	}
 	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
+}
+
+// telegramButtonStyle returns an explicit valid style unchanged and otherwise
+// infers a conservative style from the action semantics. Telegram supports
+// only primary (blue), success (green), and danger (red); all other buttons
+// intentionally retain the client's default style.
+func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
+	switch strings.ToLower(strings.TrimSpace(button.Style)) {
+	case telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger:
+		return strings.ToLower(strings.TrimSpace(button.Style))
+	}
+
+	text := strings.ToLower(strings.TrimSpace(button.Text))
+	action := strings.ToLower(strings.TrimSpace(button.CallbackData))
+
+	// Destructive or abort actions take priority over their visible wording.
+	for _, marker := range []string{
+		"取消", "删除", "清空", "解绑", "撤回", "拒绝", "放弃", "移除", "danger",
+		"cancel", "delete", "clear", "unlink", "withdraw", "reject", "remove", "abandon",
+	} {
+		if strings.Contains(text, marker) || strings.Contains(action, marker) {
+			return telegramButtonStyleDanger
+		}
+	}
+
+	// Explicit confirmations and successful state transitions are green.
+	for _, marker := range []string{
+		"确认", "提交", "完成", "批准", "保存", "启用", "开启", "标记",
+		"confirm", "submit", "complete", "approve", "save", "enable", "bind_confirm",
+		"review_complete",
+	} {
+		if strings.Contains(text, marker) || strings.Contains(action, marker) {
+			return telegramButtonStyleSuccess
+		}
+	}
+
+	// Main navigation and discovery actions are blue.
+	for _, marker := range []string{
+		"求片", "洗版", "搜索", "查看", "进度", "绑定", "许愿", "刷新", "重试", "换一批", "立即",
+		"request", "search", "select", "detail", "requests", "myreqs", "start_requests",
+		"start_search", "start_link", "link", "wish", "wash", "feedback", "series_view",
+		"request_heat", "review",
+	} {
+		if strings.Contains(text, marker) || strings.Contains(action, marker) {
+			return telegramButtonStylePrimary
+		}
+	}
+
+	return ""
 }
 
 // KeyboardBuilder helps build inline keyboards
