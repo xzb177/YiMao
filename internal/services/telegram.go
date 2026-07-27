@@ -1285,9 +1285,9 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 }
 
 // telegramButtonStyle returns an explicit valid style unchanged and otherwise
-// infers a conservative style from the action semantics. Telegram supports
-// only primary (blue), success (green), and danger (red); all other buttons
-// intentionally retain the client's default style.
+// infers a semantic style from the action. Telegram supports only primary
+// (blue), success (green), and danger (red). Every actionable button receives
+// a style; unknown actions fall back to primary instead of remaining gray.
 func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	switch strings.ToLower(strings.TrimSpace(button.Style)) {
 	case telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger:
@@ -1330,7 +1330,9 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 		}
 	}
 
-	return ""
+	// Every callback or URL is an actionable control. Never leave it gray
+	// merely because a newly added action has not been classified yet.
+	return telegramButtonStylePrimary
 }
 
 // KeyboardBuilder helps build inline keyboards

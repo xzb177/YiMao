@@ -99,7 +99,7 @@ func TestSanitizeInlineKeyboardAppliesSemanticStyles(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, ""}
+	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger, telegramButtonStylePrimary}
 	for i, button := range row {
 		if button.Style != want[i] {
 			t.Fatalf("button %q style = %q, want %q", button.Text, button.Style, want[i])
@@ -115,8 +115,8 @@ func TestSanitizeInlineKeyboardKeepsOnlyValidExplicitStyle(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	if row[0].Style != "" {
-		t.Fatalf("invalid explicit style = %q, want empty", row[0].Style)
+	if row[0].Style != telegramButtonStylePrimary {
+		t.Fatalf("invalid explicit style = %q, want fallback %q", row[0].Style, telegramButtonStylePrimary)
 	}
 	if row[1].Style != telegramButtonStylePrimary {
 		t.Fatalf("valid explicit style = %q, want %q", row[1].Style, telegramButtonStylePrimary)
