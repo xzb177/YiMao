@@ -1382,6 +1382,15 @@ func (kb *KeyboardBuilder) AddURLButton(text, url string) *KeyboardBuilder {
 	return kb
 }
 
+// AddWebAppButton adds a Telegram Mini App button to the current row.
+func (kb *KeyboardBuilder) AddWebAppButton(text, url string) *KeyboardBuilder {
+	kb.currentRow = append(kb.currentRow, types.TelegramInlineKeyboardButton{
+		Text:   text,
+		WebApp: &types.TelegramWebAppInfo{URL: url},
+	})
+	return kb
+}
+
 // NewRow starts a new row
 func (kb *KeyboardBuilder) NewRow() *KeyboardBuilder {
 	if len(kb.currentRow) > 0 {
@@ -1608,6 +1617,10 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 	if isAdmin {
 		kb.NewRow()
 		kb.AddButton("🛠️ 管理", "admin_menu")
+	}
+	if url := strings.TrimSpace(os.Getenv("MINIAPP_URL")); strings.HasPrefix(url, "https://") {
+		kb.NewRow()
+		kb.AddWebAppButton("🎞️ 打开云海小程序", url)
 	}
 
 	return kb.Build()

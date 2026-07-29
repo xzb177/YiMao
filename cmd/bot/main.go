@@ -120,6 +120,9 @@ func main() {
 		MediaNotification: depsWithHandlers.MediaNotification,
 		FeedbackHandler:   depsWithHandlers.FeedbackHandler,
 		WishHandler:       depsWithHandlers.WishHandler,
+		RequestSubmission: depsWithHandlers.RequestSubmission,
+		TMDB:              depsWithHandlers.TMDBClient,
+		Reviews:           depsWithHandlers.ReviewService,
 	}, securityService)
 
 	// Start server in background
@@ -204,12 +207,13 @@ type Dependencies struct {
 	FulfillmentStats  *services.FulfillmentStatsService // 履约统计（ETA + 入库回访）
 	SeasonRadar       *services.SeasonRadarService      // 剧集续季雷达
 	WishHandler       *handlers.WishHandler             // #6 许愿池命令/回调处理器
-	MyRequestsHandler *handlers.MyRequestsHandler       // 求片进度聚合视图（/requests 命令复用）
-	GameHandler       *handlers.GameHandler             // 游戏化功能处理器
-	AdventureHandler  *handlers.AdventureHandler        // 电影冒险
-	RankHandler       *handlers.RankHandler             // 冒险排行
-	StatsHandler      *handlers.StatsHandler            // 个人冒险战绩
-	DreamHandler      *handlers.DreamHandler            // 本周挑战
+	RequestSubmission *services.RequestSubmissionService
+	MyRequestsHandler *handlers.MyRequestsHandler // 求片进度聚合视图（/requests 命令复用）
+	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
+	AdventureHandler  *handlers.AdventureHandler  // 电影冒险
+	RankHandler       *handlers.RankHandler       // 冒险排行
+	StatsHandler      *handlers.StatsHandler      // 个人冒险战绩
+	DreamHandler      *handlers.DreamHandler      // 本周挑战
 }
 
 // initServices initializes all services
@@ -1088,6 +1092,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		FulfillmentStats:  deps.FulfillmentStats,
 		SeasonRadar:       deps.SeasonRadar,
 		WishHandler:       wishHandler,
+		RequestSubmission: submissionService,
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,
 		AdventureHandler:  adventureHandler,

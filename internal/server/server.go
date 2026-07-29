@@ -11,6 +11,7 @@ import (
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
+	"github.com/xzb177/yimao/internal/miniapp"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 )
@@ -30,6 +31,9 @@ type Dependencies struct {
 	MediaNotification *services.MediaNotificationService
 	FeedbackHandler   *handlers.FeedbackHandler
 	WishHandler       *handlers.WishHandler // #6 许愿池命令/回调处理器
+	RequestSubmission *services.RequestSubmissionService
+	TMDB              *services.TMDBClient
+	Reviews           *services.ReviewService
 }
 
 // New creates a new HTTP server
@@ -162,6 +166,19 @@ func New(
 		mux.HandleFunc("/api/admins", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
 		mux.HandleFunc("/api/admins/", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
 	}
+
+	// Telegram Mini App routes. Authentication for API calls is handled by the
+	// Mini App package using Telegram initData; the HTML shell is public so
+	// Telegram can load it before the WebApp object is initialized.
+	miniAppServer := miniapp.NewServer(miniapp.Deps{
+		BotToken: cfg.TelegramBotToken, MoviePilot: deps.MoviePilot,
+		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService,
+		Submission: deps.RequestSubmission, MaxAuthAge: 24 * time.Hour,
+	})
+	miniAppHandler := miniAppServer.Handler()
+	mux.Handle("/miniapp", miniAppHandler)
+	mux.Handle("/miniapp/", miniAppHandler)
+	mux.Handle("/api/miniapp/v1/", miniAppHandler)
 
 	return &http.Server{
 		Addr:              cfg.ServerHost + ":" + cfg.ServerPort,

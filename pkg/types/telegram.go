@@ -81,10 +81,15 @@ type TelegramInlineKeyboard struct {
 }
 
 // TelegramInlineKeyboardButton represents a button
+type TelegramWebAppInfo struct {
+	URL string `json:"url"`
+}
+
 type TelegramInlineKeyboardButton struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"`
+	Text         string              `json:"text"`
+	CallbackData string              `json:"callback_data,omitempty"`
+	URL          string              `json:"url,omitempty"`
+	WebApp       *TelegramWebAppInfo `json:"web_app,omitempty"`
 	// Style is an optional Bot API button style: primary, success or danger.
 	Style string `json:"style,omitempty"`
 }

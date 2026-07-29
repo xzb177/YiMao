@@ -295,9 +295,10 @@ type Keyboard struct {
 
 // Button represents a keyboard button
 type Button struct {
-	Text         string `json:"text"`
-	CallbackData string `json:"callback_data,omitempty"`
-	URL          string `json:"url,omitempty"`
+	Text         string                    `json:"text"`
+	CallbackData string                    `json:"callback_data,omitempty"`
+	URL          string                    `json:"url,omitempty"`
+	WebApp       *types.TelegramWebAppInfo `json:"web_app,omitempty"`
 	// Style is an optional Telegram button style: primary, success or danger.
 	Style string `json:"style,omitempty"`
 }

@@ -1612,6 +1612,7 @@ func convertKeyboard(tk *types.TelegramInlineKeyboard) *callback.Keyboard {
 				Text:         btn.Text,
 				CallbackData: btn.CallbackData,
 				URL:          btn.URL,
+				WebApp:       btn.WebApp,
 				Style:        btn.Style,
 			}
 		}
