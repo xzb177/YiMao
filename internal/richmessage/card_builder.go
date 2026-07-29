@@ -140,8 +140,9 @@ type DailySummarySeries struct {
 
 // TransferDailySummarySeries is one title/season from MoviePilot transfer history.
 type TransferDailySummarySeries struct {
-	Title string
-	Files int
+	Title     string
+	WorkTitle string // title without season, used for distinct-work statistics
+	Files     int
 }
 
 // WeeklyReportData holds data for the weekly report card
@@ -414,6 +415,18 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 // from MoviePilot successful transfer history.
 func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDailySummarySeries, fileCount int, firstAt, lastAt string) RichMessage {
 	builder := NewBuilder()
+	seriesWorks := make(map[string]struct{}, len(series))
+	for _, item := range series {
+		workTitle := item.WorkTitle
+		if workTitle == "" {
+			workTitle = item.Title
+		}
+		seriesWorks[workTitle] = struct{}{}
+	}
+	seriesLabel := fmt.Sprintf("%d 部", len(seriesWorks))
+	if len(series) > len(seriesWorks) {
+		seriesLabel = fmt.Sprintf("%d 部 / %d 季", len(seriesWorks), len(series))
+	}
 	builder.Heading("📥 入库日报", 2)
 	builder.BoldParagraph(fmt.Sprintf("%s · 云海影视", dateStr))
 	builder.Divider()
@@ -422,7 +435,7 @@ func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDail
 		rows = append(rows, []string{"🎬 电影", fmt.Sprintf("%d 部", len(movies))})
 	}
 	if len(series) > 0 {
-		rows = append(rows, []string{"📺 剧集", fmt.Sprintf("%d 部", len(series))})
+		rows = append(rows, []string{"📺 剧集", seriesLabel})
 	}
 	rows = append(rows,
 		[]string{"📁 媒体文件", fmt.Sprintf("%d 个", fileCount)},
@@ -437,7 +450,7 @@ func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDail
 		}
 	}
 	if len(series) > 0 {
-		builder.Heading(fmt.Sprintf("📺 剧集更新（%d 部）", len(series)), 3)
+		builder.Heading(fmt.Sprintf("📺 剧集更新（%s）", seriesLabel), 3)
 	}
 	for _, item := range series {
 		builder.Paragraph(fmt.Sprintf("• %s（%d 个文件）", item.Title, item.Files))

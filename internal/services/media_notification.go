@@ -719,7 +719,9 @@ func (s *MediaNotificationService) sendTransferHistorySummary(adminID int64, day
 	}
 	series := make([]richmessage.TransferDailySummarySeries, 0, len(summary.Series))
 	for _, item := range summary.Series {
-		series = append(series, richmessage.TransferDailySummarySeries{Title: item.DisplayTitle(), Files: item.Files})
+		series = append(series, richmessage.TransferDailySummarySeries{
+			Title: item.DisplayTitle(), WorkTitle: item.Title, Files: item.Files,
+		})
 	}
 	richMsg := richmessage.BuildTransferDailySummaryCard(
 		start.Format("2006年1月2日"), movies, series, summary.FileCount,
