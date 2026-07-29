@@ -47,9 +47,7 @@ func ValidateInitData(raw, botToken string, maxAge time.Duration) (AuthUser, err
 	}
 	sort.Strings(pairs)
 	dataCheckString := strings.Join(pairs, "\n")
-	// Telegram Mini Apps: secret_key = HMAC_SHA256(bot_token, key="WebAppData").
-	// Go's hmac.New takes the key first, so WebAppData is the key and the bot
-	// token is the message.
+	// Telegram Mini Apps: secret_key = HMAC_SHA256(key="WebAppData", data=bot_token).
 	secretMac := hmac.New(sha256.New, []byte("WebAppData"))
 	secretMac.Write([]byte(botToken))
 	digest := hmac.New(sha256.New, secretMac.Sum(nil))

@@ -165,15 +165,43 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mediaType := services.MediaTypeMovie
+	isTV := false
 	if typeName := r.URL.Query().Get("type"); typeName == "tv" || typeName == "电视剧" {
 		mediaType = services.MediaTypeTV
+		isTV = true
 	}
 	info, err := s.deps.MoviePilot.GetMediaInfo(id, mediaType)
-	if err != nil {
-		http.Error(w, "详情暂时不可用", http.StatusBadGateway)
+	if err == nil && info != nil && (info.Title != "" || info.ID != 0) {
+		writeJSON(w, http.StatusOK, info)
 		return
 	}
-	writeJSON(w, http.StatusOK, info)
+	// MoviePilot can return an empty media shell for a valid TMDB result that
+	// has not been indexed locally. Details browsing must still work for search
+	// results, so use the already configured TMDB client as a read-only fallback.
+	if s.deps.TMDB != nil {
+		kind := "movie"
+		if isTV {
+			kind = "tv"
+		}
+		fallback, fallbackErr := s.deps.TMDB.GetMediaByType(id, kind)
+		if fallbackErr == nil && fallback != nil && (fallback.Title != "" || fallback.Name != "") {
+			title := fallback.Title
+			if title == "" {
+				title = fallback.Name
+			}
+			writeJSON(w, http.StatusOK, services.MediaInfo{
+				ID: id, Title: title, Overview: fallback.Overview,
+				Poster:   s.deps.TMDB.GetPosterURL(fallback.PosterPath),
+				Backdrop: s.deps.TMDB.GetPosterURL(fallback.BackdropPath),
+				Rating:   fallback.VoteAverage, Type: mediaType,
+			})
+			return
+		}
+	}
+	if err != nil {
+		logger.Info("[MiniApp] detail failed: id=%d type=%s err=%v", id, mediaType, err)
+	}
+	http.Error(w, "详情暂时不可用", http.StatusBadGateway)
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
