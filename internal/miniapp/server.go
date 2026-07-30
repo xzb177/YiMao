@@ -27,6 +27,38 @@ type Deps struct {
 
 type Server struct{ deps Deps }
 
+type detailSeason struct {
+	Number       int    `json:"number"`
+	Name         string `json:"name"`
+	EpisodeCount int    `json:"episode_count"`
+	AirDate      string `json:"air_date,omitempty"`
+	Poster       string `json:"poster_path,omitempty"`
+}
+
+type detailStatus struct {
+	Code string `json:"code"`
+	Text string `json:"text"`
+}
+
+type detailResponse struct {
+	ID            int                 `json:"tmdb_id"`
+	Type          string              `json:"type"`
+	Title         string              `json:"title"`
+	OriginalTitle string              `json:"original_title,omitempty"`
+	Year          string              `json:"year,omitempty"`
+	ReleaseDate   string              `json:"release_date,omitempty"`
+	Overview      string              `json:"overview,omitempty"`
+	Poster        string              `json:"poster_path,omitempty"`
+	Backdrop      string              `json:"backdrop_path,omitempty"`
+	Rating        float64             `json:"vote_average,omitempty"`
+	VoteCount     int                 `json:"vote_count,omitempty"`
+	Runtime       int                 `json:"runtime,omitempty"`
+	Genres        []string            `json:"genres,omitempty"`
+	Seasons       []detailSeason      `json:"seasons,omitempty"`
+	Status        detailStatus        `json:"media_status"`
+	Quota         *services.UserQuota `json:"quota,omitempty"`
+}
+
 func NewServer(deps Deps) *Server {
 	if deps.MaxAuthAge <= 0 {
 		deps.MaxAuthAge = 24 * time.Hour
@@ -73,6 +105,9 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 	_, _ = w.Write(data)
 }
 
@@ -156,7 +191,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.auth(w, r); !ok {
+	user, ok := s.auth(w, r)
+	if !ok {
 		return
 	}
 	id, _ := strconv.Atoi(r.URL.Query().Get("id"))
@@ -164,44 +200,71 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "无效的影视 ID", http.StatusBadRequest)
 		return
 	}
+	kind := "movie"
 	mediaType := services.MediaTypeMovie
-	isTV := false
 	if typeName := r.URL.Query().Get("type"); typeName == "tv" || typeName == "电视剧" {
-		mediaType = services.MediaTypeTV
-		isTV = true
+		kind, mediaType = "tv", services.MediaTypeTV
 	}
-	info, err := s.deps.MoviePilot.GetMediaInfo(id, mediaType)
-	if err == nil && info != nil && (info.Title != "" || info.ID != 0) {
-		writeJSON(w, http.StatusOK, info)
+	if s.deps.TMDB == nil {
+		http.Error(w, "详情暂时不可用", http.StatusServiceUnavailable)
 		return
 	}
-	// MoviePilot can return an empty media shell for a valid TMDB result that
-	// has not been indexed locally. Details browsing must still work for search
-	// results, so use the already configured TMDB client as a read-only fallback.
-	if s.deps.TMDB != nil {
-		kind := "movie"
-		if isTV {
-			kind = "tv"
-		}
-		fallback, fallbackErr := s.deps.TMDB.GetMediaByType(id, kind)
-		if fallbackErr == nil && fallback != nil && (fallback.Title != "" || fallback.Name != "") {
-			title := fallback.Title
-			if title == "" {
-				title = fallback.Name
-			}
-			writeJSON(w, http.StatusOK, services.MediaInfo{
-				ID: id, Title: title, Overview: fallback.Overview,
-				Poster:   s.deps.TMDB.GetPosterURL(fallback.PosterPath),
-				Backdrop: s.deps.TMDB.GetPosterURL(fallback.BackdropPath),
-				Rating:   fallback.VoteAverage, Type: mediaType,
-			})
+	view := detailResponse{ID: id, Type: kind, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	if kind == "tv" {
+		d, err := s.deps.TMDB.GetTVDetailsWithSeasons(id)
+		if err != nil || d == nil || d.Name == "" {
+			http.Error(w, "详情暂时不可用", http.StatusBadGateway)
 			return
 		}
+		view.Title, view.OriginalTitle, view.ReleaseDate = d.Name, d.OriginalName, d.FirstAirDate
+		view.Overview, view.Poster, view.Backdrop = d.Overview, s.deps.TMDB.GetPosterURL(d.PosterPath), s.deps.TMDB.GetPosterURL(d.BackdropPath)
+		view.Rating, view.VoteCount = d.VoteAverage, d.VoteCount
+		for _, g := range d.Genres {
+			view.Genres = append(view.Genres, g.Name)
+		}
+		for _, season := range d.Seasons {
+			if season.SeasonNumber <= 0 {
+				continue
+			}
+			view.Seasons = append(view.Seasons, detailSeason{Number: season.SeasonNumber, Name: season.Name, EpisodeCount: season.EpisodeCount, AirDate: season.AirDate, Poster: s.deps.TMDB.GetPosterURL(season.PosterPath)})
+		}
+	} else {
+		d, err := s.deps.TMDB.GetMovieDetails(id)
+		if err != nil || d == nil || d.Title == "" {
+			http.Error(w, "详情暂时不可用", http.StatusBadGateway)
+			return
+		}
+		view.Title, view.OriginalTitle, view.ReleaseDate = d.Title, d.OriginalTitle, d.ReleaseDate
+		view.Overview, view.Poster, view.Backdrop = d.Overview, s.deps.TMDB.GetPosterURL(d.PosterPath), s.deps.TMDB.GetPosterURL(d.BackdropPath)
+		view.Rating, view.VoteCount, view.Runtime = d.VoteAverage, d.VoteCount, d.Runtime
+		for _, g := range d.Genres {
+			view.Genres = append(view.Genres, g.Name)
+		}
 	}
-	if err != nil {
-		logger.Info("[MiniApp] detail failed: id=%d type=%s err=%v", id, mediaType, err)
+	if len(view.ReleaseDate) >= 4 {
+		view.Year = view.ReleaseDate[:4]
 	}
-	http.Error(w, "详情暂时不可用", http.StatusBadGateway)
+	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
+	if existing, found, err := s.deps.MoviePilot.FindExistingSubscription(id, mediaType, season); err == nil && found {
+		if kind == "movie" {
+			view.Status = detailStatus{Code: "subscribed", Text: services.GetStateText(existing.State)}
+		} else {
+			// MoviePilot does not expose reliable season identity on every version.
+			// Keep this informational and never claim the selected season is covered.
+			view.Status = detailStatus{Code: "available", Text: "该剧已有订阅，可继续选择目标季"}
+		}
+	} else if s.deps.Reviews != nil {
+		if own, found := s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season); found {
+			view.Status = detailStatus{Code: "requested", Text: map[string]string{"pending": "等待审核", "approved": "处理中"}[own.Status]}
+			if view.Status.Text == "" {
+				view.Status.Text = "已有求片"
+			}
+		}
+	}
+	if s.deps.Quota != nil {
+		view.Quota = s.deps.Quota.GetQuotaInfo(user.ID)
+	}
+	writeJSON(w, http.StatusOK, view)
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
