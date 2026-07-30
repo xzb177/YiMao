@@ -2,6 +2,7 @@ package bot
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -57,6 +58,12 @@ func HandleCommand(
 	switch command {
 	case "/start":
 		isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
+		if len(parts) == 2 {
+			if deepLink, ok := parseMiniAppStartPayload(parts[1]); ok {
+				SendMiniAppDeepLink(telegram, msg.Chat.ID, deepLink)
+				return
+			}
+		}
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
 	case "/adventure":
 		if adventureHandler != nil {
@@ -457,6 +464,62 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 	} else {
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
 	}
+}
+
+type miniAppDeepLink struct {
+	TMDBID int
+	Type   string
+	Season int
+}
+
+func parseMiniAppStartPayload(payload string) (miniAppDeepLink, bool) {
+	parts := strings.Split(payload, "_")
+	if len(parts) != 4 || parts[0] != "yh" || (parts[1] != "m" && parts[1] != "t") {
+		return miniAppDeepLink{}, false
+	}
+	tmdbID, err := strconv.Atoi(parts[2])
+	if err != nil || tmdbID <= 0 {
+		return miniAppDeepLink{}, false
+	}
+	season, err := strconv.Atoi(parts[3])
+	if err != nil || season < 0 || season > 999 {
+		return miniAppDeepLink{}, false
+	}
+	mediaType := "movie"
+	if parts[1] == "t" {
+		mediaType = "tv"
+		if season <= 0 {
+			return miniAppDeepLink{}, false
+		}
+	} else if season != 0 {
+		return miniAppDeepLink{}, false
+	}
+	return miniAppDeepLink{TMDBID: tmdbID, Type: mediaType, Season: season}, true
+}
+
+func SendMiniAppDeepLink(telegram *services.TelegramClient, chatID int64, link miniAppDeepLink) {
+	base := strings.TrimSpace(os.Getenv("MINIAPP_URL"))
+	u, err := url.Parse(base)
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		SendStartMenu(telegram, chatID, false)
+		return
+	}
+	query := u.Query()
+	query.Set("tmdb_id", strconv.Itoa(link.TMDBID))
+	query.Set("type", link.Type)
+	if link.Season > 0 {
+		query.Set("season", strconv.Itoa(link.Season))
+	}
+	u.RawQuery = query.Encode()
+	keyboard := services.NewKeyboardBuilder()
+	keyboard.AddWebAppButton("打开影视详情", u.String())
+	keyboard.NewRow()
+	keyboard.AddButton("返回主菜单", "start")
+	label := "电影"
+	if link.Type == "tv" {
+		label = fmt.Sprintf("剧集第 %d 季", link.Season)
+	}
+	_, _ = telegram.SendMessage(chatID, fmt.Sprintf("有人分享了一部%s，点下面直接查看详情。", label), "", keyboard.Build())
 }
 
 // SendStartMenu sends the start menu
