@@ -78,6 +78,8 @@ type userRequestView struct {
 	StatusText string             `json:"status_text"`
 	Group      string             `json:"status_group"`
 	CreatedAt  time.Time          `json:"created_at"`
+	CanCancel  bool               `json:"can_cancel"`
+	Note       string             `json:"note,omitempty"`
 }
 
 func NewServer(deps Deps) *Server {
@@ -98,6 +100,7 @@ func (s *Server) Handler() http.Handler {
 	// Request submission is intentionally not exposed until it uses the existing
 	// quota/review transaction, not a direct MoviePilot write.
 	mux.HandleFunc("/api/miniapp/v1/request", s.handleRequest)
+	mux.HandleFunc("/api/miniapp/v1/request/cancel", s.handleCancelRequest)
 	return mux
 }
 
@@ -196,7 +199,15 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		status, text, group := userRequestStatus(review)
-		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt})
+		note := ""
+		if review.Status == "rejected" {
+			note = "未通过审核，可稍后换个版本或作品重试"
+		} else if review.Status == "cancelled" {
+			note = "已由你主动撤回"
+		} else if review.Stuck {
+			note = "系统正在自动重试，无需重复提交"
+		}
+		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note})
 	}
 	var quota *quotaView
 	if s.deps.Quota != nil {
@@ -421,6 +432,48 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		requestID = result.Review.RequestID
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": result.Status, "request_id": requestID})
+}
+
+func (s *Server) handleCancelRequest(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.auth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.deps.Reviews == nil || s.deps.Quota == nil {
+		http.Error(w, "撤回服务未就绪", http.StatusServiceUnavailable)
+		return
+	}
+	var body struct {
+		RequestID string `json:"request_id"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.RequestID) == "" {
+		http.Error(w, "请求参数不完整", http.StatusBadRequest)
+		return
+	}
+	review, exists := s.deps.Reviews.GetRequest(body.RequestID)
+	if !exists || review == nil || review.TelegramID != user.ID || review.NormalizedBusinessType() != services.BusinessTypeRequest {
+		http.Error(w, "求片记录不存在", http.StatusNotFound)
+		return
+	}
+	if review.Status != "pending" {
+		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "not_cancellable", "message": "该请求已进入处理阶段，不能撤回"})
+		return
+	}
+	if err := s.deps.Reviews.CancelByUser(review.RequestID, user.ID); err != nil {
+		http.Error(w, "撤回失败，请稍后再试", http.StatusConflict)
+		return
+	}
+	restored, err := s.deps.Reviews.RestoreQuotaOnce(review.RequestID, s.deps.Quota)
+	if err != nil {
+		logger.Info("[MiniApp] request cancelled but quota restore failed: request=%s user=%d err=%v", review.RequestID, user.ID, err)
+		writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "status": "cancelled_quota_pending", "quota_restored": false})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "cancelled", "quota_restored": restored})
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
