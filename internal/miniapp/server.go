@@ -3,9 +3,12 @@ package miniapp
 import (
 	"embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xzb177/yimao/internal/services"
@@ -25,7 +28,12 @@ type Deps struct {
 	MaxAuthAge time.Duration
 }
 
-type Server struct{ deps Deps }
+type Server struct {
+	deps         Deps
+	dynamicMu    sync.Mutex
+	dynamicAt    time.Time
+	dynamicCache map[string]any
+}
 
 type detailSeason struct {
 	Number       int    `json:"number"`
@@ -96,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/miniapp/v1/search", s.handleSearch)
 	mux.HandleFunc("/api/miniapp/v1/detail", s.handleDetail)
 	mux.HandleFunc("/api/miniapp/v1/discover", s.handleDiscover)
+	mux.HandleFunc("/api/miniapp/v1/dynamic", s.handleDynamic)
 	mux.HandleFunc("/api/miniapp/v1/me", s.handleMe)
 	// Request submission is intentionally not exposed until it uses the existing
 	// quota/review transaction, not a direct MoviePilot write.
@@ -175,6 +184,97 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		featured = append(featured, tvItems[0])
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"featured": featured, "movies": movieItems, "tv": tvItems})
+}
+
+type dynamicMedia struct {
+	TMDBID int     `json:"tmdb_id"`
+	Type   string  `json:"type"`
+	Title  string  `json:"title"`
+	Year   int     `json:"year,omitempty"`
+	Season int     `json:"season,omitempty"`
+	Poster string  `json:"poster_path,omitempty"`
+	Rating float64 `json:"vote_average,omitempty"`
+}
+
+func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
+	if _, ok := s.auth(w, r); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	s.dynamicMu.Lock()
+	defer s.dynamicMu.Unlock()
+	if time.Since(s.dynamicAt) < 2*time.Minute && s.dynamicCache != nil {
+		writeJSON(w, http.StatusOK, s.dynamicCache)
+		return
+	}
+	response := map[string]any{"recently_added": []dynamicMedia{}, "just_available": []dynamicMedia{}, "recent_requests": []dynamicMedia{}}
+	if s.deps.MoviePilot != nil {
+		if items, err := s.deps.MoviePilot.EmbyRecentlyAdded(8); err == nil {
+			public := make([]dynamicMedia, 0, len(items))
+			for _, item := range items {
+				public = append(public, dynamicMedia{TMDBID: item.TMDBID, Type: item.Type, Title: item.Name, Year: item.Year, Rating: item.Rating})
+			}
+			response["recently_added"] = public
+		}
+	}
+	if s.deps.Reviews != nil {
+		reviews := s.deps.Reviews.GetAllRequests()
+		sort.Slice(reviews, func(i, j int) bool { return reviews[i].CreatedAt.After(reviews[j].CreatedAt) })
+		seenRecent := map[string]bool{}
+		recent := []dynamicMedia{}
+		for _, review := range reviews {
+			if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest || review.TmdbID <= 0 {
+				continue
+			}
+			kind := "movie"
+			if review.MediaType == services.MediaTypeTV {
+				kind = "tv"
+			}
+			key := fmt.Sprintf("%s:%d:%d", kind, review.TmdbID, review.Season)
+			item := dynamicMedia{TMDBID: review.TmdbID, Type: kind, Title: review.MediaTitle, Year: review.MediaYear, Season: review.Season, Poster: review.PosterPath}
+			if !seenRecent[key] && len(recent) < 10 && review.Status != "cancelled" && review.Status != "rejected" {
+				seenRecent[key] = true
+				recent = append(recent, item)
+			}
+		}
+		sort.Slice(reviews, func(i, j int) bool { return completionTime(reviews[i]).After(completionTime(reviews[j])) })
+		seenDone := map[string]bool{}
+		done := []dynamicMedia{}
+		for _, review := range reviews {
+			if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest || review.TmdbID <= 0 || !(review.EmbyExists || review.SubscriptionState == services.StateCompleted || review.CompletedNoticeAt != nil) {
+				continue
+			}
+			kind := "movie"
+			if review.MediaType == services.MediaTypeTV {
+				kind = "tv"
+			}
+			key := fmt.Sprintf("%s:%d:%d", kind, review.TmdbID, review.Season)
+			if seenDone[key] || len(done) >= 8 {
+				continue
+			}
+			seenDone[key] = true
+			done = append(done, dynamicMedia{TMDBID: review.TmdbID, Type: kind, Title: review.MediaTitle, Year: review.MediaYear, Season: review.Season, Poster: review.PosterPath})
+		}
+		response["recent_requests"], response["just_available"] = recent, done
+	}
+	s.dynamicAt, s.dynamicCache = time.Now(), response
+	writeJSON(w, http.StatusOK, response)
+}
+
+func completionTime(review *services.ReviewRequest) time.Time {
+	if review == nil {
+		return time.Time{}
+	}
+	if review.CompletedNoticeAt != nil {
+		return *review.CompletedNoticeAt
+	}
+	if !review.ReviewedAt.IsZero() {
+		return review.ReviewedAt
+	}
+	return review.CreatedAt
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {

@@ -1506,6 +1506,71 @@ func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType Med
 	return result.TotalRecordCount > 0, nil
 }
 
+type EmbyPublicMedia struct {
+	TMDBID      int       `json:"tmdb_id"`
+	Name        string    `json:"name"`
+	Type        string    `json:"type"`
+	Year        int       `json:"year,omitempty"`
+	Rating      float64   `json:"vote_average,omitempty"`
+	DateCreated time.Time `json:"date_created"`
+}
+
+func (c *MoviePilotClient) EmbyRecentlyAdded(limit int) ([]EmbyPublicMedia, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+	if c.embyURL == "" || c.embyAPIKey == "" {
+		return nil, fmt.Errorf("Emby availability is not configured")
+	}
+	base := strings.TrimRight(c.embyURL, "/")
+	userID, err := c.resolveEmbyUserID(base)
+	if err != nil {
+		return nil, err
+	}
+	values := url.Values{}
+	values.Set("Recursive", "true")
+	values.Set("IncludeItemTypes", "Movie,Series")
+	values.Set("SortBy", "DateCreated")
+	values.Set("SortOrder", "Descending")
+	values.Set("Fields", "ProviderIds,DateCreated,ProductionYear,CommunityRating")
+	values.Set("Limit", strconv.Itoa(limit*3))
+	requestURL := fmt.Sprintf("%s/Users/%s/Items?%s", base, url.PathEscape(userID), values.Encode())
+	var result struct {
+		Items []struct {
+			Name            string            `json:"Name"`
+			Type            string            `json:"Type"`
+			ProductionYear  int               `json:"ProductionYear"`
+			CommunityRating float64           `json:"CommunityRating"`
+			DateCreated     string            `json:"DateCreated"`
+			ProviderIDs     map[string]string `json:"ProviderIds"`
+		} `json:"Items"`
+	}
+	if err := c.embyGetJSON(requestURL, &result); err != nil {
+		return nil, err
+	}
+	items := make([]EmbyPublicMedia, 0, limit)
+	for _, item := range result.Items {
+		rawID := item.ProviderIDs["Tmdb"]
+		if rawID == "" {
+			rawID = item.ProviderIDs["TMDB"]
+		}
+		tmdbID, err := strconv.Atoi(rawID)
+		if err != nil || tmdbID <= 0 {
+			continue
+		}
+		mediaType := "movie"
+		if item.Type == "Series" {
+			mediaType = "tv"
+		}
+		created, _ := time.Parse(time.RFC3339, item.DateCreated)
+		items = append(items, EmbyPublicMedia{TMDBID: tmdbID, Name: item.Name, Type: mediaType, Year: item.ProductionYear, Rating: item.CommunityRating, DateCreated: created})
+		if len(items) == limit {
+			break
+		}
+	}
+	return items, nil
+}
+
 func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDBSeason(tmdbID, season int) (bool, error) {
 	if tmdbID <= 0 || season <= 0 {
 		return false, fmt.Errorf("invalid TMDB ID or season")
