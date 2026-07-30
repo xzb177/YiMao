@@ -344,6 +344,25 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		view.Year = view.ReleaseDate[:4]
 	}
 	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
+	if mediaType == services.MediaTypeMovie {
+		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(id, mediaType); err == nil && exists {
+			view.Status = detailStatus{Code: "in_library", Text: "库中可看"}
+			if s.deps.Quota != nil {
+				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
+			}
+			writeJSON(w, http.StatusOK, view)
+			return
+		}
+	} else if season > 0 {
+		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBSeason(id, season); err == nil && exists {
+			view.Status = detailStatus{Code: "in_library", Text: "这一季已入库"}
+			if s.deps.Quota != nil {
+				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
+			}
+			writeJSON(w, http.StatusOK, view)
+			return
+		}
+	}
 	if existing, found, err := s.deps.MoviePilot.FindExistingSubscription(id, mediaType, season); err == nil && found {
 		if kind == "movie" {
 			view.Status = detailStatus{Code: "subscribed", Text: services.GetStateText(existing.State)}
@@ -391,9 +410,20 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "媒体类型无效", http.StatusBadRequest)
 		return
 	}
-	if s.deps.Submission == nil || s.deps.TMDB == nil {
+	if s.deps.Submission == nil || s.deps.TMDB == nil || s.deps.MoviePilot == nil {
 		http.Error(w, "求片服务未就绪", http.StatusServiceUnavailable)
 		return
+	}
+	if mediaType == services.MediaTypeMovie {
+		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(body.ID, mediaType); err == nil && exists {
+			writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "in_library", "message": "库中已经有这部电影"})
+			return
+		}
+	} else if body.Season > 0 {
+		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBSeason(body.ID, body.Season); err == nil && exists {
+			writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "in_library", "message": "这一季已经入库"})
+			return
+		}
 	}
 	mediaTitle, mediaYear, posterPath, overview := "", 0, "", ""
 	if body.Type == "tv" {

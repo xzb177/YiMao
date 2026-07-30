@@ -1506,6 +1506,78 @@ func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType Med
 	return result.TotalRecordCount > 0, nil
 }
 
+func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDBSeason(tmdbID, season int) (bool, error) {
+	if tmdbID <= 0 || season <= 0 {
+		return false, fmt.Errorf("invalid TMDB ID or season")
+	}
+	if c.embyURL == "" || c.embyAPIKey == "" {
+		return false, fmt.Errorf("Emby availability is not configured")
+	}
+	embyBaseURL := strings.TrimRight(c.embyURL, "/")
+	embyUserID, err := c.resolveEmbyUserID(embyBaseURL)
+	if err != nil {
+		return false, fmt.Errorf("cannot resolve Emby user: %w", err)
+	}
+	seriesValues := url.Values{}
+	seriesValues.Set("AnyProviderIdEquals", fmt.Sprintf("tmdb.%d", tmdbID))
+	seriesValues.Set("IncludeItemTypes", "Series")
+	seriesValues.Set("Recursive", "true")
+	seriesValues.Set("Limit", "1")
+	seriesValues.Set("Fields", "ProviderIds")
+	seriesURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), seriesValues.Encode())
+	var seriesResult struct {
+		Items []struct {
+			ID string `json:"Id"`
+		} `json:"Items"`
+	}
+	if err := c.embyGetJSON(seriesURL, &seriesResult); err != nil {
+		return false, err
+	}
+	if len(seriesResult.Items) == 0 || seriesResult.Items[0].ID == "" {
+		return false, nil
+	}
+	seasonValues := url.Values{}
+	seasonValues.Set("ParentId", seriesResult.Items[0].ID)
+	seasonValues.Set("IncludeItemTypes", "Season")
+	seasonValues.Set("Recursive", "true")
+	seasonValues.Set("Fields", "IndexNumber")
+	seasonValues.Set("Limit", "100")
+	seasonURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), seasonValues.Encode())
+	var seasonResult struct {
+		Items []struct {
+			IndexNumber int `json:"IndexNumber"`
+		} `json:"Items"`
+	}
+	if err := c.embyGetJSON(seasonURL, &seasonResult); err != nil {
+		return false, err
+	}
+	for _, item := range seasonResult.Items {
+		if item.IndexNumber == season {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (c *MoviePilotClient) embyGetJSON(requestURL string, target any) error {
+	req, err := http.NewRequest(http.MethodGet, requestURL, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-Emby-Token", c.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return fmt.Errorf("Emby items API returned status %d", resp.StatusCode)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, maxResponseBodySize)).Decode(target)
+}
+
 // EmbyMediaAvailability checks whether media exists in Emby and preserves
 // lookup failures so callers can distinguish an unavailable service from a
 // confirmed library miss.
