@@ -129,17 +129,28 @@ func (s *Server) handleDiscover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "发现页暂时不可用", http.StatusBadGateway)
 		return
 	}
-	items := make([]services.TMDBTrendingMediaInfo, 0, 16)
+	movieItems := []services.TMDBTrendingMediaInfo{}
+	tvItems := []services.TMDBTrendingMediaInfo{}
 	if movies != nil {
-		items = append(items, movies.Results...)
+		movieItems = movies.Results
+		if len(movieItems) > 10 {
+			movieItems = movieItems[:10]
+		}
 	}
 	if tv != nil {
-		items = append(items, tv.Results...)
+		tvItems = tv.Results
+		if len(tvItems) > 10 {
+			tvItems = tvItems[:10]
+		}
 	}
-	if len(items) > 16 {
-		items = items[:16]
+	featured := make([]services.TMDBTrendingMediaInfo, 0, 2)
+	if len(movieItems) > 0 {
+		featured = append(featured, movieItems[0])
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+	if len(tvItems) > 0 {
+		featured = append(featured, tvItems[0])
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"featured": featured, "movies": movieItems, "tv": tvItems})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
@@ -187,7 +198,22 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "搜索暂时不可用", http.StatusBadGateway)
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	upstreamCount := len(result.Results)
+	filter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+	if filter == "movie" || filter == "tv" {
+		filtered := make([]services.SearchResult, 0, len(result.Results))
+		for _, item := range result.Results {
+			itemType := "movie"
+			if item.Type == "tv" || item.Type == "电视剧" {
+				itemType = "tv"
+			}
+			if itemType == filter {
+				filtered = append(filtered, item)
+			}
+		}
+		result.Results = filtered
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"results": result.Results, "page": page, "has_more": upstreamCount == 12})
 }
 
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
