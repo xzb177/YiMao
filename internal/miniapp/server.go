@@ -40,23 +40,44 @@ type detailStatus struct {
 	Text string `json:"text"`
 }
 
+type quotaView struct {
+	MovieUsed  int `json:"movie_used"`
+	MovieLimit int `json:"movie_limit"`
+	TVUsed     int `json:"tv_used"`
+	TVLimit    int `json:"tv_limit"`
+}
+
 type detailResponse struct {
-	ID            int                 `json:"tmdb_id"`
-	Type          string              `json:"type"`
-	Title         string              `json:"title"`
-	OriginalTitle string              `json:"original_title,omitempty"`
-	Year          string              `json:"year,omitempty"`
-	ReleaseDate   string              `json:"release_date,omitempty"`
-	Overview      string              `json:"overview,omitempty"`
-	Poster        string              `json:"poster_path,omitempty"`
-	Backdrop      string              `json:"backdrop_path,omitempty"`
-	Rating        float64             `json:"vote_average,omitempty"`
-	VoteCount     int                 `json:"vote_count,omitempty"`
-	Runtime       int                 `json:"runtime,omitempty"`
-	Genres        []string            `json:"genres,omitempty"`
-	Seasons       []detailSeason      `json:"seasons,omitempty"`
-	Status        detailStatus        `json:"media_status"`
-	Quota         *services.UserQuota `json:"quota,omitempty"`
+	ID            int            `json:"tmdb_id"`
+	Type          string         `json:"type"`
+	Title         string         `json:"title"`
+	OriginalTitle string         `json:"original_title,omitempty"`
+	Year          string         `json:"year,omitempty"`
+	ReleaseDate   string         `json:"release_date,omitempty"`
+	Overview      string         `json:"overview,omitempty"`
+	Poster        string         `json:"poster_path,omitempty"`
+	Backdrop      string         `json:"backdrop_path,omitempty"`
+	Rating        float64        `json:"vote_average,omitempty"`
+	VoteCount     int            `json:"vote_count,omitempty"`
+	Runtime       int            `json:"runtime,omitempty"`
+	Genres        []string       `json:"genres,omitempty"`
+	Seasons       []detailSeason `json:"seasons,omitempty"`
+	Status        detailStatus   `json:"media_status"`
+	Quota         *quotaView     `json:"quota,omitempty"`
+}
+
+type userRequestView struct {
+	RequestID  string             `json:"request_id"`
+	TmdbID     int                `json:"tmdb_id"`
+	Title      string             `json:"media_title"`
+	Year       int                `json:"media_year,omitempty"`
+	Type       services.MediaType `json:"media_type"`
+	Season     int                `json:"season,omitempty"`
+	Poster     string             `json:"poster_path,omitempty"`
+	Status     string             `json:"status"`
+	StatusText string             `json:"status_text"`
+	Group      string             `json:"status_group"`
+	CreatedAt  time.Time          `json:"created_at"`
 }
 
 func NewServer(deps Deps) *Server {
@@ -162,18 +183,59 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	requests := []*services.ReviewRequest{}
+	reviews := []*services.ReviewRequest{}
 	if s.deps.Reviews != nil {
-		requests = s.deps.Reviews.GetUserRequests(user.ID)
+		reviews = s.deps.Reviews.GetUserRequests(user.ID)
 	}
-	if len(requests) > 20 {
-		requests = requests[:20]
+	if len(reviews) > 20 {
+		reviews = reviews[:20]
 	}
-	var quota *services.UserQuota
+	requests := make([]userRequestView, 0, len(reviews))
+	for _, review := range reviews {
+		if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest {
+			continue
+		}
+		status, text, group := userRequestStatus(review)
+		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt})
+	}
+	var quota *quotaView
 	if s.deps.Quota != nil {
-		quota = s.deps.Quota.GetQuotaInfo(user.ID)
+		quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": user, "requests": requests, "quota": quota})
+}
+
+func publicQuota(quota *services.UserQuota) *quotaView {
+	if quota == nil {
+		return nil
+	}
+	return &quotaView{MovieUsed: quota.MovieUsed, MovieLimit: quota.MovieLimit, TVUsed: quota.TVUsed, TVLimit: quota.TVLimit}
+}
+
+func userRequestStatus(review *services.ReviewRequest) (string, string, string) {
+	if review.Stuck {
+		return "stuck", "同步重试", "active"
+	}
+	if review.Status == "pending" {
+		return "pending", "待审核", "pending"
+	}
+	if review.Status == "rejected" {
+		return "rejected", "未通过", "done"
+	}
+	if review.Status == "cancelled" {
+		return "cancelled", "已撤回", "done"
+	}
+	if review.EmbyExists || review.SubscriptionState == services.StateCompleted || review.CompletedNoticeAt != nil {
+		return "completed", "已入库", "done"
+	}
+	if review.Status == "approved" {
+		text := services.GetStateText(review.SubscriptionState)
+		if review.SubscriptionState == "" {
+			text = "处理中"
+		}
+		return "approved", strings.TrimSpace(strings.TrimLeft(text, "⏳🔄🔍📥✅❌🚫")), "active"
+	}
+	return review.Status, "处理中", "active"
 }
 
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +350,7 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.deps.Quota != nil {
-		view.Quota = s.deps.Quota.GetQuotaInfo(user.ID)
+		view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
 	}
 	writeJSON(w, http.StatusOK, view)
 }
@@ -303,13 +365,11 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Name   string `json:"name"`
-		Year   int    `json:"year"`
 		ID     int    `json:"tmdb_id"`
 		Type   string `json:"type"`
 		Season int    `json:"season"`
 	}
-	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 || strings.TrimSpace(body.Name) == "" {
+	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 {
 		http.Error(w, "请求参数不完整", http.StatusBadRequest)
 		return
 	}
@@ -320,14 +380,37 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "媒体类型无效", http.StatusBadRequest)
 		return
 	}
-	if s.deps.Submission == nil {
+	if s.deps.Submission == nil || s.deps.TMDB == nil {
 		http.Error(w, "求片服务未就绪", http.StatusServiceUnavailable)
 		return
 	}
+	mediaTitle, mediaYear, posterPath, overview := "", 0, "", ""
+	if body.Type == "tv" {
+		detail, err := s.deps.TMDB.GetTVDetails(body.ID)
+		if err != nil || detail == nil || detail.Name == "" {
+			http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+			return
+		}
+		mediaTitle, posterPath, overview = detail.Name, s.deps.TMDB.GetPosterURL(detail.PosterPath), detail.Overview
+		if len(detail.FirstAirDate) >= 4 {
+			mediaYear, _ = strconv.Atoi(detail.FirstAirDate[:4])
+		}
+	} else {
+		detail, err := s.deps.TMDB.GetMovieDetails(body.ID)
+		if err != nil || detail == nil || detail.Title == "" {
+			http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+			return
+		}
+		mediaTitle, posterPath, overview = detail.Title, s.deps.TMDB.GetPosterURL(detail.PosterPath), detail.Overview
+		if len(detail.ReleaseDate) >= 4 {
+			mediaYear, _ = strconv.Atoi(detail.ReleaseDate[:4])
+		}
+	}
 	result, err := s.deps.Submission.SubmitResult(services.RequestSubmission{
 		BusinessType: "request", TelegramID: user.ID, TelegramName: user.FirstName,
-		TmdbID: body.ID, MediaTitle: strings.TrimSpace(body.Name), MediaYear: body.Year,
-		MediaType: mediaType, Season: body.Season, Origin: "miniapp", UseQuota: true,
+		TmdbID: body.ID, MediaTitle: mediaTitle, MediaYear: mediaYear,
+		MediaType: mediaType, Season: body.Season, PosterPath: posterPath, Overview: overview,
+		Origin: "miniapp", UseQuota: true,
 	})
 	if err != nil {
 		http.Error(w, "提交失败，请稍后再试", http.StatusBadGateway)
