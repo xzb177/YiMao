@@ -38,10 +38,11 @@ type ReviewRequest struct {
 	ApproveToken    string            `json:"approve_token,omitempty"` // One-time token for approve action
 
 	// MoviePilot subscription info
-	SubscriptionID    int        `json:"subscription_id,omitempty"`     // MoviePilot subscription ID
-	SubscriptionState string     `json:"subscription_state,omitempty"`  // N, R, S, D, C, F, X
-	LastResubscribeAt time.Time  `json:"last_resubscribe_at,omitempty"` // 上次自动重订阅时间
-	LibraryNotifiedAt *time.Time `json:"library_notified_at,omitempty"` // Emby 入库后已私聊通知时间，防重复通知
+	SubscriptionID              int        `json:"subscription_id,omitempty"`                // MoviePilot subscription ID
+	SubscriptionState           string     `json:"subscription_state,omitempty"`             // N, R, S, D, C, F, X
+	LastResubscribeAt           time.Time  `json:"last_resubscribe_at,omitempty"`            // 上次自动重订阅时间
+	PendingDeleteSubscriptionID int        `json:"pending_delete_subscription_id,omitempty"` // 新订阅落盘后待清理的旧订阅
+	LibraryNotifiedAt           *time.Time `json:"library_notified_at,omitempty"`            // Emby 入库后已私聊通知时间，防重复通知
 
 	// 中间态通知去重标记（P1 体验：等待期不再是黑箱）。
 	DownloadNotified bool `json:"download_notified,omitempty"` // 「开始下载」已通知
@@ -584,7 +585,8 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 	if quota == nil {
 		return false, fmt.Errorf("quota service not configured")
 	}
-	if err := quota.RestoreQuotaN(review.TelegramID, string(review.MediaType), cost); err != nil {
+	_, err := quota.RestoreQuotaForRequest(requestID, review.TelegramID, string(review.MediaType), cost)
+	if err != nil {
 		return false, err
 	}
 	review.QuotaCost = cost
@@ -593,6 +595,9 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 		review.QuotaRestored = false
 		return false, err
 	}
+	// If the quota ledger already contained this request, this call reconciled
+	// the Review marker after an earlier partial failure. The user-facing result
+	// is still "quota restored".
 	return true, nil
 }
 
@@ -822,7 +827,58 @@ func (s *ReviewService) Approve(requestID string, reviewedBy int64, token string
 	return cloneReview(review), nil
 }
 
-// UpdateSubscriptionInfo updates the MoviePilot subscription info for a review
+// RequeueApprovedPreflightFailure returns an approved request to the review
+// queue when a transient preflight dependency cannot confirm safety. It never
+// changes quota accounting and only accepts records without an MP subscription.
+func (s *ReviewService) RequeueApprovedPreflightFailure(requestID, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+	if review.Status != "approved" || review.SubscriptionID != 0 {
+		return fmt.Errorf("request is not requeueable: status=%s subscription=%d", review.Status, review.SubscriptionID)
+	}
+	previousStatus, previousAt, previousBy, previousReason := review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason
+	review.Status = "pending"
+	review.ReviewedAt = time.Time{}
+	review.ReviewedBy = 0
+	review.RejectionReason = strings.TrimSpace(reason)
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason = previousStatus, previousAt, previousBy, previousReason
+		return err
+	}
+	return nil
+}
+
+// RejectApprovedPreflight blocks an approved request that a final authoritative
+// preflight proves is already fulfilled. The transition remains auditable and
+// is limited to records that never created an MP subscription.
+func (s *ReviewService) RejectApprovedPreflight(requestID string, reviewedBy int64, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+	if review.Status != "approved" || review.SubscriptionID != 0 {
+		return fmt.Errorf("request is not preflight-rejectable: status=%s subscription=%d", review.Status, review.SubscriptionID)
+	}
+	previousStatus, previousAt, previousBy, previousReason := review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason
+	review.Status = "rejected"
+	review.ReviewedAt = time.Now()
+	review.ReviewedBy = reviewedBy
+	review.RejectionReason = strings.TrimSpace(reason)
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason = previousStatus, previousAt, previousBy, previousReason
+		return err
+	}
+	return nil
+}
+
+// UpdateSubscriptionInfo updates the MoviePilot subscription info for a review.
+// Persistence failure restores the previous in-memory state.
 func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID int, state string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -832,12 +888,41 @@ func (s *ReviewService) UpdateSubscriptionInfo(requestID string, subscriptionID 
 		return fmt.Errorf("review request not found: %s", requestID)
 	}
 
+	previousID, previousState := review.SubscriptionID, review.SubscriptionState
 	review.SubscriptionID = subscriptionID
 	review.SubscriptionState = state
+	if err := s.saveLocked(); err != nil {
+		review.SubscriptionID, review.SubscriptionState = previousID, previousState
+		return err
+	}
 
 	logger.Info("[ReviewService] Updated subscription info for %s: ID=%d, State=%s", requestID, subscriptionID, state)
+	return nil
+}
 
-	return s.saveLocked()
+// LinkSubscription atomically persists a newly created MoviePilot subscription
+// and clears any stuck marker. On failure, all in-memory fields are restored.
+func (s *ReviewService) LinkSubscription(requestID string, subscriptionID int, state string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	review, exists := s.reviews[requestID]
+	if !exists {
+		return fmt.Errorf("review request not found: %s", requestID)
+	}
+	previousID, previousState := review.SubscriptionID, review.SubscriptionState
+	previousStuck, previousError := review.Stuck, review.LastError
+	review.SubscriptionID = subscriptionID
+	review.SubscriptionState = state
+	review.Stuck = false
+	review.LastError = ""
+	if err := s.saveLocked(); err != nil {
+		review.SubscriptionID, review.SubscriptionState = previousID, previousState
+		review.Stuck, review.LastError = previousStuck, previousError
+		return err
+	}
+	logger.Info("[ReviewService] Linked subscription for %s: ID=%d, State=%s", requestID, subscriptionID, state)
+	return nil
 }
 
 // MarkStuck 记录「审核已通过但提交 MoviePilot 失败」的兜底状态。
@@ -876,6 +961,7 @@ func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
 		return fmt.Errorf("review request not found: %s", requestID)
 	}
 
+	previousRetryCount, previousLastError, previousStuck := review.RetryCount, review.LastError, review.Stuck
 	review.RetryCount++
 	review.LastError = errMsg
 	review.Stuck = true
@@ -886,32 +972,45 @@ func (s *ReviewService) MarkStuck(requestID string, errMsg string) error {
 	logger.Info("[ReviewService] 请求提交 MP 失败进入 stuck 兜底: %s, 第 %d 次, err=%s",
 		requestID, review.RetryCount, errMsg)
 
-	// B4: 告警 — 首次或最终失败时通知管理员，避免每 5 分钟重复刷屏
+	if err := s.saveLocked(); err != nil {
+		review.RetryCount, review.LastError, review.Stuck = previousRetryCount, previousLastError, previousStuck
+		return err
+	}
+
+	// B4: 告警 — 只对已持久化的状态发送，避免写盘失败后误触发终态补偿。
 	if s.Alert != nil && (review.RetryCount == 1 || review.RetryCount >= MaxApproveRetry) {
 		go s.Alert(requestID, review.MediaTitle, review.RetryCount, errMsg)
 	}
-
-	return s.saveLocked()
+	return nil
 }
 
-// MarkLibraryNotifiedOnce 标记 Emby 入库私聊已发送，返回 true 表示本次应发送。
-func (s *ReviewService) MarkLibraryNotifiedOnce(requestID string) bool {
+// IsLibraryNotificationPending reports whether the request still needs a delivery attempt.
+func (s *ReviewService) IsLibraryNotificationPending(requestID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	review, exists := s.reviews[requestID]
+	return exists && review != nil && (review.LibraryNotifiedAt == nil || review.LibraryNotifiedAt.IsZero())
+}
+
+// MarkLibraryNotified persists a successful Emby library notification.
+func (s *ReviewService) MarkLibraryNotified(requestID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	review, exists := s.reviews[requestID]
 	if !exists || review == nil {
-		return false
+		return fmt.Errorf("review request not found: %s", requestID)
 	}
 	if review.LibraryNotifiedAt != nil && !review.LibraryNotifiedAt.IsZero() {
-		return false
+		return nil
 	}
 	now := time.Now()
 	review.LibraryNotifiedAt = &now
 	if err := s.saveLocked(); err != nil {
-		logger.Info("[ReviewService] 保存入库通知标记失败: %v", err)
+		review.LibraryNotifiedAt = nil
+		return err
 	}
-	return true
+	return nil
 }
 
 // ClearStuck 在提交 MoviePilot 成功后清除兜底状态。
@@ -1216,14 +1315,38 @@ func (s *ReviewService) refreshSubscriptionStatus() {
 	}
 }
 
-// retryStuckRequests 自动重试 stuck 的请求（审核通过但提交 MP 失败）。
-// 每 5 分钟由 refreshSubscriptionStatus 调用，最多重试 MaxApproveRetry 次。
+const subscriptionRecoveryGracePeriod = 6 * time.Minute
+
+// getSubscriptionRecoveryCandidates includes persisted stuck requests and
+// approved requests whose MoviePilot link may have been lost after a local
+// write failure. Wash work orders never create MoviePilot subscriptions.
+func (s *ReviewService) getSubscriptionRecoveryCandidates() []*ReviewRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	now := time.Now()
+	var candidates []*ReviewRequest
+	for _, review := range s.reviews {
+		if review.Status != "approved" || review.SubscriptionID > 0 || review.NormalizedBusinessType() == BusinessTypeWash {
+			continue
+		}
+		if review.Stuck || (review.LastError == "" && !review.ReviewedAt.IsZero() && now.Sub(review.ReviewedAt) >= subscriptionRecoveryGracePeriod) {
+			candidates = append(candidates, cloneReview(review))
+		}
+	}
+	return candidates
+}
+
+// retryStuckRequests automatically recovers approved requests without a
+// persisted MoviePilot link. This also covers a restart after both the link
+// write and the follow-up stuck marker failed on the same broken filesystem.
+// It runs every five minutes and stops after MaxApproveRetry attempts.
 func (s *ReviewService) retryStuckRequests() {
 	if s.moviepilot == nil {
 		return
 	}
 
-	stuck := s.GetStuckRequests()
+	stuck := s.getSubscriptionRecoveryCandidates()
 	if len(stuck) == 0 {
 		return
 	}
@@ -1251,6 +1374,20 @@ func (s *ReviewService) retryStuckRequests() {
 			season = 1
 		}
 
+		// A previous create may have succeeded while the local link write failed.
+		// Recover that real subscription before creating another one.
+		if existing, found, findErr := s.moviepilot.FindExistingSubscription(rv.TmdbID, mpMediaType, season); findErr == nil && found {
+			if linkErr := s.LinkSubscription(rv.RequestID, existing.ID, existing.State); linkErr != nil {
+				logger.Info("[ReviewService] 恢复已有订阅关联失败: %s, sub=%d, err=%v", rv.RequestID, existing.ID, linkErr)
+				continue
+			}
+			logger.Info("[ReviewService] 已恢复已有订阅关联: %s, sub=%d", rv.RequestID, existing.ID)
+			continue
+		} else if findErr != nil {
+			logger.Info("[ReviewService] 查询已有订阅失败，暂缓新建: %s, err=%v", rv.RequestID, findErr)
+			continue
+		}
+
 		req, err := s.moviepilot.RequestMedia(
 			rv.MediaTitle,
 			rv.MediaYear,
@@ -1266,12 +1403,11 @@ func (s *ReviewService) retryStuckRequests() {
 			continue
 		}
 
-		// 成功：清除 stuck 状态 + 更新订阅信息
-		if cerr := s.ClearStuck(rv.RequestID); cerr != nil {
-			logger.Info("[ReviewService] ClearStuck 失败: %v", cerr)
-		}
-		if uerr := s.UpdateSubscriptionInfo(rv.RequestID, req.ID, "N"); uerr != nil {
-			logger.Info("[ReviewService] UpdateSubscriptionInfo 失败: %v", uerr)
+		// 成功：原子写入订阅关联并清除 stuck 状态
+		if uerr := s.LinkSubscription(rv.RequestID, req.ID, "N"); uerr != nil {
+			logger.Info("[ReviewService] LinkSubscription 失败: %v", uerr)
+			_ = s.MarkStuck(rv.RequestID, fmt.Sprintf("MoviePilot 订阅 %d 已创建，但本地关联失败: %v", req.ID, uerr))
+			continue
 		}
 
 		logger.Info("[ReviewService] 自动重试成功: %s, 新订阅 ID: %d", rv.RequestID, req.ID)
@@ -1310,9 +1446,12 @@ func (s *ReviewService) updateAllSubscriptionStatus() {
 	s.mu.RUnlock()
 
 	if len(toUpdate) == 0 {
+		s.cleanupReplacedSubscriptions()
 		return
 	}
 
+	// Finish any replacement cleanup left by an API error or process exit.
+	s.cleanupReplacedSubscriptions()
 	logger.Info("[ReviewService] Updating subscription status for %d requests", len(toUpdate))
 
 	// Get all subscriptions from MoviePilot
@@ -1467,10 +1606,14 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 	processedSubID := make(map[int]bool)
 	for _, requestID := range requestIDs {
 		s.mu.RLock()
-		review, exists := s.reviews[requestID]
+		stored, exists := s.reviews[requestID]
+		var review *ReviewRequest
+		if exists {
+			review = cloneReview(stored)
+		}
 		s.mu.RUnlock()
 
-		if !exists {
+		if !exists || review == nil {
 			continue
 		}
 
@@ -1480,14 +1623,6 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 				continue
 			}
 			processedSubID[review.SubscriptionID] = true
-		}
-
-		// Delete old subscription first
-		if review.SubscriptionID > 0 {
-			logger.Info("[ReviewService] Deleting old subscription %d for %s", review.SubscriptionID, requestID)
-			if err := s.moviepilot.DeleteRequest(review.SubscriptionID); err != nil {
-				logger.Info("[ReviewService] Failed to delete old subscription: %v", err)
-			}
 		}
 
 		// Resubscribe
@@ -1514,20 +1649,85 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 			continue
 		}
 
-		// Update subscription info
-		if err := s.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
-			logger.Info("[ReviewService] Failed to update subscription info: %v", err)
-		}
-
-		// Mark last resubscribe time to avoid frequent recycle loops
+		// Persist the new subscription and the old-ID cleanup intent atomically.
 		s.mu.Lock()
+		linked := false
 		if r, ok := s.reviews[requestID]; ok {
+			previousID, previousState := r.SubscriptionID, r.SubscriptionState
+			previousAt := r.LastResubscribeAt
+			previousPendingDeleteID := r.PendingDeleteSubscriptionID
+			r.SubscriptionID = req.ID
+			r.SubscriptionState = "N"
 			r.LastResubscribeAt = time.Now()
-			s.saveLocked()
+			if previousID > 0 && previousID != req.ID {
+				r.PendingDeleteSubscriptionID = previousID
+			}
+			if err := s.saveLocked(); err != nil {
+				r.SubscriptionID, r.SubscriptionState = previousID, previousState
+				r.LastResubscribeAt = previousAt
+				r.PendingDeleteSubscriptionID = previousPendingDeleteID
+				logger.Info("[ReviewService] Failed to persist resubscription link: %v", err)
+			} else {
+				linked = true
+			}
 		}
 		s.mu.Unlock()
+		if !linked {
+			if err := s.moviepilot.DeleteRequest(req.ID); err != nil {
+				logger.Info("[ReviewService] Failed to compensate unlinked subscription %d: %v", req.ID, err)
+			}
+			continue
+		}
+
+		if review.SubscriptionID > 0 && review.SubscriptionID != req.ID {
+			logger.Info("[ReviewService] Deleting replaced subscription %d for %s", review.SubscriptionID, requestID)
+			if err := s.moviepilot.DeleteRequest(review.SubscriptionID); err != nil {
+				logger.Info("[ReviewService] Failed to delete replaced subscription: %v", err)
+			} else if err := s.clearPendingDeleteSubscription(requestID, review.SubscriptionID); err != nil {
+				logger.Info("[ReviewService] Failed to persist replacement cleanup: %v", err)
+			}
+		}
 
 		logger.Info("[ReviewService] Resubscribed %s: new subscription ID %d", requestID, req.ID)
+	}
+}
+
+func (s *ReviewService) clearPendingDeleteSubscription(requestID string, subscriptionID int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review.PendingDeleteSubscriptionID != subscriptionID {
+		return nil
+	}
+	review.PendingDeleteSubscriptionID = 0
+	if err := s.saveLocked(); err != nil {
+		review.PendingDeleteSubscriptionID = subscriptionID
+		return err
+	}
+	return nil
+}
+
+func (s *ReviewService) cleanupReplacedSubscriptions() {
+	type pendingCleanup struct {
+		requestID      string
+		subscriptionID int
+	}
+	var pending []pendingCleanup
+	s.mu.RLock()
+	for requestID, review := range s.reviews {
+		if review != nil && review.PendingDeleteSubscriptionID > 0 {
+			pending = append(pending, pendingCleanup{requestID: requestID, subscriptionID: review.PendingDeleteSubscriptionID})
+		}
+	}
+	s.mu.RUnlock()
+	for _, item := range pending {
+		if err := s.moviepilot.DeleteRequest(item.subscriptionID); err != nil {
+			logger.Info("[ReviewService] Retry deleting replaced subscription %d: %v", item.subscriptionID, err)
+			continue
+		}
+		if err := s.clearPendingDeleteSubscription(item.requestID, item.subscriptionID); err != nil {
+			logger.Info("[ReviewService] Failed to clear replacement cleanup marker: %v", err)
+		}
 	}
 }
 

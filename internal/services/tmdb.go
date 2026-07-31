@@ -41,11 +41,40 @@ type TMDBClient struct {
 	cache     map[string]*tmdbCacheEntry
 	cacheTTL  time.Duration
 	cacheSize int
+
+	detailMu       sync.Mutex
+	movieDetails   map[int]tmdbMovieDetailEntry
+	tvDetails      map[int]tmdbTVDetailEntry
+	movieInFlight  map[int]*tmdbMovieDetailCall
+	tvInFlight     map[int]*tmdbTVDetailCall
+	detailCacheTTL time.Duration
 }
 
 type tmdbCacheEntry struct {
 	result    *TMDBSearchResult
 	expiresAt time.Time
+}
+
+type tmdbMovieDetailEntry struct {
+	value     *TMDBMediaInfo
+	expiresAt time.Time
+}
+
+type tmdbTVDetailEntry struct {
+	value     *TVDetailsWithSeasons
+	expiresAt time.Time
+}
+
+type tmdbMovieDetailCall struct {
+	done  chan struct{}
+	value *TMDBMediaInfo
+	err   error
+}
+
+type tmdbTVDetailCall struct {
+	done  chan struct{}
+	value *TVDetailsWithSeasons
+	err   error
 }
 
 const tmdbCacheMaxSize = 500
@@ -59,9 +88,14 @@ func NewTMDBClient(apiKey string) *TMDBClient {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
-		retryConfig: DefaultRetryConfig(),
-		cache:       make(map[string]*tmdbCacheEntry),
-		cacheTTL:    tmdbCacheDefaultTTL,
+		retryConfig:    DefaultRetryConfig(),
+		cache:          make(map[string]*tmdbCacheEntry),
+		cacheTTL:       tmdbCacheDefaultTTL,
+		movieDetails:   make(map[int]tmdbMovieDetailEntry),
+		tvDetails:      make(map[int]tmdbTVDetailEntry),
+		movieInFlight:  make(map[int]*tmdbMovieDetailCall),
+		tvInFlight:     make(map[int]*tmdbTVDetailCall),
+		detailCacheTTL: tmdbCacheDefaultTTL,
 	}
 }
 
@@ -119,6 +153,32 @@ type TMDBGenre struct {
 
 // GetMovieDetails retrieves movie details from TMDB
 func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
+	c.detailMu.Lock()
+	if entry, ok := c.movieDetails[tmdbID]; ok && time.Now().Before(entry.expiresAt) {
+		c.detailMu.Unlock()
+		return entry.value, nil
+	}
+	if call, ok := c.movieInFlight[tmdbID]; ok {
+		c.detailMu.Unlock()
+		<-call.done
+		return call.value, call.err
+	}
+	call := &tmdbMovieDetailCall{done: make(chan struct{})}
+	c.movieInFlight[tmdbID] = call
+	c.detailMu.Unlock()
+
+	call.value, call.err = c.fetchMovieDetails(tmdbID)
+	c.detailMu.Lock()
+	if call.err == nil && call.value != nil {
+		c.movieDetails[tmdbID] = tmdbMovieDetailEntry{value: call.value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+	}
+	delete(c.movieInFlight, tmdbID)
+	close(call.done)
+	c.detailMu.Unlock()
+	return call.value, call.err
+}
+
+func (c *TMDBClient) fetchMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	url := c.buildURL(fmt.Sprintf("/movie/%d", tmdbID))
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -148,31 +208,17 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 
 // GetTVDetails retrieves TV show details from TMDB
 func (c *TMDBClient) GetTVDetails(tmdbID int) (*TMDBMediaInfo, error) {
-	url := c.buildURL(fmt.Sprintf("/tv/%d", tmdbID))
-
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
+	details, err := c.GetTVDetailsWithSeasons(tmdbID)
+	if err != nil || details == nil {
 		return nil, err
 	}
-
-	resp, err := c.doRequest(req)
-	if err != nil {
-		return nil, fmt.Errorf("TMDB API request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		return nil, fmt.Errorf("TMDB API error: status %d", resp.StatusCode)
-	}
-
-	var media TMDBMediaInfo
-	if err := json.NewDecoder(resp.Body).Decode(&media); err != nil {
-		return nil, fmt.Errorf("failed to decode TMDB response: %w", err)
-	}
-
-	media.MediaType = TMDBMediaTypeTV
-	return &media, nil
+	return &TMDBMediaInfo{
+		ID: details.ID, Name: details.Name, OriginalName: details.OriginalName,
+		Overview: details.Overview, FirstAirDate: details.FirstAirDate,
+		PosterPath: details.PosterPath, BackdropPath: details.BackdropPath,
+		VoteAverage: details.VoteAverage, VoteCount: details.VoteCount,
+		Genres: details.Genres, MediaType: TMDBMediaTypeTV,
+	}, nil
 }
 
 // SearchMedia searches for media by title
@@ -728,6 +774,32 @@ type TVDetailsWithSeasons struct {
 
 // GetTVDetailsWithSeasons retrieves TV show details with season information from TMDB
 func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons, error) {
+	c.detailMu.Lock()
+	if entry, ok := c.tvDetails[tmdbID]; ok && time.Now().Before(entry.expiresAt) {
+		c.detailMu.Unlock()
+		return entry.value, nil
+	}
+	if call, ok := c.tvInFlight[tmdbID]; ok {
+		c.detailMu.Unlock()
+		<-call.done
+		return call.value, call.err
+	}
+	call := &tmdbTVDetailCall{done: make(chan struct{})}
+	c.tvInFlight[tmdbID] = call
+	c.detailMu.Unlock()
+
+	call.value, call.err = c.fetchTVDetailsWithSeasons(tmdbID)
+	c.detailMu.Lock()
+	if call.err == nil && call.value != nil {
+		c.tvDetails[tmdbID] = tmdbTVDetailEntry{value: call.value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+	}
+	delete(c.tvInFlight, tmdbID)
+	close(call.done)
+	c.detailMu.Unlock()
+	return call.value, call.err
+}
+
+func (c *TMDBClient) fetchTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons, error) {
 	url := fmt.Sprintf("%s/tv/%d?api_key=%s&language=zh-CN", c.baseURL, tmdbID, c.apiKey)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -752,6 +824,12 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	}
 
 	return &details, nil
+}
+
+// GetTVDetailsWithSeasonsFresh bypasses the UI detail cache for background
+// season discovery, where detecting newly aired seasons requires fresh data.
+func (c *TMDBClient) GetTVDetailsWithSeasonsFresh(tmdbID int) (*TVDetailsWithSeasons, error) {
+	return c.fetchTVDetailsWithSeasons(tmdbID)
 }
 
 // buildURL constructs a TMDB API URL with authentication and language

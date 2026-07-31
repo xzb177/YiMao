@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestRejectOnlyTransitionsPendingRequest(t *testing.T) {
@@ -36,6 +37,44 @@ func TestRejectIsNotRepeatable(t *testing.T) {
 	}
 	if _, err := s.Reject("pending", 100, "second"); err == nil {
 		t.Fatal("second Reject must fail")
+	}
+}
+
+func TestApprovedPreflightCanRequeueBeforeSubscription(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	r := &ReviewRequest{RequestID: "requeue", TelegramID: 1, MediaType: MediaTypeTV, Season: 2}
+	if err := s.CreateRequest(r); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.GetRequest(r.RequestID)
+	if _, err := s.Approve(r.RequestID, 9, stored.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RequeueApprovedPreflightFailure(r.RequestID, "Emby unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetRequest(r.RequestID)
+	if got.Status != "pending" || !got.ReviewedAt.IsZero() || got.ReviewedBy != 0 || got.ApproveToken == "" {
+		t.Fatalf("requeued=%+v", got)
+	}
+}
+
+func TestApprovedPreflightExistingTargetBecomesRejected(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	r := &ReviewRequest{RequestID: "fulfilled", TelegramID: 1, MediaType: MediaTypeTV, Season: 2}
+	if err := s.CreateRequest(r); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.GetRequest(r.RequestID)
+	if _, err := s.Approve(r.RequestID, 9, stored.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RejectApprovedPreflight(r.RequestID, 9, "第 2 季已入库"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetRequest(r.RequestID)
+	if got.Status != "rejected" || got.RejectionReason != "第 2 季已入库" || got.ReviewedBy != 9 {
+		t.Fatalf("rejected=%+v", got)
 	}
 }
 
@@ -123,5 +162,49 @@ func TestCancelByUserRollsBackWhenPersistenceFails(t *testing.T) {
 	stored := s.GetUserRequests(review.TelegramID)[0]
 	if stored.Status != "pending" || !stored.ReviewedAt.IsZero() || stored.RejectionReason != "" {
 		t.Fatalf("cancellation state was not rolled back: %#v", stored)
+	}
+}
+
+func TestSubscriptionRecoveryCandidatesIncludeRestartOrphanAfterGrace(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	old := time.Now().Add(-subscriptionRecoveryGracePeriod - time.Minute)
+	s.reviews["restart-orphan"] = &ReviewRequest{
+		RequestID:  "restart-orphan",
+		Status:     "approved",
+		MediaType:  MediaTypeMovie,
+		ReviewedAt: old,
+	}
+	s.reviews["in-flight"] = &ReviewRequest{
+		RequestID:  "in-flight",
+		Status:     "approved",
+		MediaType:  MediaTypeMovie,
+		ReviewedAt: time.Now(),
+	}
+	s.reviews["wash"] = &ReviewRequest{
+		RequestID:    "wash",
+		Status:       "approved",
+		MediaType:    MediaTypeMovie,
+		BusinessType: BusinessTypeWash,
+		ReviewedAt:   old,
+	}
+
+	candidates := s.getSubscriptionRecoveryCandidates()
+	if len(candidates) != 1 || candidates[0].RequestID != "restart-orphan" {
+		t.Fatalf("unexpected recovery candidates: %#v", candidates)
+	}
+}
+
+func TestSubscriptionRecoveryCandidatesIncludeExplicitStuckImmediately(t *testing.T) {
+	s := NewReviewService(t.TempDir(), false)
+	s.reviews["stuck"] = &ReviewRequest{
+		RequestID: "stuck",
+		Status:    "approved",
+		MediaType: MediaTypeTV,
+		Stuck:     true,
+	}
+
+	candidates := s.getSubscriptionRecoveryCandidates()
+	if len(candidates) != 1 || candidates[0].RequestID != "stuck" {
+		t.Fatalf("unexpected recovery candidates: %#v", candidates)
 	}
 }

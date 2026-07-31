@@ -27,11 +27,18 @@ type UserQuota struct {
 
 // QuotaService manages user quotas
 type QuotaService struct {
-	quotasFile string
-	quotas     map[int64]*UserQuota // telegramID -> quota
-	moviepilot *MoviePilotClient
-	mu         sync.RWMutex
-	adminIDs   map[int64]bool // admin users with unlimited quota
+	quotasFile       string
+	quotas           map[int64]*UserQuota // telegramID -> quota
+	restoredRequests map[string]bool      // requestID -> quota already restored
+	moviepilot       *MoviePilotClient
+	mu               sync.RWMutex
+	persistMu        sync.Mutex
+	adminIDs         map[int64]bool // admin users with unlimited quota
+}
+
+type quotaFileData struct {
+	Quotas           map[int64]*UserQuota `json:"quotas"`
+	RestoredRequests map[string]bool      `json:"restored_requests,omitempty"`
 }
 
 // NewQuotaService creates a new quota service
@@ -42,10 +49,11 @@ func NewQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService
 	}
 
 	service := &QuotaService{
-		quotasFile: quotasFile,
-		quotas:     make(map[int64]*UserQuota),
-		moviepilot: moviepilot,
-		adminIDs:   make(map[int64]bool),
+		quotasFile:       quotasFile,
+		quotas:           make(map[int64]*UserQuota),
+		restoredRequests: make(map[string]bool),
+		moviepilot:       moviepilot,
+		adminIDs:         make(map[int64]bool),
 	}
 
 	service.load()
@@ -76,9 +84,7 @@ func (s *QuotaService) load() error {
 		return err
 	}
 
-	var fileData struct {
-		Quotas map[int64]*UserQuota `json:"quotas"`
-	}
+	var fileData quotaFileData
 
 	if err := json.Unmarshal(data, &fileData); err != nil {
 		// Try legacy format (string keys)
@@ -93,6 +99,12 @@ func (s *QuotaService) load() error {
 		}
 	} else {
 		s.quotas = fileData.Quotas
+		if fileData.RestoredRequests != nil {
+			s.restoredRequests = fileData.RestoredRequests
+		}
+	}
+	if s.quotas == nil {
+		s.quotas = make(map[int64]*UserQuota)
 	}
 
 	// Reset daily usage if needed
@@ -112,11 +124,17 @@ func (s *QuotaService) load() error {
 	return nil
 }
 
-// save saves quotas to file (must NOT be called while holding mu lock)
+// save saves quotas to file (must NOT be called while holding mu lock).
+// Lock ordering is always mu then persistMu, so an older snapshot cannot be
+// written after a newer synchronous update.
 func (s *QuotaService) save() error {
-	data, err := json.MarshalIndent(map[string]interface{}{
-		"quotas": s.quotas,
-	}, "", "  ")
+	s.mu.RLock()
+	s.persistMu.Lock()
+	snapshot := s.snapshotLocked()
+	s.mu.RUnlock()
+	defer s.persistMu.Unlock()
+
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -124,26 +142,25 @@ func (s *QuotaService) save() error {
 	return atomicWriteFile(s.quotasFile, data, 0644)
 }
 
-func (s *QuotaService) snapshotLocked() map[int64]*UserQuota {
-	result := make(map[int64]*UserQuota, len(s.quotas))
+func (s *QuotaService) snapshotLocked() quotaFileData {
+	result := quotaFileData{
+		Quotas:           make(map[int64]*UserQuota, len(s.quotas)),
+		RestoredRequests: make(map[string]bool, len(s.restoredRequests)),
+	}
 	for k, v := range s.quotas {
 		q := *v
-		result[k] = &q
+		result.Quotas[k] = &q
+	}
+	for requestID, restored := range s.restoredRequests {
+		result.RestoredRequests[requestID] = restored
 	}
 	return result
 }
 
-// saveAsync saves quotas to file asynchronously (without locking)
-func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
-	data, err := json.MarshalIndent(map[string]interface{}{
-		"quotas": quotasCopy,
-	}, "", "  ")
-	if err != nil {
-		logger.Info("[QuotaService] Failed to marshal quotas: %v", err)
-		return
-	}
-
-	if err := atomicWriteFile(s.quotasFile, data, 0644); err != nil {
+// saveAsync persists the latest state. Callers may pass an earlier snapshot,
+// but delayed goroutines must never overwrite a newer synchronous update.
+func (s *QuotaService) saveAsync(_ quotaFileData) {
+	if err := s.save(); err != nil {
 		logger.Info("[QuotaService] Failed to save quotas: %v", err)
 	}
 }
@@ -151,13 +168,11 @@ func (s *QuotaService) saveAsync(quotasCopy map[int64]*UserQuota) {
 // saveLocked saves quotas to file (caller must hold mu lock)
 // Creates a copy of quotas to avoid deadlock
 func (s *QuotaService) saveLocked() error {
-	// Create a copy of quotas map while holding lock
-	quotasCopy := s.snapshotLocked()
+	s.persistMu.Lock()
+	defer s.persistMu.Unlock()
 
-	// Release lock before saving
-	data, err := json.MarshalIndent(map[string]interface{}{
-		"quotas": quotasCopy,
-	}, "", "  ")
+	snapshot := s.snapshotLocked()
+	data, err := json.MarshalIndent(snapshot, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -384,6 +399,47 @@ func (s *QuotaService) RestoreQuotaN(telegramID int64, mediaType string, cost in
 
 	s.saveAsync(quotasCopy)
 	return nil
+}
+
+// RestoreQuotaForRequest restores quota and persists an idempotency ledger in
+// the same file write. A failed write rolls the in-memory quota back.
+func (s *QuotaService) RestoreQuotaForRequest(requestID string, telegramID int64, mediaType string, cost int) (bool, error) {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		return false, fmt.Errorf("request ID is required")
+	}
+	if cost <= 0 {
+		return false, fmt.Errorf("quota restore cost must be positive")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.restoredRequests[requestID] {
+		return false, nil
+	}
+	quota := s.getOrCreateQuotaUnsafe(telegramID)
+	previousMovieUsed, previousTVUsed := quota.MovieUsed, quota.TVUsed
+	switch mediaType {
+	case "movie":
+		quota.MovieUsed -= cost
+		if quota.MovieUsed < 0 {
+			quota.MovieUsed = 0
+		}
+	case "tv":
+		quota.TVUsed -= cost
+		if quota.TVUsed < 0 {
+			quota.TVUsed = 0
+		}
+	default:
+		return false, fmt.Errorf("unsupported media type: %s", mediaType)
+	}
+	s.restoredRequests[requestID] = true
+	if err := s.saveLocked(); err != nil {
+		quota.MovieUsed, quota.TVUsed = previousMovieUsed, previousTVUsed
+		delete(s.restoredRequests, requestID)
+		return false, err
+	}
+	return true, nil
 }
 
 // GetQuotaText returns formatted quota text for a user

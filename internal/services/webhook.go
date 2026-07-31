@@ -427,10 +427,22 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType, carpoolTitle)
 
 		// 入库后私聊通知求片用户：查找匹配的审核请求，通知求片人
-		s.notifyRequesterOnLibraryAdd(carpoolTMDBID, carpoolType, carpoolTitle)
+		s.notifyRequesterOnLibraryAdd(carpoolTMDBID, carpoolType, carpoolTitle, embyWebhookSeason(payload))
 	}
 
 	return nil
+}
+
+func embyWebhookSeason(payload EmbyWebhookPayload) int {
+	if payload.Item != nil {
+		if payload.Item.ParentIndexNumber != nil {
+			return *payload.Item.ParentIndexNumber
+		}
+		if strings.EqualFold(payload.Item.Type, "Season") && payload.Item.IndexNumber != nil {
+			return *payload.Item.IndexNumber
+		}
+	}
+	return payload.Season
 }
 
 // aggregateEpisode adds episode to aggregation buffer with per-key debounce mechanism
@@ -751,6 +763,12 @@ func (s *WebhookService) flushSingleAggregation(key string) {
 
 	// Send notification to admins based on their individual settings
 	s.sendAggregatedEpisodeToAdmins(seriesName, year, season, episodes, epRange, quality, imageURL, fileSize, enhancedInfo, libraryName)
+
+	// Episode events bypass the immediate notification path, so complete the
+	// season-scoped request here after aggregation has stabilized.
+	if enhancedInfo != nil && enhancedInfo.TMDBID != "" {
+		s.notifyRequesterOnLibraryAdd(enhancedInfo.TMDBID, "tv", seriesName, season)
+	}
 
 	logger.Info("[入库] %s S%02d %s (%d集, 总大小:%s)", seriesName, season, epRange, len(episodes), s.formatFileSizeDecimal(fileSize))
 

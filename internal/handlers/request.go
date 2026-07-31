@@ -276,27 +276,38 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		embyType = services.MediaTypeTV
 	}
 
-	logger.Info("[RequestHandler] Checking Emby by exact TMDB ID: %d %s (5s timeout)", tmdbID, embyType)
-	existingMedia, err := h.webhookService.SearchEmbyMediaByTMDB(tmdbID, embyType)
+	logger.Info("[RequestHandler] Checking Emby at request scope: tmdb=%d type=%s season=%d", tmdbID, embyType, season)
+	existingMedia, exists, err := requestExistsInEmby(
+		tmdbID,
+		embyType,
+		season,
+		h.webhookService.SearchEmbyMediaByTMDB,
+		h.moviepilot.EmbyMediaAvailabilityByTMDBSeason,
+	)
 	if err != nil {
-		logger.Info("[RequestHandler] Emby search timeout/failed (continuing): %v", err)
-		// 继续创建请求 - Emby 慢时不阻塞求片
-	} else if existingMedia != nil {
-		logger.Info("[求片] 媒体库已存在: %s", existingMedia.Title)
-
-		// Build message showing media already exists
-		typeIcon := "🎬"
-		typeLabel := "电影"
-		if existingMedia.Type == "Series" || existingMedia.Type == "Episode" {
-			typeIcon = "📺"
-			typeLabel = "剧集"
+		logger.Info("[RequestHandler] Emby request-scope lookup failed: %v", err)
+		return &callback.Response{
+			Text:        "⚠️ 媒体库状态暂时无法确认\n\n为避免重复下载，本次没有提交。请稍后再试。",
+			CallbackMsg: "状态待确认",
+			ShowAlert:   true,
+			Edit:        false,
+		}, nil
+	} else if exists {
+		displayTitle := mediaTitle
+		if existingMedia != nil && existingMedia.Title != "" {
+			displayTitle = existingMedia.Title
 		}
+		logger.Info("[求片] 媒体库已存在请求目标: %s season=%d", displayTitle, season)
 
-		message := fmt.Sprintf("⚠️ 媒体库中已存在\n\n%s %s", typeIcon, existingMedia.Title)
-		if existingMedia.Year > 0 {
-			message += fmt.Sprintf(" (%d年)", existingMedia.Year)
+		message := "⚠️ 媒体库中已存在\n\n"
+		if mediaType == "tv" && season > 0 {
+			message += fmt.Sprintf("📺 %s · 第 %d 季", displayTitle, season)
+		} else {
+			message += fmt.Sprintf("🎬 %s", displayTitle)
+			if existingMedia != nil && existingMedia.Year > 0 {
+				message += fmt.Sprintf(" (%d年)", existingMedia.Year)
+			}
 		}
-		message += fmt.Sprintf("\n🏷️ %s", typeLabel)
 
 		message += "\n\n是否仍要订阅？"
 

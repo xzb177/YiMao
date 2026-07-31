@@ -184,22 +184,52 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		season = 1 // Default to season 1 if not specified
 	}
 
-	// 1) Emby existence check before creating subscription
+	// 1) Emby existence check before creating subscription. TV season requests
+	// must be checked at season scope; the parent Series existing is not enough.
 	if h.webhookService != nil {
-		embyType := services.MediaTypeMovie
-		if review.MediaType == services.MediaTypeTV {
-			embyType = services.MediaTypeTV
+		existingMedia, exists, embyErr := requestExistsInEmby(
+			review.TmdbID,
+			mpMediaType,
+			season,
+			h.webhookService.SearchEmbyMediaByTMDB,
+			h.moviepilot.EmbyMediaAvailabilityByTMDBSeason,
+		)
+		if embyErr != nil {
+			if requeueErr := h.reviewService.RequeueApprovedPreflightFailure(requestID, "Emby 状态暂时无法确认"); requeueErr != nil {
+				return nil, fmt.Errorf("requeue after Emby lookup failure: %w", requeueErr)
+			}
+			return &callback.Response{
+				Text:        "⚠️ 审核已通过，但媒体库状态暂时无法确认\n\n系统会保留这条请求，请稍后重试，不会直接重复下载。",
+				CallbackMsg: "状态待确认",
+				ShowAlert:   true,
+				Edit:        true,
+			}, nil
 		}
-		existingMedia, embyErr := h.webhookService.SearchEmbyMediaByTMDB(review.TmdbID, embyType)
-		if embyErr == nil && existingMedia != nil {
-			blockedCard := richmessage.BuildReviewBlockedCard(
-				existingMedia.Title,
-				"⚠️ 媒体库已存在该影片",
-				"",
-			)
+		if exists {
+			reasonText := "媒体库已存在该电影"
+			if review.MediaType == services.MediaTypeTV {
+				reasonText = fmt.Sprintf("媒体库已存在第 %d 季", season)
+			}
+			if rejectErr := h.reviewService.RejectApprovedPreflight(requestID, ctx.UserID, reasonText); rejectErr != nil {
+				return nil, rejectErr
+			}
+			if _, restoreErr := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); restoreErr != nil {
+				return nil, fmt.Errorf("restore quota after preflight reject: %w", restoreErr)
+			}
+			title := review.MediaTitle
+			if existingMedia != nil && existingMedia.Title != "" {
+				title = existingMedia.Title
+			}
+			reason := "⚠️ 媒体库已存在该电影"
+			alert := fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》", review.MediaTitle)
+			if review.MediaType == services.MediaTypeTV {
+				reason = fmt.Sprintf("⚠️ 媒体库已存在第 %d 季", season)
+				alert = fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》第 %d 季", review.MediaTitle, season)
+			}
+			blockedCard := richmessage.BuildReviewBlockedCard(title, reason, "")
 			h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
 			return &callback.Response{
-				Text:        fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》", review.MediaTitle),
+				Text:        alert,
 				CallbackMsg: "媒体已存在",
 				ShowAlert:   true,
 				Edit:        true,
@@ -239,12 +269,12 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		// 关键兜底（修复「审核通过但 MP 失败请求凭空消失」的真 bug）：
 		// 审核状态保持 approved，但标记 stuck + 记录错误，让请求可见、可重试。
 		if merrr := h.reviewService.MarkStuck(requestID, err.Error()); merrr != nil {
-			logger.Info("[ReviewHandler] MarkStuck 失败: %v", merrr)
+			return nil, fmt.Errorf("persist MoviePilot failure state: %w", merrr)
 		}
 		// 最终/不可重试的审核提交失败不应消耗用户配额。
 		if latest, ok := h.reviewService.GetRequest(requestID); ok && latest.RetryCount >= services.MaxApproveRetry {
 			if _, rerr := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); rerr != nil {
-				logger.Info("[ReviewHandler] 最终失败返还配额失败: %v", rerr)
+				return nil, fmt.Errorf("restore quota after terminal MoviePilot failure: %w", rerr)
 			}
 		}
 		// Notify user about approval but submission failed
@@ -264,17 +294,17 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	logger.Info("[ReviewHandler] Submitted to MoviePilot: ID=%d", req.ID)
 
-	// 提交成功，清除可能存在的 stuck 兜底状态
-	if cerr := h.reviewService.ClearStuck(requestID); cerr != nil {
-		logger.Info("[ReviewHandler] ClearStuck 失败: %v", cerr)
-	}
-
-	// Note: Quota was already deducted when user submitted the request
-	// No need to deduct again here
-
-	// Save subscription ID to review
-	if err := h.reviewService.UpdateSubscriptionInfo(requestID, req.ID, "N"); err != nil {
-		logger.Info("[ReviewHandler] Failed to update subscription info: %v", err)
+	// Persist the real MoviePilot ID before reporting success. A persistence
+	// failure leaves the review recoverable and must not be presented as linked.
+	if err := h.reviewService.LinkSubscription(requestID, req.ID, "N"); err != nil {
+		logger.Info("[ReviewHandler] Failed to link created subscription %d: %v", req.ID, err)
+		_ = h.reviewService.MarkStuck(requestID, fmt.Sprintf("MoviePilot 订阅 %d 已创建，但本地关联失败: %v", req.ID, err))
+		return &callback.Response{
+			Text:        "⚠️ 订阅已创建，但进度关联暂时失败\n\n系统会继续恢复关联，请稍后查看求片进度。",
+			CallbackMsg: "进度关联待恢复",
+			ShowAlert:   true,
+			Edit:        true,
+		}, nil
 	}
 
 	mediaIcon := "🎬"

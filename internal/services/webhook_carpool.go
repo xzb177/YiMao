@@ -214,9 +214,28 @@ func escapeCarpoolMentionText(s string) string {
 	return r.Replace(s)
 }
 
+func reviewMatchesLibraryAdd(rv *ReviewRequest, tmdbID int, mediaType string, season int) bool {
+	if rv == nil || rv.Status != "approved" || rv.TmdbID != tmdbID {
+		return false
+	}
+	rvType := string(rv.MediaType)
+	if rvType == "" {
+		rvType = "movie"
+	}
+	if rvType != mediaType {
+		return false
+	}
+	if mediaType == "tv" {
+		// Unknown webhook seasons may only complete legacy, non-season-scoped
+		// reviews. A known season must match exactly.
+		return rv.Season == season
+	}
+	return true
+}
+
 // notifyRequesterOnLibraryAdd 入库后私聊通知求片用户。
-// 查找匹配 TMDB ID + mediaType 的审核请求，向求片人发送「已入库」私信。
-func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType string, title string) {
+// 查找匹配 TMDB ID + mediaType + season 的审核请求，向求片人发送「已入库」私信。
+func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType string, title string, season int) {
 	if s.review == nil {
 		logger.Info("[入库通知] review service 未注入，跳过")
 		return
@@ -238,24 +257,10 @@ func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType
 	s.review.mu.RLock()
 	var matched []*ReviewRequest
 	for _, rv := range s.review.reviews {
-		if rv == nil {
+		if !reviewMatchesLibraryAdd(rv, tmdbID, mediaType, season) {
 			continue
 		}
-		if rv.Status != "approved" {
-			continue
-		}
-		if rv.TmdbID != tmdbID {
-			continue
-		}
-		// 匹配 mediaType
-		rvType := string(rv.MediaType)
-		if rvType == "" {
-			rvType = "movie"
-		}
-		if rvType != mediaType {
-			continue
-		}
-		matched = append(matched, rv)
+		matched = append(matched, cloneReview(rv))
 	}
 	s.review.mu.RUnlock()
 
@@ -275,10 +280,9 @@ func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType
 		if notified[rv.TelegramID] {
 			continue
 		}
-		if !s.review.MarkLibraryNotifiedOnce(rv.RequestID) {
+		if !s.review.IsLibraryNotificationPending(rv.RequestID) {
 			continue
 		}
-		notified[rv.TelegramID] = true
 
 		mediaEmoji := "🎬"
 		if mediaType == "tv" {
@@ -288,6 +292,11 @@ func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType
 		if _, err := s.telegram.SendMessage(rv.TelegramID, msg, "", nil); err != nil {
 			logger.Info("[入库通知] 私聊求片用户失败 user=%d: %v", rv.TelegramID, err)
 		} else {
+			if err := s.review.MarkLibraryNotified(rv.RequestID); err != nil {
+				logger.Info("[入库通知] 保存通知结果失败 request=%s: %v", rv.RequestID, err)
+				continue
+			}
+			notified[rv.TelegramID] = true
 			logger.Info("[入库通知] 已通知求片用户 %d: %s", rv.TelegramID, titleText)
 		}
 	}

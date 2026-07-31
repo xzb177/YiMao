@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
 	"sort"
 	"strconv"
 	"strings"
@@ -24,6 +25,7 @@ type Deps struct {
 	TMDB       *services.TMDBClient
 	Reviews    *services.ReviewService
 	Quota      *services.QuotaService
+	Carpool    *services.CarpoolService
 	Submission *services.RequestSubmissionService
 	MaxAuthAge time.Duration
 }
@@ -36,16 +38,46 @@ type Server struct {
 }
 
 type detailSeason struct {
-	Number       int    `json:"number"`
-	Name         string `json:"name"`
-	EpisodeCount int    `json:"episode_count"`
-	AirDate      string `json:"air_date,omitempty"`
-	Poster       string `json:"poster_path,omitempty"`
+	Number       int          `json:"number"`
+	Name         string       `json:"name"`
+	EpisodeCount int          `json:"episode_count"`
+	AirDate      string       `json:"air_date,omitempty"`
+	Poster       string       `json:"poster_path,omitempty"`
+	Status       detailStatus `json:"status"`
 }
 
 type detailStatus struct {
 	Code string `json:"code"`
 	Text string `json:"text"`
+}
+
+func seasonBaseStatus(airDate string, now time.Time) detailStatus {
+	air, err := time.Parse("2006-01-02", airDate)
+	if err != nil {
+		return detailStatus{Code: "unknown", Text: "首播时间暂未确认"}
+	}
+	if air.After(now) {
+		return detailStatus{Code: "upcoming", Text: "尚未播出"}
+	}
+	return detailStatus{Code: "available", Text: "可以求片"}
+}
+
+func applySeasonAvailability(seasons []detailSeason, available map[int]bool, availabilityErr error, activeRequest func(int) (*services.ReviewRequest, bool)) {
+	for i := range seasons {
+		// Emby 故障只影响已经播出且可求片的季，未来季的首播事实仍然有效。
+		if availabilityErr != nil && seasons[i].Status.Code == "available" {
+			seasons[i].Status = detailStatus{Code: "unknown", Text: "暂时无法确认"}
+		} else if available[seasons[i].Number] {
+			seasons[i].Status = detailStatus{Code: "in_library", Text: "已入库"}
+		}
+		if activeRequest == nil || seasons[i].Status.Code == "in_library" {
+			continue
+		}
+		if own, found := activeRequest(seasons[i].Number); found {
+			_, text, _ := userRequestStatus(own)
+			seasons[i].Status = detailStatus{Code: "requested", Text: text}
+		}
+	}
 }
 
 type quotaView struct {
@@ -72,6 +104,21 @@ type detailResponse struct {
 	Seasons       []detailSeason `json:"seasons,omitempty"`
 	Status        detailStatus   `json:"media_status"`
 	Quota         *quotaView     `json:"quota,omitempty"`
+	InWatchlist   bool           `json:"in_watchlist"`
+}
+
+type watchlistItemView struct {
+	TMDBID int    `json:"tmdb_id"`
+	Type   string `json:"type"`
+	Title  string `json:"title,omitempty"`
+	Year   string `json:"year,omitempty"`
+	Poster string `json:"poster_path,omitempty"`
+}
+
+type progressEventView struct {
+	Code string     `json:"code"`
+	Text string     `json:"text"`
+	At   *time.Time `json:"at,omitempty"`
 }
 
 type userRequestView struct {
@@ -106,6 +153,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/miniapp/v1/discover", s.handleDiscover)
 	mux.HandleFunc("/api/miniapp/v1/dynamic", s.handleDynamic)
 	mux.HandleFunc("/api/miniapp/v1/me", s.handleMe)
+	mux.HandleFunc("/api/miniapp/v1/watchlist", s.handleWatchlist)
+	mux.HandleFunc("/api/miniapp/v1/progress", s.handleProgress)
+
 	// Request submission is intentionally not exposed until it uses the existing
 	// quota/review transaction, not a direct MoviePilot write.
 	mux.HandleFunc("/api/miniapp/v1/request", s.handleRequest)
@@ -196,6 +246,62 @@ type dynamicMedia struct {
 	Rating float64 `json:"vote_average,omitempty"`
 }
 
+type dynamicPosterLookup func(tmdbID int, mediaType string) (string, error)
+
+func fillDynamicPoster(item *dynamicMedia, lookup dynamicPosterLookup) {
+	if item == nil || item.Poster != "" || item.TMDBID <= 0 || lookup == nil {
+		return
+	}
+	if poster, err := lookup(item.TMDBID, item.Type); err == nil {
+		item.Poster = poster
+	}
+}
+
+func (s *Server) fillDynamicPosters(items []dynamicMedia) {
+	if s.deps.TMDB == nil || len(items) == 0 {
+		return
+	}
+	lookup := func(tmdbID int, mediaType string) (string, error) {
+		detail, err := s.deps.TMDB.GetMediaByType(tmdbID, mediaType)
+		if err != nil || detail == nil {
+			return "", err
+		}
+		return s.deps.TMDB.GetPosterURL(detail.PosterPath), nil
+	}
+	// Dynamic feeds are cached for two minutes. Limit concurrent TMDB reads so
+	// one refresh stays fast without turning a missing-poster batch into a burst.
+	type posterResult struct {
+		index  int
+		poster string
+	}
+	semaphore := make(chan struct{}, 3)
+	results := make(chan posterResult, len(items))
+	pending := 0
+	for i := range items {
+		if items[i].Poster != "" || items[i].TMDBID <= 0 {
+			continue
+		}
+		pending++
+		go func(index int, item dynamicMedia) {
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
+			fillDynamicPoster(&item, lookup)
+			results <- posterResult{index: index, poster: item.Poster}
+		}(i, items[i])
+	}
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for pending > 0 {
+		select {
+		case result := <-results:
+			items[result.index].Poster = result.poster
+			pending--
+		case <-deadline.C:
+			return
+		}
+	}
+}
+
 func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.auth(w, r); !ok {
 		return
@@ -207,7 +313,8 @@ func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 	s.dynamicMu.Lock()
 	defer s.dynamicMu.Unlock()
 	if time.Since(s.dynamicAt) < 2*time.Minute && s.dynamicCache != nil {
-		writeJSON(w, http.StatusOK, s.dynamicCache)
+		cached := s.dynamicCache
+		writeJSON(w, http.StatusOK, cached)
 		return
 	}
 	response := map[string]any{"recently_added": []dynamicMedia{}, "just_available": []dynamicMedia{}, "recent_requests": []dynamicMedia{}}
@@ -217,6 +324,7 @@ func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 			for _, item := range items {
 				public = append(public, dynamicMedia{TMDBID: item.TMDBID, Type: item.Type, Title: item.Name, Year: item.Year, Rating: item.Rating})
 			}
+			s.fillDynamicPosters(public)
 			response["recently_added"] = public
 		}
 	}
@@ -244,7 +352,7 @@ func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 		seenDone := map[string]bool{}
 		done := []dynamicMedia{}
 		for _, review := range reviews {
-			if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest || review.TmdbID <= 0 || !(review.EmbyExists || review.SubscriptionState == services.StateCompleted || review.CompletedNoticeAt != nil) {
+			if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest || review.TmdbID <= 0 || !(review.EmbyExists || review.LibraryNotifiedAt != nil) {
 				continue
 			}
 			kind := "movie"
@@ -258,6 +366,8 @@ func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 			seenDone[key] = true
 			done = append(done, dynamicMedia{TMDBID: review.TmdbID, Type: kind, Title: review.MediaTitle, Year: review.MediaYear, Season: review.Season, Poster: review.PosterPath})
 		}
+		s.fillDynamicPosters(recent)
+		s.fillDynamicPosters(done)
 		response["recent_requests"], response["just_available"] = recent, done
 	}
 	s.dynamicAt, s.dynamicCache = time.Now(), response
@@ -267,6 +377,9 @@ func (s *Server) handleDynamic(w http.ResponseWriter, r *http.Request) {
 func completionTime(review *services.ReviewRequest) time.Time {
 	if review == nil {
 		return time.Time{}
+	}
+	if review.LibraryNotifiedAt != nil {
+		return *review.LibraryNotifiedAt
 	}
 	if review.CompletedNoticeAt != nil {
 		return *review.CompletedNoticeAt
@@ -336,10 +449,13 @@ func userRequestStatus(review *services.ReviewRequest) (string, string, string) 
 	if review.Status == "cancelled" {
 		return "cancelled", "已撤回", "done"
 	}
-	if review.EmbyExists || review.SubscriptionState == services.StateCompleted || review.CompletedNoticeAt != nil {
+	if review.EmbyExists || review.LibraryNotifiedAt != nil {
 		return "completed", "已入库", "done"
 	}
 	if review.Status == "approved" {
+		if review.SubscriptionState == services.StateCompleted {
+			return "awaiting_library", "资源已齐，等待入库", "active"
+		}
 		text := services.GetStateText(review.SubscriptionState)
 		if review.SubscriptionState == "" {
 			text = "处理中"
@@ -409,6 +525,9 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := detailResponse{ID: id, Type: kind, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	if s.deps.Carpool != nil {
+		view.InWatchlist = s.deps.Carpool.Contains(id, kind, user.ID)
+	}
 	if kind == "tv" {
 		d, err := s.deps.TMDB.GetTVDetailsWithSeasons(id)
 		if err != nil || d == nil || d.Name == "" {
@@ -425,8 +544,21 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 			if season.SeasonNumber <= 0 {
 				continue
 			}
-			view.Seasons = append(view.Seasons, detailSeason{Number: season.SeasonNumber, Name: season.Name, EpisodeCount: season.EpisodeCount, AirDate: season.AirDate, Poster: s.deps.TMDB.GetPosterURL(season.PosterPath)})
+			status := seasonBaseStatus(season.AirDate, time.Now())
+			view.Seasons = append(view.Seasons, detailSeason{Number: season.SeasonNumber, Name: season.Name, EpisodeCount: season.EpisodeCount, AirDate: season.AirDate, Poster: s.deps.TMDB.GetPosterURL(season.PosterPath), Status: status})
 		}
+		available := map[int]bool(nil)
+		seasonErr := fmt.Errorf("Emby season lookup is unavailable")
+		if s.deps.MoviePilot != nil {
+			available, seasonErr = s.deps.MoviePilot.EmbyAvailableSeasonsByTMDB(id)
+		}
+		var activeRequest func(int) (*services.ReviewRequest, bool)
+		if s.deps.Reviews != nil {
+			activeRequest = func(season int) (*services.ReviewRequest, bool) {
+				return s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season)
+			}
+		}
+		applySeasonAvailability(view.Seasons, available, seasonErr, activeRequest)
 	} else {
 		d, err := s.deps.TMDB.GetMovieDetails(id)
 		if err != nil || d == nil || d.Title == "" {
@@ -445,7 +577,10 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
 	if mediaType == services.MediaTypeMovie {
-		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(id, mediaType); err == nil && exists {
+		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(id, mediaType)
+		if err != nil {
+			view.Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
+		} else if exists {
 			view.Status = detailStatus{Code: "in_library", Text: "库中可看"}
 			if s.deps.Quota != nil {
 				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
@@ -454,28 +589,30 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if season > 0 {
-		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBSeason(id, season); err == nil && exists {
-			view.Status = detailStatus{Code: "in_library", Text: "这一季已入库"}
-			if s.deps.Quota != nil {
-				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
+		for _, item := range view.Seasons {
+			if item.Number == season {
+				view.Status = item.Status
+				break
 			}
-			writeJSON(w, http.StatusOK, view)
-			return
 		}
 	}
-	if existing, found, err := s.deps.MoviePilot.FindExistingSubscription(id, mediaType, season); err == nil && found {
-		if kind == "movie" {
-			view.Status = detailStatus{Code: "subscribed", Text: services.GetStateText(existing.State)}
-		} else {
-			// MoviePilot does not expose reliable season identity on every version.
-			// Keep this informational and never claim the selected season is covered.
-			view.Status = detailStatus{Code: "available", Text: "该剧已有订阅，可继续选择目标季"}
-		}
-	} else if s.deps.Reviews != nil {
-		if own, found := s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season); found {
-			view.Status = detailStatus{Code: "requested", Text: map[string]string{"pending": "等待审核", "approved": "处理中"}[own.Status]}
-			if view.Status.Text == "" {
-				view.Status.Text = "已有求片"
+	if view.Status.Code == "available" {
+		if existing, found, ready := s.deps.MoviePilot.FindCachedSubscription(id, mediaType); !ready {
+			view.Status = detailStatus{Code: "unknown", Text: "订阅状态暂时无法确认"}
+		} else if found {
+			if kind == "movie" {
+				view.Status = detailStatus{Code: "subscribed", Text: services.GetStateText(existing.State)}
+			} else {
+				// MoviePilot does not expose reliable season identity on every version.
+				// Keep this informational and never claim the selected season is covered.
+				view.Status = detailStatus{Code: "available", Text: "该剧已有订阅，可继续选择目标季"}
+			}
+		} else if s.deps.Reviews != nil {
+			if own, found := s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season); found {
+				view.Status = detailStatus{Code: "requested", Text: map[string]string{"pending": "等待审核", "approved": "处理中"}[own.Status]}
+				if view.Status.Text == "" {
+					view.Status.Text = "已有求片"
+				}
 			}
 		}
 	}
@@ -483,6 +620,149 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
 	}
 	writeJSON(w, http.StatusOK, view)
+}
+
+func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.auth(w, r)
+	if !ok {
+		return
+	}
+	if s.deps.Carpool == nil {
+		http.Error(w, "想看服务未就绪", http.StatusServiceUnavailable)
+		return
+	}
+	if r.Method == http.MethodGet {
+		items := s.deps.Carpool.ListForUser(user.ID)
+		views := make([]watchlistItemView, len(items))
+		semaphore := make(chan struct{}, 3)
+		var wg sync.WaitGroup
+		for i, item := range items {
+			views[i] = watchlistItemView{TMDBID: item.TMDBID, Type: item.Type, Title: item.Title, Year: item.Year, Poster: item.Poster}
+			if item.Title != "" || s.deps.TMDB == nil {
+				continue
+			}
+			wg.Add(1)
+			go func(index int, item services.CarpoolItem) {
+				defer wg.Done()
+				semaphore <- struct{}{}
+				defer func() { <-semaphore }()
+				detail, err := s.deps.TMDB.GetMediaByType(item.TMDBID, item.Type)
+				if err != nil || detail == nil {
+					return
+				}
+				view := &views[index]
+				view.Title, view.Poster = detail.Title, s.deps.TMDB.GetPosterURL(detail.PosterPath)
+				date := detail.ReleaseDate
+				if item.Type == "tv" {
+					view.Title, date = detail.Name, detail.FirstAirDate
+				}
+				if len(date) >= 4 {
+					view.Year = date[:4]
+				}
+			}(i, item)
+		}
+		wg.Wait()
+		writeJSON(w, http.StatusOK, map[string]any{"items": views})
+		return
+	}
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID   int    `json:"tmdb_id"`
+		Type string `json:"type"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") {
+		http.Error(w, "请求参数不完整", http.StatusBadRequest)
+		return
+	}
+	if r.Method == http.MethodPost {
+		if s.deps.TMDB == nil {
+			http.Error(w, "影视信息服务未就绪", http.StatusServiceUnavailable)
+			return
+		}
+		if len(s.deps.Carpool.ListForUser(user.ID)) >= 200 && !s.deps.Carpool.Contains(body.ID, body.Type, user.ID) {
+			http.Error(w, "想看列表已达上限", http.StatusConflict)
+			return
+		}
+		meta := services.CarpoolMetadata{AddedAt: time.Now().UTC()}
+		detail, detailErr := s.deps.TMDB.GetMediaByType(body.ID, body.Type)
+		if detailErr != nil || detail == nil {
+			http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+			return
+		}
+		meta.Title, meta.Poster = detail.Title, s.deps.TMDB.GetPosterURL(detail.PosterPath)
+		date := detail.ReleaseDate
+		if body.Type == "tv" {
+			meta.Title, date = detail.Name, detail.FirstAirDate
+		}
+		if strings.TrimSpace(meta.Title) == "" {
+			http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+			return
+		}
+		if len(date) >= 4 {
+			meta.Year = date[:4]
+		}
+		count, err := s.deps.Carpool.AddWithMetadataChecked(body.ID, body.Type, user.ID, meta)
+		if err != nil {
+			http.Error(w, "想看保存失败，请稍后再试", http.StatusServiceUnavailable)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "in_watchlist": true, "watcher_count": count})
+		return
+	}
+	removed, err := s.deps.Carpool.RemoveChecked(body.ID, body.Type, user.ID)
+	if err != nil {
+		http.Error(w, "取消想看保存失败，请稍后再试", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "in_watchlist": false, "removed": removed})
+}
+
+func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.auth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.deps.Reviews == nil {
+		http.Error(w, "进度服务未就绪", http.StatusServiceUnavailable)
+		return
+	}
+	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
+	review, found := s.deps.Reviews.GetRequest(requestID)
+	if requestID == "" || !found || review == nil || review.TelegramID != user.ID || review.NormalizedBusinessType() != services.BusinessTypeRequest {
+		http.Error(w, "求片记录不存在", http.StatusNotFound)
+		return
+	}
+	createdAt := review.CreatedAt
+	events := []progressEventView{{Code: "created", Text: "已提交求片", At: &createdAt}}
+	if !review.ReviewedAt.IsZero() {
+		text := "审核已通过"
+		code := "approved"
+		if review.Status == "rejected" {
+			code, text = "rejected", "审核未通过"
+		} else if review.Status == "cancelled" {
+			code, text = "cancelled", "已主动撤回"
+		}
+		reviewedAt := review.ReviewedAt
+		events = append(events, progressEventView{Code: code, Text: text, At: &reviewedAt})
+	}
+	if review.DownloadNotified {
+		// 旧数据只持久化“已通知”事实，不持久化独立时间，因此不伪造时间。
+		events = append(events, progressEventView{Code: "downloading", Text: "已开始下载（时间未单独记录）"})
+	}
+	if review.CompletedNoticeAt != nil {
+		events = append(events, progressEventView{Code: "download_complete", Text: "资源已齐，等待 Emby 入库确认", At: review.CompletedNoticeAt})
+	}
+	if review.LibraryNotifiedAt != nil {
+		events = append(events, progressEventView{Code: "completed", Text: "已入库并通知", At: review.LibraryNotifiedAt})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"request_id": review.RequestID, "events": events})
 }
 
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
@@ -506,8 +786,15 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	mediaType := services.MediaTypeMovie
 	if body.Type == "tv" {
 		mediaType = services.MediaTypeTV
+		if body.Season <= 0 {
+			http.Error(w, "请选择有效季号", http.StatusBadRequest)
+			return
+		}
 	} else if body.Type != "movie" {
 		http.Error(w, "媒体类型无效", http.StatusBadRequest)
+		return
+	} else if body.Season != 0 {
+		http.Error(w, "电影请求不能包含季号", http.StatusBadRequest)
 		return
 	}
 	if s.deps.Submission == nil || s.deps.TMDB == nil || s.deps.MoviePilot == nil {
@@ -515,21 +802,46 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if mediaType == services.MediaTypeMovie {
-		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(body.ID, mediaType); err == nil && exists {
+		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(body.ID, mediaType)
+		if err != nil {
+			http.Error(w, "暂时无法确认媒体库状态，请稍后再试", http.StatusServiceUnavailable)
+			return
+		}
+		if exists {
 			writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "in_library", "message": "库中已经有这部电影"})
 			return
 		}
-	} else if body.Season > 0 {
-		if exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBSeason(body.ID, body.Season); err == nil && exists {
+	} else {
+		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBSeason(body.ID, body.Season)
+		if err != nil {
+			http.Error(w, "暂时无法确认这一季的媒体库状态，请稍后再试", http.StatusServiceUnavailable)
+			return
+		}
+		if exists {
 			writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "in_library", "message": "这一季已经入库"})
 			return
 		}
 	}
 	mediaTitle, mediaYear, posterPath, overview := "", 0, "", ""
 	if body.Type == "tv" {
-		detail, err := s.deps.TMDB.GetTVDetails(body.ID)
+		detail, err := s.deps.TMDB.GetTVDetailsWithSeasons(body.ID)
 		if err != nil || detail == nil || detail.Name == "" {
 			http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+			return
+		}
+		seasonStatus := detailStatus{Code: "unknown", Text: "季信息暂时无法确认"}
+		for _, season := range detail.Seasons {
+			if season.SeasonNumber == body.Season {
+				seasonStatus = seasonBaseStatus(season.AirDate, time.Now())
+				break
+			}
+		}
+		if seasonStatus.Code != "available" {
+			status := http.StatusConflict
+			if seasonStatus.Code == "unknown" {
+				status = http.StatusServiceUnavailable
+			}
+			writeJSON(w, status, map[string]any{"ok": false, "status": seasonStatus.Code, "message": seasonStatus.Text})
 			return
 		}
 		mediaTitle, posterPath, overview = detail.Name, s.deps.TMDB.GetPosterURL(detail.PosterPath), detail.Overview

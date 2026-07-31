@@ -123,6 +123,7 @@ func main() {
 		RequestSubmission: depsWithHandlers.RequestSubmission,
 		TMDB:              depsWithHandlers.TMDBClient,
 		Reviews:           depsWithHandlers.ReviewService,
+		Carpool:           depsWithHandlers.CarpoolService,
 	}, securityService)
 
 	// Start server in background
@@ -328,7 +329,8 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		alertService = services.NewAlertService(telegramClient, adminIDs[0], 30*time.Minute)
 		logger.Info("    - AlertService initialized (admin=%d)", adminIDs[0])
 	}
-	// P1：MP 轮询订阅完成时通知用户（替代 Emby webhook，Emby 不可用时仍能通知）
+	// MP 完成只证明资源已齐，不等于 Emby 已完成索引。真正“可看”通知
+	// 仍由 Emby webhook 发出，避免把下载完成伪装成已入库。
 	reviewService.OnSubscriptionComplete = func(telegramID int64, title string, year int, mediaType string) {
 		// 检查用户是否开启了入库通知
 		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
@@ -346,18 +348,18 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		}
 
 		msg := services.NewMessageBuilder()
-		msg.Bold("🎉 求片已完成！").Newline()
+		msg.Bold("✅ 资源已齐，等待入库").Newline()
 		msg.Newline()
 		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
 		msg.Newline()
-		msg.Text("🍿 快去 Emby 观看吧～")
+		msg.Text("正在等待 Emby 确认入库；真正可看后会再通知你。")
 
 		kb := services.NewKeyboardBuilder()
 		kb.AddButton("📊 求片进度", "my_requests")
 		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
 			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
 		}
-		logger.Info("[ReviewService] 已通知用户 %d: %s%s 订阅完成", telegramID, title, yearStr)
+		logger.Info("[ReviewService] 已通知用户 %d: %s%s 资源已齐，等待 Emby 入库", telegramID, title, yearStr)
 	}
 	// P1 中间态：开始下载（用户可关，走同一 NotifyDownload 偏好）
 	reviewService.OnDownloadStart = func(telegramID int64, title string, year int, mediaType string) {

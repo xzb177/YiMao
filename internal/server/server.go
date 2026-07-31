@@ -34,6 +34,7 @@ type Dependencies struct {
 	RequestSubmission *services.RequestSubmissionService
 	TMDB              *services.TMDBClient
 	Reviews           *services.ReviewService
+	Carpool           *services.CarpoolService
 }
 
 // New creates a new HTTP server
@@ -172,7 +173,7 @@ func New(
 	// Telegram can load it before the WebApp object is initialized.
 	miniAppServer := miniapp.NewServer(miniapp.Deps{
 		BotToken: cfg.TelegramBotToken, MoviePilot: deps.MoviePilot,
-		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService,
+		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService, Carpool: deps.Carpool,
 		Submission: deps.RequestSubmission, MaxAuthAge: 24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
@@ -185,8 +186,11 @@ func New(
 		Handler:           mux,
 		ReadTimeout:       15 * time.Second,
 		ReadHeaderTimeout: 5 * time.Second,
-		WriteTimeout:      15 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		// Upstream metadata checks have bounded retries. Keep the server from
+		// cutting a valid response at 15s while endpoint-level caches and
+		// deadlines provide the normal fast path.
+		WriteTimeout: 120 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+
 	"strconv"
 	"strings"
 	"sync"
@@ -1137,15 +1138,45 @@ func (c *MoviePilotClient) FindExistingSubscription(tmdbID int, mediaType MediaT
 		if it.State == StateCancelled || it.State == StateFailed {
 			continue
 		}
-		// For TV season-specific requests, only block exact season match when season info exists
-		if targetType == "tv" && season > 0 && it.TotalEpisode > 0 {
-			// MoviePilot API payload doesn't always expose season directly in all versions,
-			// so we keep this check permissive and still treat same TMDB TV as duplicate.
+		// A TV request is season-scoped. Missing season data is not precise enough
+		// to link or block a different season request.
+		if targetType == "tv" && season > 0 && it.Season != season {
+			continue
 		}
 		return it, true, nil
 	}
 
 	return nil, false, nil
+}
+
+// FindCachedSubscription performs a request-path-safe duplicate lookup. It
+// never calls MoviePilot: stale or missing cache is reported as unknown so UI
+// details remain available while the background warmup refreshes separately.
+func (c *MoviePilotClient) FindCachedSubscription(tmdbID int, mediaType MediaType) (*SubscribeStatus, bool, bool) {
+	c.subsCacheMu.RLock()
+	defer c.subsCacheMu.RUnlock()
+	if c.subsCacheData == nil || time.Since(c.subsCacheTime) >= c.subsCacheTTL {
+		return nil, false, false
+	}
+	targetType := "movie"
+	if mediaType == MediaTypeTV {
+		targetType = "tv"
+	}
+	for _, cached := range c.subsCacheData {
+		if cached.TMDBID != tmdbID || MediaStatusKey(cached.TMDBID, cached.Type) != MediaStatusKey(tmdbID, targetType) {
+			continue
+		}
+		if cached.State == StateCancelled || cached.State == StateFailed {
+			continue
+		}
+		item := &SubscribeStatus{
+			ID: cached.ID, Name: cached.Name, Year: cached.Year, Type: cached.Type,
+			State: cached.State, MediaID: FlexibleInt64(cached.TMDBID), Username: cached.Username,
+			Season: cached.Season, TotalEpisode: cached.TotalEpisode, LackEpisode: cached.LackEpisode,
+		}
+		return item, true, true
+	}
+	return nil, false, true
 }
 
 // Subscription state constants
@@ -1245,6 +1276,7 @@ type SubscribeStatus struct {
 	MediaID        FlexibleInt64 `json:"media_id"`
 	SavePath       string        `json:"save_path"`
 	Username       string        `json:"username"`
+	Season         int           `json:"season"`
 	Downloader     string        `json:"downloader"`
 	TotalEpisode   int           `json:"total_episode"`
 	CurrentEpisode int           `json:"current_episode"`
@@ -1571,57 +1603,67 @@ func (c *MoviePilotClient) EmbyRecentlyAdded(limit int) ([]EmbyPublicMedia, erro
 	return items, nil
 }
 
-func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDBSeason(tmdbID, season int) (bool, error) {
-	if tmdbID <= 0 || season <= 0 {
-		return false, fmt.Errorf("invalid TMDB ID or season")
+func (c *MoviePilotClient) EmbyAvailableSeasonsByTMDB(tmdbID int) (map[int]bool, error) {
+	if tmdbID <= 0 || c.embyURL == "" || c.embyAPIKey == "" {
+		return nil, fmt.Errorf("invalid or unconfigured Emby season lookup")
 	}
-	if c.embyURL == "" || c.embyAPIKey == "" {
-		return false, fmt.Errorf("Emby availability is not configured")
-	}
-	embyBaseURL := strings.TrimRight(c.embyURL, "/")
-	embyUserID, err := c.resolveEmbyUserID(embyBaseURL)
+	base := strings.TrimRight(c.embyURL, "/")
+	userID, err := c.resolveEmbyUserID(base)
 	if err != nil {
-		return false, fmt.Errorf("cannot resolve Emby user: %w", err)
+		return nil, err
 	}
-	seriesValues := url.Values{}
-	seriesValues.Set("AnyProviderIdEquals", fmt.Sprintf("tmdb.%d", tmdbID))
-	seriesValues.Set("IncludeItemTypes", "Series")
-	seriesValues.Set("Recursive", "true")
-	seriesValues.Set("Limit", "1")
-	seriesValues.Set("Fields", "ProviderIds")
-	seriesURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), seriesValues.Encode())
-	var seriesResult struct {
+	values := url.Values{}
+	values.Set("AnyProviderIdEquals", fmt.Sprintf("tmdb.%d", tmdbID))
+	values.Set("IncludeItemTypes", "Series")
+	values.Set("Recursive", "true")
+	values.Set("Limit", "1")
+	var series struct {
 		Items []struct {
 			ID string `json:"Id"`
 		} `json:"Items"`
 	}
-	if err := c.embyGetJSON(seriesURL, &seriesResult); err != nil {
-		return false, err
+	if err := c.embyGetJSON(fmt.Sprintf("%s/Users/%s/Items?%s", base, url.PathEscape(userID), values.Encode()), &series); err != nil {
+		return nil, err
 	}
-	if len(seriesResult.Items) == 0 || seriesResult.Items[0].ID == "" {
-		return false, nil
+	result := map[int]bool{}
+	if len(series.Items) == 0 || series.Items[0].ID == "" {
+		return result, nil
 	}
 	seasonValues := url.Values{}
-	seasonValues.Set("ParentId", seriesResult.Items[0].ID)
+	seasonValues.Set("ParentId", series.Items[0].ID)
 	seasonValues.Set("IncludeItemTypes", "Season")
 	seasonValues.Set("Recursive", "true")
 	seasonValues.Set("Fields", "IndexNumber")
-	seasonValues.Set("Limit", "100")
-	seasonURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), seasonValues.Encode())
-	var seasonResult struct {
+	seasonValues.Set("Limit", "10000")
+	var seasons struct {
 		Items []struct {
 			IndexNumber int `json:"IndexNumber"`
 		} `json:"Items"`
+		TotalRecordCount int `json:"TotalRecordCount"`
 	}
-	if err := c.embyGetJSON(seasonURL, &seasonResult); err != nil {
-		return false, err
+	if err := c.embyGetJSON(fmt.Sprintf("%s/Users/%s/Items?%s", base, url.PathEscape(userID), seasonValues.Encode()), &seasons); err != nil {
+		return nil, err
 	}
-	for _, item := range seasonResult.Items {
-		if item.IndexNumber == season {
-			return true, nil
+	if seasons.TotalRecordCount > len(seasons.Items) {
+		return nil, fmt.Errorf("Emby season result truncated: got %d of %d", len(seasons.Items), seasons.TotalRecordCount)
+	}
+	for _, item := range seasons.Items {
+		if item.IndexNumber > 0 {
+			result[item.IndexNumber] = true
 		}
 	}
-	return false, nil
+	return result, nil
+}
+
+func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDBSeason(tmdbID, season int) (bool, error) {
+	if season <= 0 {
+		return false, fmt.Errorf("invalid season")
+	}
+	seasons, err := c.EmbyAvailableSeasonsByTMDB(tmdbID)
+	if err != nil {
+		return false, err
+	}
+	return seasons[season], nil
 }
 
 func (c *MoviePilotClient) embyGetJSON(requestURL string, target any) error {

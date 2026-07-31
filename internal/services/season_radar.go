@@ -70,7 +70,7 @@ func (s *SeasonRadarService) TrackTV(userID int64, tmdbID int, title string) {
 	if tmdb == nil {
 		return
 	}
-	details, err := tmdb.GetTVDetailsWithSeasons(tmdbID)
+	details, err := tmdb.GetTVDetailsWithSeasonsFresh(tmdbID)
 	if err != nil || details == nil {
 		return
 	}
@@ -128,7 +128,7 @@ func (s *SeasonRadarService) Scan() {
 	sort.Slice(items, func(i, j int) bool { return items[i].LastChecked.Before(items[j].LastChecked) })
 
 	for _, item := range items {
-		details, err := tmdb.GetTVDetailsWithSeasons(item.TmdbID)
+		details, err := tmdb.GetTVDetailsWithSeasonsFresh(item.TmdbID)
 		if err != nil || details == nil {
 			logger.Info("[SeasonRadar] 查询失败: tmdb=%d err=%v", item.TmdbID, err)
 			continue
