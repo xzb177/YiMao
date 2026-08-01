@@ -124,6 +124,8 @@ func main() {
 		TMDB:              depsWithHandlers.TMDBClient,
 		Reviews:           depsWithHandlers.ReviewService,
 		Carpool:           depsWithHandlers.CarpoolService,
+		WishService:       depsWithHandlers.WishService,
+		AdventureHandler:  depsWithHandlers.AdventureHandler,
 	}, securityService)
 
 	// Start server in background

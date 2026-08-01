@@ -328,7 +328,10 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 
 	var userActive int
 	if err := tx.QueryRow(
-		`SELECT COUNT(*) FROM wish_items WHERE user_id = ? AND state IN (?,?,?,?)`,
+		`SELECT COUNT(DISTINCT w.canonical_key)
+		 FROM wish_wishers w
+		 JOIN wish_items i ON i.tmdb_id != 0 AND w.canonical_key = 'tmdb-' || i.tmdb_id || '-' || i.media_type || '-' || i.season
+		 WHERE w.user_id = ? AND i.state IN (?,?,?,?)`,
 		item.UserID, WishStatePending, WishStateSearching, WishStateFound, WishStateNotified,
 	).Scan(&userActive); err != nil {
 		return nil, err
@@ -770,6 +773,36 @@ func (s *WishService) ListByUser(userID int64) ([]*WishItem, error) {
 			return nil, err
 		}
 		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// ListForWisher returns every active wish the user joined, including wishes
+// originally created by another user.
+func (s *WishService) ListForWisher(userID int64) ([]*WishItem, error) {
+	rows, err := s.db.Query(`
+		SELECT i.id, i.user_id, i.tmdb_id, i.imdb_id, i.media_type, i.title, i.year, i.season, i.state, i.found_detail,
+		       i.searching_at, i.notified_at, i.search_offset_minute, i.created_at, i.updated_at
+		FROM wish_items i
+		JOIN wish_wishers w ON w.canonical_key =
+			CASE WHEN i.tmdb_id != 0
+				THEN 'tmdb-' || i.tmdb_id || '-' || (CASE WHEN i.media_type = '' THEN 'movie' ELSE i.media_type END) || '-' || i.season
+				ELSE 'imdb-' || i.imdb_id || '-' || (CASE WHEN i.media_type = '' THEN 'movie' ELSE i.media_type END) || '-' || i.season
+			END
+		WHERE w.user_id = ? AND i.state IN (?,?,?,?)
+		ORDER BY w.created_at DESC`,
+		userID, WishStatePending, WishStateSearching, WishStateFound, WishStateNotified)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*WishItem
+	for rows.Next() {
+		item, err := scanWishRowsCursor(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
 	}
 	return items, rows.Err()
 }

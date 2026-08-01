@@ -88,6 +88,17 @@ func TestWishersMultiUserSameTitle(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("ListWishers len=%d, want 3: %v", len(got), got)
 	}
+
+	// 后来加入的用户必须能在自己的许愿池看到该资源，不能只累计人数。
+	for _, uid := range []int64{1, 2, 3} {
+		items, err := ws.ListForWisher(uid)
+		if err != nil {
+			t.Fatalf("ListForWisher(%d): %v", uid, err)
+		}
+		if len(items) != 1 || items[0].TmdbID != 777 {
+			t.Fatalf("ListForWisher(%d)=%+v, want tmdb 777", uid, items)
+		}
+	}
 }
 
 // TestWishersIdempotent 幂等：同一 user 重复许同片 N 次 → CountWishers 仍=1（INSERT OR IGNORE）。

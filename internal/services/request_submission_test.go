@@ -169,6 +169,31 @@ func TestSubmitNoQuotaAndNotifyPanicIsolationCopy(t *testing.T) {
 		t.Fatalf("used=%d result=%+v", q.used, result.Review)
 	}
 }
+func TestSubmitWashSkipsBindingAndQuotaAndPersistsBaseline(t *testing.T) {
+	q := &fakeSubmissionQuota{}
+	r := &ReviewService{reviewsFile: t.TempDir() + "/reviews.json", reviews: make(map[string]*ReviewRequest)}
+	s := &RequestSubmissionService{reviews: r, quota: q, create: r.CreateRequest}
+	in := RequestSubmission{BusinessType: BusinessTypeWash, TelegramID: 99, TmdbID: 42, MediaType: MediaTypeMovie, UseQuota: false, WashBaseline: []string{"/media/old.mkv"}}
+	result, err := s.SubmitResult(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != SubmissionCreated || result.Review == nil || result.Review.NormalizedBusinessType() != BusinessTypeWash || result.Review.MoviePilotID != 0 || result.Review.QuotaCost != 0 || q.used != 0 {
+		t.Fatalf("unexpected wash result: %+v charged=%d", result, q.used)
+	}
+	if len(result.Review.WashBaseline) != 1 || result.Review.WashBaseline[0] != "/media/old.mkv" {
+		t.Fatalf("wash baseline not persisted: %+v", result.Review.WashBaseline)
+	}
+}
+
+func TestSubmitTVWashRequiresSeason(t *testing.T) {
+	s := newSubmissionTestService(t, &fakeSubmissionQuota{}, nil)
+	_, err := s.SubmitResult(RequestSubmission{BusinessType: BusinessTypeWash, TelegramID: 1, TmdbID: 42, MediaType: MediaTypeTV})
+	if !errors.Is(err, ErrInvalidSubmission) {
+		t.Fatalf("expected invalid TV wash, got %v", err)
+	}
+}
+
 func TestSubmitTypedNotBoundAndQuotaExceeded(t *testing.T) {
 	s := newSubmissionTestService(t, &fakeSubmissionQuota{}, nil)
 	r, e := s.SubmitResult(validSubmission(0, MediaTypeMovie))

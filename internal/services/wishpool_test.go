@@ -76,6 +76,23 @@ func TestWishAddAndCanonicalDedup(t *testing.T) {
 	}
 }
 
+func TestListForWisherIncludesJoinedWish(t *testing.T) {
+	ws := newTestWishService(t)
+	if _, err := ws.AddWish(&WishItem{UserID: 1, TmdbID: 100, MediaType: "movie", Title: "片A"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ws.AddWish(&WishItem{UserID: 2, TmdbID: 100, MediaType: "movie", Title: "片A"}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := ws.ListForWisher(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || items[0].TmdbID != 100 {
+		t.Fatalf("joined wish missing: %+v", items)
+	}
+}
+
 func TestWishStateMachineTransitions(t *testing.T) {
 	ws := newTestWishService(t)
 	res, err := ws.AddWish(&WishItem{UserID: 1, TmdbID: 1, MediaType: "movie", Title: "片"})

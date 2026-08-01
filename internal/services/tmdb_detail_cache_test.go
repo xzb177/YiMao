@@ -76,3 +76,25 @@ func TestTMDBTVDetailsSharedAcrossBasicAndSeasonViews(t *testing.T) {
 		t.Fatalf("upstream calls=%d want 1", got)
 	}
 }
+
+func TestTMDBDetailCachesAreBounded(t *testing.T) {
+	client := NewTMDBClient("test")
+	client.detailCacheTTL = time.Hour
+
+	client.detailMu.Lock()
+	for id := 1; id <= tmdbDetailCacheMaxSize+1; id++ {
+		client.storeMovieDetail(id, &TMDBMediaInfo{ID: id})
+		client.storeTVDetail(id, &TVDetailsWithSeasons{ID: id})
+	}
+	movieCount, tvCount := len(client.movieDetails), len(client.tvDetails)
+	_, oldestMovie := client.movieDetails[1]
+	_, oldestTV := client.tvDetails[1]
+	client.detailMu.Unlock()
+
+	if movieCount != tmdbDetailCacheMaxSize || tvCount != tmdbDetailCacheMaxSize {
+		t.Fatalf("detail cache sizes movie=%d tv=%d want %d", movieCount, tvCount, tmdbDetailCacheMaxSize)
+	}
+	if oldestMovie || oldestTV {
+		t.Fatal("oldest detail entries were not evicted")
+	}
+}

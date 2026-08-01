@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
 )
@@ -27,6 +28,12 @@ type Deps struct {
 	Quota      *services.QuotaService
 	Carpool    *services.CarpoolService
 	Submission *services.RequestSubmissionService
+	Webhook    *services.WebhookService
+	Issues     *services.IssueService
+	Wishes     *services.WishService
+	Adventure  *handlers.AdventureHandler
+	Telegram   *services.TelegramClient
+	Admins     *services.AdminService
 	MaxAuthAge time.Duration
 }
 
@@ -122,19 +129,34 @@ type progressEventView struct {
 }
 
 type userRequestView struct {
-	RequestID  string             `json:"request_id"`
-	TmdbID     int                `json:"tmdb_id"`
-	Title      string             `json:"media_title"`
-	Year       int                `json:"media_year,omitempty"`
-	Type       services.MediaType `json:"media_type"`
-	Season     int                `json:"season,omitempty"`
-	Poster     string             `json:"poster_path,omitempty"`
-	Status     string             `json:"status"`
-	StatusText string             `json:"status_text"`
-	Group      string             `json:"status_group"`
-	CreatedAt  time.Time          `json:"created_at"`
-	CanCancel  bool               `json:"can_cancel"`
-	Note       string             `json:"note,omitempty"`
+	RequestID    string             `json:"request_id"`
+	TmdbID       int                `json:"tmdb_id"`
+	Title        string             `json:"media_title"`
+	Year         int                `json:"media_year,omitempty"`
+	Type         services.MediaType `json:"media_type"`
+	Season       int                `json:"season,omitempty"`
+	Poster       string             `json:"poster_path,omitempty"`
+	Status       string             `json:"status"`
+	StatusText   string             `json:"status_text"`
+	Group        string             `json:"status_group"`
+	CreatedAt    time.Time          `json:"created_at"`
+	CanCancel    bool               `json:"can_cancel"`
+	Note         string             `json:"note,omitempty"`
+	BusinessType string             `json:"business_type"`
+}
+
+const (
+	defaultSearchLimit = 12
+	maxSearchLimit     = 24
+	maxSearchLookahead = 3
+)
+
+type searchResponseView struct {
+	Results  []services.SearchResult `json:"results"`
+	Page     int                     `json:"page"`
+	Limit    int                     `json:"limit"`
+	HasMore  bool                    `json:"has_more"`
+	NextPage int                     `json:"next_page,omitempty"`
 }
 
 func NewServer(deps Deps) *Server {
@@ -156,10 +178,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/miniapp/v1/watchlist", s.handleWatchlist)
 	mux.HandleFunc("/api/miniapp/v1/progress", s.handleProgress)
 
-	// Request submission is intentionally not exposed until it uses the existing
-	// quota/review transaction, not a direct MoviePilot write.
+	// All user submissions reuse the shared review transaction.
 	mux.HandleFunc("/api/miniapp/v1/request", s.handleRequest)
+	mux.HandleFunc("/api/miniapp/v1/wash", s.handleWash)
 	mux.HandleFunc("/api/miniapp/v1/request/cancel", s.handleCancelRequest)
+	mux.HandleFunc("/api/miniapp/v1/issues", s.handleIssues)
+	mux.HandleFunc("/api/miniapp/v1/wishes", s.handleWishes)
+	mux.HandleFunc("/api/miniapp/v1/adventure", s.handleAdventure)
 	return mux
 }
 
@@ -408,7 +433,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	}
 	requests := make([]userRequestView, 0, len(reviews))
 	for _, review := range reviews {
-		if review == nil || review.NormalizedBusinessType() != services.BusinessTypeRequest {
+		if review == nil || (review.NormalizedBusinessType() != services.BusinessTypeRequest && review.NormalizedBusinessType() != services.BusinessTypeWash) {
 			continue
 		}
 		status, text, group := userRequestStatus(review)
@@ -420,7 +445,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		} else if review.Stuck {
 			note = "系统正在自动重试，无需重复提交"
 		}
-		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note})
+		if review.NormalizedBusinessType() == services.BusinessTypeWash {
+			if review.Status == "completed" {
+				status, text, group = "completed", "洗版完成", "done"
+			} else if review.Status == "approved" {
+				status, text, group = "approved", "洗版处理中", "active"
+			}
+		}
+		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note, BusinessType: review.NormalizedBusinessType()})
 	}
 	var quota *quotaView
 	if s.deps.Quota != nil {
@@ -478,31 +510,82 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if page < 1 {
 		page = 1
 	}
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit < 1 {
+		limit = defaultSearchLimit
+	} else if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+	response := searchResponseView{Results: []services.SearchResult{}, Page: page, Limit: limit}
 	if query == "" {
-		writeJSON(w, http.StatusOK, map[string]any{"results": []any{}})
+		writeJSON(w, http.StatusOK, response)
 		return
 	}
-	result, err := s.deps.MoviePilot.SearchMediaWithCount(query, page, 12)
+	if s.deps.MoviePilot == nil {
+		http.Error(w, "搜索暂时不可用", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := s.deps.MoviePilot.SearchMediaWithCountContext(r.Context(), query, page, limit)
 	if err != nil {
 		http.Error(w, "搜索暂时不可用", http.StatusBadGateway)
 		return
 	}
 	upstreamCount := len(result.Results)
-	filter := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
-	if filter == "movie" || filter == "tv" {
-		filtered := make([]services.SearchResult, 0, len(result.Results))
-		for _, item := range result.Results {
-			itemType := "movie"
-			if item.Type == "tv" || item.Type == "电视剧" {
-				itemType = "tv"
+	typeName := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+	if typeName == "movie" || typeName == "tv" {
+		result.Results = filterSearchResults(result.Results, typeName)
+	} else {
+		typeName = ""
+	}
+	response.Results = result.Results
+
+	// A client page remains one upstream page. For typed searches, look ahead a
+	// bounded number of pages and point the cursor at the next page that actually
+	// contains the requested type, so "load more" never leads to a known-empty
+	// page. Unfiltered searches only need the immediate next-page probe.
+	if upstreamCount == limit {
+		lookahead := 1
+		if typeName != "" {
+			lookahead = maxSearchLookahead
+		}
+		for nextPage := page + 1; nextPage <= page+lookahead; nextPage++ {
+			next, err := s.deps.MoviePilot.SearchMediaWithCountContext(r.Context(), query, nextPage, limit)
+			if err != nil {
+				if r.Context().Err() != nil {
+					return
+				}
+				// The current page is still valid. A failed lookahead must not turn
+				// an otherwise successful search into an error response.
+				break
 			}
-			if itemType == filter {
-				filtered = append(filtered, item)
+			nextCount := len(next.Results)
+			if typeName != "" {
+				next.Results = filterSearchResults(next.Results, typeName)
+			}
+			if len(next.Results) > 0 {
+				response.HasMore = true
+				response.NextPage = nextPage
+				break
+			}
+			if nextCount < limit {
+				break
 			}
 		}
-		result.Results = filtered
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"results": result.Results, "page": page, "has_more": upstreamCount == 12})
+	writeJSON(w, http.StatusOK, response)
+}
+
+func filterSearchResults(results []services.SearchResult, typeName string) []services.SearchResult {
+	filtered := make([]services.SearchResult, 0, len(results))
+	for _, item := range results {
+		if typeName == "movie" && (item.Type == "电影" || item.Type == "movie") {
+			filtered = append(filtered, item)
+		}
+		if typeName == "tv" && (item.Type == "电视剧" || item.Type == "tv") {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
@@ -515,6 +598,7 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "无效的影视 ID", http.StatusBadRequest)
 		return
 	}
+	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
 	kind := "movie"
 	mediaType := services.MediaTypeMovie
 	if typeName := r.URL.Query().Get("type"); typeName == "tv" || typeName == "电视剧" {
@@ -525,8 +609,24 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := detailResponse{ID: id, Type: kind, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	wishJoined := false
 	if s.deps.Carpool != nil {
 		view.InWatchlist = s.deps.Carpool.Contains(id, kind, user.ID)
+	}
+	if s.deps.Wishes != nil {
+		seasonScope := 0
+		if kind == "tv" && season > 0 {
+			seasonScope = season
+		}
+		if joined, err := s.deps.Wishes.ListForWisher(user.ID); err == nil {
+			for _, item := range joined {
+				if item.TmdbID == id && item.MediaType == kind && item.Season == seasonScope {
+					wishJoined = true
+					view.Status = detailStatus{Code: "wish_joined", Text: "已经在许愿池"}
+					break
+				}
+			}
+		}
 	}
 	if kind == "tv" {
 		d, err := s.deps.TMDB.GetTVDetailsWithSeasons(id)
@@ -575,13 +675,14 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	if len(view.ReleaseDate) >= 4 {
 		view.Year = view.ReleaseDate[:4]
 	}
-	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
 	if mediaType == services.MediaTypeMovie {
 		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(id, mediaType)
 		if err != nil {
 			view.Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
 		} else if exists {
-			view.Status = detailStatus{Code: "in_library", Text: "库中可看"}
+			if !wishJoined {
+				view.Status = detailStatus{Code: "in_library", Text: "库中可看"}
+			}
 			if s.deps.Quota != nil {
 				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
 			}
@@ -591,7 +692,9 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	} else if season > 0 {
 		for _, item := range view.Seasons {
 			if item.Number == season {
-				view.Status = item.Status
+				if !wishJoined {
+					view.Status = item.Status
+				}
 				break
 			}
 		}
@@ -735,12 +838,16 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
 	review, found := s.deps.Reviews.GetRequest(requestID)
-	if requestID == "" || !found || review == nil || review.TelegramID != user.ID || review.NormalizedBusinessType() != services.BusinessTypeRequest {
-		http.Error(w, "求片记录不存在", http.StatusNotFound)
+	if requestID == "" || !found || review == nil || review.TelegramID != user.ID || (review.NormalizedBusinessType() != services.BusinessTypeRequest && review.NormalizedBusinessType() != services.BusinessTypeWash) {
+		http.Error(w, "进度记录不存在", http.StatusNotFound)
 		return
 	}
 	createdAt := review.CreatedAt
-	events := []progressEventView{{Code: "created", Text: "已提交求片", At: &createdAt}}
+	createdText := "已提交求片"
+	if review.NormalizedBusinessType() == services.BusinessTypeWash {
+		createdText = "已提交洗版工单"
+	}
+	events := []progressEventView{{Code: "created", Text: createdText, At: &createdAt}}
 	if !review.ReviewedAt.IsZero() {
 		text := "审核已通过"
 		code := "approved"
@@ -761,6 +868,9 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	}
 	if review.LibraryNotifiedAt != nil {
 		events = append(events, progressEventView{Code: "completed", Text: "已入库并通知", At: review.LibraryNotifiedAt})
+	}
+	if review.NormalizedBusinessType() == services.BusinessTypeWash && review.Status == "completed" {
+		events = append(events, progressEventView{Code: "completed", Text: "新版本已验证，洗版完成"})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"request_id": review.RequestID, "events": events})
 }
@@ -876,6 +986,76 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": result.Status, "request_id": requestID})
 }
 
+func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
+	user, ok := s.auth(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var body struct {
+		ID     int    `json:"tmdb_id"`
+		Type   string `json:"type"`
+		Season int    `json:"season"`
+	}
+	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") || (body.Type == "movie" && body.Season != 0) || (body.Type == "tv" && body.Season <= 0) {
+		http.Error(w, "洗版参数不完整", http.StatusBadRequest)
+		return
+	}
+	if s.deps.Submission == nil || s.deps.TMDB == nil || s.deps.Webhook == nil {
+		http.Error(w, "洗版服务未就绪", http.StatusServiceUnavailable)
+		return
+	}
+	mediaType := services.MediaTypeMovie
+	if body.Type == "tv" {
+		mediaType = services.MediaTypeTV
+	}
+	media, err := s.deps.TMDB.GetMediaByType(body.ID, body.Type)
+	if err != nil || media == nil {
+		http.Error(w, "影视信息校验失败", http.StatusBadGateway)
+		return
+	}
+	title, date := media.Title, media.ReleaseDate
+	if body.Type == "tv" {
+		title, date = media.Name, media.FirstAirDate
+	}
+	year := 0
+	if len(date) >= 4 {
+		year, _ = strconv.Atoi(date[:4])
+	}
+	exists, err := s.deps.Webhook.HasEmbyWashTarget(body.ID, title, year, mediaType, body.Season)
+	if err != nil {
+		http.Error(w, "暂时无法核验媒体库，请稍后再试", http.StatusServiceUnavailable)
+		return
+	}
+	if !exists {
+		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "not_in_library", "message": "媒体库中没有当前版本，不能申请洗版"})
+		return
+	}
+	baseline, err := s.deps.Webhook.CaptureEmbyWashBaseline(body.ID, mediaType, body.Season)
+	if err != nil || len(baseline) == 0 {
+		http.Error(w, "无法记录当前版本，已停止提交", http.StatusServiceUnavailable)
+		return
+	}
+	result, err := s.deps.Submission.SubmitResult(services.RequestSubmission{
+		BusinessType: services.BusinessTypeWash, TelegramID: user.ID, TelegramName: user.FirstName,
+		TmdbID: body.ID, MediaTitle: title, MediaYear: year, MediaType: mediaType, Season: body.Season,
+		PosterPath: s.deps.TMDB.GetPosterURL(media.PosterPath), Overview: media.Overview,
+		Origin: "miniapp_wash", UseQuota: false, WashBaseline: baseline,
+	})
+	if err != nil {
+		http.Error(w, "洗版工单提交失败，请稍后再试", http.StatusBadGateway)
+		return
+	}
+	requestID := ""
+	if result.Review != nil {
+		requestID = result.Review.RequestID
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": result.Status, "request_id": requestID})
+}
+
 func (s *Server) handleCancelRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.auth(w, r)
 	if !ok {
@@ -897,8 +1077,8 @@ func (s *Server) handleCancelRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	review, exists := s.deps.Reviews.GetRequest(body.RequestID)
-	if !exists || review == nil || review.TelegramID != user.ID || review.NormalizedBusinessType() != services.BusinessTypeRequest {
-		http.Error(w, "求片记录不存在", http.StatusNotFound)
+	if !exists || review == nil || review.TelegramID != user.ID || (review.NormalizedBusinessType() != services.BusinessTypeRequest && review.NormalizedBusinessType() != services.BusinessTypeWash) {
+		http.Error(w, "进度记录不存在", http.StatusNotFound)
 		return
 	}
 	if review.Status != "pending" {
@@ -907,6 +1087,10 @@ func (s *Server) handleCancelRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.deps.Reviews.CancelByUser(review.RequestID, user.ID); err != nil {
 		http.Error(w, "撤回失败，请稍后再试", http.StatusConflict)
+		return
+	}
+	if review.NormalizedBusinessType() == services.BusinessTypeWash {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "cancelled", "quota_restored": false})
 		return
 	}
 	restored, err := s.deps.Reviews.RestoreQuotaOnce(review.RequestID, s.deps.Quota)

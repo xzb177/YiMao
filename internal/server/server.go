@@ -35,6 +35,8 @@ type Dependencies struct {
 	TMDB              *services.TMDBClient
 	Reviews           *services.ReviewService
 	Carpool           *services.CarpoolService
+	WishService       *services.WishService
+	AdventureHandler  *handlers.AdventureHandler
 }
 
 // New creates a new HTTP server
@@ -174,7 +176,9 @@ func New(
 	miniAppServer := miniapp.NewServer(miniapp.Deps{
 		BotToken: cfg.TelegramBotToken, MoviePilot: deps.MoviePilot,
 		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService, Carpool: deps.Carpool,
-		Submission: deps.RequestSubmission, MaxAuthAge: 24 * time.Hour,
+		Submission: deps.RequestSubmission, Webhook: deps.WebhookService,
+		Issues: deps.IssueService, Wishes: deps.WishService, Adventure: deps.AdventureHandler,
+		Telegram: deps.Telegram, Admins: deps.AdminService, MaxAuthAge: 24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
 	mux.Handle("/miniapp", miniAppHandler)

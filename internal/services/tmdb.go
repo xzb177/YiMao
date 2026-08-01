@@ -78,6 +78,7 @@ type tmdbTVDetailCall struct {
 }
 
 const tmdbCacheMaxSize = 500
+const tmdbDetailCacheMaxSize = 500
 const tmdbCacheDefaultTTL = 1 * time.Hour
 
 // NewTMDBClient creates a new TMDB client
@@ -170,7 +171,7 @@ func (c *TMDBClient) GetMovieDetails(tmdbID int) (*TMDBMediaInfo, error) {
 	call.value, call.err = c.fetchMovieDetails(tmdbID)
 	c.detailMu.Lock()
 	if call.err == nil && call.value != nil {
-		c.movieDetails[tmdbID] = tmdbMovieDetailEntry{value: call.value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+		c.storeMovieDetail(tmdbID, call.value)
 	}
 	delete(c.movieInFlight, tmdbID)
 	close(call.done)
@@ -791,7 +792,7 @@ func (c *TMDBClient) GetTVDetailsWithSeasons(tmdbID int) (*TVDetailsWithSeasons,
 	call.value, call.err = c.fetchTVDetailsWithSeasons(tmdbID)
 	c.detailMu.Lock()
 	if call.err == nil && call.value != nil {
-		c.tvDetails[tmdbID] = tmdbTVDetailEntry{value: call.value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+		c.storeTVDetail(tmdbID, call.value)
 	}
 	delete(c.tvInFlight, tmdbID)
 	close(call.done)
@@ -861,6 +862,36 @@ func (c *TMDBClient) SetRetryConfig(cfg *RetryConfig) {
 }
 
 // C4: 缓存辅助方法
+
+func (c *TMDBClient) storeMovieDetail(tmdbID int, value *TMDBMediaInfo) {
+	if len(c.movieDetails) >= tmdbDetailCacheMaxSize {
+		oldest := 0
+		for id, entry := range c.movieDetails {
+			if oldest == 0 || entry.expiresAt.Before(c.movieDetails[oldest].expiresAt) {
+				oldest = id
+			}
+		}
+		if oldest != 0 {
+			delete(c.movieDetails, oldest)
+		}
+	}
+	c.movieDetails[tmdbID] = tmdbMovieDetailEntry{value: value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+}
+
+func (c *TMDBClient) storeTVDetail(tmdbID int, value *TVDetailsWithSeasons) {
+	if len(c.tvDetails) >= tmdbDetailCacheMaxSize {
+		oldest := 0
+		for id, entry := range c.tvDetails {
+			if oldest == 0 || entry.expiresAt.Before(c.tvDetails[oldest].expiresAt) {
+				oldest = id
+			}
+		}
+		if oldest != 0 {
+			delete(c.tvDetails, oldest)
+		}
+	}
+	c.tvDetails[tmdbID] = tmdbTVDetailEntry{value: value, expiresAt: time.Now().Add(c.detailCacheTTL)}
+}
 
 func (c *TMDBClient) cacheGet(key string) *TMDBSearchResult {
 	c.cacheMu.RLock()

@@ -66,6 +66,7 @@ type RequestSubmission struct {
 	AdventureScore int
 	AdventureGrade string
 	UseQuota       bool
+	WashBaseline   []string
 }
 
 type RequestSubmissionService struct {
@@ -104,15 +105,26 @@ func (s *RequestSubmissionService) Submit(in RequestSubmission) (*ReviewRequest,
 }
 
 func (s *RequestSubmissionService) SubmitResult(in RequestSubmission) (SubmissionResult, error) {
-	if s == nil || s.mapping == nil || s.reviews == nil || s.create == nil {
+	if s == nil || s.reviews == nil || s.create == nil {
 		return SubmissionResult{}, errors.New("request submission service is not configured")
 	}
 	if in.TmdbID <= 0 || (in.MediaType != MediaTypeMovie && in.MediaType != MediaTypeTV) || in.Season < 0 {
 		return SubmissionResult{}, fmt.Errorf("%w: tmdb_id must be positive, media_type must be movie or tv, and season must be non-negative", ErrInvalidSubmission)
 	}
-	mpID, ok := s.mapping.GetMoviePilotUserID(in.TelegramID)
-	if !ok || mpID == 0 {
-		return SubmissionResult{Status: SubmissionNotBound}, nil
+	businessType := normalizeBusinessType(in.BusinessType)
+	if in.MediaType == MediaTypeTV && businessType == BusinessTypeWash && in.Season <= 0 {
+		return SubmissionResult{}, fmt.Errorf("%w: TV wash requires a positive season", ErrInvalidSubmission)
+	}
+	mpID := int64(0)
+	if businessType == BusinessTypeRequest {
+		if s.mapping == nil {
+			return SubmissionResult{}, errors.New("request submission mapping is not configured")
+		}
+		var ok bool
+		mpID, ok = s.mapping.GetMoviePilotUserID(in.TelegramID)
+		if !ok || mpID == 0 {
+			return SubmissionResult{Status: SubmissionNotBound}, nil
+		}
 	}
 
 	s.mu.Lock()
@@ -152,7 +164,7 @@ func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64
 	if origin == "" {
 		origin = "normal"
 	}
-	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade}
+	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade, WashBaseline: append([]string(nil), in.WashBaseline...)}
 	if in.UseQuota {
 		review.QuotaCost = quotaCost
 	}

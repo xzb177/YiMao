@@ -326,10 +326,18 @@ type User struct {
 
 // makeRequest makes an API request to MoviePilot
 func (c *MoviePilotClient) makeRequest(method, endpoint string, body interface{}) ([]byte, error) {
-	return c.makeRequestWithLimit(method, endpoint, body, maxResponseBodySize)
+	return c.makeRequestWithContext(context.Background(), method, endpoint, body)
 }
 
 func (c *MoviePilotClient) makeRequestWithLimit(method, endpoint string, body interface{}, maxBodySize int64) ([]byte, error) {
+	return c.makeRequestWithLimitContext(context.Background(), method, endpoint, body, maxBodySize)
+}
+
+func (c *MoviePilotClient) makeRequestWithContext(ctx context.Context, method, endpoint string, body interface{}) ([]byte, error) {
+	return c.makeRequestWithLimitContext(ctx, method, endpoint, body, maxResponseBodySize)
+}
+
+func (c *MoviePilotClient) makeRequestWithLimitContext(ctx context.Context, method, endpoint string, body interface{}, maxBodySize int64) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
@@ -340,7 +348,7 @@ func (c *MoviePilotClient) makeRequestWithLimit(method, endpoint string, body in
 	}
 
 	url := c.baseURL + endpoint
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequestWithContext(ctx, method, url, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -427,6 +435,11 @@ func (c *MoviePilotClient) SearchMedia(query string, page int) (*SearchResponse,
 // SearchMediaWithCount searches with an explicit page size. Interactive Telegram
 // results use 8 so every API item maps to one visible button without gaps.
 func (c *MoviePilotClient) SearchMediaWithCount(query string, page, count int) (*SearchResponse, error) {
+	return c.SearchMediaWithCountContext(context.Background(), query, page, count)
+}
+
+// SearchMediaWithCountContext is SearchMediaWithCount with caller cancellation.
+func (c *MoviePilotClient) SearchMediaWithCountContext(ctx context.Context, query string, page, count int) (*SearchResponse, error) {
 	query = validation.SanitizeSearchQuery(query)
 	if query == "" {
 		return nil, fmt.Errorf("search query cannot be empty")
@@ -441,7 +454,7 @@ func (c *MoviePilotClient) SearchMediaWithCount(query string, page, count int) (
 	encodedQuery := url.QueryEscape(query)
 	endpoint := fmt.Sprintf("/api/v1/media/search?title=%s&page=%d&count=%d", encodedQuery, page, count)
 
-	body, err := c.makeRequest("GET", endpoint, nil)
+	body, err := c.makeRequestWithContext(ctx, "GET", endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -1463,8 +1476,7 @@ func (c *MoviePilotClient) SearchAllResources(keyword string, page int) (map[str
 
 // doRequest executes an HTTP request with retry logic
 func (c *MoviePilotClient) doRequest(req *http.Request) (*http.Response, error) {
-	ctx := context.Background()
-	resp, err := RetryHTTP(ctx, c.httpClient, req, c.retryConfig)
+	resp, err := RetryHTTP(req.Context(), c.httpClient, req, c.retryConfig)
 	if err != nil {
 		return nil, err
 	}
