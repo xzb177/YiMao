@@ -6,22 +6,73 @@ import (
 	"testing"
 )
 
-// TestHomeHeroCopyKeepsTheFirstScreenDirect 验证首页首屏保持简洁、可执行的产品表达。
-func TestHomeHeroCopyKeepsTheFirstScreenDirect(t *testing.T) {
+// TestHomeStartsWithArtworkAndFeaturedTitle 验证首页首屏由真实内容主导，而不是说明性开场。
+func TestHomeStartsWithArtworkAndFeaturedTitle(t *testing.T) {
 	page, err := os.ReadFile("web/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	html := string(page)
-	for _, want := range []string{"今晚看什么？", "先逛逛热门，也可以直接搜片名。"} {
+	for _, want := range []string{
+		"lead.backdrop_path||lead.poster_path",
+		`<section class="home-feature">`,
+		"本周热看",
+		"查看详情",
+		`class="search home-search"`,
+		"搜电影、剧集或演员",
+	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("首页缺少首屏文案 %q", want)
+			t.Fatalf("首页缺少内容主导的首屏契约 %q", want)
 		}
 	}
-	for _, stale := range []string{"想看的，<br>交给云海。", "找到今晚真正想看的故事"} {
+	for _, stale := range []string{
+		"今晚看什么？",
+		"先逛逛热门，也可以直接搜片名。",
+		"想看的，<br>交给云海。",
+		"找到今晚真正想看的故事",
+	} {
 		if strings.Contains(html, stale) {
 			t.Fatalf("首页仍包含旧口号 %q", stale)
+		}
+	}
+
+	homeStart := strings.Index(html, "function home(){")
+	if homeStart < 0 {
+		t.Fatal("未找到首页渲染函数")
+	}
+	homeEnd := strings.Index(html[homeStart:], "let homeController")
+	if homeEnd < 0 {
+		t.Fatal("未找到首页渲染函数边界")
+	}
+	home := html[homeStart : homeStart+homeEnd]
+	if artwork, search := strings.Index(home, "home-feature"), strings.Index(home, "home-search"); artwork < 0 || search < 0 || artwork > search {
+		t.Fatal("首页没有把主打作品放在搜索框之前")
+	}
+}
+
+func TestMiniAppUsesSingleCinemaPaletteAndMotionFallback(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"--bg: #090a0c",
+		"--accent: #f05a4f",
+		"color: var(--accent-ink)",
+		"data-type=\"'+esc(v)+'\" onclick=\"setSearchType(this.dataset.type)\"",
+		"overflow-x: clip",
+		"@media (prefers-reduced-motion: reduce)",
+		`min-width: 320px`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Mini App 缺少视觉系统契约 %q", want)
+		}
+	}
+	for _, stale := range []string{"#e9ff5b", "radial-gradient", "--bg:#11100f"} {
+		if strings.Contains(html, stale) {
+			t.Fatalf("Mini App 仍包含旧视觉主题 %q", stale)
 		}
 	}
 }
