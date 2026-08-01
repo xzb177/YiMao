@@ -10,8 +10,8 @@
   --line: #2b2d33;
   --line-soft: #202228;
   --ink: #f4f2ef;
-  --muted: #aaa8a6;
-  --dim: #77777b;
+  --muted: #bbb8b5;
+  --dim: #949398;
   --accent: #f05a4f;
   --accent-strong: #ff7468;
   --accent-ink: #160807;
@@ -19,9 +19,15 @@
   --warning: #e8b35e;
   --danger: #ff756b;
   --shadow: 0 18px 44px rgba(0, 0, 0, .34);
-  --safe-top: max(env(safe-area-inset-top,0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
-  --safe-bottom: max(14px, env(safe-area-inset-bottom,0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
+  --glass: #1a1b20;
+  --glass-border: rgba(255, 255, 255, .14);
+  --glass-highlight: rgba(255, 255, 255, .1);
+  --safe-top: max(0px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
+  --safe-bottom: max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
   --safe:var(--safe-bottom);
+  --tab-height: 50px;
+  --tab-gap: 8px;
+  --tab-clearance: calc(var(--tab-height) + var(--safe-bottom) + var(--tab-gap) + 18px);
 }
 
 * {
@@ -90,22 +96,38 @@ img {
   max-width: 100%;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .shell {
   width: 100%;
   max-width: 760px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: var(--safe-top) 16px calc(94px + var(--safe-bottom));
+  padding: var(--safe-top) 16px var(--tab-clearance);
   overflow-x: clip;
 }
 
 .top {
-  position: relative;
-  z-index: 5;
-  height: 58px;
+  position: sticky;
+  z-index: 8;
+  top: var(--safe-top);
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  margin: 0 -8px;
+  padding: 0 8px;
+  border-bottom: 1px solid transparent;
+  background: var(--bg);
 }
 
 .brand {
@@ -119,8 +141,8 @@ img {
 }
 
 .mark {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   flex: none;
   display: grid;
   place-items: center;
@@ -138,190 +160,342 @@ img {
 }
 
 .avatar {
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   flex: none;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(255, 255, 255, .16);
+  padding: 0;
+  border: 1px solid var(--glass-border);
   border-radius: 50%;
-  background: rgba(11, 12, 14, .72);
+  background: var(--glass);
   color: var(--ink);
   font-size: 12px;
   font-weight: 750;
-  backdrop-filter: blur(14px);
 }
 
 .home-shell {
   position: relative;
-  padding-top: var(--safe-top);
 }
 
-.home-shell .top {
+.home-shell .top::after {
+  content: "";
   position: absolute;
-  top: var(--safe-top);
-  left: 16px;
-  right: 16px;
+  right: 8px;
+  bottom: 0;
+  left: 8px;
+  height: 1px;
+  background: var(--glass-highlight);
+  opacity: 0;
 }
 
-.home-shell .brand,
-.home-shell .avatar {
-  text-shadow: 0 1px 12px rgba(0, 0, 0, .8);
-}
-
-.home-shell .mark {
-  box-shadow: none;
-}
-
-.home-feature {
+.home-search {
   position: relative;
-  height: clamp(350px, 52dvh, 460px);
-  margin: 0 -16px;
-  overflow: hidden;
+  z-index: 6;
+  margin-top: 6px;
+  border-color: var(--line);
+  border-radius: 24px;
   background: var(--panel-strong);
-  isolation: isolate;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .18);
 }
 
-.feature {
+.home-search.search {
+  min-height: 46px;
+  padding: 0 1px 0 14px;
+}
+
+.home-search .search-submit {
+  width: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 3px;
+  border-radius: 50%;
+  background-clip: content-box;
+}
+
+.home-search .search-submit svg {
+  width: 18px;
+  height: 18px;
+}
+
+.featured-mosaic {
+  position: relative;
+  margin-top: 17px;
+  animation: surface-in .3s ease-out both;
+}
+
+.featured-heading {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+
+.featured-heading h1 {
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.25;
+  font-weight: 740;
+}
+
+.featured-heading span {
+  flex: none;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.featured-layout {
+  height: 164px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.58fr) minmax(104px, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.featured-primary,
+.featured-compact {
   position: relative;
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: block;
   padding: 0;
   overflow: hidden;
-  background: #18191d;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  background: var(--panel-strong);
+  box-shadow: 0 9px 22px rgba(0, 0, 0, .2), inset 0 1px 0 rgba(255, 255, 255, .07);
   text-align: left;
 }
 
-.feature::before {
+.featured-primary::after,
+.featured-compact::after {
   content: "";
   position: absolute;
   z-index: 1;
   inset: 0;
-  background: linear-gradient(180deg, rgba(7, 8, 10, .58) 0%, rgba(7, 8, 10, .04) 31%, rgba(7, 8, 10, .18) 54%, rgba(7, 8, 10, .96) 100%);
+  background: linear-gradient(180deg, rgba(9, 10, 12, .02) 28%, rgba(9, 10, 12, .94) 100%);
   pointer-events: none;
 }
 
-.feature::after {
-  content: "";
-  position: absolute;
-  z-index: 2;
-  left: 16px;
-  right: 16px;
-  bottom: 0;
-  height: 1px;
-  background: rgba(255, 255, 255, .12);
-  pointer-events: none;
-}
-
-.feature img {
+.featured-primary img,
+.featured-compact img {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
-  object-position: center 20%;
-  transform: scale(1.01);
-  animation: image-settle .55s ease-out both;
+  background: var(--panel-strong);
+  animation: image-settle .45s ease-out both;
 }
 
-.feature picture {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: flex-end;
-  background: #090a0c;
+.featured-primary img {
+  object-position: center 24%;
 }
 
-.feature picture img {
-  width: auto;
-  max-width: 82%;
-  object-fit: contain;
-  object-position: right top;
-  transform: none;
-}
-
-.feature-copy {
-  position: absolute;
-  z-index: 3;
-  left: 18px;
-  right: 18px;
-  bottom: 38px;
+.featured-stack {
+  min-width: 0;
+  min-height: 0;
   display: grid;
-  justify-items: start;
-}
-
-.feature-eyebrow,
-.kicker {
-  color: var(--accent-strong);
-  font-size: 11px;
-  line-height: 1.4;
-  font-weight: 720;
-}
-
-.feature h1,
-.feature h2 {
-  max-width: min(88%, 540px);
-  margin: 7px 0 8px;
-  color: #fff;
-  font-size: 31px;
-  line-height: 1.1;
-  font-weight: 780;
-  text-wrap: balance;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, .5);
-}
-
-.feature-meta {
-  max-width: min(86%, 520px);
-  display: flex;
-  align-items: center;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 8px;
-  color: rgba(255, 255, 255, .76);
-  font-size: 12px;
-  line-height: 1.4;
 }
 
-.feature-meta span + span::before {
-  content: "·";
-  margin-right: 8px;
-  color: rgba(255, 255, 255, .42);
+.featured-copy {
+  position: absolute;
+  z-index: 2;
+  right: 10px;
+  bottom: 9px;
+  left: 10px;
 }
 
-.feature-overview {
-  max-width: min(88%, 560px);
-  margin: 9px 0 0;
+.featured-copy h2,
+.featured-copy h3 {
+  margin: 0;
   overflow: hidden;
-  color: rgba(255, 255, 255, .82);
-  font-size: 13px;
-  line-height: 1.55;
+  color: #fff;
+  line-height: 1.2;
+  font-weight: 740;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .64);
+}
+
+.featured-copy h2 {
+  font-size: 18px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-.feature-cta {
-  position: absolute;
-  z-index: 3;
-  right: 17px;
-  bottom: 18px;
-  min-height: 34px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #fff;
+.featured-copy h3 {
   font-size: 12px;
-  font-weight: 680;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-.feature-cta svg {
-  width: 15px;
-  height: 15px;
-  fill: currentColor;
+.featured-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  color: rgba(255, 255, 255, .88);
+  font-size: 10px;
+  line-height: 1.4;
 }
 
-.home-search {
+.featured-meta span + span::before {
+  content: "·";
+  margin-right: 6px;
+  color: rgba(255, 255, 255, .54);
+}
+
+.featured-compact .featured-copy {
+  right: 8px;
+  bottom: 7px;
+  left: 8px;
+}
+
+.featured-fallback {
+  height: 100%;
+  display: grid;
+  align-content: end;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.feed-list {
+  display: grid;
+  border-top: 1px solid var(--line-soft);
+}
+
+.feed-row {
+  width: 100%;
+  min-height: 94px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  text-align: left;
+}
+
+.feed-poster {
   position: relative;
-  z-index: 4;
-  box-shadow: var(--shadow);
+  width: 56px;
+  height: 76px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 6px;
+  background: var(--panel-strong);
+}
+
+.feed-poster img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.feed-poster .feed-rank {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  min-width: 19px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: rgba(9, 10, 12, .84);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 760;
+  text-align: center;
+}
+
+.feed-poster .feed-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  padding: 7px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.feed-copy {
+  min-width: 0;
+}
+
+.feed-copy h3 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 680;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.feed-copy p {
+  margin: 5px 0 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.feed-score {
+  min-width: 34px;
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 720;
+  text-align: right;
+}
+
+.feed-score small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 560;
+}
+
+.wide-rail {
+  display: flex;
+  gap: 11px;
+  margin: 0 -16px;
+  padding: 0 16px 5px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 16px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.wide-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.wide-rail .media {
+  flex: 0 0 38%;
+}
+
+.wide-rail .media:nth-child(3n + 2) {
+  flex-basis: 46%;
 }
 
 .search {
@@ -359,7 +533,7 @@ img {
 
 .search input {
   min-width: 0;
-  min-height: 40px;
+  min-height: 44px;
   flex: 1;
   border: 0;
   background: transparent;
@@ -376,7 +550,7 @@ img {
 
 .search button,
 .primary {
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 16px;
   border-radius: 7px;
   background: var(--accent);
@@ -385,6 +559,13 @@ img {
   font-weight: 760;
   white-space: nowrap;
   transition: background .16s ease, transform .16s ease, opacity .16s ease;
+}
+
+.kicker {
+  color: var(--accent-strong);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 720;
 }
 
 .search button:hover,
@@ -423,8 +604,8 @@ img {
 
 .section-head span {
   flex: none;
-  color: var(--dim);
-  font-size: 11px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .rail,
@@ -542,7 +723,6 @@ img {
   background: rgba(9, 10, 12, .78);
   color: rgba(255, 255, 255, .84);
   font-size: 9px;
-  backdrop-filter: blur(7px);
 }
 
 .media:active .poster img {
@@ -556,8 +736,8 @@ img {
 
 .recent-head button,
 .refresh {
-  min-height: 36px;
-  padding: 0 4px;
+  min-height: 44px;
+  padding: 0 6px;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
@@ -588,7 +768,7 @@ img {
 .chip,
 .filter,
 .progress-tab {
-  min-height: 40px;
+  min-height: 44px;
   flex: none;
   padding: 0 13px;
   border: 1px solid var(--line);
@@ -655,6 +835,12 @@ img {
   color: var(--accent-strong);
   font-size: 14px;
   font-weight: 780;
+}
+
+.tool-glyph svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.8;
 }
 
 .tool-arrow {
@@ -756,9 +942,9 @@ img {
 }
 
 .history button {
-  min-height: 34px;
+  min-height: 44px;
   flex: none;
-  padding: 0 4px;
+  padding: 0 6px;
   background: transparent;
   color: var(--muted);
   font-size: 11px;
@@ -778,7 +964,7 @@ img {
 }
 
 .filter {
-  min-height: 35px;
+  min-height: 44px;
   border: 0;
   background: transparent;
 }
@@ -987,7 +1173,7 @@ img {
 .detail-actions {
   position: sticky;
   z-index: 4;
-  bottom: calc(66px + var(--safe-bottom));
+  bottom: calc(var(--tab-height) + var(--safe-bottom) + var(--tab-gap) + 10px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -995,9 +1181,8 @@ img {
   padding: 7px;
   border: 1px solid rgba(255, 255, 255, .07);
   border-radius: 8px;
-  background: rgba(15, 16, 19, .92);
+  background: #17181d;
   box-shadow: 0 14px 36px rgba(0, 0, 0, .34);
-  backdrop-filter: blur(18px);
 }
 
 .detail-actions .primary,
@@ -1096,7 +1281,7 @@ img {
 }
 
 .progress-tab {
-  min-height: 36px;
+  min-height: 44px;
 }
 
 .progress-tab.active {
@@ -1174,8 +1359,8 @@ img {
 }
 
 .cancel-request {
-  min-height: 28px;
-  padding: 0 7px;
+  min-height: 44px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: #1c1d22;
@@ -1781,8 +1966,7 @@ img {
   display: flex;
   align-items: flex-end;
   padding-top: var(--safe-top);
-  background: rgba(0, 0, 0, .66);
-  backdrop-filter: blur(10px);
+  background: rgba(0, 0, 0, .8);
   animation: veil-in .18s ease-out both;
 }
 
@@ -1857,65 +2041,65 @@ img {
 .bottom {
   position: fixed;
   z-index: 10;
-  right: auto;
-  bottom: 0;
   left: 50%;
-  width: min(100%, 1040px);
+  bottom: calc(var(--safe-bottom) + var(--tab-gap));
+  width: min(calc(100% - 20px), 410px);
   transform: translateX(-50%);
-  padding: 5px 12px calc(5px + var(--safe-bottom));
-  border-top: 1px solid rgba(255, 255, 255, .08);
-  background: rgba(11, 12, 15, .94);
-  backdrop-filter: blur(22px) saturate(120%);
+  padding: 2px;
+  border: 1px solid var(--glass-border);
+  border-radius: 17px;
+  background: var(--glass);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 26px rgba(0, 0, 0, .28);
 }
 
 .bottom nav {
   width: 100%;
-  max-width: 430px;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  margin: 0 auto;
 }
 
 .nav {
   min-width: 0;
-  min-height: 52px;
+  min-height: 44px;
   display: grid;
   place-items: center;
   align-content: center;
-  gap: 3px;
-  padding: 2px;
+  gap: 1px;
+  padding: 1px 2px;
+  border-radius: 14px;
   background: transparent;
-  color: #77787d;
+  color: #c0bec2;
   font-size: 10px;
 }
 
 .nav i {
-  width: 21px;
-  height: 21px;
+  width: 19px;
+  height: 19px;
   display: grid;
   place-items: center;
   font-style: normal;
 }
 
 .nav svg {
-  width: 20px;
-  height: 20px;
-  stroke-width: 1.8;
+  width: 18px;
+  height: 18px;
+  stroke-width: 1.7;
 }
 
 .nav.active {
+  background: rgba(240, 90, 79, .035);
   color: var(--accent-strong);
 }
 
 .nav.active i {
-  filter: drop-shadow(0 0 8px rgba(240, 90, 79, .32));
+  filter: none;
 }
 
 .toast {
   position: fixed;
   z-index: 40;
   left: 50%;
-  bottom: calc(78px + var(--safe-bottom));
+  bottom: calc(var(--tab-height) + var(--safe-bottom) + var(--tab-gap) + 14px);
   width: max-content;
   max-width: calc(100vw - 32px);
   padding: 10px 13px;
@@ -1977,6 +2161,32 @@ img {
   }
 }
 
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root {
+    --glass: rgba(24, 25, 30, .72);
+  }
+
+  .glass-surface {
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    backdrop-filter: blur(16px) saturate(120%);
+  }
+
+  .compact-top-bar {
+    background: rgba(9, 10, 12, .76);
+  }
+
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .glass-surface {
+    background: #1a1b20;
+  }
+
+  .compact-top-bar {
+    background: var(--bg);
+  }
+}
+
 @media (hover: hover) {
   .media:hover .poster img {
     transform: scale(1.025);
@@ -1991,50 +2201,33 @@ img {
 }
 
 @media (min-width: 600px) {
-  .feature picture {
-    display: block;
-  }
-
-  .feature picture img {
-    width: 100%;
-    max-width: none;
-    object-fit: cover;
-    object-position: center 20%;
-    transform: scale(1.01);
-  }
-
   .shell {
     padding-right: 28px;
     padding-left: 28px;
   }
 
-  .home-shell .top {
-    right: 28px;
-    left: 28px;
+  .featured-layout {
+    height: 218px;
+    grid-template-columns: minmax(0, 1.7fr) minmax(160px, .8fr);
   }
 
-  .home-feature,
+  .featured-copy h2 {
+    max-width: 75%;
+    font-size: 23px;
+  }
+
+  .featured-copy h3 {
+    font-size: 15px;
+  }
+
   .detail-hero {
     margin-right: -28px;
     margin-left: -28px;
   }
 
-  .home-feature {
-    height: 480px;
-  }
-
-  .feature-copy {
-    right: 28px;
-    left: 28px;
-  }
-
-  .feature h1,
-  .feature h2 {
-    font-size: 38px;
-  }
-
   .rail,
   .recent-rail,
+  .wide-rail,
   .chips,
   .history {
     margin-right: -28px;
@@ -2053,6 +2246,14 @@ img {
 
   .activity-section .rail {
     grid-auto-columns: 20%;
+  }
+
+  .wide-rail .media {
+    flex-basis: 24%;
+  }
+
+  .wide-rail .media:nth-child(3n + 2) {
+    flex-basis: 30%;
   }
 
   .grid {
@@ -2113,29 +2314,23 @@ img {
     padding-left: 12px;
   }
 
-  .home-shell .top {
-    right: 12px;
-    left: 12px;
-  }
-
-  .home-feature,
   .detail-hero {
     margin-right: -12px;
     margin-left: -12px;
   }
 
-  .feature-copy {
-    right: 14px;
-    left: 14px;
+  .featured-layout {
+    height: 156px;
+    grid-template-columns: minmax(0, 1.55fr) minmax(96px, 1fr);
   }
 
-  .feature h1,
-  .feature h2 {
-    font-size: 27px;
+  .featured-copy h2 {
+    font-size: 17px;
   }
 
   .rail,
   .recent-rail,
+  .wide-rail,
   .chips,
   .history {
     margin-right: -12px;
@@ -2146,6 +2341,16 @@ img {
 
   .rail {
     grid-auto-columns: 33%;
+  }
+
+  .feed-row {
+    grid-template-columns: 52px minmax(0, 1fr) auto;
+    gap: 9px;
+  }
+
+  .feed-poster {
+    width: 52px;
+    height: 72px;
   }
 
   .request {
@@ -2203,18 +2408,19 @@ function setDialogBusy(seq,busy){if(!isCurrentDialog(seq))return;D.dismissible=!
 function onDialogBackdrop(event){if(event.target===event.currentTarget&&D.dismissible)closeConfirm(D.seq)}
 function handleDialogKeys(event){const dialog=document.getElementById('confirm');if(!dialog)return;if(event.key==='Escape'){if(D.dismissible){event.preventDefault();closeConfirm(D.seq)}return}if(event.key!=='Tab')return;const items=dialogFocusables(dialog);if(!items.length){event.preventDefault();dialog.querySelector('.sheet')?.focus();return}const first=items[0],last=items.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}}
 document.addEventListener('keydown',handleDialogKeys);
-const icons={mark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z"/></svg>',home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',play:'<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg>'};
+const icons={mark:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 5h5v5H5zM14 5h5v5h-5zM5 14h5v5H5zM14 14h5v5h-5z"/></svg>',home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',play:'<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg>',game:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 8h8a5 5 0 0 1 4.6 7l-1 2.3a2.5 2.5 0 0 1-4.1.7l-1.2-1.2H9.7L8.5 18a2.5 2.5 0 0 1-4.1-.7l-1-2.3A5 5 0 0 1 8 8Z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/></svg>',wish:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.2 5.1 5.5.5-4.2 3.7 1.2 5.4-4.7-2.8-4.7 2.8 1.2-5.4-4.2-3.7 5.5-.5z"/></svg>',message:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 5h14v11H9l-4 3z"/><path d="M8 9h8M8 12h5"/></svg>'};
 function card(x){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${id(x)},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
+function feedCard(x,index){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'',summary=x.overview||((mt==='tv'?'这部剧':'这部电影')+'最近看的人不少');return `<button class="feed-row" onclick="openDetail(${Number(id(x))},'${mt}',${Number(x.season)||0})"><span class="feed-poster">${p?`<img loading="lazy" src="${esc(p)}" alt="">`:`<span class="feed-fallback">${esc(title(x))}</span>`}<span class="feed-rank">${index+1}</span></span><span class="feed-copy"><h3>${esc(title(x))}</h3><span class="meta">${esc(year(x)||'年份待定')} · ${mt==='tv'?'剧集':'电影'}</span><p>${esc(summary)}</p></span><span class="feed-score">${score?'★ '+score:'新'}<small>详情</small></span></button>`}
 function chrome(content,active=S.view){
 	const n=S.user?.first_name||'影迷',immersive=S.view==='adventure',isHome=S.view==='home'&&!S.detailVisible;
 	const shellClass='shell'+(isHome?' home-shell':'');
 	const current=v=>active===v?' aria-current="page"':'';
-	const nav=immersive?'':'<div class="bottom"><nav aria-label="主导航"><button class="nav '+(active==='home'?'active':'')+'"'+current('home')+' onclick="goHome()"><i>'+icons.home+'</i>发现</button><button class="nav '+(active==='search'?'active':'')+'"'+current('search')+' onclick="goSearch()"><i>'+icons.search+'</i>找片</button><button class="nav '+(active==='me'?'active':'')+'"'+current('me')+' onclick="goMe()"><i>'+icons.user+'</i>我的</button></nav></div>';
-	return '<main class="'+shellClass+'"><header class="top"><div class="brand"><span class="mark">云</span><span>云海影视</span></div><div class="avatar" aria-label="'+esc(n)+'">'+esc(n.slice(0,1))+'</div></header>'+content+'</main>'+nav;
+	const nav=immersive?'':'<div class="bottom glass-surface"><nav aria-label="主导航"><button class="nav '+(active==='home'?'active':'')+'"'+current('home')+' onclick="goHome()"><i>'+icons.home+'</i>发现</button><button class="nav '+(active==='search'?'active':'')+'"'+current('search')+' onclick="goSearch()"><i>'+icons.search+'</i>找片</button><button class="nav '+(active==='me'?'active':'')+'"'+current('me')+' onclick="goMe()"><i>'+icons.user+'</i>我的</button></nav></div>';
+	return '<main class="'+shellClass+'"><header class="top compact-top-bar glass-surface"><div class="brand"><span class="mark" aria-hidden="true">云</span><span>云海影视</span></div><button class="avatar" aria-label="打开我的" onclick="goMe()">'+esc(n.slice(0,1))+'</button></header>'+content+'</main>'+nav;
 }
 function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view)}
 function dynamicSections(){
-	const d=S.dynamic,sections=[['recently_added','新入云海','最近入库'],['just_available','刚刚可看','已经到库'],['recent_requests','最近求片','片友动态']];
+	const d=S.dynamic,sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
 	return sections.map(([key,label,hint])=>d[key]?.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+d[key].map(card).join('')+'</div></section>':'').join('');
 }
 function recentSection(){
@@ -2224,30 +2430,32 @@ function recentSection(){
 function homeDiscoverError(){
 	if(!S.discoverError)return'';
 	const action=S.discoverAuthError?'<button class="primary" onclick="closeExpiredSession()">关闭 Mini App</button>':'<button class="primary" onclick="loadHome()">重新加载</button>';
-	return '<div class="empty discover-error"><strong>'+(S.discoverAuthError?'会话已经过期':'片单暂时没加载出来')+'</strong><p class="detail-copy">'+esc(S.discoverError)+'</p>'+action+'</div>';
+	return '<div class="empty discover-error" role="alert"><strong>'+(S.discoverAuthError?'会话已经过期':'片单暂时没加载出来')+'</strong><p class="detail-copy">'+esc(S.discoverError)+'</p>'+action+'</div>';
 }
 function home(){
-	const d=S.discover,lead=d.featured?.[0],movies=d.movies||[],tv=d.tv||[];
-	const loadingPosters=Array(5).fill('<div class="poster skeleton" aria-hidden="true"></div>').join('');
-	const rail=(heading,hint,items)=>items.length||S.discoverLoading?'<section class="section"><div class="section-head"><h2>'+heading+'</h2><span>'+hint+'</span></div><div class="rail">'+(items.length?items.map(card).join(''):loadingPosters)+'</div></section>':'';
-	let feature='';
+	const d=S.discover,movies=d.movies||[],tv=d.tv||[],lead=d.featured?.[0]||movies[0]||tv[0];
+	const sameMedia=(a,b)=>Number(id(a))===Number(id(b))&&type(a)===type(b);
+	const sidePicks=[...movies,...tv].filter(x=>lead&&!sameMedia(x,lead)).slice(0,2);
+	const loadingFeed=Array(4).fill('<div class="feed-row" aria-hidden="true"><span class="feed-poster skeleton"></span><span><span class="skeleton" style="display:block;height:14px;width:62%;margin-bottom:9px"></span><span class="skeleton" style="display:block;height:28px"></span></span></div>').join('');
+	const compact=x=>{if(!x)return'<div class="featured-compact"><div class="featured-fallback">再挑一部</div></div>';const p=img(x.poster_path||x.backdrop_path),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="featured-compact" aria-label="查看 '+esc(title(x))+' 详情" onclick="openDetail('+Number(id(x))+',\''+mt+'\')">'+(p?'<img loading="lazy" src="'+esc(p)+'" alt="" onerror="this.remove()">':'')+'<span class="featured-copy"><h3>'+esc(title(x))+'</h3></span></button>'};
+	let featured='';
 	if(lead){
 		const leadType=type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie';
-		const action='openDetail('+Number(id(lead))+','+js(leadType)+')';
 		const artwork=img(lead.backdrop_path||lead.poster_path).replace('/w780','/w1280');
-		const mobileArtwork=img(lead.poster_path||lead.backdrop_path);
 		const score=lead.vote_average?Number(lead.vote_average).toFixed(1):'';
 		const meta=[year(lead),score?'评分 '+score:''].filter(Boolean).map(v=>'<span>'+esc(v)+'</span>').join('');
-		feature='<section class="home-feature"><button class="feature" aria-label="查看 '+esc(title(lead))+' 详情" onclick="'+esc(action)+'">'+(artwork?'<picture><source media="(max-width: 599px)" srcset="'+esc(mobileArtwork)+'"><img src="'+esc(artwork)+'" alt="'+esc(title(lead))+'" onerror="this.closest(\'picture\')?.remove()"></picture>':'')+'<div class="feature-copy"><div class="feature-eyebrow">本周热看</div><h1>'+esc(title(lead))+'</h1><div class="feature-meta">'+meta+'</div>'+(lead.overview?'<p class="feature-overview">'+esc(lead.overview)+'</p>':'')+'</div><span class="feature-cta">'+icons.play+' 查看详情</span></button></section>';
+		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><div class="featured-layout"><button class="featured-primary" aria-label="查看 '+esc(title(lead))+' 详情" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\')">'+(artwork?'<img src="'+esc(artwork)+'" alt="" onerror="this.remove()">':'')+'<span class="featured-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button><div class="featured-stack">'+compact(sidePicks[0])+compact(sidePicks[1])+'</div></div></section>';
 	}else if(S.discoverLoading){
-		feature='<section class="home-feature skeleton" aria-label="正在加载本周热看"></section>';
+		featured='<section class="featured-mosaic" aria-busy="true" aria-label="正在加载精选片单"><div class="featured-heading"><h1>今日精选</h1></div><div class="featured-layout"><div class="featured-primary skeleton"></div><div class="featured-stack"><div class="featured-compact skeleton"></div><div class="featured-compact skeleton"></div></div></div></section>';
 	}else{
-		feature='<section class="home-feature"><div class="feature feature-fallback"><div class="feature-copy"><div class="feature-eyebrow">云海影视</div><h1>片单正在重新亮起</h1></div></div></section>';
+		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1></div><div class="featured-layout"><div class="featured-primary"><div class="featured-fallback">片单还没回来，先搜一部想看的。</div></div><div class="featured-stack"><div class="featured-compact"></div><div class="featured-compact"></div></div></div></section>';
 	}
-	const search='<form class="search home-search" role="search" aria-label="搜索影视" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="搜电影、剧集或演员"><button>搜索</button></form>';
+	const search='<form class="search home-search" role="search" aria-label="搜索影视" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="搜片名、剧集或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'<span class="sr-only">搜索</span></button></form>';
 	const genres=['科幻','悬疑','喜剧','动画','犯罪','纪录片'].map(x=>'<button class="chip" data-query="'+esc(x)+'" onclick="quick(this.dataset.query)">'+x+'</button>').join('');
-	const tools='<section class="section home-tools"><div class="section-head"><h2>换种方式找片</h2><span>工具与玩法</span></div><div class="tool-list"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">幕</span><span><strong>电影大冒险</strong><small>走进剧情，通关后求片</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">愿</span><span><strong>许愿池</strong><small>让云海继续寻找稀缺资源</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">报</span><span><strong>问题反馈</strong><small>查看处理状态与回复</small></span><span class="tool-arrow">›</span></button></div></section>';
-	return feature+search+homeDiscoverError()+rail('热门电影','本周趋势',movies)+rail('热播剧集','正在播出',tv)+recentSection()+dynamicSections()+'<section class="section"><div class="section-head"><h2>按口味找</h2><span>类型</span></div><div class="chips">'+genres+'</div></section>'+tools;
+	const popular=movies.length||S.discoverLoading?'<section class="section home-feed"><div class="section-head"><h2>热门电影</h2><span>最近大家在看</span></div><div class="feed-list">'+(movies.length?movies.slice(0,6).map(feedCard).join(''):loadingFeed)+'</div></section>':'';
+	const shows=tv.length||S.discoverLoading?'<section class="section"><div class="section-head"><h2>正在热播</h2><span>挑一部追起来</span></div><div class="wide-rail">'+(tv.length?tv.map(card).join(''):Array(4).fill('<div class="poster skeleton" aria-hidden="true" style="flex:0 0 38%"></div>').join(''))+'</div></section>':'';
+	const tools='<section class="section home-tools"><div class="section-head"><h2>还能这么找</h2><span>换个玩法</span></div><div class="tool-list"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩五关剧情，通关后直接求片</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>没找到的片，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放有问题，来看看处理进度</small></span><span class="tool-arrow">›</span></button></div></section>';
+	return search+homeDiscoverError()+featured+popular+shows+recentSection()+dynamicSections()+'<section class="section"><div class="section-head"><h2>按类型挑</h2><span>随便逛逛</span></div><div class="chips">'+genres+'</div></section>'+tools;
 }
 let homeController=null;
 async function loadHome(){homeController?.abort();const controller=new AbortController();homeController=controller;S.discoverLoading=true;S.discoverError='';S.discoverAuthError=false;if(S.view==='home')render();try{const d=await api('/api/miniapp/v1/discover',{signal:controller.signal});if(homeController!==controller)return;S.discover=d;localStorage.setItem('yunhai_discover_cache',JSON.stringify(d))}catch(e){if(e?.name==='AbortError'||homeController!==controller)return;S.discoverError=e.message||'网络连接不稳定，请稍后再试';S.discoverAuthError=e.status===401||e.status===403}finally{if(homeController===controller){homeController=null;S.discoverLoading=false;if(S.view==='home')render()}}}
@@ -2288,7 +2496,15 @@ function openCancel(requestID,title,kind='求片'){const wash=kind==='洗版工�
 async function cancelRequest(button){if(button.disabled)return;const ctx=dialogContext();if(!ctx)return;const requestID=button.dataset.id,wash=button.dataset.wash==='1';button.disabled=true;button.textContent='正在撤回…';setDialogBusy(ctx.seq,true);try{const d=await api('/api/miniapp/v1/request/cancel',{method:'POST',signal:ctx.signal,body:JSON.stringify({request_id:requestID})});if(!isCurrentDialog(ctx.seq))return;closeConfirm(ctx.seq);tg?.HapticFeedback?.notificationOccurred?.('success');toast(wash?'洗版工单已撤回':d.quota_restored?'已撤回，配额已返还':'已撤回，配额返还待处理');await goMe(true)}catch(e){if(e?.name==='AbortError'||!isCurrentDialog(ctx.seq))return;setDialogBusy(ctx.seq,false);button.disabled=false;button.textContent='确认撤回';toast(e.message||'撤回失败')}}
 function leaveDetail(){S.detailSeq++;S.detailVisible=false;syncNativeBack()}
 function goHome(){leaveDetail();S.view='home';render();requestAnimationFrame(()=>window.scrollTo(0,S.scroll.home||0))}function goSearch(){leaveDetail();S.view='search';render();requestAnimationFrame(()=>window.scrollTo(0,S.scroll.search||0));if(!S.results.length)setTimeout(()=>document.getElementById('q')?.focus(),50)}async function goMe(silent=false){leaveDetail();S.view='me';syncNativeBack();const seq=++S.meSeq;if(!silent){S.me=null;S.meError='';S.watchError='';render()}const [me,watch]=await Promise.allSettled([api('/api/miniapp/v1/me'),api('/api/miniapp/v1/watchlist')]);if(seq!==S.meSeq||S.view!=='me')return;if(me.status==='fulfilled'){S.me=me.value;S.meError='';S.lastMeRefresh=Date.now()}else{S.meError=me.reason?.message||'求片进度暂时无法加载';if(!silent)toast(S.meError)}if(watch.status==='fulfilled'){S.watchlist=watch.value.items||[];S.watchError=''}else{S.watchError=watch.reason?.message||'想看片单暂时没加载出来';if(!silent)toast(S.watchError)}render()}function setProgressType(v){S.progressType=v;render()}
-function resetSearchPage(){S.page=1;S.nextPage=2;S.hasMore=false;S.results=[]}function quick(q){S.query=q;S.view='search';resetSearchPage();rememberSearch(q);render();doSearch(false,1)}function submitSearch(e){e.preventDefault();S.query=document.getElementById('q').value.trim();if(!S.query)return;S.view='search';resetSearchPage();rememberSearch(S.query);render();doSearch(false,1)}function setSearchType(v){S.searchType=v;if(S.query){resetSearchPage();doSearch(false,1)}else render()}function rememberSearch(q){S.history=[q,...S.history.filter(x=>x!==q)].slice(0,5);localStorage.setItem('yunhai_search_history',JSON.stringify(S.history))}function clearHistory(){S.history=[];localStorage.removeItem('yunhai_search_history');render()}function clearRecent(){S.recent=[];localStorage.removeItem('yunhai_recent_views');render()}function rememberView(x){const item={tmdb_id:id(x),type:x.type||type(x),title:x.title||title(x),year:x.year||year(x),poster_path:x.poster_path||x.poster,vote_average:x.vote_average||0,season:x.type==='tv'?S.season:0};S.recent=[item,...S.recent.filter(y=>!(id(y)===item.tmdb_id&&type(y)===item.type))].slice(0,12);localStorage.setItem('yunhai_recent_views',JSON.stringify(S.recent))}function saveSearchState(){localStorage.setItem('yunhai_search_query',S.query);localStorage.setItem('yunhai_search_page',String(S.page));localStorage.setItem('yunhai_search_more',S.hasMore?'1':'0');localStorage.setItem('yunhai_search_type',S.searchType);localStorage.setItem('yunhai_search_results',JSON.stringify(S.results));localStorage.setItem('yunhai_search_scroll',String(S.scroll.search||0))}function loadMore(){if(!S.loading&&S.hasMore)doSearch(true,S.nextPage)}async function doSearch(append,targetPage=1){if(!S.query)return;const seq=++S.searchSeq;S.loading=true;render();try{const f=S.searchType==='all'?'':'&type='+S.searchType,d=await api('/api/miniapp/v1/search?q='+encodeURIComponent(S.query)+'&page='+targetPage+f);if(seq!==S.searchSeq)return;S.results=append?[...S.results,...(d.results||[])]:d.results||[];S.page=Number(d.page)||targetPage;S.nextPage=Number(d.next_page)||S.page+1;S.hasMore=!!d.has_more}catch(e){if(seq!==S.searchSeq)return;if(!append){S.results=[];S.hasMore=false}toast(e.message||'搜索暂时不可用')}finally{if(seq===S.searchSeq){S.loading=false;saveSearchState();render()}}}
+let searchController=null;
+function cancelSearch(){searchController?.abort();searchController=null;S.searchSeq++;S.loading=false}
+function resetSearchPage(){S.page=1;S.nextPage=2;S.hasMore=false;S.results=[]}
+function quick(q){S.query=q;S.view='search';resetSearchPage();rememberSearch(q);render();doSearch(false,1)}
+function submitSearch(e){e.preventDefault();const query=document.getElementById('q').value.trim();if(!query){cancelSearch();S.query='';resetSearchPage();render();return}S.query=query;S.view='search';resetSearchPage();rememberSearch(S.query);render();doSearch(false,1)}
+function setSearchType(v){S.searchType=v;if(S.query){resetSearchPage();doSearch(false,1)}else{cancelSearch();render()}}
+function rememberSearch(q){S.history=[q,...S.history.filter(x=>x!==q)].slice(0,5);localStorage.setItem('yunhai_search_history',JSON.stringify(S.history))}function clearHistory(){S.history=[];localStorage.removeItem('yunhai_search_history');render()}function clearRecent(){S.recent=[];localStorage.removeItem('yunhai_recent_views');render()}function rememberView(x){const item={tmdb_id:id(x),type:x.type||type(x),title:x.title||title(x),year:x.year||year(x),poster_path:x.poster_path||x.poster,vote_average:x.vote_average||0,season:x.type==='tv'?S.season:0};S.recent=[item,...S.recent.filter(y=>!(id(y)===item.tmdb_id&&type(y)===item.type))].slice(0,12);localStorage.setItem('yunhai_recent_views',JSON.stringify(S.recent))}function saveSearchState(){localStorage.setItem('yunhai_search_query',S.query);localStorage.setItem('yunhai_search_page',String(S.page));localStorage.setItem('yunhai_search_more',S.hasMore?'1':'0');localStorage.setItem('yunhai_search_type',S.searchType);localStorage.setItem('yunhai_search_results',JSON.stringify(S.results));localStorage.setItem('yunhai_search_scroll',String(S.scroll.search||0))}
+function loadMore(){if(!S.loading&&S.hasMore){const request={query:S.query,type:S.searchType,page:S.nextPage};doSearch(true,request.page,request)}}
+async function doSearch(append,targetPage=1,request=null){if(!S.query)return;searchController?.abort();const controller=new AbortController();searchController=controller;const seq=++S.searchSeq,current=request||{query:S.query,type:S.searchType,page:targetPage};S.loading=true;render();try{const f=current.type==='all'?'':'&type='+encodeURIComponent(current.type),d=await api('/api/miniapp/v1/search?q='+encodeURIComponent(current.query)+'&page='+current.page+f,{signal:controller.signal});if(seq!==S.searchSeq||searchController!==controller||S.query!==current.query||S.searchType!==current.type)return;S.results=append?[...S.results,...(d.results||[])]:d.results||[];S.page=Number(d.page)||current.page;S.nextPage=Number(d.next_page)||S.page+1;S.hasMore=!!d.has_more}catch(e){if(e?.name==='AbortError'||seq!==S.searchSeq||searchController!==controller)return;if(!append){S.results=[];S.hasMore=false}toast(e.message||'搜索暂时不可用')}finally{if(seq===S.searchSeq&&searchController===controller&&S.query===current.query&&S.searchType===current.type){searchController=null;S.loading=false;saveSearchState();render()}}}
 async function openDetail(mid,mt,wantedSeason=0){if(!mid)return;S.detailError=null;S.scroll[S.view]=window.scrollY;if(S.view==='search'){localStorage.setItem('yunhai_search_scroll',String(S.scroll.search));saveSearchState()}const seq=++S.detailSeq;S.detailFrom=S.view;S.season=0;S.detailVisible=true;showDetailSkeleton();try{const seasonParam=mt==='tv'&&Number(wantedSeason)>0?'&season='+encodeURIComponent(Number(wantedSeason)):'';const detail=await api(`/api/miniapp/v1/detail?id=${mid}&type=${mt}${seasonParam}`);if(seq!==S.detailSeq)return;if(mt==='tv'&&detail.seasons?.length){const allowed=detail.seasons.some(s=>s.number===Number(wantedSeason));S.season=allowed?Number(wantedSeason):detail.seasons[0].number;detail.media_status=detail.seasons.find(s=>s.number===S.season)?.status||{code:'unknown',text:'暂时无法确认'}}S.detail=detail;rememberView(detail);showDetail()}catch(e){if(seq===S.detailSeq){S.detailError={mid,mt,season:wantedSeason,message:'详情暂时没加载出来'};showDetailError()}}}
 function showDetailError(){const e=S.detailError;showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="empty" style="margin-top:32px"><strong>${esc(e.message)}</strong><p class="detail-copy">上游响应有点慢，不影响其他页面。</p><button class="primary" onclick="openDetail(${e.mid},'${e.mt}',${e.season})">重新加载</button></div></section>`,S.detailFrom)}
 function showDetailSkeleton(){showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="detail-hero skeleton"></div><div class="poster skeleton" style="height:44px;aspect-ratio:auto;margin:12px 0"></div><div class="poster skeleton" style="height:90px;aspect-ratio:auto"></div><div class="detail-actions"><button class="primary" disabled>正在加载详情…</button><button class="watch-action" disabled>加入想看</button><button class="share" disabled>分享</button></div></section>`,S.detailFrom)}

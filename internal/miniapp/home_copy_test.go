@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// TestHomeStartsWithArtworkAndFeaturedTitle 验证首页首屏由真实内容主导，而不是说明性开场。
-func TestHomeStartsWithArtworkAndFeaturedTitle(t *testing.T) {
+// TestHomeUsesAppFirstDiscoveryLayout 验证首页采用紧凑、可扫描的 App 布局，而不是网页 Hero 模板。
+func TestHomeUsesAppFirstDiscoveryLayout(t *testing.T) {
 	page, err := os.ReadFile("web/index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -16,24 +16,35 @@ func TestHomeStartsWithArtworkAndFeaturedTitle(t *testing.T) {
 	html := string(page)
 	for _, want := range []string{
 		"lead.backdrop_path||lead.poster_path",
-		`<section class="home-feature">`,
-		"本周热看",
-		"查看详情",
+		`class="top compact-top-bar glass-surface"`,
 		`class="search home-search"`,
-		"搜电影、剧集或演员",
+		`<section class="featured-mosaic"`,
+		`class="featured-primary"`,
+		`class="featured-stack"`,
+		"grid-template-rows: minmax(0, 1fr)",
+		`class="feed-list"`,
+		`class="wide-rail"`,
+		"function feedCard(x,index)",
+		"今日精选",
+		"搜片名、剧集或演员",
 	} {
 		if !strings.Contains(html, want) {
-			t.Fatalf("首页缺少内容主导的首屏契约 %q", want)
+			t.Fatalf("首页缺少 App-first 发现页契约 %q", want)
 		}
 	}
 	for _, stale := range []string{
+		`class="home-feature"`,
+		`class="feature"`,
+		"rail('热门电影'",
+		"本周热看",
+		"大家最近在看",
 		"今晚看什么？",
 		"先逛逛热门，也可以直接搜片名。",
 		"想看的，<br>交给云海。",
 		"找到今晚真正想看的故事",
 	} {
 		if strings.Contains(html, stale) {
-			t.Fatalf("首页仍包含旧口号 %q", stale)
+			t.Fatalf("首页仍包含旧 Hero 模板或旧口号 %q", stale)
 		}
 	}
 
@@ -46,12 +57,12 @@ func TestHomeStartsWithArtworkAndFeaturedTitle(t *testing.T) {
 		t.Fatal("未找到首页渲染函数边界")
 	}
 	home := html[homeStart : homeStart+homeEnd]
-	if artwork, search := strings.Index(home, "home-feature"), strings.Index(home, "home-search"); artwork < 0 || search < 0 || artwork > search {
-		t.Fatal("首页没有把主打作品放在搜索框之前")
+	if !strings.Contains(home, "return search+homeDiscoverError()+featured+popular+shows") {
+		t.Fatal("首页没有按顶部搜索、非对称精选、纵向热门列表的顺序渲染")
 	}
 }
 
-func TestMiniAppUsesSingleCinemaPaletteAndMotionFallback(t *testing.T) {
+func TestMiniAppUsesNeutralCinemaPaletteAndMotionFallback(t *testing.T) {
 	page, err := os.ReadFile("web/index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +88,61 @@ func TestMiniAppUsesSingleCinemaPaletteAndMotionFallback(t *testing.T) {
 	}
 }
 
+func TestMiniAppUsesReadableLiquidGlassWithFallback(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"--glass: #1a1b20",
+		"--glass-border: rgba(255, 255, 255, .14)",
+		"--glass-highlight: rgba(255, 255, 255, .1)",
+		"box-shadow: inset 0 1px 0 var(--glass-highlight)",
+		"@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
+		"@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
+		"-webkit-backdrop-filter: blur(16px) saturate(120%)",
+		"backdrop-filter: blur(16px) saturate(120%)",
+		`class="top compact-top-bar glass-surface"`,
+		`class="bottom glass-surface"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Mini App 缺少克制的 Liquid Glass 契约 %q", want)
+		}
+	}
+	for _, contentSurface := range []string{`class="search home-search glass-surface"`, ".avatar,\n  .detail-actions", ".type-badge,\n  .confirm"} {
+		if strings.Contains(html, contentSurface) {
+			t.Fatalf("Glass 不应进入内容表面 %q", contentSurface)
+		}
+	}
+}
+
+func TestAppShellReservesTabBarSpaceAndAccessibleTargets(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"--tab-height: 50px",
+		"--tab-clearance: calc(var(--tab-height) + var(--safe-bottom) + var(--tab-gap) + 18px)",
+		"padding: var(--safe-top) 16px var(--tab-clearance)",
+		"bottom: calc(var(--safe-bottom) + var(--tab-gap))",
+		`class="bottom glass-surface"`,
+		`class="avatar" aria-label="打开我的"`,
+		`class="search-submit" aria-label="搜索"`,
+		`aria-current="page"`,
+		`role="alert"`,
+		`aria-busy="true"`,
+		".search input {\n  min-width: 0;\n  min-height: 44px",
+		"min-height: 44px",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("App shell 缺少底栏留白或无障碍契约 %q", want)
+		}
+	}
+}
+
 // TestMePagePersistsSectionErrors 验证“我的”页面失败后展示分区内联错误，而不是只弹短暂提示。
 func TestMePagePersistsSectionErrors(t *testing.T) {
 	page, err := os.ReadFile("web/index.html")
@@ -98,8 +164,8 @@ func TestSearchLoadMoreCommitsPageOnlyAfterSuccess(t *testing.T) {
 	}
 	html := string(page)
 	for _, want := range []string{
-		"function loadMore(){if(!S.loading&&S.hasMore)doSearch(true,S.nextPage)",
-		"S.page=Number(d.page)||targetPage",
+		"function loadMore(){if(!S.loading&&S.hasMore){const request={query:S.query,type:S.searchType,page:S.nextPage}",
+		"S.page=Number(d.page)||current.page",
 		"S.nextPage=Number(d.next_page)||S.page+1",
 	} {
 		if !strings.Contains(html, want) {
@@ -108,6 +174,27 @@ func TestSearchLoadMoreCommitsPageOnlyAfterSuccess(t *testing.T) {
 	}
 	if strings.Contains(html, "S.page++;doSearch(true)") {
 		t.Fatal("加载更多仍会在请求成功前推进页码")
+	}
+}
+
+func TestSearchAbortsAndScopesEveryRequest(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"let searchController=null",
+		"searchController?.abort()",
+		"searchController=controller",
+		"{query:S.query,type:S.searchType,page:targetPage}",
+		"{signal:controller.signal}",
+		"e?.name==='AbortError'",
+		"S.query!==current.query||S.searchType!==current.type",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("搜索请求缺少取消或请求快照契约 %q", want)
+		}
 	}
 }
 
@@ -164,8 +251,8 @@ func TestMiniAppUsesTelegramAndBrowserSafeAreas(t *testing.T) {
 	for _, want := range []string{
 		"--tg-safe-area-inset-top",
 		"--tg-content-safe-area-inset-top",
-		"env(safe-area-inset-top,0px)",
-		"env(safe-area-inset-bottom,0px)",
+		"env(safe-area-inset-top, 0px)",
+		"env(safe-area-inset-bottom, 0px)",
 		"--safe:var(--safe-bottom)",
 	} {
 		if !strings.Contains(html, want) {
