@@ -290,17 +290,72 @@ img {
   pointer-events: none;
 }
 
-.featured-primary img,
-.featured-compact img {
-  width: 100%;
-  height: 100%;
-  display: block;
-  object-fit: cover;
+.featured-media {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
   background: var(--panel-strong);
 }
 
-.featured-primary img {
-  object-position: center 24%;
+.featured-media img {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.featured-media .featured-ambient {
+  inset: -14%;
+  width: 128%;
+  height: 128%;
+  object-fit: cover;
+  filter: blur(15px) saturate(1.08) brightness(.78);
+  opacity: 0;
+  transform: scale(1.06);
+}
+
+.featured-media .featured-subject {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: var(--featured-focus-x, 50%) var(--featured-focus-y, 42%);
+  background: var(--panel-strong);
+  transition: opacity .18s ease;
+}
+
+.featured-media.is-portrait {
+  background: #111216;
+}
+
+.featured-media.is-portrait .featured-ambient {
+  opacity: .78;
+}
+
+.featured-media.is-portrait .featured-subject {
+  inset: 4px 4px 4px 10%;
+  width: calc(90% - 8px);
+  height: calc(100% - 8px);
+  object-fit: contain;
+  filter: drop-shadow(0 5px 13px rgba(0, 0, 0, .42));
+}
+
+.featured-media.is-landscape .featured-ambient {
+  display: none;
+}
+
+.featured-media.is-error {
+  display: none;
+}
+
+.featured-media + .featured-fallback {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+}
+
+.featured-media.is-error + .featured-fallback {
+  visibility: visible;
 }
 
 .featured-stack {
@@ -483,7 +538,7 @@ img {
   display: flex;
   gap: 11px;
   margin: 0 -16px;
-  padding: 0 16px 5px;
+  padding: 7px 16px 10px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-padding-inline: 16px;
@@ -629,7 +684,7 @@ img {
   grid-auto-columns: 34%;
   gap: 11px;
   margin: 0 -16px;
-  padding: 0 16px 5px;
+  padding: 7px 16px 10px;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
   scroll-padding-inline: 16px;
@@ -652,6 +707,27 @@ img {
   background: transparent;
   text-align: left;
   scroll-snap-align: start;
+}
+
+.focus-rail .media {
+  --rail-focus: 0;
+  position: relative;
+  z-index: 1;
+  opacity: calc(.72 + var(--rail-focus) * .28);
+  filter: saturate(calc(.76 + var(--rail-focus) * .24));
+  transform: scale(calc(.95 + var(--rail-focus) * .09));
+  transform-origin: center bottom;
+  transition: transform .24s cubic-bezier(.2, .8, .2, 1), opacity .2s ease, filter .2s ease;
+  will-change: transform;
+}
+
+.focus-rail .media.is-rail-active {
+  z-index: 2;
+}
+
+.focus-rail .media.is-rail-active .poster {
+  border-color: rgba(255, 255, 255, .17);
+  box-shadow: 0 13px 32px rgba(0, 0, 0, .38);
 }
 
 .poster {
@@ -2442,6 +2518,12 @@ img {
   .media:hover .poster img {
     transform: none;
   }
+
+  .focus-rail .media {
+    opacity: 1;
+    filter: none;
+    transform: none;
+  }
 }
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
@@ -2481,7 +2563,19 @@ function chrome(content,active=S.view,motion=''){
 	const nav=immersive?'':'<div class="bottom glass-surface"><nav'+tabClass+' aria-label="主导航"><button class="nav '+(active==='home'?'active':'')+'"'+current('home')+' onclick="goHome()"><i>'+icons.home+'</i>发现</button><button class="nav '+(active==='search'?'active':'')+'"'+current('search')+' onclick="goSearch()"><i>'+icons.search+'</i>找片</button><button class="nav '+(active==='me'?'active':'')+'"'+current('me')+' onclick="goMe()"><i>'+icons.user+'</i>我的</button></nav></div>';
 	return '<main class="'+shellClass+'">'+appBar+view+'</main>'+nav;
 }
-function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();const motion=S.rootMotion;S.rootMotion='';document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view,motion)}
+let railInitFrame=0,railResizeFrame=0;
+const railMotionQuery=window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const railFocusStates=new WeakMap();
+function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();const motion=S.rootMotion;S.rootMotion='';document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view,motion);if(railInitFrame)cancelAnimationFrame(railInitFrame);railInitFrame=requestAnimationFrame(()=>{railInitFrame=0;initRailFocus()})}
+function updateRailFocus(rail){const cards=[...rail.querySelectorAll(':scope > .media')];if(!cards.length)return;const box=rail.getBoundingClientRect(),anchor=box.left+Math.min(82,box.width*.22),span=Math.max(96,box.width*.38);let active=cards[0],best=Infinity;for(const card of cards){const rect=card.getBoundingClientRect(),distance=Math.abs(rect.left+rect.width/2-anchor),focus=Math.max(0,1-distance/span);card.style.setProperty('--rail-focus',focus.toFixed(3));if(distance<best){best=distance;active=card}}for(const card of cards)card.classList.toggle('is-rail-active',card===active);active.style.setProperty('--rail-focus','1')}
+function initRailFocus(){if(railMotionQuery?.matches)return;document.querySelectorAll('.rail,.wide-rail,.recent-rail').forEach(rail=>{if(railFocusStates.has(rail))return;rail.dataset.focusReady='1';rail.classList.add('focus-rail');const state={frame:0,scroll:null};const update=()=>{state.frame=0;if(rail.isConnected&&!railMotionQuery?.matches)updateRailFocus(rail)};state.scroll=()=>{if(!state.frame&&!railMotionQuery?.matches)state.frame=requestAnimationFrame(update)};railFocusStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true});update()})}
+function clearRailFocus(rail){const state=railFocusStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);railFocusStates.delete(rail)}rail.classList.remove('focus-rail');rail.removeAttribute('data-focus-ready');rail.querySelectorAll(':scope > .media').forEach(card=>{card.style.removeProperty('--rail-focus');card.classList.remove('is-rail-active')})}
+function refreshRailFocus(){if(railResizeFrame)cancelAnimationFrame(railResizeFrame);railResizeFrame=requestAnimationFrame(()=>{railResizeFrame=0;if(!railMotionQuery?.matches)document.querySelectorAll('.focus-rail').forEach(updateRailFocus)})}
+window.addEventListener('resize',refreshRailFocus,{passive:true});
+railMotionQuery?.addEventListener?.('change',()=>{if(railMotionQuery.matches){if(railInitFrame){cancelAnimationFrame(railInitFrame);railInitFrame=0}if(railResizeFrame){cancelAnimationFrame(railResizeFrame);railResizeFrame=0}document.querySelectorAll('.focus-rail').forEach(clearRailFocus)}else initRailFocus()});
+function featuredArtwork(src,label){if(!src)return'<span class="featured-fallback" aria-hidden="true"></span>';return'<span class="featured-media" data-featured-media><img class="featured-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-subject" src="'+esc(src)+'" alt="" onload="prepareFeaturedImage(this)" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true"></span>'}
+function featuredImageError(image){const media=image?.closest?.('[data-featured-media]');if(!media)return;media.classList.add('is-error');media.closest('button')?.classList.add('has-artwork-error')}
+function prepareFeaturedImage(image){const media=image?.closest?.('[data-featured-media]');if(!media||!image.naturalWidth||!image.naturalHeight)return;const ratio=image.naturalWidth/image.naturalHeight,portrait=ratio<.9,focus={x:50,y:portrait?36:42};media.classList.remove('is-error');media.classList.toggle('is-portrait',portrait);media.classList.toggle('is-landscape',!portrait);media.dataset.artworkMode=portrait?'portrait':'landscape';media.dataset.focusX=String(focus.x);media.dataset.focusY=String(focus.y);media.style.setProperty('--featured-focus-x',focus.x+'%');media.style.setProperty('--featured-focus-y',focus.y+'%')}
 function dynamicSections(){
 	const d=S.dynamic,sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
 	return sections.map(([key,label,hint])=>d[key]?.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+d[key].map(card).join('')+'</div></section>':'').join('');
@@ -2500,14 +2594,14 @@ function home(){
 	const sameMedia=(a,b)=>Number(id(a))===Number(id(b))&&type(a)===type(b);
 	const sidePicks=[...movies,...tv].filter(x=>lead&&!sameMedia(x,lead)).slice(0,2);
 	const loadingFeed=Array(4).fill('<div class="feed-row" aria-hidden="true"><span class="feed-poster skeleton"></span><span><span class="skeleton" style="display:block;height:14px;width:62%;margin-bottom:9px"></span><span class="skeleton" style="display:block;height:28px"></span></span></div>').join('');
-	const compact=x=>{if(!x)return'<div class="featured-compact"><div class="featured-fallback">再挑一部</div></div>';const p=img(x.poster_path||x.backdrop_path),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="featured-compact" aria-label="查看 '+esc(title(x))+' 详情" onclick="openDetail('+Number(id(x))+',\''+mt+'\')">'+(p?'<img loading="lazy" src="'+esc(p)+'" alt="" onerror="this.remove()">':'')+'<span class="featured-copy"><h3>'+esc(title(x))+'</h3></span></button>'};
+	const compact=x=>{if(!x)return'<div class="featured-compact"><div class="featured-fallback">再挑一部</div></div>';const p=img(x.poster_path||x.backdrop_path),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="featured-compact" aria-label="查看 '+esc(title(x))+' 详情" onclick="openDetail('+Number(id(x))+',\''+mt+'\')">'+featuredArtwork(p,title(x))+'<span class="featured-copy"><h3>'+esc(title(x))+'</h3></span></button>'};
 	let featured='';
 	if(lead){
 		const leadType=type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie';
 		const artwork=img(lead.backdrop_path||lead.poster_path).replace('/w780','/w1280');
 		const score=lead.vote_average?Number(lead.vote_average).toFixed(1):'';
 		const meta=[year(lead),score?'评分 '+score:''].filter(Boolean).map(v=>'<span>'+esc(v)+'</span>').join('');
-		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><div class="featured-layout"><button class="featured-primary" aria-label="查看 '+esc(title(lead))+' 详情" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\')">'+(artwork?'<img src="'+esc(artwork)+'" alt="" onerror="this.remove()">':'')+'<span class="featured-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button><div class="featured-stack">'+compact(sidePicks[0])+compact(sidePicks[1])+'</div></div></section>';
+		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><div class="featured-layout"><button class="featured-primary" aria-label="查看 '+esc(title(lead))+' 详情" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\')">'+featuredArtwork(artwork,title(lead))+'<span class="featured-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button><div class="featured-stack">'+compact(sidePicks[0])+compact(sidePicks[1])+'</div></div></section>';
 	}else if(S.discoverLoading){
 		featured='<section class="featured-mosaic" aria-busy="true" aria-label="正在加载精选片单"><div class="featured-heading"><h1>今日精选</h1></div><div class="featured-layout"><div class="featured-primary skeleton"></div><div class="featured-stack"><div class="featured-compact skeleton"></div><div class="featured-compact skeleton"></div></div></div></section>';
 	}else{
