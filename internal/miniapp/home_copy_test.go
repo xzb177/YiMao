@@ -87,6 +87,22 @@ func TestHomeArtworkUsesOneIdentityAndIndependentFallbacks(t *testing.T) {
 	)
 }
 
+func TestHomeComposerUsesAssistantWithSafeFallbacks(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`onsubmit="submitAssistant(event)"`,
+		`/api/miniapp/v1/assistant`,
+		"assistantHistory.slice(-6)",
+		"assistantController?.abort()",
+		"seq!==S.assistantSeq",
+		"function safeAssistantItem(x)",
+		"Number.isFinite(mid)&&mid>0",
+		"['movie','tv','all'].includes",
+		"esc(S.assistantReply)",
+		"fallback_query||message",
+	)
+}
+
 func TestShellUsesContextAppBarAndEntityDock(t *testing.T) {
 	html := miniAppSource(t)
 	start := strings.Index(html, "function chrome(")
