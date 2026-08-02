@@ -227,6 +227,8 @@ func TestToolPagesIgnoreStaleResponses(t *testing.T) {
 		"const seq=++S.toolSeq",
 		"if(seq!==S.toolSeq||S.view!==view)return",
 		"if(seq===S.toolSeq&&S.view===view){S.toolLoading=false;render()}",
+		"view=S.view",
+		"if(S.view===view)await goIssues()",
 	)
 }
 
