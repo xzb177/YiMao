@@ -19,9 +19,9 @@
   --warning: #e8b35e;
   --danger: #ff756b;
   --shadow: 0 18px 44px rgba(0, 0, 0, .34);
-  --glass: #1a1b20;
-  --glass-border: rgba(255, 255, 255, .14);
-  --glass-highlight: rgba(255, 255, 255, .1);
+  --glass: rgba(18, 19, 23, .68);
+  --glass-border: rgba(255, 255, 255, .2);
+  --glass-highlight: rgba(255, 255, 255, .18);
   --safe-top: max(0px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
   --safe-bottom: max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
   --safe:var(--safe-bottom);
@@ -126,6 +126,50 @@ img {
   overflow-x: clip;
 }
 
+.glass-surface {
+  --glass-x: 50%;
+  --glass-y: 12%;
+  --glass-shift: 0px;
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--glass-border);
+  background-color: var(--glass);
+  background-image:
+    radial-gradient(circle at var(--glass-x) var(--glass-y), rgba(255, 255, 255, .2), rgba(255, 255, 255, .055) 20%, transparent 45%),
+    linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .018) 42%, rgba(5, 6, 8, .08));
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, .04), 0 12px 30px rgba(0, 0, 0, .28);
+  color: var(--ink);
+}
+
+.glass-surface::before,
+.glass-surface::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.glass-surface::before {
+  inset: 1px;
+  border: 1px solid rgba(255, 255, 255, .055);
+  background: radial-gradient(ellipse 42% 95% at var(--glass-x) var(--glass-y), rgba(255, 255, 255, .12), transparent 72%);
+}
+
+.glass-surface::after {
+  background: linear-gradient(108deg, transparent 18%, rgba(255, 255, 255, .02) 35%, rgba(255, 255, 255, .12) 49%, rgba(255, 255, 255, .025) 62%, transparent 80%);
+  background-repeat: no-repeat;
+  background-position: calc(var(--glass-x) + var(--glass-shift)) var(--glass-y);
+  background-size: 48% 170%;
+  opacity: .72;
+}
+
+.glass-surface > * {
+  position: relative;
+  z-index: 1;
+}
+
 .app-bar {
   position: sticky;
   z-index: 8;
@@ -134,10 +178,10 @@ img {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 -8px;
-  padding: 0 8px;
-  border-bottom: 1px solid transparent;
-  background: var(--bg);
+  margin: 0 -10px;
+  padding: 0 10px;
+  border-radius: 0 0 14px 14px;
+  background-color: var(--glass);
 }
 
 .app-context {
@@ -185,25 +229,14 @@ img {
   position: relative;
 }
 
-.home-shell .app-bar::after {
-  content: "";
-  position: absolute;
-  right: 8px;
-  bottom: 0;
-  left: 8px;
-  height: 1px;
-  background: var(--glass-highlight);
-  opacity: 0;
-}
-
 .home-search {
   position: relative;
   z-index: 6;
   margin-top: 6px;
-  border-color: var(--line);
+  border-color: var(--glass-border);
   border-radius: 24px;
-  background: var(--panel-strong);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, .18);
+  background-color: var(--glass);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, .035), 0 10px 24px rgba(0, 0, 0, .24);
 }
 
 .home-search.search {
@@ -227,7 +260,7 @@ img {
   height: 18px;
 }
 
-.featured-mosaic {
+.featured-home {
   position: relative;
   margin-top: 17px;
 }
@@ -256,20 +289,11 @@ img {
   font-size: 11px;
 }
 
-.featured-layout {
-  height: 164px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.58fr) minmax(104px, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  gap: 8px;
-}
-
-.featured-primary,
-.featured-compact {
+.featured-lead {
   position: relative;
   width: 100%;
-  height: 100%;
-  min-height: 0;
+  min-height: 190px;
+  aspect-ratio: 16 / 8;
   display: block;
   padding: 0;
   overflow: hidden;
@@ -280,93 +304,88 @@ img {
   text-align: left;
 }
 
-.featured-primary::after,
-.featured-compact::after {
+.featured-lead::after {
   content: "";
   position: absolute;
   z-index: 1;
   inset: 0;
-  background: linear-gradient(180deg, rgba(9, 10, 12, .02) 28%, rgba(9, 10, 12, .94) 100%);
+  background: linear-gradient(180deg, rgba(9, 10, 12, .02) 24%, rgba(9, 10, 12, .94) 100%);
   pointer-events: none;
 }
 
-.featured-media {
+.featured-lead-media,
+.featured-poster-media {
   position: absolute;
   inset: 0;
   overflow: hidden;
   background: var(--panel-strong);
 }
 
-.featured-media img {
+.featured-lead-media img,
+.featured-poster-media img {
   position: absolute;
   display: block;
   pointer-events: none;
   user-select: none;
 }
 
-.featured-media .featured-ambient {
+.featured-lead-ambient,
+.featured-poster-ambient {
   inset: -14%;
   width: 128%;
   height: 128%;
   object-fit: cover;
-  filter: blur(15px) saturate(1.08) brightness(.78);
-  opacity: 0;
+  filter: blur(16px) saturate(1.08) brightness(.72);
+  opacity: .62;
   transform: scale(1.06);
 }
 
-.featured-media .featured-subject {
+.featured-lead-subject {
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: var(--featured-focus-x, 50%) var(--featured-focus-y, 42%);
+  object-position: center 42%;
   background: var(--panel-strong);
   transition: opacity .18s ease;
 }
 
-.featured-media.is-portrait {
-  background: #111216;
-}
-
-.featured-media.is-portrait .featured-ambient {
-  opacity: .78;
-}
-
-.featured-media.is-portrait .featured-subject {
-  inset: 4px 4px 4px 10%;
-  width: calc(90% - 8px);
-  height: calc(100% - 8px);
+.featured-lead-media.has-poster .featured-lead-subject {
+  inset: 6px 12%;
+  width: 76%;
+  height: calc(100% - 12px);
   object-fit: contain;
   filter: drop-shadow(0 5px 13px rgba(0, 0, 0, .42));
 }
 
-.featured-media.is-landscape .featured-ambient {
+.featured-lead-media.is-error,
+.featured-poster-media.is-error {
   display: none;
 }
 
-.featured-media.is-error {
-  display: none;
+.featured-fallback {
+  height: 100%;
+  display: grid;
+  align-content: end;
+  padding: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.featured-media + .featured-fallback {
+.featured-lead-media + .featured-fallback,
+.featured-poster-media + .featured-fallback {
   position: absolute;
   inset: 0;
   visibility: hidden;
 }
 
-.featured-media.is-error + .featured-fallback {
+.featured-lead-media.is-error + .featured-fallback,
+.featured-poster-media.is-error + .featured-fallback {
   visibility: visible;
 }
 
-.featured-stack {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.featured-copy {
+.featured-lead-copy {
   position: absolute;
   z-index: 2;
   right: 10px;
@@ -374,25 +393,14 @@ img {
   left: 10px;
 }
 
-.featured-copy h2,
-.featured-copy h3 {
+.featured-lead-copy h2 {
   margin: 0;
   overflow: hidden;
   color: #fff;
+  font-size: 18px;
   line-height: 1.2;
   font-weight: 740;
   text-shadow: 0 2px 12px rgba(0, 0, 0, .64);
-}
-
-.featured-copy h2 {
-  font-size: 18px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.featured-copy h3 {
-  font-size: 12px;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -414,20 +422,55 @@ img {
   color: rgba(255, 255, 255, .54);
 }
 
-.featured-compact .featured-copy {
-  right: 8px;
-  bottom: 7px;
-  left: 8px;
+.featured-rail {
+  display: flex;
+  gap: 11px;
+  margin: 10px -16px 0;
+  padding: 3px 16px 10px;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scroll-padding-inline: 16px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
 }
 
-.featured-fallback {
-  height: 100%;
-  display: grid;
-  align-content: end;
-  padding: 12px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
+.featured-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.featured-poster-card {
+  flex: 0 0 28%;
+  scroll-snap-align: start;
+}
+
+.featured-poster-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .08);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
+}
+
+.featured-poster-media .featured-poster-subject {
+  inset: 4px;
+  width: calc(100% - 8px);
+  height: calc(100% - 8px);
+  object-fit: contain;
+  filter: drop-shadow(0 5px 13px rgba(0, 0, 0, .42));
+}
+
+.featured-poster-card h3 {
+  margin: 8px 1px 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.35;
+  font-weight: 650;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .feed-list {
@@ -459,10 +502,29 @@ img {
 }
 
 .feed-poster img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
   display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
+.feed-poster .feed-ambient {
+  inset: -18%;
+  width: 136%;
+  height: 136%;
   object-fit: cover;
+  filter: blur(12px) saturate(1.08) brightness(.7);
+  opacity: .62;
+  transform: scale(1.06);
+}
+
+.feed-poster .feed-subject {
+  inset: 3px;
+  width: calc(100% - 6px);
+  height: calc(100% - 6px);
+  display: block;
+  object-fit: contain;
+  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .38));
 }
 
 .feed-poster .feed-rank {
@@ -524,14 +586,6 @@ img {
   font-size: 12px;
   font-weight: 720;
   text-align: right;
-}
-
-.feed-score small {
-  display: block;
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 560;
 }
 
 .wide-rail {
@@ -728,6 +782,17 @@ img {
 .focus-rail .media.is-rail-active .poster {
   border-color: rgba(255, 255, 255, .17);
   box-shadow: 0 13px 32px rgba(0, 0, 0, .38);
+}
+
+.focus-rail .media.is-rail-active .featured-poster-frame {
+  border-color: rgba(255, 255, 255, .17);
+  box-shadow: 0 13px 32px rgba(0, 0, 0, .38);
+}
+
+.featured-rail.focus-rail .featured-poster-card {
+  transform: none;
+  transition: opacity .2s ease, filter .2s ease;
+  will-change: opacity, filter;
 }
 
 .poster {
@@ -2134,8 +2199,8 @@ img {
   padding: 2px;
   border: 1px solid var(--glass-border);
   border-radius: 17px;
-  background: var(--glass);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 26px rgba(0, 0, 0, .28);
+  background-color: var(--glass);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, .04), 0 12px 32px rgba(0, 0, 0, .34);
 }
 
 .bottom nav {
@@ -2154,7 +2219,7 @@ img {
   padding: 1px 2px;
   border-radius: 14px;
   background: transparent;
-  color: #c0bec2;
+  color: #d5d2d5;
   font-size: 10px;
 }
 
@@ -2175,7 +2240,7 @@ img {
 }
 
 .nav.active {
-  background: rgba(240, 90, 79, .035);
+  background: rgba(240, 90, 79, .1);
   color: var(--accent-strong);
 }
 
@@ -2288,28 +2353,16 @@ img {
 }
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  :root {
-    --glass: rgba(24, 25, 30, .72);
-  }
-
   .glass-surface {
-    -webkit-backdrop-filter: blur(16px) saturate(120%);
-    backdrop-filter: blur(16px) saturate(120%);
+    background-color: rgba(18, 19, 23, .62);
+    -webkit-backdrop-filter: blur(18px) saturate(135%) contrast(105%);
+    backdrop-filter: blur(18px) saturate(135%) contrast(105%);
   }
-
-  .app-bar {
-    background: rgba(9, 10, 12, .76);
-  }
-
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .glass-surface {
-    background: #1a1b20;
-  }
-
-  .app-bar {
-    background: var(--bg);
+    background-color: rgba(24, 25, 30, .96);
   }
 }
 
@@ -2332,18 +2385,17 @@ img {
     padding-left: 28px;
   }
 
-  .featured-layout {
-    height: 218px;
-    grid-template-columns: minmax(0, 1.7fr) minmax(160px, .8fr);
+  .featured-lead {
+    min-height: 218px;
   }
 
-  .featured-copy h2 {
+  .featured-lead-copy h2 {
     max-width: 75%;
     font-size: 23px;
   }
 
-  .featured-copy h3 {
-    font-size: 15px;
+  .featured-poster-card {
+    flex-basis: 17%;
   }
 
   .detail-hero {
@@ -2353,6 +2405,7 @@ img {
 
   .rail,
   .recent-rail,
+  .featured-rail,
   .wide-rail,
   .chips,
   .history {
@@ -2445,17 +2498,17 @@ img {
     margin-left: -12px;
   }
 
-  .featured-layout {
-    height: 156px;
-    grid-template-columns: minmax(0, 1.55fr) minmax(96px, 1fr);
+  .featured-lead {
+    min-height: 156px;
   }
 
-  .featured-copy h2 {
+  .featured-lead-copy h2 {
     font-size: 17px;
   }
 
   .rail,
   .recent-rail,
+  .featured-rail,
   .wide-rail,
   .chips,
   .history {
@@ -2467,6 +2520,10 @@ img {
 
   .rail {
     grid-auto-columns: 33%;
+  }
+
+  .featured-poster-card {
+    flex-basis: 34%;
   }
 
   .feed-row {
@@ -2524,6 +2581,12 @@ img {
     filter: none;
     transform: none;
   }
+
+  .glass-surface {
+    --glass-x: 50%;
+    --glass-y: 12%;
+    --glass-shift: 0px;
+  }
 }
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
@@ -2549,8 +2612,9 @@ function handleDialogKeys(event){const dialog=document.getElementById('confirm')
 document.addEventListener('keydown',handleDialogKeys);
 const ROOT_VIEWS=['home','search','me'];
 const icons={home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',play:'<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg>',game:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 8h8a5 5 0 0 1 4.6 7l-1 2.3a2.5 2.5 0 0 1-4.1.7l-1.2-1.2H9.7L8.5 18a2.5 2.5 0 0 1-4.1-.7l-1-2.3A5 5 0 0 1 8 8Z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/></svg>',wish:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.2 5.1 5.5.5-4.2 3.7 1.2 5.4-4.7-2.8-4.7 2.8 1.2-5.4-4.2-3.7 5.5-.5z"/></svg>',message:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 5h14v11H9l-4 3z"/><path d="M8 9h8M8 12h5"/></svg>'};
-function card(x){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${id(x)},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
-function feedCard(x,index){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'',summary=x.overview||((mt==='tv'?'这部剧':'这部电影')+'最近看的人不少');return `<button class="feed-row" onclick="openDetail(${Number(id(x))},'${mt}',${Number(x.season)||0})"><span class="feed-poster">${p?`<img loading="lazy" src="${esc(p)}" alt="">`:`<span class="feed-fallback">${esc(title(x))}</span>`}<span class="feed-rank">${index+1}</span></span><span class="feed-copy"><h3>${esc(title(x))}</h3><span class="meta">${esc(year(x)||'年份待定')} · ${mt==='tv'?'剧集':'电影'}</span><p>${esc(summary)}</p></span><span class="feed-score">${score?'★ '+score:'新'}<small>详情</small></span></button>`}
+function card(x){const mid=Number(id(x));if(mid<=0)return '';const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
+function mediaIdentity(x){const mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',mid=Number(id(x));if(mid>0)return mt+':id:'+mid;const artwork=x.poster_path||x.poster||x.backdrop_path||'';return mt+':fallback:'+title(x).trim().toLowerCase()+':'+year(x)+':'+artwork}
+function feedCard(x,index){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'',summary=x.overview||'暂无简介';return `<button class="feed-row" aria-label="打开 ${esc(title(x))}" onclick="openDetail(${Number(id(x))},'${mt}',${Number(x.season)||0})"><span class="feed-poster">${p?`<img class="feed-ambient" loading="lazy" src="${esc(p)}" alt="" aria-hidden="true" onerror="this.style.display='none'"><img class="feed-subject" loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<span class="feed-fallback">${esc(title(x))}</span>`}<span class="feed-rank">${index+1}</span></span><span class="feed-copy"><h3>${esc(title(x))}</h3><span class="meta">${esc(year(x)||'年份待定')} · ${mt==='tv'?'剧集':'电影'}</span><p>${esc(summary)}</p></span><span class="feed-score">${score?'★ '+score:'新片'}</span></button>`}
 function chrome(content,active=S.view,motion=''){
 	const n=S.user?.first_name||'影迷',immersive=S.view==='adventure',isRoot=!S.detailVisible&&ROOT_VIEWS.includes(S.view),isHome=isRoot&&S.view==='home';
 	const shellClass='shell'+(isHome?' home-shell':'');
@@ -2566,16 +2630,27 @@ function chrome(content,active=S.view,motion=''){
 let railInitFrame=0,railResizeFrame=0;
 const railMotionQuery=window.matchMedia?.('(prefers-reduced-motion: reduce)');
 const railFocusStates=new WeakMap();
-function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();const motion=S.rootMotion;S.rootMotion='';document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view,motion);if(railInitFrame)cancelAnimationFrame(railInitFrame);railInitFrame=requestAnimationFrame(()=>{railInitFrame=0;initRailFocus()})}
-function updateRailFocus(rail){const cards=[...rail.querySelectorAll(':scope > .media')];if(!cards.length)return;const box=rail.getBoundingClientRect(),anchor=box.left+Math.min(82,box.width*.22),span=Math.max(96,box.width*.38);let active=cards[0],best=Infinity;for(const card of cards){const rect=card.getBoundingClientRect(),distance=Math.abs(rect.left+rect.width/2-anchor),focus=Math.max(0,1-distance/span);card.style.setProperty('--rail-focus',focus.toFixed(3));if(distance<best){best=distance;active=card}}for(const card of cards)card.classList.toggle('is-rail-active',card===active);active.style.setProperty('--rail-focus','1')}
-function initRailFocus(){if(railMotionQuery?.matches)return;document.querySelectorAll('.rail,.wide-rail,.recent-rail').forEach(rail=>{if(railFocusStates.has(rail))return;rail.dataset.focusReady='1';rail.classList.add('focus-rail');const state={frame:0,scroll:null};const update=()=>{state.frame=0;if(rail.isConnected&&!railMotionQuery?.matches)updateRailFocus(rail)};state.scroll=()=>{if(!state.frame&&!railMotionQuery?.matches)state.frame=requestAnimationFrame(update)};railFocusStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true});update()})}
-function clearRailFocus(rail){const state=railFocusStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);railFocusStates.delete(rail)}rail.classList.remove('focus-rail');rail.removeAttribute('data-focus-ready');rail.querySelectorAll(':scope > .media').forEach(card=>{card.style.removeProperty('--rail-focus');card.classList.remove('is-rail-active')})}
+const glassMotionQuery=railMotionQuery,glassSurfaceStates=new WeakMap(),glassRailStates=new WeakMap();
+function scheduleChromeDynamics(){if(railInitFrame)cancelAnimationFrame(railInitFrame);railInitFrame=requestAnimationFrame(()=>{railInitFrame=0;initRailFocus();initGlassDynamics()})}
+function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();const motion=S.rootMotion;S.rootMotion='';document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view,motion);scheduleChromeDynamics()}
+function railCards(rail){return Array.from(rail.children).filter(card=>card.classList.contains('media'))}
+function updateRailFocus(rail){const cards=railCards(rail);if(!cards.length)return;const box=rail.getBoundingClientRect(),anchor=box.left+Math.min(82,box.width*.22),span=Math.max(96,box.width*.38);let active=cards[0],best=Infinity;for(const card of cards){const rect=card.getBoundingClientRect(),distance=Math.abs(rect.left+rect.width/2-anchor),focus=Math.max(0,1-distance/span);card.style.setProperty('--rail-focus',focus.toFixed(3));if(distance<best){best=distance;active=card}}for(const card of cards)card.classList.toggle('is-rail-active',card===active);active.style.setProperty('--rail-focus','1')}
+function initRailFocus(){if(railMotionQuery?.matches)return;document.querySelectorAll('.rail,.wide-rail,.recent-rail,.featured-rail').forEach(rail=>{if(railFocusStates.has(rail))return;rail.dataset.focusReady='1';rail.classList.add('focus-rail');const state={frame:0,scroll:null};const update=()=>{state.frame=0;if(rail.isConnected&&!railMotionQuery?.matches)updateRailFocus(rail)};state.scroll=()=>{if(!state.frame&&!railMotionQuery?.matches)state.frame=requestAnimationFrame(update)};railFocusStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true});update()})}
+function clearRailFocus(rail){const state=railFocusStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);railFocusStates.delete(rail)}rail.classList.remove('focus-rail');rail.removeAttribute('data-focus-ready');railCards(rail).forEach(card=>{card.style.removeProperty('--rail-focus');card.classList.remove('is-rail-active')})}
 function refreshRailFocus(){if(railResizeFrame)cancelAnimationFrame(railResizeFrame);railResizeFrame=requestAnimationFrame(()=>{railResizeFrame=0;if(!railMotionQuery?.matches)document.querySelectorAll('.focus-rail').forEach(updateRailFocus)})}
 window.addEventListener('resize',refreshRailFocus,{passive:true});
-railMotionQuery?.addEventListener?.('change',()=>{if(railMotionQuery.matches){if(railInitFrame){cancelAnimationFrame(railInitFrame);railInitFrame=0}if(railResizeFrame){cancelAnimationFrame(railResizeFrame);railResizeFrame=0}document.querySelectorAll('.focus-rail').forEach(clearRailFocus)}else initRailFocus()});
-function featuredArtwork(src,label){if(!src)return'<span class="featured-fallback" aria-hidden="true"></span>';return'<span class="featured-media" data-featured-media><img class="featured-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-subject" src="'+esc(src)+'" alt="" onload="prepareFeaturedImage(this)" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true"></span>'}
+function resetGlassSurface(surface){surface.style.removeProperty('--glass-x');surface.style.removeProperty('--glass-y');surface.style.removeProperty('--glass-shift')}
+function initGlassSurface(surface){if(glassSurfaceStates.has(surface))return;surface.dataset.glassReady='1';const state={frame:0,x:0,y:0,pointerType:'',move:null,down:null,leave:null,cancel:null,up:null};const flush=()=>{state.frame=0;if(!surface.isConnected||glassMotionQuery?.matches)return;const rect=surface.getBoundingClientRect(),x=Math.max(0,Math.min(100,(state.x-rect.left)/Math.max(1,rect.width)*100)),y=Math.max(0,Math.min(100,(state.y-rect.top)/Math.max(1,rect.height)*100));surface.style.setProperty('--glass-x',x.toFixed(1)+'%');surface.style.setProperty('--glass-y',y.toFixed(1)+'%');surface.style.setProperty('--glass-shift',((x-50)*.08).toFixed(1)+'px')};const queue=event=>{if(glassMotionQuery?.matches)return;state.x=event.clientX;state.y=event.clientY;state.pointerType=event.pointerType;if(!state.frame)state.frame=requestAnimationFrame(flush)};const reset=()=>{if(state.frame){cancelAnimationFrame(state.frame);state.frame=0}resetGlassSurface(surface)};state.move=queue;state.down=queue;state.leave=reset;state.cancel=reset;state.up=event=>{if(event.pointerType!=='mouse')reset()};glassSurfaceStates.set(surface,state);surface.addEventListener('pointermove',state.move,{passive:true});surface.addEventListener('pointerdown',state.down,{passive:true});surface.addEventListener('pointerleave',state.leave,{passive:true});surface.addEventListener('pointercancel',state.cancel,{passive:true});surface.addEventListener('pointerup',state.up,{passive:true})}
+function clearGlassSurface(surface){const state=glassSurfaceStates.get(surface);if(state){surface.removeEventListener('pointermove',state.move);surface.removeEventListener('pointerdown',state.down);surface.removeEventListener('pointerleave',state.leave);surface.removeEventListener('pointercancel',state.cancel);surface.removeEventListener('pointerup',state.up);if(state.frame)cancelAnimationFrame(state.frame);glassSurfaceStates.delete(surface)}surface.removeAttribute('data-glass-ready');resetGlassSurface(surface)}
+function updateGlassFromFeaturedRail(rail){if(glassMotionQuery?.matches)return;const max=Math.max(1,rail.scrollWidth-rail.clientWidth),progress=Math.max(0,Math.min(1,rail.scrollLeft/max)),x=(20+progress*60).toFixed(1)+'%',shift=((progress-.5)*10).toFixed(1)+'px';document.querySelectorAll('.glass-surface').forEach(surface=>{surface.style.setProperty('--glass-x',x);surface.style.setProperty('--glass-y','18%');surface.style.setProperty('--glass-shift',shift)})}
+function initGlassRail(rail){if(glassRailStates.has(rail))return;rail.dataset.glassRailReady='1';const state={frame:0,scroll:null},update=()=>{state.frame=0;if(rail.isConnected&&!glassMotionQuery?.matches)updateGlassFromFeaturedRail(rail)};state.scroll=()=>{if(!state.frame&&!glassMotionQuery?.matches)state.frame=requestAnimationFrame(update)};glassRailStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true})}
+function clearGlassRail(rail){const state=glassRailStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);glassRailStates.delete(rail)}rail.removeAttribute('data-glass-rail-ready')}
+function clearGlassDynamics(){document.querySelectorAll('[data-glass-ready]').forEach(clearGlassSurface);document.querySelectorAll('[data-glass-rail-ready]').forEach(clearGlassRail);document.querySelectorAll('.glass-surface').forEach(resetGlassSurface)}
+function initGlassDynamics(){if(glassMotionQuery?.matches){clearGlassDynamics();return}document.querySelectorAll('.glass-surface').forEach(initGlassSurface);document.querySelectorAll('.featured-rail').forEach(initGlassRail)}
+railMotionQuery?.addEventListener?.('change',()=>{if(railMotionQuery.matches){if(railInitFrame){cancelAnimationFrame(railInitFrame);railInitFrame=0}if(railResizeFrame){cancelAnimationFrame(railResizeFrame);railResizeFrame=0}document.querySelectorAll('.focus-rail').forEach(clearRailFocus);clearGlassDynamics()}else{initRailFocus();initGlassDynamics()}});
+function featuredLeadArtwork(item,src){if(!src)return'<span class="featured-fallback" aria-hidden="true"></span>';const mode=item.backdrop_path?'has-backdrop':'has-poster';return'<span class="featured-lead-media '+mode+'" data-featured-media><img class="featured-lead-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-lead-subject" src="'+esc(src)+'" alt="'+esc(title(item))+'" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>'}
+function featuredPosterArtwork(item){const src=img(item.poster_path||item.poster);if(!src)return'<span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>';return'<span class="featured-poster-media" data-featured-media><img class="featured-poster-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-poster-subject" src="'+esc(src)+'" alt="'+esc(title(item))+'" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>'}
 function featuredImageError(image){const media=image?.closest?.('[data-featured-media]');if(!media)return;media.classList.add('is-error');media.closest('button')?.classList.add('has-artwork-error')}
-function prepareFeaturedImage(image){const media=image?.closest?.('[data-featured-media]');if(!media||!image.naturalWidth||!image.naturalHeight)return;const ratio=image.naturalWidth/image.naturalHeight,portrait=ratio<.9,focus={x:50,y:portrait?36:42};media.classList.remove('is-error');media.classList.toggle('is-portrait',portrait);media.classList.toggle('is-landscape',!portrait);media.dataset.artworkMode=portrait?'portrait':'landscape';media.dataset.focusX=String(focus.x);media.dataset.focusY=String(focus.y);media.style.setProperty('--featured-focus-x',focus.x+'%');media.style.setProperty('--featured-focus-y',focus.y+'%')}
 function dynamicSections(){
 	const d=S.dynamic,sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
 	return sections.map(([key,label,hint])=>d[key]?.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+d[key].map(card).join('')+'</div></section>':'').join('');
@@ -2590,26 +2665,31 @@ function homeDiscoverError(){
 	return '<div class="empty discover-error" role="alert"><strong>'+(S.discoverAuthError?'会话已经过期':'片单暂时没加载出来')+'</strong><p class="detail-copy">'+esc(S.discoverError)+'</p>'+action+'</div>';
 }
 function home(){
-	const d=S.discover,movies=d.movies||[],tv=d.tv||[],lead=d.featured?.[0]||movies[0]||tv[0];
-	const sameMedia=(a,b)=>Number(id(a))===Number(id(b))&&type(a)===type(b);
-	const sidePicks=[...movies,...tv].filter(x=>lead&&!sameMedia(x,lead)).slice(0,2);
+	const d=S.discover,movies=d.movies||[],tv=d.tv||[],featuredItems=(d.featured||[]).filter(x=>x&&Number(id(x))>0),lead=featuredItems[0]||movies.find(x=>Number(id(x))>0)||tv.find(x=>Number(id(x))>0);
+	const featuredUsed=new Set(),featuredRailItems=[];
+	if(lead)featuredUsed.add(mediaIdentity(lead));
+	for(const item of [...featuredItems.slice(1),...movies,...tv]){const identity=mediaIdentity(item);if(Number(id(item))>0&&!featuredUsed.has(identity)){featuredUsed.add(identity);featuredRailItems.push(item)}if(featuredRailItems.length===3)break}
+	const popularSeen=new Set(featuredUsed),popularItems=[];
+	for(const item of movies){const identity=mediaIdentity(item);if(Number(id(item))>0&&!popularSeen.has(identity)){popularSeen.add(identity);popularItems.push(item)}if(popularItems.length===6)break}
 	const loadingFeed=Array(4).fill('<div class="feed-row" aria-hidden="true"><span class="feed-poster skeleton"></span><span><span class="skeleton" style="display:block;height:14px;width:62%;margin-bottom:9px"></span><span class="skeleton" style="display:block;height:28px"></span></span></div>').join('');
-	const compact=x=>{if(!x)return'<div class="featured-compact"><div class="featured-fallback">再挑一部</div></div>';const p=img(x.poster_path||x.backdrop_path),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="featured-compact" aria-label="查看 '+esc(title(x))+' 详情" onclick="openDetail('+Number(id(x))+',\''+mt+'\')">'+featuredArtwork(p,title(x))+'<span class="featured-copy"><h3>'+esc(title(x))+'</h3></span></button>'};
+	const featuredPosterCard=x=>{const mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="media featured-poster-card" aria-label="打开 '+esc(title(x))+'" onclick="openDetail('+Number(id(x))+',\''+mt+'\','+(Number(x.season)||0)+')"><span class="featured-poster-frame">'+featuredPosterArtwork(x)+'</span><h3>'+esc(title(x))+'</h3></button>'};
 	let featured='';
 	if(lead){
 		const leadType=type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie';
-		const artwork=img(lead.backdrop_path||lead.poster_path).replace('/w780','/w1280');
+		const leadImage=img(lead.backdrop_path||lead.poster_path).replace('/w780','/w1280');
 		const score=lead.vote_average?Number(lead.vote_average).toFixed(1):'';
 		const meta=[year(lead),score?'评分 '+score:''].filter(Boolean).map(v=>'<span>'+esc(v)+'</span>').join('');
-		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><div class="featured-layout"><button class="featured-primary" aria-label="查看 '+esc(title(lead))+' 详情" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\')">'+featuredArtwork(artwork,title(lead))+'<span class="featured-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button><div class="featured-stack">'+compact(sidePicks[0])+compact(sidePicks[1])+'</div></div></section>';
+		const rail=featuredRailItems.length?'<div class="featured-rail" aria-label="更多今日精选">'+featuredRailItems.map(featuredPosterCard).join('')+'</div>':'';
+		featured='<section class="featured-home" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><button class="featured-lead" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+(Number(lead.season)||0)+')">'+featuredLeadArtwork(lead,leadImage)+'<span class="featured-lead-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button>'+rail+'</section>';
 	}else if(S.discoverLoading){
-		featured='<section class="featured-mosaic" aria-busy="true" aria-label="正在加载精选片单"><div class="featured-heading"><h1>今日精选</h1></div><div class="featured-layout"><div class="featured-primary skeleton"></div><div class="featured-stack"><div class="featured-compact skeleton"></div><div class="featured-compact skeleton"></div></div></div></section>';
+		const loadingRail=Array(5).fill('<div class="featured-poster-card" aria-hidden="true"><div class="featured-poster-frame skeleton"></div><span class="skeleton" style="display:block;height:13px;margin:8px 1px 0"></span></div>').join('');
+		featured='<section class="featured-home" aria-busy="true" aria-label="正在加载精选片单"><div class="featured-heading"><h1>今日精选</h1></div><div class="featured-lead skeleton"></div><div class="featured-rail">'+loadingRail+'</div></section>';
 	}else{
-		featured='<section class="featured-mosaic" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1></div><div class="featured-layout"><div class="featured-primary"><div class="featured-fallback">片单还没回来，先搜一部想看的。</div></div><div class="featured-stack"><div class="featured-compact"></div><div class="featured-compact"></div></div></div></section>';
+		featured='<section class="featured-home" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1></div><div class="featured-lead"><div class="featured-fallback">片单还没回来，先搜一部想看的。</div></div></section>';
 	}
-	const search='<form class="search home-search" role="search" aria-label="搜索影视" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="搜片名、剧集或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'<span class="sr-only">搜索</span></button></form>';
+	const search='<form class="search home-search glass-surface" role="search" aria-label="搜索影视" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="搜片名、剧集或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'<span class="sr-only">搜索</span></button></form>';
 	const genres=['科幻','悬疑','喜剧','动画','犯罪','纪录片'].map(x=>'<button class="chip" data-query="'+esc(x)+'" onclick="quick(this.dataset.query)">'+x+'</button>').join('');
-	const popular=movies.length||S.discoverLoading?'<section class="section home-feed"><div class="section-head"><h2>热门电影</h2><span>最近大家在看</span></div><div class="feed-list">'+(movies.length?movies.slice(0,6).map(feedCard).join(''):loadingFeed)+'</div></section>':'';
+	const popular=popularItems.length||S.discoverLoading?'<section class="section home-feed"><div class="section-head"><h2>热门电影</h2><span>最近大家在看</span></div><div class="feed-list">'+(popularItems.length?popularItems.map(feedCard).join(''):loadingFeed)+'</div></section>':'';
 	const shows=tv.length||S.discoverLoading?'<section class="section"><div class="section-head"><h2>正在热播</h2><span>挑一部追起来</span></div><div class="wide-rail">'+(tv.length?tv.map(card).join(''):Array(4).fill('<div class="poster skeleton" aria-hidden="true" style="flex:0 0 38%"></div>').join(''))+'</div></section>':'';
 	const tools='<section class="section home-tools"><div class="section-head"><h2>还能这么找</h2><span>换个玩法</span></div><div class="tool-list"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩五关剧情，通关后直接求片</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>没找到的片，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放有问题，来看看处理进度</small></span><span class="tool-arrow">›</span></button></div></section>';
 	return search+homeDiscoverError()+featured+popular+shows+recentSection()+dynamicSections()+'<section class="section"><div class="section-head"><h2>按类型挑</h2><span>随便逛逛</span></div><div class="chips">'+genres+'</div></section>'+tools;
@@ -2664,9 +2744,9 @@ function rememberSearch(q){S.history=[q,...S.history.filter(x=>x!==q)].slice(0,5
 function loadMore(){if(!S.loading&&S.hasMore){const request={query:S.query,type:S.searchType,page:S.nextPage};doSearch(true,request.page,request)}}
 async function doSearch(append,targetPage=1,request=null){if(!S.query)return;searchController?.abort();const controller=new AbortController();searchController=controller;const seq=++S.searchSeq,current=request||{query:S.query,type:S.searchType,page:targetPage};S.loading=true;render();try{const f=current.type==='all'?'':'&type='+encodeURIComponent(current.type),d=await api('/api/miniapp/v1/search?q='+encodeURIComponent(current.query)+'&page='+current.page+f,{signal:controller.signal});if(seq!==S.searchSeq||searchController!==controller||S.query!==current.query||S.searchType!==current.type)return;S.results=append?[...S.results,...(d.results||[])]:d.results||[];S.page=Number(d.page)||current.page;S.nextPage=Number(d.next_page)||S.page+1;S.hasMore=!!d.has_more}catch(e){if(e?.name==='AbortError'||seq!==S.searchSeq||searchController!==controller)return;if(!append){S.results=[];S.hasMore=false}toast(e.message||'搜索暂时不可用')}finally{if(seq===S.searchSeq&&searchController===controller&&S.query===current.query&&S.searchType===current.type){searchController=null;S.loading=false;saveSearchState();render()}}}
 async function openDetail(mid,mt,wantedSeason=0){if(!mid)return;S.detailError=null;S.scroll[S.view]=window.scrollY;if(S.view==='search'){localStorage.setItem('yunhai_search_scroll',String(S.scroll.search));saveSearchState()}const seq=++S.detailSeq;S.detailFrom=S.view;S.season=0;S.detailVisible=true;showDetailSkeleton();try{const seasonParam=mt==='tv'&&Number(wantedSeason)>0?'&season='+encodeURIComponent(Number(wantedSeason)):'';const detail=await api(`/api/miniapp/v1/detail?id=${mid}&type=${mt}${seasonParam}`);if(seq!==S.detailSeq)return;if(mt==='tv'&&detail.seasons?.length){const allowed=detail.seasons.some(s=>s.number===Number(wantedSeason));S.season=allowed?Number(wantedSeason):detail.seasons[0].number;detail.media_status=detail.seasons.find(s=>s.number===S.season)?.status||{code:'unknown',text:'暂时无法确认'}}S.detail=detail;rememberView(detail);showDetail()}catch(e){if(seq===S.detailSeq){S.detailError={mid,mt,season:wantedSeason,message:'详情暂时没加载出来'};showDetailError()}}}
-function showDetailError(){const e=S.detailError;showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="empty" style="margin-top:32px"><strong>${esc(e.message)}</strong><p class="detail-copy">上游响应有点慢，不影响其他页面。</p><button class="primary" onclick="openDetail(${e.mid},'${e.mt}',${e.season})">重新加载</button></div></section>`,S.detailFrom)}
-function showDetailSkeleton(){showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail detail-enter"><div class="detail-hero skeleton"></div><div class="poster skeleton" style="height:44px;aspect-ratio:auto;margin:12px 0"></div><div class="poster skeleton" style="height:90px;aspect-ratio:auto"></div><div class="detail-actions"><button class="primary" disabled>正在加载详情…</button><button class="watch-action" disabled>加入想看</button><button class="share" disabled>分享</button></div></section>`,S.detailFrom)}
-function showDetail(){const x=S.detail,mt=x.type,p=img(x.backdrop_path||x.poster_path),q=x.quota||{},used=mt==='tv'?q.tv_used:q.movie_used,limit=mt==='tv'?q.tv_limit:q.movie_limit,remain=limit===-1?'不限':Math.max(0,(limit||0)-(used||0));const disabled=x.media_status?.code!=='available';const seasons=mt==='tv'?(x.seasons||[]).map(s=>`<button class="season ${S.season===s.number?'selected':''}" onclick="selectSeason(${s.number})">${s.poster_path?`<img src="${esc(img(s.poster_path))}" alt="">`:'<span></span>'}<div><b>${esc(s.name||'第 '+s.number+' 季')}</b><span>${esc((s.air_date||'').slice(0,4)||'年份待定')} · ${s.episode_count||0} 集</span></div><em class="season-state ${esc(s.status?.code||'unknown')}">${esc(s.status?.text||'暂时无法确认')}</em></button>`).join(''):'';showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="detail-hero">${p?`<img src="${esc(p)}" alt="${esc(x.title)}">`:''}</div><div class="detail-content"><div class="kicker">${mt==='tv'?'剧集':'电影'} · ${esc(x.year||'年份待定')}</div><h1>${esc(x.title)}</h1>${x.original_title&&x.original_title!==x.title?`<div class="meta">${esc(x.original_title)}</div>`:''}<div class="fact-row">${x.vote_average?`<span class="fact">★ ${Number(x.vote_average).toFixed(1)} · ${x.vote_count||0} 人评分</span>`:''}${x.runtime?`<span class="fact">${x.runtime} 分钟</span>`:''}${(x.genres||[]).map(g=>`<span class="fact">${esc(g)}</span>`).join('')}</div><div class="media-state"><div><b>${esc(x.media_status?.text||'可以求片')}</b><span>当前状态</span></div><span>今日剩余 ${remain}</span></div><p class="detail-copy">${esc(x.overview||'这部作品还没有简介。')}</p>${mt==='tv'?`<h2 class="season-title">选择要看的季</h2><div class="season-list">${seasons||'<div class="empty">暂无可选季</div>'}</div>`:''}<div class="detail-actions">${x.media_status?.code==='in_library'?`<button class="wash-action" onclick="openWashConfirm()">${mt==='tv'?'申请洗版第 '+S.season+' 季':'申请洗版'}</button>`:x.media_status?.code==='available'?`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="openConfirm()">${mt==='tv'?'求第 '+S.season+' 季':'加入求片'}</button>`:`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="wishDetail(this)">加入许愿池</button>`}<button class="watch-action" onclick="toggleWatchlist(this)">${x.in_watchlist?'取消想看':'加入想看'}</button><button class="share" onclick="shareDetail()">分享</button></div>${mt==='tv'?'<p class="meta">剧集想看按整部作品提醒，不区分季。</p>':''}</div></section>`,S.detailFrom)}
+function showDetailError(){const e=S.detailError;showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="empty" style="margin-top:32px"><strong>${esc(e.message)}</strong><p class="detail-copy">上游响应有点慢，不影响其他页面。</p><button class="primary" onclick="openDetail(${e.mid},'${e.mt}',${e.season})">重新加载</button></div></section>`,S.detailFrom);scheduleChromeDynamics()}
+function showDetailSkeleton(){showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail detail-enter"><div class="detail-hero skeleton"></div><div class="poster skeleton" style="height:44px;aspect-ratio:auto;margin:12px 0"></div><div class="poster skeleton" style="height:90px;aspect-ratio:auto"></div><div class="detail-actions"><button class="primary" disabled>正在加载详情…</button><button class="watch-action" disabled>加入想看</button><button class="share" disabled>分享</button></div></section>`,S.detailFrom);scheduleChromeDynamics()}
+function showDetail(){const x=S.detail,mt=x.type,p=img(x.backdrop_path||x.poster_path),q=x.quota||{},used=mt==='tv'?q.tv_used:q.movie_used,limit=mt==='tv'?q.tv_limit:q.movie_limit,remain=limit===-1?'不限':Math.max(0,(limit||0)-(used||0));const disabled=x.media_status?.code!=='available';const seasons=mt==='tv'?(x.seasons||[]).map(s=>`<button class="season ${S.season===s.number?'selected':''}" onclick="selectSeason(${s.number})">${s.poster_path?`<img src="${esc(img(s.poster_path))}" alt="">`:'<span></span>'}<div><b>${esc(s.name||'第 '+s.number+' 季')}</b><span>${esc((s.air_date||'').slice(0,4)||'年份待定')} · ${s.episode_count||0} 集</span></div><em class="season-state ${esc(s.status?.code||'unknown')}">${esc(s.status?.text||'暂时无法确认')}</em></button>`).join(''):'';showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="detail-hero">${p?`<img src="${esc(p)}" alt="${esc(x.title)}">`:''}</div><div class="detail-content"><div class="kicker">${mt==='tv'?'剧集':'电影'} · ${esc(x.year||'年份待定')}</div><h1>${esc(x.title)}</h1>${x.original_title&&x.original_title!==x.title?`<div class="meta">${esc(x.original_title)}</div>`:''}<div class="fact-row">${x.vote_average?`<span class="fact">★ ${Number(x.vote_average).toFixed(1)} · ${x.vote_count||0} 人评分</span>`:''}${x.runtime?`<span class="fact">${x.runtime} 分钟</span>`:''}${(x.genres||[]).map(g=>`<span class="fact">${esc(g)}</span>`).join('')}</div><div class="media-state"><div><b>${esc(x.media_status?.text||'可以求片')}</b><span>当前状态</span></div><span>今日剩余 ${remain}</span></div><p class="detail-copy">${esc(x.overview||'这部作品还没有简介。')}</p>${mt==='tv'?`<h2 class="season-title">选择要看的季</h2><div class="season-list">${seasons||'<div class="empty">暂无可选季</div>'}</div>`:''}<div class="detail-actions">${x.media_status?.code==='in_library'?`<button class="wash-action" onclick="openWashConfirm()">${mt==='tv'?'申请洗版第 '+S.season+' 季':'申请洗版'}</button>`:x.media_status?.code==='available'?`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="openConfirm()">${mt==='tv'?'求第 '+S.season+' 季':'加入求片'}</button>`:`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="wishDetail(this)">加入许愿池</button>`}<button class="watch-action" onclick="toggleWatchlist(this)">${x.in_watchlist?'取消想看':'加入想看'}</button><button class="share" onclick="shareDetail()">分享</button></div>${mt==='tv'?'<p class="meta">剧集想看按整部作品提醒，不区分季。</p>':''}</div></section>`,S.detailFrom);scheduleChromeDynamics()}
 async function toggleWatchlist(button){if(button.disabled)return;button.disabled=true;const x=S.detail,adding=!x.in_watchlist;try{await api('/api/miniapp/v1/watchlist',{method:adding?'POST':'DELETE',body:JSON.stringify({tmdb_id:id(x),type:x.type})});x.in_watchlist=adding;if(adding){const item={tmdb_id:id(x),type:x.type,title:x.title,year:x.year,poster_path:x.poster_path};S.watchlist=[item,...S.watchlist.filter(y=>!(id(y)===id(x)&&type(y)===x.type))]}else S.watchlist=S.watchlist.filter(y=>!(id(y)===id(x)&&type(y)===x.type));button.textContent=adding?'取消想看':'加入想看';tg?.HapticFeedback?.notificationOccurred?.('success');toast(adding?'已加入想看，入库后会提醒你':'已取消想看')}catch(e){toast(e.message||'操作失败')}finally{button.disabled=false}}
 
 function shareDetail(){const x=S.detail,kind=x.type==='tv'?'t':'m',season=x.type==='tv'?S.season:0,payload=`yh_${kind}_${id(x)}_${season}`,shareURL='https://t.me/share/url?url='+encodeURIComponent(`https://t.me/yunhaiqp_bot?start=${payload}`)+'&text='+encodeURIComponent(`云海影视 · ${x.title}${season?' 第'+season+'季':''}`);tg?.HapticFeedback?.impactOccurred?.('light');if(tg?.openTelegramLink)tg.openTelegramLink(shareURL);else window.open(shareURL,'_blank')}

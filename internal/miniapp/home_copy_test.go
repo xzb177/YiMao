@@ -16,14 +16,25 @@ func TestHomeUsesAppFirstDiscoveryLayout(t *testing.T) {
 	html := string(page)
 	for _, want := range []string{
 		"lead.backdrop_path||lead.poster_path",
-		`class="search home-search"`,
-		`<section class="featured-mosaic"`,
-		`class="featured-primary"`,
-		`class="featured-stack"`,
-		"grid-template-rows: minmax(0, 1fr)",
+		`class="search home-search glass-surface"`,
+		`<section class="featured-home"`,
+		`class="featured-lead"`,
+		`class="featured-rail"`,
+		`class="featured-poster-card"`,
+		`class="featured-lead-media '+mode+'"`,
+		"object-fit: contain",
 		`class="feed-list"`,
 		`class="wide-rail"`,
 		"function feedCard(x,index)",
+		"function mediaIdentity(x)",
+		"const featuredUsed=new Set()",
+		"featuredItems=(d.featured||[]).filter(x=>x&&Number(id(x))>0)",
+		"...movies,...tv",
+		"if(featuredRailItems.length===3)break",
+		"function card(x){const mid=Number(id(x));if(mid<=0)return ''",
+		"const popularSeen=new Set(featuredUsed),popularItems=[]",
+		"Number(id(item))>0&&!popularSeen.has(identity)",
+		"scheduleChromeDynamics()",
 		"今日精选",
 		"搜片名、剧集或演员",
 	} {
@@ -34,6 +45,13 @@ func TestHomeUsesAppFirstDiscoveryLayout(t *testing.T) {
 	for _, stale := range []string{
 		`class="home-feature"`,
 		`class="feature"`,
+		`class="featured-mosaic"`,
+		`class="featured-primary"`,
+		`class="featured-stack"`,
+		`class="featured-compact"`,
+		"grid-template-rows: minmax(0, 1fr)",
+		"const sidePicks=",
+		"movies.slice(0,6).map(feedCard)",
 		"rail('热门电影'",
 		"本周热看",
 		"大家最近在看",
@@ -57,7 +75,56 @@ func TestHomeUsesAppFirstDiscoveryLayout(t *testing.T) {
 	}
 	home := html[homeStart : homeStart+homeEnd]
 	if !strings.Contains(home, "return search+homeDiscoverError()+featured+popular+shows") {
-		t.Fatal("首页没有按顶部搜索、非对称精选、纵向热门列表的顺序渲染")
+		t.Fatal("首页没有按顶部搜索、电影精选、纵向热门列表的顺序渲染")
+	}
+	feedStart := strings.Index(html, "function feedCard(x,index)")
+	if feedStart < 0 {
+		t.Fatal("未找到热门 feed 渲染函数边界")
+	}
+	feedEnd := strings.Index(html[feedStart:], "function chrome(")
+	if feedEnd <= 0 {
+		t.Fatal("未找到热门 feed 渲染函数边界")
+	}
+	feed := html[feedStart : feedStart+feedEnd]
+	if strings.Contains(feed, "<small>详情</small>") {
+		t.Fatal("热门 feed 仍使用含糊的 Details 标签")
+	}
+	for _, want := range []string{"class=\"feed-row\"", "feed-ambient", "feed-subject", "暂无简介"} {
+		if !strings.Contains(feed, want) {
+			t.Fatalf("热门 feed 缺少完整行卡片契约 %q", want)
+		}
+	}
+}
+
+func TestHomePosterSurfacesPreserveFullArtwork(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, selector := range []string{
+		".featured-lead-media.has-poster .featured-lead-subject",
+		".featured-poster-media .featured-poster-subject",
+		".feed-poster .feed-subject",
+	} {
+		start := strings.Index(html, selector+" {")
+		if start < 0 {
+			t.Fatalf("首页缺少海报完整展示选择器 %q", selector)
+		}
+		end := strings.Index(html[start:], "}\n")
+		if end < 0 || !strings.Contains(html[start:start+end], "object-fit: contain") {
+			t.Fatalf("首页海报仍可能被裁切 %q", selector)
+		}
+	}
+	for _, want := range []string{
+		`class="featured-lead-ambient"`,
+		`class="featured-poster-ambient"`,
+		`class="feed-ambient"`,
+		"filter: blur(",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("首页海报缺少环境背景契约 %q", want)
+		}
 	}
 }
 
@@ -80,7 +147,7 @@ func TestMiniAppUsesNeutralCinemaPaletteAndMotionFallback(t *testing.T) {
 			t.Fatalf("Mini App 缺少视觉系统契约 %q", want)
 		}
 	}
-	for _, stale := range []string{"#e9ff5b", "radial-gradient", "--bg:#11100f"} {
+	for _, stale := range []string{"#e9ff5b", "--bg:#11100f"} {
 		if strings.Contains(html, stale) {
 			t.Fatalf("Mini App 仍包含旧视觉主题 %q", stale)
 		}
@@ -94,25 +161,92 @@ func TestMiniAppUsesReadableLiquidGlassWithFallback(t *testing.T) {
 	}
 	html := string(page)
 	for _, want := range []string{
-		"--glass: #1a1b20",
-		"--glass-border: rgba(255, 255, 255, .14)",
-		"--glass-highlight: rgba(255, 255, 255, .1)",
-		"box-shadow: inset 0 1px 0 var(--glass-highlight)",
+		"--glass: rgba(18, 19, 23, .68)",
+		"--glass-border: rgba(255, 255, 255, .2)",
+		"--glass-highlight: rgba(255, 255, 255, .18)",
+		"radial-gradient(circle at var(--glass-x) var(--glass-y)",
+		"background-position: calc(var(--glass-x) + var(--glass-shift)) var(--glass-y)",
+		"inset 0 1px 0 var(--glass-highlight)",
 		"@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
 		"@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
-		"-webkit-backdrop-filter: blur(16px) saturate(120%)",
-		"backdrop-filter: blur(16px) saturate(120%)",
+		"-webkit-backdrop-filter: blur(18px) saturate(135%) contrast(105%)",
+		"backdrop-filter: blur(18px) saturate(135%) contrast(105%)",
+		"background-color: rgba(24, 25, 30, .96)",
 		`class="app-bar glass-surface"`,
 		`class="bottom glass-surface"`,
+		`class="search home-search glass-surface"`,
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("Mini App 缺少克制的 Liquid Glass 契约 %q", want)
 		}
 	}
-	for _, contentSurface := range []string{`class="search home-search glass-surface"`, ".avatar,\n  .detail-actions", ".type-badge,\n  .confirm"} {
+	for _, contentSurface := range []string{".avatar,\n  .detail-actions", ".type-badge,\n  .confirm"} {
 		if strings.Contains(html, contentSurface) {
 			t.Fatalf("Glass 不应进入内容表面 %q", contentSurface)
 		}
+	}
+}
+
+func TestLiquidGlassDynamicsAreInputDrivenAndReducedMotionSafe(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"--glass-x: 50%",
+		"--glass-y: 12%",
+		"--glass-shift: 0px",
+		"function initGlassDynamics()",
+		"document.querySelectorAll('.glass-surface').forEach(initGlassSurface)",
+		"document.querySelectorAll('.featured-rail').forEach(initGlassRail)",
+		"surface.addEventListener('pointermove'",
+		"surface.addEventListener('pointerdown'",
+		"surface.addEventListener('pointerleave'",
+		"surface.addEventListener('pointercancel'",
+		"surface.addEventListener('pointerup'",
+		"surface.style.setProperty('--glass-x'",
+		"surface.style.setProperty('--glass-y'",
+		"surface.style.setProperty('--glass-shift'",
+		"state.frame=requestAnimationFrame(flush)",
+		"state.frame=requestAnimationFrame(update)",
+		"rail.addEventListener('scroll',state.scroll,{passive:true})",
+		"if(glassMotionQuery?.matches){clearGlassDynamics();return}",
+		"clearGlassDynamics()",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Liquid Glass 缺少输入驱动或减弱动态契约 %q", want)
+		}
+	}
+	for _, stale := range []string{"window.addEventListener('scroll'", "gsap", "requestAnimationFrame(loop)"} {
+		if strings.Contains(html, stale) {
+			t.Fatalf("Liquid Glass 使用了非局部或连续动画机制 %q", stale)
+		}
+	}
+}
+
+func TestFeaturedRailFocusAndMissingIDIdentityAreCompatible(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"function railCards(rail){return Array.from(rail.children).filter(card=>card.classList.contains('media'))}",
+		"const cards=railCards(rail)",
+		"railCards(rail).forEach(card=>",
+		".focus-rail .media.is-rail-active .featured-poster-frame",
+		".featured-rail.focus-rail .featured-poster-card",
+		"transform: none",
+		"mid=Number(id(x));if(mid>0)return mt+':id:'+mid",
+		"return mt+':fallback:'+title(x).trim().toLowerCase()+':'+year(x)+':'+artwork",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("精选横滑栏缺少焦点兼容或无 ID 身份契约 %q", want)
+		}
+	}
+	if strings.Contains(html, "querySelectorAll(':scope > .media')") {
+		t.Fatal("横滑栏焦点仍依赖旧 WebView 兼容性较差的 :scope 查询")
 	}
 }
 
