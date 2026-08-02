@@ -45,9 +45,19 @@ func TestMiniAppUsesCinemaStudioAcrossRootPages(t *testing.T) {
 		`class="search-workspace"`,
 		`class="search-console"`,
 		`class="search-results" aria-live="polite"`,
-		`class="account-workspace"`,
-		`class="account-summary"`,
-		`class="account-content"`,
+		`class="archive-workspace"`,
+		`class="archive-lead"`,
+		`class="archive-now"`,
+		`class="archive-body"`,
+		`class="quota-ticket"`,
+		`class="watch-stack"`,
+		`class="service-band"`,
+		"正在处理",
+		"focus.media_title||focus.title||focus.name||'正在处理的求片'",
+		"r.media_title||r.title||r.name||'正在处理的求片'",
+		"focus.request_id??focus.id",
+		"r.request_id??r.id",
+		"求片档案",
 		`class="tool-workspace"`,
 		`class="tool-header"`,
 		`class="tool-body"`,
@@ -68,6 +78,21 @@ func TestMiniAppUsesCinemaStudioAcrossRootPages(t *testing.T) {
 		`class="bottom glass-surface"`,
 		"AI 精选",
 	)
+}
+
+func TestMeFocusOnlyUsesOpenRequestsAndRendersTheWholeWatchlist(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"focus=all.find(r=>progressGroup(r)==='active')||all.find(r=>progressGroup(r)==='pending')",
+		"grid-template-columns: 98px minmax(0, 1fr)",
+		"watch.map(watchStackItem).join('')",
+	)
+	if strings.Contains(html, "all.find(r=>progressGroup(r)==='pending')||all[0]") {
+		t.Fatal("我的页不应把已结束请求回退成正在处理")
+	}
+	if strings.Contains(html, "watch.slice(0,4)") {
+		t.Fatal("我的页不应静默隐藏第 5 条及之后的想看记录")
+	}
 }
 
 func TestHomeTimelineUsesSingleMobileTrackAndDesktopGrid(t *testing.T) {
@@ -159,8 +184,8 @@ func TestGlobalVisualSystemIsMobileFirstAndDesktopReflows(t *testing.T) {
 		".home-studio {",
 		".search-workspace {",
 		".tool-workspace {",
-		".account-workspace {",
-		"grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr)",
+		".archive-workspace {",
+		"grid-template-columns: minmax(270px, .68fr) minmax(0, 1.32fr)",
 		"@media (max-width: 350px)",
 		"@media (prefers-reduced-motion: reduce)",
 		"animation: none !important",
