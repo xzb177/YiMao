@@ -70,6 +70,24 @@ func TestMiniAppUsesCinemaStudioAcrossRootPages(t *testing.T) {
 	)
 }
 
+func TestHomeTimelineUsesSingleMobileTrackAndDesktopGrid(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"margin: 26px 0 0 21px",
+		".thread-turn {",
+		"width: 100%",
+		".thread-turn.is-wide .thread-art {",
+		"@media (min-width: 900px)",
+		"grid-template-columns: repeat(2, minmax(0, 1fr))",
+	)
+	rejectSource(t, html,
+		"padding-right: 16%",
+		"padding-left: 18%",
+		"width: calc(100% + 21px)",
+		"margin-left: -21px",
+	)
+}
+
 func TestHomeArtworkUsesOneIdentityAndIndependentFallbacks(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
@@ -131,7 +149,7 @@ func TestGlobalVisualSystemIsMobileFirstAndDesktopReflows(t *testing.T) {
 		"--bg: #090a0c",
 		"--accent: #f05a4f",
 		"overflow-x: clip",
-		"min-width: 320px",
+		"min-width: 0",
 		"min-height: 44px",
 		"@media (min-width: 900px)",
 		".home-studio {",
