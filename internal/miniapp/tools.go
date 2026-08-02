@@ -1,7 +1,6 @@
 package miniapp
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -77,8 +76,7 @@ func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
 			MediaID     string `json:"media_id"`
 			MediaTitle  string `json:"media_title"`
 		}
-		dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
-		if dec.Decode(&body) != nil {
+		if decodeJSONBody(w, r, &body, 16<<10) != nil {
 			http.Error(w, "反馈内容格式不正确", http.StatusBadRequest)
 			return
 		}
@@ -162,7 +160,7 @@ func (s *Server) createWish(w http.ResponseWriter, r *http.Request, user AuthUse
 		MediaType string `json:"type"`
 		Season    int    `json:"season"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body) != nil || body.TMDBID <= 0 ||
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.TMDBID <= 0 ||
 		(body.MediaType != "movie" && body.MediaType != "tv") || (body.MediaType == "movie" && body.Season != 0) ||
 		(body.MediaType == "tv" && body.Season <= 0) {
 		http.Error(w, "许愿参数不完整", http.StatusBadRequest)
@@ -262,7 +260,7 @@ func (s *Server) handleAdventure(w http.ResponseWriter, r *http.Request) {
 		Turn   int    `json:"turn"`
 		Choice int    `json:"choice"`
 	}
-	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8<<10)).Decode(&body) != nil {
+	if decodeJSONBody(w, r, &body, 8<<10) != nil {
 		http.Error(w, "操作参数不完整", http.StatusBadRequest)
 		return
 	}

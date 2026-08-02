@@ -201,7 +201,31 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/miniapp/v1/issues", s.handleIssues)
 	mux.HandleFunc("/api/miniapp/v1/wishes", s.handleWishes)
 	mux.HandleFunc("/api/miniapp/v1/adventure", s.handleAdventure)
-	return mux
+	return browserSecurityHeaders(mux)
+}
+
+func browserSecurityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, limit int64) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
+	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("multiple JSON values")
+		}
+		return err
+	}
+	return nil
 }
 
 type assistantResponseView struct {
@@ -712,6 +736,10 @@ func filterSearchResults(results []services.SearchResult, typeName string) []ser
 }
 
 func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
 	user, ok := s.auth(w, r)
 	if !ok {
 		return
@@ -899,7 +927,7 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		ID   int    `json:"tmdb_id"`
 		Type string `json:"type"`
 	}
-	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") {
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") {
 		http.Error(w, "请求参数不完整", http.StatusBadRequest)
 		return
 	}
@@ -1012,7 +1040,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		Type   string `json:"type"`
 		Season int    `json:"season"`
 	}
-	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 {
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 {
 		http.Error(w, "请求参数不完整", http.StatusBadRequest)
 		return
 	}
@@ -1123,7 +1151,7 @@ func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
 		Type   string `json:"type"`
 		Season int    `json:"season"`
 	}
-	if json.NewDecoder(r.Body).Decode(&body) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") || (body.Type == "movie" && body.Season != 0) || (body.Type == "tv" && body.Season <= 0) {
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") || (body.Type == "movie" && body.Season != 0) || (body.Type == "tv" && body.Season <= 0) {
 		http.Error(w, "洗版参数不完整", http.StatusBadRequest)
 		return
 	}
@@ -1195,7 +1223,7 @@ func (s *Server) handleCancelRequest(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		RequestID string `json:"request_id"`
 	}
-	if json.NewDecoder(r.Body).Decode(&body) != nil || strings.TrimSpace(body.RequestID) == "" {
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || strings.TrimSpace(body.RequestID) == "" {
 		http.Error(w, "请求参数不完整", http.StatusBadRequest)
 		return
 	}

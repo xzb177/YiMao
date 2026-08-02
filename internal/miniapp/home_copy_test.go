@@ -220,6 +220,16 @@ func TestSearchRacePaginationAndPersistentErrors(t *testing.T) {
 	rejectSource(t, html, "S.page++;doSearch(true)", "await r.text()")
 }
 
+func TestToolPagesIgnoreStaleResponses(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"toolSeq:0",
+		"const seq=++S.toolSeq",
+		"if(seq!==S.toolSeq||S.view!==view)return",
+		"if(seq===S.toolSeq&&S.view===view){S.toolLoading=false;render()}",
+	)
+}
+
 func TestUntrustedMediaIDsAreNumericAndInvalidEntriesAreNotClickable(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,

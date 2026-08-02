@@ -46,6 +46,59 @@ func TestAuthRejectsSignedInitDataInQueryString(t *testing.T) {
 	}
 }
 
+func TestIndexSetsBrowserSecurityHeaders(t *testing.T) {
+	handler := NewServer(Deps{}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/miniapp/", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	wants := map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"Referrer-Policy":        "no-referrer",
+		"Permissions-Policy":     "camera=(), microphone=(), geolocation=()",
+	}
+	for name, want := range wants {
+		if got := response.Header().Get(name); got != want {
+			t.Errorf("%s=%q want %q", name, got, want)
+		}
+	}
+}
+
+func TestDetailRejectsNonGETMethods(t *testing.T) {
+	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedRequest(t, method, "/api/miniapp/v1/detail?id=1&type=movie", `{}`, 101))
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestWriteEndpointsRejectTrailingJSON(t *testing.T) {
+	carpool := services.NewCarpoolService(t.TempDir())
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodDelete, "/api/miniapp/v1/watchlist", `{"tmdb_id":550,"type":"movie"}{"tmdb_id":551,"type":"movie"}`, 101))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestWriteEndpointsRejectOversizedBodies(t *testing.T) {
+	carpool := services.NewCarpoolService(t.TempDir())
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
+	body := `{"tmdb_id":550,"type":"movie","padding":"` + strings.Repeat("x", 9<<10) + `"}`
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodDelete, "/api/miniapp/v1/watchlist", body, 101))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestWatchlistListAndExactRemove(t *testing.T) {
 	carpool := services.NewCarpoolService(t.TempDir())
 	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
