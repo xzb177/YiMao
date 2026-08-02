@@ -69,6 +69,14 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 	}
 }
 
+func duplicateSubscriptionFeedback(ctx *callback.Context, requesterID int64) (*callback.Response, bool) {
+	return &callback.Response{
+		Text:        "⚠️ 已有相同求片正在处理\n\n这条求片已经在处理，不用重复提交。",
+		CallbackMsg: "已有订阅",
+		Edit:        true,
+	}, ctx == nil || ctx.ChatID != requesterID
+}
+
 // handleApprove handles approve callback
 // Supports two formats:
 // - Legacy: "review_approve:id:xxx:token:yyy"
@@ -245,16 +253,14 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			"⚠️ 已有相同求片正在处理",
 			fmt.Sprintf("当前进度：%s", stateText),
 		)
-		h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
+		resp, sendSeparate := duplicateSubscriptionFeedback(ctx, review.TelegramID)
+		if sendSeparate {
+			h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
+		}
 		// Sync review with existing subscription info when possible
 		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
 		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
-		return &callback.Response{
-			Text:        "⚠️ 已有相同求片正在处理，无需重复提交",
-			CallbackMsg: "已有订阅",
-			ShowAlert:   true,
-			Edit:        true,
-		}, nil
+		return resp, nil
 	}
 
 	req, err := h.moviepilot.RequestMedia(
