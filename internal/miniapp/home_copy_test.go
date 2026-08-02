@@ -16,7 +16,6 @@ func TestHomeUsesAppFirstDiscoveryLayout(t *testing.T) {
 	html := string(page)
 	for _, want := range []string{
 		"lead.backdrop_path||lead.poster_path",
-		`class="top compact-top-bar glass-surface"`,
 		`class="search home-search"`,
 		`<section class="featured-mosaic"`,
 		`class="featured-primary"`,
@@ -103,7 +102,7 @@ func TestMiniAppUsesReadableLiquidGlassWithFallback(t *testing.T) {
 		"@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))",
 		"-webkit-backdrop-filter: blur(16px) saturate(120%)",
 		"backdrop-filter: blur(16px) saturate(120%)",
-		`class="top compact-top-bar glass-surface"`,
+		`class="app-bar glass-surface"`,
 		`class="bottom glass-surface"`,
 	} {
 		if !strings.Contains(html, want) {
@@ -113,6 +112,90 @@ func TestMiniAppUsesReadableLiquidGlassWithFallback(t *testing.T) {
 	for _, contentSurface := range []string{`class="search home-search glass-surface"`, ".avatar,\n  .detail-actions", ".type-badge,\n  .confirm"} {
 		if strings.Contains(html, contentSurface) {
 			t.Fatalf("Glass 不应进入内容表面 %q", contentSurface)
+		}
+	}
+}
+
+func TestChromeUsesContextualRootAppBarWithoutWebsiteBranding(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	chromeStart := strings.Index(html, "function chrome(")
+	chromeEnd := strings.Index(html, "function render(){")
+	if chromeStart < 0 || chromeEnd <= chromeStart {
+		t.Fatal("未找到 chrome 渲染边界")
+	}
+	chrome := html[chromeStart:chromeEnd]
+
+	for _, want := range []string{
+		"isRoot=!S.detailVisible&&ROOT_VIEWS.includes(S.view)",
+		"home:['发现','今晚看什么']",
+		"search:['搜索','片库就绪']",
+		"me:['我的','你好，'+n]",
+		`<header class="app-bar glass-surface">`,
+		`<div class="app-context">`,
+		`class="avatar" aria-label="打开我的"`,
+		"const appBar=isRoot?",
+	} {
+		if !strings.Contains(chrome, want) {
+			t.Fatalf("根页面缺少上下文 App Bar 契约 %q", want)
+		}
+	}
+
+	for _, stale := range []string{
+		`class="brand"`,
+		`class="mark"`,
+		"compact-top-bar",
+		"云海影视",
+	} {
+		if strings.Contains(chrome, stale) {
+			t.Fatalf("全局头部仍包含网站式品牌元素 %q", stale)
+		}
+	}
+	for _, stale := range []string{".brand {", ".mark {", "icons={mark:"} {
+		if strings.Contains(html, stale) {
+			t.Fatalf("页面仍保留已废弃的头部品牌契约 %q", stale)
+		}
+	}
+}
+
+func TestRootMotionIsOneShotNavigationOnlyAndReducedMotionSafe(t *testing.T) {
+	page, err := os.ReadFile("web/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(page)
+	for _, want := range []string{
+		"rootMotion:''",
+		"function queueRootMotion(next)",
+		"from===next){S.rootMotion=''",
+		"ROOT_VIEWS.indexOf(next)>ROOT_VIEWS.indexOf(from)?'forward':'backward'",
+		"const motion=S.rootMotion;S.rootMotion=''",
+		"root-enter-forward",
+		"root-enter-backward",
+		"@keyframes row-in",
+		"@keyframes detail-in",
+		`class="detail detail-enter"`,
+		":nth-child(-n + 6)",
+		".search:focus-within .search-icon",
+		"transform: scale(.98)",
+		".tab-transition .nav.active i",
+		"animation: none !important",
+		"transition: none !important",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("Mini App 缺少一次性原生动效契约 %q", want)
+		}
+	}
+	for _, stale := range []string{
+		"animation: surface-in",
+		"animation: shine",
+		"IntersectionObserver",
+	} {
+		if strings.Contains(html, stale) {
+			t.Fatalf("Mini App 仍包含异步重放或滚动触发动效 %q", stale)
 		}
 	}
 }
