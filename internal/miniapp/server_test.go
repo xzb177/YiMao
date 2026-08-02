@@ -19,15 +19,31 @@ const miniAppTestToken = "123456:TEST_TOKEN_FOR_UNIT_TEST_ONLY"
 
 func signedRequest(t *testing.T, method, target, body string, userID int64) *http.Request {
 	t.Helper()
+	values := signedInitDataValues(userID)
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("X-Telegram-Init-Data", values.Encode())
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+func signedInitDataValues(userID int64) url.Values {
 	values := url.Values{
 		"auth_date": {strconv.FormatInt(time.Now().Unix(), 10)},
 		"user":      {`{"id":` + strconv.FormatInt(userID, 10) + `,"first_name":"测试"}`},
 	}
 	values.Set("hash", signInitDataForTest(miniAppTestToken, values))
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
-	req.Header.Set("X-Telegram-Init-Data", values.Encode())
-	req.Header.Set("Content-Type", "application/json")
-	return req
+	return values
+}
+
+func TestAuthRejectsSignedInitDataInQueryString(t *testing.T) {
+	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
+	query := signedInitDataValues(101).Encode()
+	request := httptest.NewRequest(http.MethodGet, "/api/miniapp/v1/watchlist?initData="+url.QueryEscape(query), nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("query-string initData must be rejected: status=%d body=%s", response.Code, response.Body.String())
+	}
 }
 
 func TestWatchlistListAndExactRemove(t *testing.T) {

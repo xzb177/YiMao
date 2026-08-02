@@ -316,9 +316,6 @@ func validAssistantSearchResults(results []services.SearchResult, requestedType 
 
 func (s *Server) auth(w http.ResponseWriter, r *http.Request) (AuthUser, bool) {
 	raw := r.Header.Get("X-Telegram-Init-Data")
-	if raw == "" {
-		raw = r.URL.Query().Get("initData")
-	}
 	user, err := ValidateInitData(raw, s.deps.BotToken, s.deps.MaxAuthAge)
 	if err != nil {
 		logger.Info("[MiniApp] initData rejected: %v", err)
