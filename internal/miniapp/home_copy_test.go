@@ -103,6 +103,7 @@ func TestHomePosterSurfacesPreserveFullArtwork(t *testing.T) {
 	}
 	html := string(page)
 	for _, selector := range []string{
+		".featured-lead-subject",
 		".featured-lead-media.has-poster .featured-lead-subject",
 		".featured-poster-media .featured-poster-subject",
 		".feed-poster .feed-subject",
@@ -115,6 +116,14 @@ func TestHomePosterSurfacesPreserveFullArtwork(t *testing.T) {
 		if end < 0 || !strings.Contains(html[start:start+end], "object-fit: contain") {
 			t.Fatalf("首页海报仍可能被裁切 %q", selector)
 		}
+	}
+	frameStart := strings.Index(html, ".featured-poster-frame {")
+	if frameStart < 0 {
+		t.Fatal("首页缺少精选海报 frame")
+	}
+	frameEnd := strings.Index(html[frameStart:], "}\n")
+	if frameEnd < 0 || !strings.Contains(html[frameStart:frameStart+frameEnd], "display: block") {
+		t.Fatal("精选海报 frame 未建立块级盒，真机可能折叠成竖线")
 	}
 	for _, want := range []string{
 		`class="featured-lead-ambient"`,
