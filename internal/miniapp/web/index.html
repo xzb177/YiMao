@@ -19,9 +19,9 @@
   --warning: #e8b35e;
   --danger: #ff756b;
   --shadow: 0 18px 44px rgba(0, 0, 0, .34);
-  --glass: rgba(18, 19, 23, .68);
-  --glass-border: rgba(255, 255, 255, .2);
-  --glass-highlight: rgba(255, 255, 255, .18);
+  --glass: rgba(17, 18, 21, .88);
+  --glass-border: rgba(255, 255, 255, .09);
+  --glass-highlight: rgba(255, 255, 255, .08);
   --safe-top: max(0px, env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px));
   --safe-bottom: max(0px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px));
   --safe:var(--safe-bottom);
@@ -131,43 +131,18 @@ img {
   --glass-y: 12%;
   --glass-shift: 0px;
   position: relative;
-  isolation: isolate;
   border: 1px solid var(--glass-border);
   background-color: var(--glass);
   background-image:
-    radial-gradient(circle at var(--glass-x) var(--glass-y), rgba(255, 255, 255, .2), rgba(255, 255, 255, .055) 20%, transparent 45%),
-    linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .018) 42%, rgba(5, 6, 8, .08));
-  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, .04), 0 12px 30px rgba(0, 0, 0, .28);
+    radial-gradient(circle at var(--glass-x) var(--glass-y), rgba(255, 255, 255, .075), transparent 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, .035), transparent 56%);
+  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 10px 28px rgba(0, 0, 0, .22);
   color: var(--ink);
 }
 
 .glass-surface::before,
 .glass-surface::after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.glass-surface::before {
-  inset: 1px;
-  border: 1px solid rgba(255, 255, 255, .055);
-  background: radial-gradient(ellipse 42% 95% at var(--glass-x) var(--glass-y), rgba(255, 255, 255, .12), transparent 72%);
-}
-
-.glass-surface::after {
-  background: linear-gradient(108deg, transparent 18%, rgba(255, 255, 255, .02) 35%, rgba(255, 255, 255, .12) 49%, rgba(255, 255, 255, .025) 62%, transparent 80%);
-  background-repeat: no-repeat;
-  background-position: calc(var(--glass-x) + var(--glass-shift)) var(--glass-y);
-  background-size: 48% 170%;
-  opacity: .72;
-}
-
-.glass-surface > * {
-  position: relative;
-  z-index: 1;
+  content: none;
 }
 
 .app-bar {
@@ -180,8 +155,10 @@ img {
   justify-content: space-between;
   margin: 0 -10px;
   padding: 0 10px;
-  border-radius: 0 0 14px 14px;
+  border-color: transparent transparent rgba(255, 255, 255, .055);
+  border-radius: 0 0 12px 12px;
   background-color: var(--glass);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
 }
 
 .app-context {
@@ -217,9 +194,9 @@ img {
   display: grid;
   place-items: center;
   padding: 0;
-  border: 1px solid var(--glass-border);
+  border: 0;
   border-radius: 50%;
-  background: var(--glass);
+  background: rgba(255, 255, 255, .065);
   color: var(--ink);
   font-size: 12px;
   font-weight: 750;
@@ -227,390 +204,413 @@ img {
 
 .home-shell {
   position: relative;
+  padding-top: calc(var(--safe-top) + 18px);
 }
 
-.home-search {
+.home-studio,
+.studio-console,
+.screening-flow {
+  min-width: 0;
+}
+
+.studio-intro {
+  margin: 4px 0 16px;
+}
+
+.studio-intro p,
+.studio-intro h1 {
+  margin: 0;
+}
+
+.studio-intro p {
+  color: var(--accent-strong);
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 720;
+}
+
+.studio-intro h1 {
+  max-width: 300px;
+  margin-top: 3px;
+  font-size: 28px;
+  line-height: 1.18;
+  font-weight: 720;
+}
+
+.prompt-composer {
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  background-color: rgba(19, 20, 24, .78);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+}
+
+.prompt-composer textarea {
+  width: 100%;
+  min-height: 82px;
+  display: block;
+  resize: none;
+  padding: 15px 15px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.prompt-composer textarea::placeholder {
+  color: #8d8b90;
+}
+
+.prompt-composer-footer {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  border-top: 1px solid rgba(255, 255, 255, .065);
+}
+
+.prompt-types {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.prompt-kind {
   position: relative;
-  z-index: 6;
-  margin-top: 6px;
-  border-color: var(--glass-border);
-  border-radius: 24px;
-  background-color: var(--glass);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), inset 0 -1px 0 rgba(255, 255, 255, .035), 0 10px 24px rgba(0, 0, 0, .24);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 9px;
+  background: transparent;
+  color: var(--dim);
+  font-size: 11px;
 }
 
-.home-search.search {
-  min-height: 46px;
-  padding: 0 1px 0 14px;
+.prompt-kind.active {
+  color: var(--ink);
 }
 
-.home-search .search-submit {
+.prompt-kind.active::after {
+  content: "";
+  position: absolute;
+  right: 9px;
+  bottom: 5px;
+  left: 9px;
+  height: 2px;
+  background: var(--accent);
+}
+
+.prompt-send {
   width: 44px;
   min-width: 44px;
   min-height: 44px;
   display: grid;
   place-items: center;
-  padding: 3px;
-  border-radius: 50%;
-  background-clip: content-box;
-}
-
-.home-search .search-submit svg {
-  width: 18px;
-  height: 18px;
-}
-
-.featured-home {
-  position: relative;
-  margin-top: 17px;
-}
-
-.featured-heading {
-  min-height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 7px;
-}
-
-.featured-heading h1 {
-  min-width: 0;
-  margin: 0;
-  color: var(--ink);
-  font-size: 17px;
-  line-height: 1.25;
-  font-weight: 740;
-}
-
-.featured-heading span {
-  flex: none;
-  color: var(--dim);
-  font-size: 11px;
-}
-
-.featured-lead {
-  position: relative;
-  width: 100%;
-  min-height: 190px;
-  aspect-ratio: 16 / 8;
-  display: block;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .1);
-  border-radius: 8px;
-  background: var(--panel-strong);
-  box-shadow: 0 9px 22px rgba(0, 0, 0, .2), inset 0 1px 0 rgba(255, 255, 255, .07);
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.prompt-send svg {
+  width: 20px;
+  height: 20px;
+}
+
+.studio-prompts {
+  display: grid;
+  margin-top: 10px;
+}
+
+.studio-prompts button {
+  min-height: 44px;
+  padding: 9px 2px;
+  border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
   text-align: left;
 }
 
-.featured-lead::after {
-  content: "";
-  position: absolute;
-  z-index: 1;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(9, 10, 12, .02) 24%, rgba(9, 10, 12, .94) 100%);
-  pointer-events: none;
+.screening-flow {
+  margin-top: 30px;
 }
 
-.featured-lead-media,
-.featured-poster-media {
+.screening-response {
+  display: grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin: 0 0 12px;
+  color: #d8d5d2;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.screening-response::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+}
+
+.screening-response p {
+  margin: 0;
+}
+
+.screening-scene {
+  position: relative;
+  width: calc(100% + 32px);
+  min-height: 208px;
+  aspect-ratio: 16 / 10;
+  display: block;
+  margin: 0 -16px;
+  padding: 0;
+  overflow: hidden;
+  background: #151619;
+  text-align: left;
+}
+
+.studio-artwork {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  background: var(--panel-strong);
+  background: #151619;
 }
 
-.featured-lead-media img,
-.featured-poster-media img {
+.studio-artwork img {
   position: absolute;
   display: block;
   pointer-events: none;
   user-select: none;
 }
 
-.featured-lead-ambient,
-.featured-poster-ambient {
-  inset: -14%;
-  width: 128%;
-  height: 128%;
-  object-fit: cover;
-  filter: blur(16px) saturate(1.08) brightness(.72);
-  opacity: .62;
-  transform: scale(1.06);
-}
-
-.featured-lead-subject {
-  inset: 6px;
-  width: calc(100% - 12px);
-  height: calc(100% - 12px);
-  object-fit: contain;
-  object-position: center;
-  background: var(--panel-strong);
-  filter: drop-shadow(0 5px 13px rgba(0, 0, 0, .42));
-  transition: opacity .18s ease;
-}
-
-.featured-lead-media.has-poster .featured-lead-subject {
-  inset: 6px 12%;
-  width: 76%;
-  height: calc(100% - 12px);
-  object-fit: contain;
-}
-
-.featured-lead-media.is-error,
-.featured-poster-media.is-error {
-  display: none;
-}
-
-.featured-fallback {
-  height: 100%;
-  display: grid;
-  align-content: end;
-  padding: 12px;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.featured-lead-media + .featured-fallback,
-.featured-poster-media + .featured-fallback {
-  position: absolute;
+.studio-ambient {
   inset: 0;
-  visibility: hidden;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(.84) brightness(.62);
+  transition: opacity .2s ease;
 }
 
-.featured-lead-media.is-error + .featured-fallback,
-.featured-poster-media.is-error + .featured-fallback {
-  visibility: visible;
+.studio-subject {
+  z-index: 1;
+  right: 5%;
+  bottom: -3%;
+  width: 38%;
+  height: 94%;
+  object-fit: contain;
+  object-position: center bottom;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, .58));
+  transition: opacity .2s ease;
 }
 
-.featured-lead-copy {
+.studio-artwork::after {
+  content: "";
   position: absolute;
   z-index: 2;
-  right: 10px;
-  bottom: 9px;
-  left: 10px;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(9, 10, 12, .94) 0%, rgba(9, 10, 12, .54) 44%, rgba(9, 10, 12, .08) 78%), linear-gradient(0deg, rgba(9, 10, 12, .88), transparent 56%);
+  pointer-events: none;
 }
 
-.featured-lead-copy h2 {
-  margin: 0;
+.studio-fallback {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #18191d;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.studio-artwork.is-empty .studio-fallback,
+.studio-artwork.is-error .studio-fallback {
+  display: flex;
+}
+
+.scene-caption {
+  position: absolute;
+  z-index: 3;
+  right: 42%;
+  bottom: 15px;
+  left: 16px;
+  display: grid;
+  gap: 5px;
+}
+
+.scene-caption strong {
   overflow: hidden;
   color: #fff;
-  font-size: 18px;
-  line-height: 1.2;
+  font-size: 21px;
+  line-height: 1.12;
   font-weight: 740;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, .64);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .72);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
 
-.featured-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 4px;
-  color: rgba(255, 255, 255, .88);
+.scene-caption small,
+.thread-caption small,
+.thread-caption span {
+  color: rgba(255, 255, 255, .72);
   font-size: 10px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
-.featured-meta span + span::before {
-  content: "·";
-  margin-right: 6px;
-  color: rgba(255, 255, 255, .54);
-}
-
-.featured-rail {
-  display: flex;
-  gap: 11px;
-  margin: 10px -16px 0;
-  padding: 3px 16px 10px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scroll-padding-inline: 16px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-
-.featured-rail::-webkit-scrollbar {
-  display: none;
-}
-
-.featured-poster-card {
-  flex: 0 0 28%;
-  scroll-snap-align: start;
-}
-
-.featured-poster-frame {
+.film-thread {
   position: relative;
+  display: flow-root;
+  margin-top: 26px;
+  padding-left: 21px;
+}
+
+.film-thread::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 20px;
+  left: 4px;
+  width: 1px;
+  background: linear-gradient(var(--accent), rgba(240, 90, 79, .08));
+}
+
+.thread-turn {
+  position: relative;
+  margin: 0 0 34px;
+}
+
+.thread-turn::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: -21px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.thread-pick {
+  width: 100%;
+  min-height: 44px;
   display: block;
-  width: 100%;
-  aspect-ratio: 2 / 3;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .08);
-  border-radius: 6px;
-  background: var(--panel-strong);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, .28);
-}
-
-.featured-poster-media .featured-poster-subject {
-  inset: 4px;
-  width: calc(100% - 8px);
-  height: calc(100% - 8px);
-  object-fit: contain;
-  filter: drop-shadow(0 5px 13px rgba(0, 0, 0, .42));
-}
-
-.featured-poster-card h3 {
-  margin: 8px 1px 0;
-  overflow: hidden;
-  color: var(--ink);
-  font-size: 13px;
-  line-height: 1.35;
-  font-weight: 650;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.feed-list {
-  display: grid;
-  border-top: 1px solid var(--line-soft);
-}
-
-.feed-row {
-  width: 100%;
-  min-height: 94px;
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 2px;
-  border-bottom: 1px solid var(--line-soft);
+  padding: 0;
   background: transparent;
   text-align: left;
 }
 
-.feed-poster {
+.thread-turn.is-poster .thread-pick {
+  padding-right: 16%;
+}
+
+.thread-turn.is-poster:nth-child(even) .thread-pick {
+  padding-right: 0;
+  padding-left: 18%;
+}
+
+.thread-art {
   position: relative;
-  width: 56px;
-  height: 76px;
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .09);
-  border-radius: 6px;
-  background: var(--panel-strong);
-}
-
-.feed-poster img {
-  position: absolute;
+  width: 100%;
+  aspect-ratio: 2 / 3;
   display: block;
-  pointer-events: none;
-  user-select: none;
-}
-
-.feed-poster .feed-ambient {
-  inset: -18%;
-  width: 136%;
-  height: 136%;
-  object-fit: cover;
-  filter: blur(12px) saturate(1.08) brightness(.7);
-  opacity: .62;
-  transform: scale(1.06);
-}
-
-.feed-poster .feed-subject {
-  inset: 3px;
-  width: calc(100% - 6px);
-  height: calc(100% - 6px);
-  display: block;
-  object-fit: contain;
-  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, .38));
-}
-
-.feed-poster .feed-rank {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
-  min-width: 19px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  background: rgba(9, 10, 12, .84);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 760;
-  text-align: center;
-}
-
-.feed-poster .feed-fallback {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  padding: 7px;
   overflow: hidden;
-  color: var(--muted);
-  font-size: 9px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
+  background: #151619;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, .3);
 }
 
-.feed-copy {
-  min-width: 0;
+.thread-art .studio-subject {
+  right: 13%;
+  bottom: 2%;
+  width: 74%;
+  height: 94%;
 }
 
-.feed-copy h3 {
-  margin: 0;
+.thread-art .studio-artwork::after {
+  background: linear-gradient(0deg, rgba(9, 10, 12, .52), transparent 54%);
+}
+
+.thread-turn.is-wide {
+  margin-top: 8px;
+  margin-bottom: 38px;
+}
+
+.thread-turn.is-wide .thread-art {
+  width: calc(100% + 21px);
+  aspect-ratio: 16 / 7;
+  margin-left: -21px;
+  box-shadow: none;
+}
+
+.thread-turn.is-wide .studio-subject {
+  right: 4%;
+  bottom: -6%;
+  width: 31%;
+  height: 108%;
+}
+
+.thread-caption {
+  position: relative;
+  display: grid;
+  gap: 3px;
+  margin-top: 9px;
+}
+
+.thread-caption strong {
   overflow: hidden;
   color: var(--ink);
-  font-size: 15px;
-  line-height: 1.35;
-  font-weight: 680;
+  font-size: 16px;
+  line-height: 1.3;
+  font-weight: 690;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 
-.feed-copy p {
-  margin: 5px 0 0;
-  overflow: hidden;
+.thread-caption small {
+  color: var(--accent-strong);
+}
+
+.thread-caption span {
+  color: var(--dim);
+}
+
+.thread-turn.is-wide .thread-caption {
+  z-index: 3;
+  margin: -53px 12px 0 0;
+  padding: 0 12px 11px;
+}
+
+.thread-turn.is-wide .thread-caption strong {
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, .75);
+}
+
+.studio-empty {
+  min-height: 220px;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 24px 18px;
+  border-left: 2px solid var(--accent);
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.45;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
 }
 
-.feed-score {
-  min-width: 34px;
-  color: var(--warning);
-  font-size: 12px;
-  font-weight: 720;
-  text-align: right;
-}
-
-.wide-rail {
-  display: flex;
-  gap: 11px;
-  margin: 0 -16px;
-  padding: 7px 16px 10px;
-  overflow-x: auto;
-  overscroll-behavior-inline: contain;
-  scroll-padding-inline: 16px;
-  scroll-snap-type: x proximity;
-  scrollbar-width: none;
-}
-
-.wide-rail::-webkit-scrollbar {
-  display: none;
-}
-
-.wide-rail .media {
-  flex: 0 0 38%;
-}
-
-.wide-rail .media:nth-child(3n + 2) {
-  flex-basis: 46%;
+.studio-empty strong {
+  color: var(--ink);
+  font-size: 17px;
 }
 
 .search {
@@ -783,17 +783,6 @@ img {
 .focus-rail .media.is-rail-active .poster {
   border-color: rgba(255, 255, 255, .17);
   box-shadow: 0 13px 32px rgba(0, 0, 0, .38);
-}
-
-.focus-rail .media.is-rail-active .featured-poster-frame {
-  border-color: rgba(255, 255, 255, .17);
-  box-shadow: 0 13px 32px rgba(0, 0, 0, .38);
-}
-
-.featured-rail.focus-rail .featured-poster-card {
-  transform: none;
-  transition: opacity .2s ease, filter .2s ease;
-  will-change: opacity, filter;
 }
 
 .poster {
@@ -2193,15 +2182,15 @@ img {
 .bottom {
   position: fixed;
   z-index: 10;
-  left: 50%;
-  bottom: calc(var(--safe-bottom) + var(--tab-gap));
-  width: min(calc(100% - 24px), 404px);
-  transform: translateX(-50%);
-  padding: 2px;
-  border: 1px solid var(--glass-border);
-  border-radius: 17px;
-  background-color: rgba(18, 19, 23, .54);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14), inset 0 -1px 0 rgba(255, 255, 255, .03), 0 8px 22px rgba(0, 0, 0, .24);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  min-height: calc(var(--tab-height) + var(--safe-bottom));
+  padding: 3px 8px var(--safe-bottom);
+  border-top: 1px solid #2b2d33;
+  background: #15161a;
+  box-shadow: 0 -10px 28px rgba(0, 0, 0, .26);
 }
 
 .bottom nav {
@@ -2211,13 +2200,14 @@ img {
 }
 
 .nav {
+  position: relative;
   min-width: 0;
   min-height: 44px;
   display: grid;
   place-items: center;
   align-content: center;
   gap: 1px;
-  padding: 1px 2px;
+  padding: 1px 2px 3px;
   border-radius: 14px;
   background: transparent;
   color: #d5d2d5;
@@ -2241,8 +2231,20 @@ img {
 }
 
 .nav.active {
-  background: rgba(240, 90, 79, .1);
+  background: transparent;
   color: var(--accent-strong);
+}
+
+.nav.active::after {
+  content: "";
+  position: absolute;
+  bottom: 1px;
+  left: 50%;
+  width: 16px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-strong);
+  transform: translateX(-50%);
 }
 
 .nav.active i {
@@ -2326,15 +2328,15 @@ img {
   animation: root-in-backward .22s ease-out both;
 }
 
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(-n + 6) {
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(-n + 6) {
   animation: row-in .18s ease-out both;
 }
 
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(2) { animation-delay: .014s; }
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(3) { animation-delay: .028s; }
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(4) { animation-delay: .042s; }
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(5) { animation-delay: .056s; }
-.root-enter :is(.feed-list, .grid, .request-list, .tool-list) > :nth-child(6) { animation-delay: .07s; }
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(2) { animation-delay: .014s; }
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(3) { animation-delay: .028s; }
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(4) { animation-delay: .042s; }
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(5) { animation-delay: .056s; }
+.root-enter :is(.grid, .request-list, .tool-list) > :nth-child(6) { animation-delay: .07s; }
 
 .tab-transition .nav.active i {
   animation: tab-active .18s ease-out both;
@@ -2355,21 +2357,16 @@ img {
 
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .glass-surface {
-    background-color: rgba(18, 19, 23, .62);
-    -webkit-backdrop-filter: blur(18px) saturate(135%) contrast(105%);
-    backdrop-filter: blur(18px) saturate(135%) contrast(105%);
+    background-color: rgba(17, 18, 21, .72);
+    -webkit-backdrop-filter: blur(16px) saturate(118%);
+    backdrop-filter: blur(16px) saturate(118%);
   }
 
-  .bottom {
-    background-color: rgba(18, 19, 23, .5);
-    -webkit-backdrop-filter: blur(14px) saturate(122%) contrast(103%);
-    backdrop-filter: blur(14px) saturate(122%) contrast(103%);
-  }
 }
 
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .glass-surface {
-    background-color: rgba(24, 25, 30, .96);
+    background-color: rgba(20, 21, 24, .96);
   }
 }
 
@@ -2386,23 +2383,71 @@ img {
   }
 }
 
+.search-workspace,
+.tool-workspace {
+  min-width: 0;
+}
+
+.search-console,
+.tool-header {
+  padding: 10px 0 26px;
+  border-bottom: 1px solid var(--line);
+}
+
+.search-console > p,
+.tool-header > p {
+  margin: 0 0 7px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .09em;
+}
+
+.search-console h1,
+.tool-header h1 {
+  margin: 0 0 22px;
+  max-width: 680px;
+  font-size: clamp(28px, 8vw, 44px);
+  line-height: 1.06;
+  letter-spacing: -.045em;
+}
+
+.search-results,
+.tool-body {
+  padding-top: 24px;
+}
+
+.search-result-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.search-result-head h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.search-result-head span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.tool-workspace .section:first-child {
+  margin-top: 0;
+}
+
+.app-dock {
+  border-radius: 0;
+  box-shadow: 0 -12px 28px rgba(0, 0, 0, .28);
+}
+
 @media (min-width: 600px) {
   .shell {
     padding-right: 28px;
     padding-left: 28px;
-  }
-
-  .featured-lead {
-    min-height: 218px;
-  }
-
-  .featured-lead-copy h2 {
-    max-width: 75%;
-    font-size: 23px;
-  }
-
-  .featured-poster-card {
-    flex-basis: 17%;
   }
 
   .detail-hero {
@@ -2412,8 +2457,6 @@ img {
 
   .rail,
   .recent-rail,
-  .featured-rail,
-  .wide-rail,
   .chips,
   .history {
     margin-right: -28px;
@@ -2434,14 +2477,6 @@ img {
     grid-auto-columns: 20%;
   }
 
-  .wide-rail .media {
-    flex-basis: 24%;
-  }
-
-  .wide-rail .media:nth-child(3n + 2) {
-    flex-basis: 30%;
-  }
-
   .grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
@@ -2459,6 +2494,91 @@ img {
 @media (min-width: 900px) {
   .shell {
     max-width: 1040px;
+  }
+
+  .home-studio {
+    display: grid;
+    grid-template-columns: minmax(260px, .72fr) minmax(0, 1.28fr);
+    align-items: start;
+    gap: clamp(36px, 6vw, 76px);
+  }
+
+  .studio-console {
+    position: sticky;
+    top: calc(var(--safe-top) + 24px);
+  }
+
+  .screening-flow {
+    margin-top: 0;
+  }
+
+  .film-thread {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 34px 18px;
+  }
+
+  .thread-turn {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .thread-turn.is-wide {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .thread-turn.is-poster .thread-pick,
+  .thread-turn.is-poster:nth-child(even) .thread-pick {
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .thread-turn.is-wide .thread-art {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .search-workspace {
+    display: grid;
+    grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
+    align-items: start;
+    gap: clamp(36px, 6vw, 76px);
+  }
+
+  .search-console {
+    position: sticky;
+    top: calc(var(--safe-top) + 76px);
+    border-bottom: 0;
+  }
+
+  .search-results {
+    padding-top: 10px;
+  }
+
+  .tool-workspace {
+    display: grid;
+    grid-template-columns: minmax(220px, .56fr) minmax(0, 1.44fr);
+    align-items: start;
+    gap: clamp(32px, 5vw, 64px);
+  }
+
+  .tool-header {
+    position: sticky;
+    top: calc(var(--safe-top) + 76px);
+    border-bottom: 0;
+  }
+
+  .tool-body {
+    padding-top: 10px;
+  }
+
+  .account-workspace {
+    display: grid;
+    grid-template-columns: minmax(240px, .58fr) minmax(0, 1.42fr);
+    align-items: start;
+    gap: clamp(32px, 5vw, 64px);
   }
 
   .rail {
@@ -2505,18 +2625,8 @@ img {
     margin-left: -12px;
   }
 
-  .featured-lead {
-    min-height: 156px;
-  }
-
-  .featured-lead-copy h2 {
-    font-size: 17px;
-  }
-
   .rail,
   .recent-rail,
-  .featured-rail,
-  .wide-rail,
   .chips,
   .history {
     margin-right: -12px;
@@ -2527,20 +2637,6 @@ img {
 
   .rail {
     grid-auto-columns: 33%;
-  }
-
-  .featured-poster-card {
-    flex-basis: 34%;
-  }
-
-  .feed-row {
-    grid-template-columns: 52px minmax(0, 1fr) auto;
-    gap: 9px;
-  }
-
-  .feed-poster {
-    width: 52px;
-    height: 72px;
   }
 
   .request {
@@ -2619,45 +2715,42 @@ function handleDialogKeys(event){const dialog=document.getElementById('confirm')
 document.addEventListener('keydown',handleDialogKeys);
 const ROOT_VIEWS=['home','search','me'];
 const icons={home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',play:'<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg>',game:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 8h8a5 5 0 0 1 4.6 7l-1 2.3a2.5 2.5 0 0 1-4.1.7l-1.2-1.2H9.7L8.5 18a2.5 2.5 0 0 1-4.1-.7l-1-2.3A5 5 0 0 1 8 8Z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/></svg>',wish:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.2 5.1 5.5.5-4.2 3.7 1.2 5.4-4.7-2.8-4.7 2.8 1.2-5.4-4.2-3.7 5.5-.5z"/></svg>',message:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 5h14v11H9l-4 3z"/><path d="M8 9h8M8 12h5"/></svg>'};
-function card(x){const mid=Number(id(x));if(mid<=0)return '';const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
+function card(x){const mid=Number(id(x));if(!Number.isFinite(mid)||mid<=0)return '';const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
 function mediaIdentity(x){const mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',mid=Number(id(x));if(mid>0)return mt+':id:'+mid;const artwork=x.poster_path||x.poster||x.backdrop_path||'';return mt+':fallback:'+title(x).trim().toLowerCase()+':'+year(x)+':'+artwork}
-function feedCard(x,index){const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'',summary=x.overview||'暂无简介';return `<button class="feed-row" aria-label="打开 ${esc(title(x))}" onclick="openDetail(${Number(id(x))},'${mt}',${Number(x.season)||0})"><span class="feed-poster">${p?`<img class="feed-ambient" loading="lazy" src="${esc(p)}" alt="" aria-hidden="true" onerror="this.style.display='none'"><img class="feed-subject" loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<span class="feed-fallback">${esc(title(x))}</span>`}<span class="feed-rank">${index+1}</span></span><span class="feed-copy"><h3>${esc(title(x))}</h3><span class="meta">${esc(year(x)||'年份待定')} · ${mt==='tv'?'剧集':'电影'}</span><p>${esc(summary)}</p></span><span class="feed-score">${score?'★ '+score:'新片'}</span></button>`}
+function screeningMedia(item,variant='lead'){const poster=img(item.poster_path||item.poster),backdrop=img(item.backdrop_path||item.backdrop)||poster,label=esc(title(item));if(!poster&&!backdrop)return'<div class="studio-artwork is-empty'+(variant==='detail'?' detail-art':'')+'" data-artwork><div class="studio-fallback" aria-hidden="true">'+label+'</div></div>';const classes=['studio-artwork',variant==='thread'?'thread-art':'',variant==='detail'?'detail-art':''].filter(Boolean).join(' ');return '<div class="'+classes+'" data-artwork>'+(backdrop?'<img class="studio-ambient" loading="lazy" src="'+esc(backdrop)+'" alt="" aria-hidden="true" onerror="screeningImageError(this,\'ambient\')">':'')+(poster?'<img class="studio-subject" loading="lazy" src="'+esc(poster)+'" alt="'+label+'" onerror="screeningImageError(this,\'subject\')">':'')+'<div class="studio-fallback" aria-hidden="true">'+label+'</div></div>'}
+function screeningImageError(image,role='subject'){const media=image?.closest?.('[data-artwork]');if(!media)return;image.style.display='none';media.dataset[role+'Failed']='1';const subject=media.querySelector('.studio-subject'),ambient=media.querySelector('.studio-ambient'),subjectFailed=!subject||media.dataset.subjectFailed==='1',ambientFailed=!ambient||media.dataset.ambientFailed==='1';if(subjectFailed&&ambientFailed)media.classList.add('is-error')}
+function screeningTurn(item,{label='',hint='',wide=false}={}){const mid=Number(id(item));if(!Number.isFinite(mid)||mid<=0)return'';const mt=type(item)==='tv'||type(item)==='电视剧'?'tv':'movie',meta=[year(item)||'年份待定',mt==='tv'?'剧集':'电影'].filter(Boolean).join(' · ');return '<button class="thread-turn '+(wide?'is-wide':'is-poster')+'" aria-label="打开 '+esc(title(item))+'" onclick="openDetail('+mid+',\''+mt+'\','+Number(item.season||0)+')"><span class="thread-pick">'+screeningMedia(item,'thread')+'<span class="thread-caption"><small>'+esc(label)+'</small><strong>'+esc(title(item))+'</strong><span>'+esc(meta)+(hint?' · '+esc(hint):'')+'</span></span></span></button>'}
 function chrome(content,active=S.view,motion=''){
 	const n=S.user?.first_name||'影迷',immersive=S.view==='adventure',isRoot=!S.detailVisible&&ROOT_VIEWS.includes(S.view),isHome=isRoot&&S.view==='home';
-	const shellClass='shell'+(isHome?' home-shell':'');
+	const shellClass='shell'+(isHome?' home-shell':'')+' view-'+esc(S.view);
 	const current=v=>active===v?' aria-current="page"':'';
-	const rootMeta={home:['发现','今晚看什么'],search:['搜索','片库就绪'],me:['我的','你好，'+n]},meta=rootMeta[S.view];
-	const appBar=isRoot?'<header class="app-bar glass-surface"><div class="app-context"><strong>'+meta[0]+'</strong><span>'+esc(meta[1])+'</span></div><button class="avatar" aria-label="打开我的" onclick="goMe()">'+esc(n.slice(0,1))+'</button></header>':'';
+	const rootMeta={search:['找片','说片名，也可以说演员'],me:['我的片单','你好，'+n]},meta=rootMeta[S.view];
+	const appBar=isRoot&&!isHome&&meta?'<header class="app-bar"><div class="app-context"><strong>'+meta[0]+'</strong><span>'+esc(meta[1])+'</span></div><button class="avatar" aria-label="打开我的" onclick="goMe()">'+esc(n.slice(0,1))+'</button></header>':'';
 	const motionClass=isRoot&&(motion==='forward'||motion==='backward')?' root-enter root-enter-'+motion:'';
 	const view=isRoot?'<div class="root-view'+motionClass+'">'+content+'</div>':content;
 	const tabClass=motionClass?' class="tab-transition"':'';
-	const nav=immersive?'':'<div class="bottom glass-surface"><nav'+tabClass+' aria-label="主导航"><button class="nav '+(active==='home'?'active':'')+'"'+current('home')+' onclick="goHome()"><i>'+icons.home+'</i>发现</button><button class="nav '+(active==='search'?'active':'')+'"'+current('search')+' onclick="goSearch()"><i>'+icons.search+'</i>找片</button><button class="nav '+(active==='me'?'active':'')+'"'+current('me')+' onclick="goMe()"><i>'+icons.user+'</i>我的</button></nav></div>';
+	const nav=immersive?'':'<div class="bottom app-dock"><nav'+tabClass+' aria-label="主导航"><button class="nav '+(active==='home'?'active':'')+'"'+current('home')+' onclick="goHome()"><i>'+icons.home+'</i>放映室</button><button class="nav '+(active==='search'?'active':'')+'"'+current('search')+' onclick="goSearch()"><i>'+icons.search+'</i>找片</button><button class="nav '+(active==='me'?'active':'')+'"'+current('me')+' onclick="goMe()"><i>'+icons.user+'</i>我的</button></nav></div>';
 	return '<main class="'+shellClass+'">'+appBar+view+'</main>'+nav;
 }
 let railInitFrame=0,railResizeFrame=0;
 const railMotionQuery=window.matchMedia?.('(prefers-reduced-motion: reduce)');
 const railFocusStates=new WeakMap();
-const glassMotionQuery=railMotionQuery,glassSurfaceStates=new WeakMap(),glassRailStates=new WeakMap();
+const glassMotionQuery=railMotionQuery,glassSurfaceStates=new WeakMap();
 function scheduleChromeDynamics(){if(railInitFrame)cancelAnimationFrame(railInitFrame);railInitFrame=requestAnimationFrame(()=>{railInitFrame=0;initRailFocus();initGlassDynamics()})}
 function render(){document.body.classList.remove('adventure-resolving');let body='';if(S.view==='home')body=home();else if(S.view==='search')body=searchPage();else if(S.view==='me')body=mePage();else if(S.view==='wishes')body=wishesPage();else if(S.view==='issues')body=issuesPage();else if(S.view==='adventure')body=adventurePageV2();const motion=S.rootMotion;S.rootMotion='';document.getElementById('app').innerHTML=chrome(body,S.view==='wishes'||S.view==='issues'||S.view==='adventure'?'me':S.view,motion);scheduleChromeDynamics()}
 function railCards(rail){return Array.from(rail.children).filter(card=>card.classList.contains('media'))}
 function updateRailFocus(rail){const cards=railCards(rail);if(!cards.length)return;const box=rail.getBoundingClientRect(),anchor=box.left+Math.min(82,box.width*.22),span=Math.max(96,box.width*.38);let active=cards[0],best=Infinity;for(const card of cards){const rect=card.getBoundingClientRect(),distance=Math.abs(rect.left+rect.width/2-anchor),focus=Math.max(0,1-distance/span);card.style.setProperty('--rail-focus',focus.toFixed(3));if(distance<best){best=distance;active=card}}for(const card of cards)card.classList.toggle('is-rail-active',card===active);active.style.setProperty('--rail-focus','1')}
-function initRailFocus(){if(railMotionQuery?.matches)return;document.querySelectorAll('.rail,.wide-rail,.recent-rail,.featured-rail').forEach(rail=>{if(railFocusStates.has(rail))return;rail.dataset.focusReady='1';rail.classList.add('focus-rail');const state={frame:0,scroll:null};const update=()=>{state.frame=0;if(rail.isConnected&&!railMotionQuery?.matches)updateRailFocus(rail)};state.scroll=()=>{if(!state.frame&&!railMotionQuery?.matches)state.frame=requestAnimationFrame(update)};railFocusStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true});update()})}
+function initRailFocus(){if(railMotionQuery?.matches)return;document.querySelectorAll('.rail,.recent-rail').forEach(rail=>{if(railFocusStates.has(rail))return;rail.dataset.focusReady='1';rail.classList.add('focus-rail');const state={frame:0,scroll:null};const update=()=>{state.frame=0;if(rail.isConnected&&!railMotionQuery?.matches)updateRailFocus(rail)};state.scroll=()=>{if(!state.frame&&!railMotionQuery?.matches)state.frame=requestAnimationFrame(update)};railFocusStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true});update()})}
 function clearRailFocus(rail){const state=railFocusStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);railFocusStates.delete(rail)}rail.classList.remove('focus-rail');rail.removeAttribute('data-focus-ready');railCards(rail).forEach(card=>{card.style.removeProperty('--rail-focus');card.classList.remove('is-rail-active')})}
 function refreshRailFocus(){if(railResizeFrame)cancelAnimationFrame(railResizeFrame);railResizeFrame=requestAnimationFrame(()=>{railResizeFrame=0;if(!railMotionQuery?.matches)document.querySelectorAll('.focus-rail').forEach(updateRailFocus)})}
 window.addEventListener('resize',refreshRailFocus,{passive:true});
 function resetGlassSurface(surface){surface.style.removeProperty('--glass-x');surface.style.removeProperty('--glass-y');surface.style.removeProperty('--glass-shift')}
 function initGlassSurface(surface){if(glassSurfaceStates.has(surface))return;surface.dataset.glassReady='1';const state={frame:0,x:0,y:0,pointerType:'',move:null,down:null,leave:null,cancel:null,up:null};const flush=()=>{state.frame=0;if(!surface.isConnected||glassMotionQuery?.matches)return;const rect=surface.getBoundingClientRect(),x=Math.max(0,Math.min(100,(state.x-rect.left)/Math.max(1,rect.width)*100)),y=Math.max(0,Math.min(100,(state.y-rect.top)/Math.max(1,rect.height)*100));surface.style.setProperty('--glass-x',x.toFixed(1)+'%');surface.style.setProperty('--glass-y',y.toFixed(1)+'%');surface.style.setProperty('--glass-shift',((x-50)*.08).toFixed(1)+'px')};const queue=event=>{if(glassMotionQuery?.matches)return;state.x=event.clientX;state.y=event.clientY;state.pointerType=event.pointerType;if(!state.frame)state.frame=requestAnimationFrame(flush)};const reset=()=>{if(state.frame){cancelAnimationFrame(state.frame);state.frame=0}resetGlassSurface(surface)};state.move=queue;state.down=queue;state.leave=reset;state.cancel=reset;state.up=event=>{if(event.pointerType!=='mouse')reset()};glassSurfaceStates.set(surface,state);surface.addEventListener('pointermove',state.move,{passive:true});surface.addEventListener('pointerdown',state.down,{passive:true});surface.addEventListener('pointerleave',state.leave,{passive:true});surface.addEventListener('pointercancel',state.cancel,{passive:true});surface.addEventListener('pointerup',state.up,{passive:true})}
 function clearGlassSurface(surface){const state=glassSurfaceStates.get(surface);if(state){surface.removeEventListener('pointermove',state.move);surface.removeEventListener('pointerdown',state.down);surface.removeEventListener('pointerleave',state.leave);surface.removeEventListener('pointercancel',state.cancel);surface.removeEventListener('pointerup',state.up);if(state.frame)cancelAnimationFrame(state.frame);glassSurfaceStates.delete(surface)}surface.removeAttribute('data-glass-ready');resetGlassSurface(surface)}
-function updateGlassFromFeaturedRail(rail){if(glassMotionQuery?.matches)return;const max=Math.max(1,rail.scrollWidth-rail.clientWidth),progress=Math.max(0,Math.min(1,rail.scrollLeft/max)),x=(20+progress*60).toFixed(1)+'%',shift=((progress-.5)*10).toFixed(1)+'px';document.querySelectorAll('.glass-surface').forEach(surface=>{surface.style.setProperty('--glass-x',x);surface.style.setProperty('--glass-y','18%');surface.style.setProperty('--glass-shift',shift)})}
-function initGlassRail(rail){if(glassRailStates.has(rail))return;rail.dataset.glassRailReady='1';const state={frame:0,scroll:null},update=()=>{state.frame=0;if(rail.isConnected&&!glassMotionQuery?.matches)updateGlassFromFeaturedRail(rail)};state.scroll=()=>{if(!state.frame&&!glassMotionQuery?.matches)state.frame=requestAnimationFrame(update)};glassRailStates.set(rail,state);rail.addEventListener('scroll',state.scroll,{passive:true})}
-function clearGlassRail(rail){const state=glassRailStates.get(rail);if(state){rail.removeEventListener('scroll',state.scroll);if(state.frame)cancelAnimationFrame(state.frame);glassRailStates.delete(rail)}rail.removeAttribute('data-glass-rail-ready')}
-function clearGlassDynamics(){document.querySelectorAll('[data-glass-ready]').forEach(clearGlassSurface);document.querySelectorAll('[data-glass-rail-ready]').forEach(clearGlassRail);document.querySelectorAll('.glass-surface').forEach(resetGlassSurface)}
-function initGlassDynamics(){if(glassMotionQuery?.matches){clearGlassDynamics();return}document.querySelectorAll('.glass-surface').forEach(initGlassSurface);document.querySelectorAll('.featured-rail').forEach(initGlassRail)}
+function clearGlassDynamics(){document.querySelectorAll('[data-glass-ready]').forEach(clearGlassSurface);document.querySelectorAll('.glass-surface').forEach(resetGlassSurface)}
+function initGlassDynamics(){if(glassMotionQuery?.matches){clearGlassDynamics();return}document.querySelectorAll('.glass-surface').forEach(initGlassSurface)}
 railMotionQuery?.addEventListener?.('change',()=>{if(railMotionQuery.matches){if(railInitFrame){cancelAnimationFrame(railInitFrame);railInitFrame=0}if(railResizeFrame){cancelAnimationFrame(railResizeFrame);railResizeFrame=0}document.querySelectorAll('.focus-rail').forEach(clearRailFocus);clearGlassDynamics()}else{initRailFocus();initGlassDynamics()}});
-function featuredLeadArtwork(item,src){if(!src)return'<span class="featured-fallback" aria-hidden="true"></span>';const mode=item.backdrop_path?'has-backdrop':'has-poster';return'<span class="featured-lead-media '+mode+'" data-featured-media><img class="featured-lead-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-lead-subject" src="'+esc(src)+'" alt="'+esc(title(item))+'" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>'}
-function featuredPosterArtwork(item){const src=img(item.poster_path||item.poster);if(!src)return'<span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>';return'<span class="featured-poster-media" data-featured-media><img class="featured-poster-ambient" loading="lazy" src="'+esc(src)+'" alt="" aria-hidden="true" onerror="this.style.display=\'none\'"><img class="featured-poster-subject" src="'+esc(src)+'" alt="'+esc(title(item))+'" onerror="featuredImageError(this)"></span><span class="featured-fallback" aria-hidden="true">'+esc(title(item))+'</span>'}
-function featuredImageError(image){const media=image?.closest?.('[data-featured-media]');if(!media)return;media.classList.add('is-error');media.closest('button')?.classList.add('has-artwork-error')}
+
 function dynamicSections(){
 	const d=S.dynamic,sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
 	return sections.map(([key,label,hint])=>d[key]?.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+d[key].map(card).join('')+'</div></section>':'').join('');
@@ -2672,34 +2765,15 @@ function homeDiscoverError(){
 	return '<div class="empty discover-error" role="alert"><strong>'+(S.discoverAuthError?'会话已经过期':'片单暂时没加载出来')+'</strong><p class="detail-copy">'+esc(S.discoverError)+'</p>'+action+'</div>';
 }
 function home(){
-	const d=S.discover,movies=d.movies||[],tv=d.tv||[],featuredItems=(d.featured||[]).filter(x=>x&&Number(id(x))>0),lead=featuredItems[0]||movies.find(x=>Number(id(x))>0)||tv.find(x=>Number(id(x))>0);
-	const featuredUsed=new Set(),featuredRailItems=[];
-	if(lead)featuredUsed.add(mediaIdentity(lead));
-	for(const item of [...featuredItems.slice(1),...movies,...tv]){const identity=mediaIdentity(item);if(Number(id(item))>0&&!featuredUsed.has(identity)){featuredUsed.add(identity);featuredRailItems.push(item)}if(featuredRailItems.length===3)break}
-	const popularSeen=new Set(featuredUsed),popularItems=[];
-	for(const item of movies){const identity=mediaIdentity(item);if(Number(id(item))>0&&!popularSeen.has(identity)){popularSeen.add(identity);popularItems.push(item)}if(popularItems.length===6)break}
-	const loadingFeed=Array(4).fill('<div class="feed-row" aria-hidden="true"><span class="feed-poster skeleton"></span><span><span class="skeleton" style="display:block;height:14px;width:62%;margin-bottom:9px"></span><span class="skeleton" style="display:block;height:28px"></span></span></div>').join('');
-	const featuredPosterCard=x=>{const mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie';return'<button class="media featured-poster-card" aria-label="打开 '+esc(title(x))+'" onclick="openDetail('+Number(id(x))+',\''+mt+'\','+(Number(x.season)||0)+')"><span class="featured-poster-frame">'+featuredPosterArtwork(x)+'</span><h3>'+esc(title(x))+'</h3></button>'};
-	let featured='';
-	if(lead){
-		const leadType=type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie';
-		const leadImage=img(lead.backdrop_path||lead.poster_path).replace('/w780','/w1280');
-		const score=lead.vote_average?Number(lead.vote_average).toFixed(1):'';
-		const meta=[year(lead),score?'评分 '+score:''].filter(Boolean).map(v=>'<span>'+esc(v)+'</span>').join('');
-		const rail=featuredRailItems.length?'<div class="featured-rail" aria-label="更多今日精选">'+featuredRailItems.map(featuredPosterCard).join('')+'</div>':'';
-		featured='<section class="featured-home" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1><span>最近热看</span></div><button class="featured-lead" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+(Number(lead.season)||0)+')">'+featuredLeadArtwork(lead,leadImage)+'<span class="featured-lead-copy"><h2>'+esc(title(lead))+'</h2><span class="featured-meta">'+meta+'</span></span></button>'+rail+'</section>';
-	}else if(S.discoverLoading){
-		const loadingRail=Array(5).fill('<div class="featured-poster-card" aria-hidden="true"><div class="featured-poster-frame skeleton"></div><span class="skeleton" style="display:block;height:13px;margin:8px 1px 0"></span></div>').join('');
-		featured='<section class="featured-home" aria-busy="true" aria-label="正在加载精选片单"><div class="featured-heading"><h1>今日精选</h1></div><div class="featured-lead skeleton"></div><div class="featured-rail">'+loadingRail+'</div></section>';
-	}else{
-		featured='<section class="featured-home" aria-labelledby="featured-title"><div class="featured-heading"><h1 id="featured-title">今日精选</h1></div><div class="featured-lead"><div class="featured-fallback">片单还没回来，先搜一部想看的。</div></div></section>';
-	}
-	const search='<form class="search home-search glass-surface" role="search" aria-label="搜索影视" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" placeholder="搜片名、剧集或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'<span class="sr-only">搜索</span></button></form>';
-	const genres=['科幻','悬疑','喜剧','动画','犯罪','纪录片'].map(x=>'<button class="chip" data-query="'+esc(x)+'" onclick="quick(this.dataset.query)">'+x+'</button>').join('');
-	const popular=popularItems.length||S.discoverLoading?'<section class="section home-feed"><div class="section-head"><h2>热门电影</h2><span>最近大家在看</span></div><div class="feed-list">'+(popularItems.length?popularItems.map(feedCard).join(''):loadingFeed)+'</div></section>':'';
-	const shows=tv.length||S.discoverLoading?'<section class="section"><div class="section-head"><h2>正在热播</h2><span>挑一部追起来</span></div><div class="wide-rail">'+(tv.length?tv.map(card).join(''):Array(4).fill('<div class="poster skeleton" aria-hidden="true" style="flex:0 0 38%"></div>').join(''))+'</div></section>':'';
-	const tools='<section class="section home-tools"><div class="section-head"><h2>还能这么找</h2><span>换个玩法</span></div><div class="tool-list"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩五关剧情，通关后直接求片</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>没找到的片，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放有问题，来看看处理进度</small></span><span class="tool-arrow">›</span></button></div></section>';
-	return search+homeDiscoverError()+featured+popular+shows+recentSection()+dynamicSections()+'<section class="section"><div class="section-head"><h2>按类型挑</h2><span>随便逛逛</span></div><div class="chips">'+genres+'</div></section>'+tools;
+	const d=S.discover,movies=d.movies||[],shows=d.tv||[],featured=(d.featured||[]).filter(x=>x&&Number(id(x))>0),lead=featured[0]||movies.find(x=>Number(id(x))>0)||shows.find(x=>Number(id(x))>0);
+	const seen=new Set(),picks=[];
+	for(const item of [...featured,...movies,...shows,...(S.dynamic.recently_added||[]),...(S.dynamic.just_available||[]),...S.recent]){if(!item||Number(id(item))<=0)continue;const identity=mediaIdentity(item);if(seen.has(identity))continue;seen.add(identity);picks.push(item);if(picks.length===8)break}
+	const leadType=lead?(type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie'):'movie',leadMeta=lead?[year(lead),lead.vote_average?'评分 '+Number(lead.vote_average).toFixed(1):'',leadType==='tv'?'剧集':'电影'].filter(Boolean).join(' · '):'';
+	const composer='<section class="studio-console"><div class="studio-intro"><p>YiMao 放映室</p><h1>今晚想看点什么？</h1></div><form class="prompt-composer glass-surface" role="search" aria-label="告诉 YiMao 想看的内容" onsubmit="submitSearch(event)"><textarea id="q" rows="2" autocomplete="off" enterkeyhint="search" placeholder="比如：来部节奏快、不费脑的科幻片"></textarea><div class="prompt-composer-footer"><div class="prompt-types" aria-label="快速类型"><button type="button" class="prompt-kind" data-query="电影" onclick="quick(this.dataset.query)">电影</button><button type="button" class="prompt-kind" data-query="剧集" onclick="quick(this.dataset.query)">剧集</button><button type="button" class="prompt-kind" data-query="动画" onclick="quick(this.dataset.query)">动画</button></div><button class="prompt-send" aria-label="开始找片">'+icons.search+'</button></div></form><div class="studio-prompts"><button data-query="适合深夜一个人看的电影" onclick="quick(this.dataset.query)">适合深夜一个人看的</button><button data-query="两小时内的高分悬疑片" onclick="quick(this.dataset.query)">两小时内，悬疑，别太沉重</button></div></section>';
+	let flow='';
+	if(lead){const other=picks.filter(x=>mediaIdentity(x)!==mediaIdentity(lead));flow='<section class="screening-flow" aria-label="YiMao 推荐片单"><div class="screening-response"><p>我先开一场。第一部稳一点，后面几部把口味慢慢拉开。</p></div><button class="screening-scene" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+Number(lead.season||0)+')">'+screeningMedia(lead)+'<span class="scene-caption"><small>今晚先看这部</small><strong>'+esc(title(lead))+'</strong><span>'+esc(leadMeta)+'</span></span></button><div class="film-thread">'+other.slice(0,6).map((item,index)=>screeningTurn(item,{label:index===0?'换个气口':index===1?'再大胆一点':'顺着这条线',hint:index%2?'口碑不错':'适合接着看',wide:index===2||index===5})).join('')+'</div></section>'}else if(S.discoverLoading){flow='<section class="screening-flow" aria-busy="true" aria-label="正在排片"><div class="screening-response"><p>正在翻片库，马上给你排一场。</p></div><div class="screening-scene skeleton"></div><div class="film-thread"><div class="thread-turn"><div class="thread-art skeleton"></div></div></div></section>'}else{flow='<div class="studio-empty"><strong>放映单还没回来</strong><span>你可以直接说一句想看的，我从片名开始找。</span><button class="primary" onclick="loadHome()">重新排片</button></div>'}
+	const tools='<div class="tool-list studio-tools" aria-label="更多找片方式"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩一段剧情，再决定求哪部</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>暂时没源的，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放或求片不对劲，直接告诉我</small></span><span class="tool-arrow">›</span></button></div>';
+	return '<div class="home-studio">'+composer+'<div>'+homeDiscoverError()+flow+tools+'</div></div>';
 }
 let homeController=null;
 async function loadHome(){homeController?.abort();const controller=new AbortController();homeController=controller;S.discoverLoading=true;S.discoverError='';S.discoverAuthError=false;if(S.view==='home')render();try{const d=await api('/api/miniapp/v1/discover',{signal:controller.signal});if(homeController!==controller)return;S.discover=d;localStorage.setItem('yunhai_discover_cache',JSON.stringify(d))}catch(e){if(e?.name==='AbortError'||homeController!==controller)return;S.discoverError=e.message||'网络连接不稳定，请稍后再试';S.discoverAuthError=e.status===401||e.status===403}finally{if(homeController===controller){homeController=null;S.discoverLoading=false;if(S.view==='home')render()}}}
@@ -2710,15 +2784,15 @@ function searchPage(){
 	const filters=[['all','全部'],['movie','电影'],['tv','剧集']].map(([v,t])=>'<button class="filter '+(S.searchType===v?'active':'')+'" data-type="'+esc(v)+'" onclick="setSearchType(this.dataset.type)">'+t+'</button>').join('');
 	const results=S.loading&&!S.results.length?Array(6).fill('<div class="poster skeleton" aria-hidden="true"></div>').join(''):S.results.length?S.results.map(card).join(''):empty;
 	const more=S.hasMore?'<button class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMore()">'+(S.loading?'加载中…':'加载更多')+'</button>':'';
-	return '<section class="hero"><div class="kicker">片库搜索</div><h1>'+(S.query?'搜索结果':'找一部想看的')+'</h1><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名"><button>搜索</button></form>'+history+'<div class="filter-row">'+filters+'</div></section><section class="section"><div class="section-head"><h2>'+(S.query?'相关作品':'等待搜索')+'</h2><span>'+(S.results.length?S.results.length+' 部':'')+'</span></div><div class="grid">'+results+'</div>'+more+'</section>';
+	return '<div class="search-workspace"><section class="search-console"><p>片名、演员，或者一句描述都行。</p><h1>'+(S.query?esc(S.query):'想找哪一部？')+'</h1><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名或演员"><button>搜索</button></form>'+history+'<div class="filter-row">'+filters+'</div></section><section class="search-results" aria-live="polite"><div class="search-result-head"><h2>'+(S.query?'匹配结果':'从一句话开始')+'</h2><span>'+(S.results.length?S.results.length+' 部':'')+'</span></div><div class="grid">'+results+'</div>'+more+'</section></div>';
 }
-function mePage(){if(!S.me)return S.meError?`<section class="account"><div class="kicker">我的云海</div><h1>求片进度暂时没加载出来</h1><button class="primary" onclick="goMe()">重新加载</button></section>`:`<section class="account"><div class="kicker">我的云海</div><h1>正在整理你的片单</h1></section><div class="poster skeleton" style="aspect-ratio:3/1"></div>`;const q=S.me.quota||{},all=S.me.requests||[],rs=S.progressType==='all'?all:all.filter(r=>progressGroup(r)===S.progressType),remain=(limit,used)=>limit===-1?'∞':Math.max(0,(limit||0)-(used||0));const tabs=[['all','全部'],['pending','待审核'],['active','处理中'],['done','已结束']],watch=S.watchlist||[];return `<section class="account"><div class="kicker">我的云海</div><h1>${esc(S.me.user?.first_name||'影迷')}，片单在这里。</h1><p class="detail-copy">想看、求片进度和今日额度，一眼看清。</p></section><div class="quota"><div class="quota-card"><span class="meta">电影剩余</span><b>${remain(q.movie_limit,q.movie_used)}</b></div><div class="quota-card"><span class="meta">剧集剩余</span><b>${remain(q.tv_limit,q.tv_used)}</b></div></div><section class="section"><div class="section-head"><h2>我的想看</h2><span>${watch.length} 部</span></div>${S.watchError?'<div class="empty"><strong>想看片单暂时没加载出来</strong><button class="primary" onclick="goMe(true)">重试片单</button></div>':watch.length?`<div class="rail">${watch.map(card).join('')}</div>`:'<div class="empty"><strong>想看片单还是空的</strong>打开作品详情，点“加入想看”。入库后 Bot 会提醒你。</div>'}</section><section class="section"><div class="section-head"><h2>更多玩法</h2><span>和 Bot 同步</span></div><div class="tool-grid"><button class="tool primary-tool" onclick="goAdventure()"><b>求片大冒险</b><span>五关互动，通关后自动提交求片</span></button><button class="tool" onclick="goWishes()"><b>许愿池</b><span>暂时没源的片，交给云海持续找</span></button><button class="tool" onclick="goIssues()"><b>问题反馈</b><span>查看处理状态和管理员回复</span></button><button class="tool" onclick="goSearch()"><b>拼车求片</b><span>找片后加入想看，和同好一起等</span></button></div></section><section class="section"><div class="section-head"><h2>全部进度</h2><button class="refresh" onclick="refreshMe(this)">刷新 · ${all.length} 条</button></div><div class="progress-tabs">${tabs.map(([v,t])=>`<button class="progress-tab ${S.progressType===v?'active':''}" onclick="setProgressType('${v}')">${t}</button>`).join('')}</div><div class="request-list">${rs.length?rs.map(requestCard).join(''):'<div class="empty"><strong>这里还没有记录</strong>换个状态看看，或者去发现页找一部。</div>'}</div></section>`}
+function mePage(){if(!S.me)return S.meError?`<section class="account"><div class="kicker">我的云海</div><h1>求片进度暂时没加载出来</h1><button class="primary" onclick="goMe()">重新加载</button></section>`:`<section class="account"><div class="kicker">我的云海</div><h1>正在整理你的片单</h1></section><div class="poster skeleton" style="aspect-ratio:3/1"></div>`;const q=S.me.quota||{},all=S.me.requests||[],rs=S.progressType==='all'?all:all.filter(r=>progressGroup(r)===S.progressType),remain=(limit,used)=>limit===-1?'∞':Math.max(0,(limit||0)-(used||0));const tabs=[['all','全部'],['pending','待审核'],['active','处理中'],['done','已结束']],watch=S.watchlist||[];return `<div class="account-workspace"><div class="account-summary"><section class="account"><div class="kicker">我的云海</div><h1>${esc(S.me.user?.first_name||'影迷')}，片单在这里。</h1><p class="detail-copy">想看、求片进度和今日额度，一眼看清。</p></section><div class="quota"><div class="quota-card"><span class="meta">电影剩余</span><b>${remain(q.movie_limit,q.movie_used)}</b></div><div class="quota-card"><span class="meta">剧集剩余</span><b>${remain(q.tv_limit,q.tv_used)}</b></div></div></div><div class="account-content"><section class="section"><div class="section-head"><h2>我的想看</h2><span>${watch.length} 部</span></div>${S.watchError?'<div class="empty"><strong>想看片单暂时没加载出来</strong><button class="primary" onclick="goMe(true)">重试片单</button></div>':watch.length?`<div class="rail">${watch.map(card).join('')}</div>`:'<div class="empty"><strong>想看片单还是空的</strong>打开作品详情，点“加入想看”。入库后 Bot 会提醒你。</div>'}</section><section class="section"><div class="section-head"><h2>更多玩法</h2><span>和 Bot 同步</span></div><div class="tool-grid"><button class="tool primary-tool" onclick="goAdventure()"><b>求片大冒险</b><span>五关互动，通关后自动提交求片</span></button><button class="tool" onclick="goWishes()"><b>许愿池</b><span>暂时没源的片，交给云海持续找</span></button><button class="tool" onclick="goIssues()"><b>问题反馈</b><span>查看处理状态和管理员回复</span></button><button class="tool" onclick="goSearch()"><b>拼车求片</b><span>找片后加入想看，和同好一起等</span></button></div></section><section class="section"><div class="section-head"><h2>全部进度</h2><button class="refresh" onclick="refreshMe(this)">刷新 · ${all.length} 条</button></div><div class="progress-tabs">${tabs.map(([v,t])=>`<button class="progress-tab ${S.progressType===v?'active':''}" onclick="setProgressType('${v}')">${t}</button>`).join('')}</div><div class="request-list">${rs.length?rs.map(requestCard).join(''):'<div class="empty"><strong>这里还没有记录</strong>换个状态看看，或者去放映室找一部。</div>'}</div></section></div></div>`}
 function progressGroup(r){return r.status_group||'active'}
-function toolShell(kicker,heading,body){return `<section class="account"><div class="kicker">${esc(kicker)}</div><h1>${esc(heading)}</h1></section>${body}`}
+function toolShell(kicker,heading,body){return `<div class="tool-workspace"><header class="tool-header"><p>${esc(kicker)}</p><h1>${esc(heading)}</h1></header><div class="tool-body">${body}</div></div>`}
 function adventureBackdrop(a){const shots=a?.backdrops||[];if(!shots.length)return'';const shot=shots[Math.max(0,(Number(a.level)||1)-1)%shots.length];return img(shot)}
 function adventureTrack(level,total){const n=Math.max(5,Number(total)||5);return `<div class="quest-track">${Array.from({length:n},(_,i)=>`<span class="quest-step ${i+1<level?'done':i+1===level?'current':''}"></span>`).join('')}</div>`}
 function adventurePageV2(){const a=S.adventure;if(S.toolLoading)return `<section class="adventure-v2 adventure-loading"><div class="skeleton" style="height:28px;width:48%"></div><div class="skeleton" style="height:220px"></div><div class="skeleton" style="height:58px"></div><div class="skeleton" style="height:58px"></div></section>`;if(S.toolError)return `<section class="adventure-v2"><div class="adventure-ticket"><div class="kicker">片场中断</div><strong>这一幕没接上</strong><p>${esc(S.toolError)}</p></div><button class="primary" style="width:100%;margin-top:14px" onclick="goAdventure()">重新进入</button></section>`;if(!a)return `<section class="adventure-v2 adventure-intro"><div class="adventure-ticket"><div class="kicker">电影大冒险</div><strong>这次你来改写剧情</strong><p>选一部电影或剧集，闯过五幕剧情。选错会掉生命，通关后直接进入求片流程。</p></div><div class="adventure-rules"><div class="adventure-rule"><b>5 幕</b><span>每一关都是新场景</span></div><div class="adventure-rule"><b>100 HP</b><span>选错会扣生命</span></div><div class="adventure-rule"><b>1 次提示</b><span>救场要付出代价</span></div></div><form class="adventure-start" onsubmit="startAdventure(event)"><input id="adventure-movie" maxlength="80" required autocomplete="off" placeholder="输入想闯的片名"><button class="primary">进片场</button></form></section>`;if(a.phase==='finished'){const grade=esc(a.grade||'C'),copy=a.message||(a.success?'这条故事线已经走通，求片已自动提交。':'生命耗尽，换条路还能再来。');return `<section class="adventure-v2 quest-finish"><div class="finish-hero"><div class="finish-grade">${grade}</div><div><div class="kicker">${esc(a.movie_title||'电影大冒险')} · 最终评级</div><h1>${a.success?'杀青，通关':'这次没能杀青'}</h1><p>${esc(copy)}</p></div></div><div class="finish-stats"><div class="finish-stat"><b>${Number(a.score)||0}</b><span>最终得分</span></div><div class="finish-stat"><b>${Math.max(0,Number(a.hp)||0)}</b><span>剩余生命</span></div><div class="finish-stat"><b>${Number(a.level)||0}/${Number(a.total_levels)||5}</b><span>抵达关卡</span></div></div><div class="actions"><button class="secondary" onclick="quitAdventure(true)">再闯一部</button>${a.success?'<button class="primary" onclick="goMe()">查看求片进度</button>':'<button class="primary" onclick="quitAdventure(true)">重新挑战</button>'}</div></section>`}const level=Number(a.level)||1,total=Number(a.total_levels)||5,hp=Math.max(0,Number(a.hp)||0),max=Math.max(1,Number(a.max_hp)||100),hpPct=Math.min(100,Math.round(hp/max*100)),shot=adventureBackdrop(a),choices=(a.choices||[]).map(c=>`<button class="quest-choice" ${c.tried?'disabled':''} onclick="chooseAdventure(${Number(c.index)},this)"><span class="choice-key">${Number(c.index)+1}</span><span class="choice-text">${esc(c.text)}</span><span class="choice-state">${c.tried?'走过':''}</span></button>`).join('');return `<section class="adventure-v2"><div class="quest-top"><div class="quest-title"><small>${esc(a.movie_title||'电影大冒险')}${a.movie_year?' · '+esc(a.movie_year):''}</small><strong>第 ${level} 幕，共 ${total} 幕</strong></div><div class="quest-score"><b>${Number(a.score)||0}</b><span>分数</span></div></div>${adventureTrack(level,total)}<div class="quest-hud"><div><div class="hp-label"><span>生命值</span><span>${hp} / ${max}</span></div><div class="hp-track"><div class="hp-fill" style="width:${hpPct}%"></div></div></div><div class="combo-chip"><b>×${Number(a.combo)||0}</b><span>连对</span></div></div><div class="quest-scene">${shot?`<img src="${esc(shot)}" alt="${esc(a.movie_title||'电影场景')}" onerror="this.remove()">`:''}<div class="quest-scene-copy"><small>${esc(a.stage_name||'剧情现场')}</small><h1>${esc(a.scene_title||'下一幕')}</h1></div></div><p class="quest-narrative">${esc(a.description||a.atmosphere||'剧情正在展开，你的选择会改变下一幕。')}</p>${a.message?`<div class="quest-message">${esc(a.message)}</div>`:''}${a.hint?`<div class="quest-hint"><b>场记提示</b><br>${esc(a.hint)}</div>`:''}<div class="quest-prompt"><strong>你准备怎么做？</strong><span>选过的路不会再开</span></div><div class="quest-choices">${choices}</div><div class="quest-tools"><button class="quest-tool hint" ${a.hint?'disabled':''} onclick="hintAdventure(this)">${a.hint?'提示已使用':'看提示 · 扣生命'}</button><button class="quest-tool" onclick="quitAdventure(false)">退出本局</button></div></section>`}
-function wishesPage(){if(S.toolLoading)return toolShell('许愿池','云海还在找',`<div class="poster skeleton" style="height:96px;aspect-ratio:auto"></div>`);if(S.toolError)return toolShell('许愿池','记录暂时没加载出来',`<div class="empty"><strong>${esc(S.toolError)}</strong><button class="primary" onclick="goWishes()">重新加载</button></div>`);const rows=S.wishes.map(w=>`<button class="compact-row" onclick="openDetail(${w.tmdb_id},'${w.media_type}',${Number(w.season)||0})"><div><b>${esc(w.title)}${w.season?' · 第 '+w.season+' 季':''}</b><span>${esc(w.year||'年份待定')} · ${wishState(w.state)}</span></div><em>${w.wisher_count} 人许愿</em></button>`).join('');return toolShell('许愿池','没源也别放弃',rows?`<div class="wish-list">${rows}</div>`:`<div class="empty"><strong>还没有许愿</strong><p class="detail-copy">在作品详情里加入许愿池，云海会持续找。</p><button class="primary" onclick="goSearch()">去找片</button></div>`)}
+function wishesPage(){if(S.toolLoading)return toolShell('许愿池','云海还在找',`<div class="poster skeleton" style="height:96px;aspect-ratio:auto"></div>`);if(S.toolError)return toolShell('许愿池','记录暂时没加载出来',`<div class="empty"><strong>${esc(S.toolError)}</strong><button class="primary" onclick="goWishes()">重新加载</button></div>`);const rows=S.wishes.map(w=>{const mid=Number(w.tmdb_id),mt=w.media_type==='tv'||w.media_type==='电视剧'?'tv':'movie';if(!Number.isFinite(mid)||mid<=0)return '';return `<button class="compact-row" onclick="openDetail(${mid},'${mt}',${Number(w.season)||0})"><div><b>${esc(w.title)}${w.season?' · 第 '+w.season+' 季':''}</b><span>${esc(w.year||'年份待定')} · ${wishState(w.state)}</span></div><em>${Number(w.wisher_count)||0} 人许愿</em></button>`}).join('');return toolShell('许愿池','没源也别放弃',rows?`<div class="wish-list">${rows}</div>`:`<div class="empty"><strong>还没有许愿</strong><p class="detail-copy">在作品详情里加入许愿池，云海会持续找。</p><button class="primary" onclick="goSearch()">去找片</button></div>`)}
 function wishState(v){return({PENDING:'等待重搜',SEARCHING:'正在找源',FOUND:'发现资源',FULFILLED:'已经求片',EXPIRED:'已过期'})[v]||'持续寻找'}
 function issuesPage(){if(S.toolLoading)return toolShell('问题反馈','正在读取处理进度',`<div class="poster skeleton" style="height:110px;aspect-ratio:auto"></div>`);const form=`<form class="form-stack" onsubmit="submitIssue(event)"><input id="issue-title" maxlength="80" required placeholder="一句话说明问题"><textarea id="issue-description" maxlength="2000" required placeholder="发生了什么？可以写清操作步骤和报错。"></textarea><button class="primary">提交反馈</button></form>`;if(S.toolError)return toolShell('问题反馈','记录暂时没加载出来',`<div class="empty"><strong>${esc(S.toolError)}</strong><button class="primary" onclick="goIssues()">重新加载</button></div><section class="section"><div class="section-head"><h2>新反馈</h2></div>${form}</section>`);const rows=S.issues.map(i=>`<div class="compact-row"><div><b>#${i.id} ${esc(i.title)}</b><span>${esc(issueState(i.status))}${i.replies?.length?' · '+esc(i.replies.at(-1).author_name)+': '+esc(i.replies.at(-1).content):''}</span></div><em>${new Date(i.updated_at).toLocaleDateString('zh-CN')}</em></div>`).join('');return toolShell('问题反馈','有问题直接说',`<section><div class="issue-list">${rows||'<div class="empty"><strong>还没有反馈记录</strong>提交后，处理状态和回复会留在这里。</div>'}</div></section><section class="section"><div class="section-head"><h2>新反馈</h2></div>${form}</section>`)}
 function issueState(v){return({open:'待处理',reply:'已回复',processing:'处理中',fixed:'已解决',closed:'已关闭'})[v]||'处理中'}
@@ -2732,7 +2806,7 @@ async function chooseAdventure(choice,button){if(button.disabled)return;button.c
 async function hintAdventure(button){if(button.disabled)return;button.disabled=true;button.textContent='正在问场记…';tg?.HapticFeedback?.impactOccurred?.('light');try{const a=S.adventure,d=await api('/api/miniapp/v1/adventure',{method:'POST',body:JSON.stringify({action:'hint',run_id:a.run_id,turn:a.turn})});S.adventure=d.state;tg?.HapticFeedback?.notificationOccurred?.('warning');render()}catch(e){button.disabled=false;button.textContent='看提示 · 扣生命';toast(e.message||'现在不能使用提示')}}
 async function quitAdventure(restart=false){if(!restart&&!confirm('退出后会清除当前冒险，确定退出？'))return;try{await api('/api/miniapp/v1/adventure',{method:'DELETE'});S.adventure=null;render()}catch(e){toast(e.message||'退出失败')}}
 async function wishDetail(button){if(button.disabled)return;const x=S.detail,season=x.type==='tv'?S.season:0;button.disabled=true;button.textContent='正在加入…';try{const d=await api('/api/miniapp/v1/wishes',{method:'POST',body:JSON.stringify({tmdb_id:id(x),type:x.type,season})});tg?.HapticFeedback?.notificationOccurred?.('success');toast(d.status==='joined'?'已经和其他人一起许愿':'已加入许愿池');button.textContent='已在许愿池';await goWishes()}catch(e){button.disabled=false;button.textContent='加入许愿池';toast(e.message||'许愿失败')}}
-function requestCard(r){const p=img(r.poster_path),date=r.created_at?new Date(r.created_at).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}):'',wash=r.business_type==='wash';return `<div class="request" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="openDetail(${r.tmdb_id},'${r.media_type==='tv'||r.media_type==='电视剧'?'tv':'movie'}',${Number(r.season)||0})">${p?`<img class="request-poster" src="${esc(p)}" alt="" onerror="this.style.visibility='hidden'">`:'<span class="request-poster"></span>'}<div>${wash?'<span class="business-badge">洗版</span>':''}<h3>${esc(r.media_title||'未命名')}</h3><span class="meta">${esc(r.media_year||'')} ${r.season?'· S'+String(r.season).padStart(2,'0'):''}</span><time>${date}</time>${r.note?`<small class="request-note">${esc(r.note)}</small>`:''}</div><div class="request-actions"><span class="status">${statusText(r)}</span><button class="cancel-request" data-id="${esc(r.request_id)}" onclick="event.stopPropagation();openProgress(this.dataset.id)">时间线</button>${r.can_cancel?`<button class="cancel-request" data-id="${esc(r.request_id)}" data-title="${esc(r.media_title)}" data-kind="${wash?'洗版工单':'求片'}" onclick="event.stopPropagation();openCancel(this.dataset.id,this.dataset.title,this.dataset.kind)">撤回</button>`:''}</div></div>`}
+function requestCard(r){const mid=Number(r.tmdb_id),mt=r.media_type==='tv'||r.media_type==='电视剧'?'tv':'movie';if(!Number.isFinite(mid)||mid<=0)return '';const p=img(r.poster_path),date=r.created_at?new Date(r.created_at).toLocaleDateString('zh-CN',{month:'numeric',day:'numeric'}):'',wash=r.business_type==='wash';return `<div class="request" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="openDetail(${mid},'${mt}',${Number(r.season)||0})">${p?`<img class="request-poster" src="${esc(p)}" alt="" onerror="this.style.visibility='hidden'">`:'<span class="request-poster"></span>'}<div>${wash?'<span class="business-badge">洗版</span>':''}<h3>${esc(r.media_title||'未命名')}</h3><span class="meta">${esc(r.media_year||'')} ${r.season?'· S'+String(r.season).padStart(2,'0'):''}</span><time>${date}</time>${r.note?`<small class="request-note">${esc(r.note)}</small>`:''}</div><div class="request-actions"><span class="status">${statusText(r)}</span><button class="cancel-request" data-id="${esc(r.request_id)}" onclick="event.stopPropagation();openProgress(this.dataset.id)">时间线</button>${r.can_cancel?`<button class="cancel-request" data-id="${esc(r.request_id)}" data-title="${esc(r.media_title)}" data-kind="${wash?'洗版工单':'求片'}" onclick="event.stopPropagation();openCancel(this.dataset.id,this.dataset.title,this.dataset.kind)">撤回</button>`:''}</div></div>`}
 function statusText(r){return r.status_text||'处理中'}
 async function openProgress(requestID){const ctx=openDialog(`<div class="kicker">进度时间线</div><h2 id="dialog-title">正在读取真实进度…</h2>`);try{const d=await api('/api/miniapp/v1/progress?request_id='+encodeURIComponent(requestID),{signal:ctx.signal});if(!isCurrentDialog(ctx.seq))return;const events=d.events||[],rows=events.map(e=>`<div class="summary"><div><span>${esc(e.text)}</span><b>${e.at?new Date(e.at).toLocaleString('zh-CN'):'时间未单独记录'}</b></div></div>`).join(''),dialog=document.getElementById('confirm');dialog.querySelector('.sheet').innerHTML=`<div class="kicker">进度时间线</div><h2 id="dialog-title">真实节点</h2>${rows||'<div class="empty">暂无进度节点</div>'}<button class="primary" style="width:100%;margin-top:14px" onclick="closeConfirm()">知道了</button>`;focusDialog(dialog,'.primary')}catch(e){if(e?.name==='AbortError'||!isCurrentDialog(ctx.seq))return;closeConfirm(ctx.seq);toast(e.message||'时间线暂时无法加载')}}
 async function refreshMe(button){if(button){button.disabled=true;button.classList.add('spinning');button.textContent='刷新中…'}await goMe(true);tg?.HapticFeedback?.impactOccurred?.('light')}
@@ -2753,7 +2827,7 @@ async function doSearch(append,targetPage=1,request=null){if(!S.query)return;sea
 async function openDetail(mid,mt,wantedSeason=0){if(!mid)return;S.detailError=null;S.scroll[S.view]=window.scrollY;if(S.view==='search'){localStorage.setItem('yunhai_search_scroll',String(S.scroll.search));saveSearchState()}const seq=++S.detailSeq;S.detailFrom=S.view;S.season=0;S.detailVisible=true;showDetailSkeleton();try{const seasonParam=mt==='tv'&&Number(wantedSeason)>0?'&season='+encodeURIComponent(Number(wantedSeason)):'';const detail=await api(`/api/miniapp/v1/detail?id=${mid}&type=${mt}${seasonParam}`);if(seq!==S.detailSeq)return;if(mt==='tv'&&detail.seasons?.length){const allowed=detail.seasons.some(s=>s.number===Number(wantedSeason));S.season=allowed?Number(wantedSeason):detail.seasons[0].number;detail.media_status=detail.seasons.find(s=>s.number===S.season)?.status||{code:'unknown',text:'暂时无法确认'}}S.detail=detail;rememberView(detail);showDetail()}catch(e){if(seq===S.detailSeq){S.detailError={mid,mt,season:wantedSeason,message:'详情暂时没加载出来'};showDetailError()}}}
 function showDetailError(){const e=S.detailError;showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="empty" style="margin-top:32px"><strong>${esc(e.message)}</strong><p class="detail-copy">上游响应有点慢，不影响其他页面。</p><button class="primary" onclick="openDetail(${e.mid},'${e.mt}',${e.season})">重新加载</button></div></section>`,S.detailFrom);scheduleChromeDynamics()}
 function showDetailSkeleton(){showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail detail-enter"><div class="detail-hero skeleton"></div><div class="poster skeleton" style="height:44px;aspect-ratio:auto;margin:12px 0"></div><div class="poster skeleton" style="height:90px;aspect-ratio:auto"></div><div class="detail-actions"><button class="primary" disabled>正在加载详情…</button><button class="watch-action" disabled>加入想看</button><button class="share" disabled>分享</button></div></section>`,S.detailFrom);scheduleChromeDynamics()}
-function showDetail(){const x=S.detail,mt=x.type,p=img(x.backdrop_path||x.poster_path),q=x.quota||{},used=mt==='tv'?q.tv_used:q.movie_used,limit=mt==='tv'?q.tv_limit:q.movie_limit,remain=limit===-1?'不限':Math.max(0,(limit||0)-(used||0));const disabled=x.media_status?.code!=='available';const seasons=mt==='tv'?(x.seasons||[]).map(s=>`<button class="season ${S.season===s.number?'selected':''}" onclick="selectSeason(${s.number})">${s.poster_path?`<img src="${esc(img(s.poster_path))}" alt="">`:'<span></span>'}<div><b>${esc(s.name||'第 '+s.number+' 季')}</b><span>${esc((s.air_date||'').slice(0,4)||'年份待定')} · ${s.episode_count||0} 集</span></div><em class="season-state ${esc(s.status?.code||'unknown')}">${esc(s.status?.text||'暂时无法确认')}</em></button>`).join(''):'';showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="detail-hero">${p?`<img src="${esc(p)}" alt="${esc(x.title)}">`:''}</div><div class="detail-content"><div class="kicker">${mt==='tv'?'剧集':'电影'} · ${esc(x.year||'年份待定')}</div><h1>${esc(x.title)}</h1>${x.original_title&&x.original_title!==x.title?`<div class="meta">${esc(x.original_title)}</div>`:''}<div class="fact-row">${x.vote_average?`<span class="fact">★ ${Number(x.vote_average).toFixed(1)} · ${x.vote_count||0} 人评分</span>`:''}${x.runtime?`<span class="fact">${x.runtime} 分钟</span>`:''}${(x.genres||[]).map(g=>`<span class="fact">${esc(g)}</span>`).join('')}</div><div class="media-state"><div><b>${esc(x.media_status?.text||'可以求片')}</b><span>当前状态</span></div><span>今日剩余 ${remain}</span></div><p class="detail-copy">${esc(x.overview||'这部作品还没有简介。')}</p>${mt==='tv'?`<h2 class="season-title">选择要看的季</h2><div class="season-list">${seasons||'<div class="empty">暂无可选季</div>'}</div>`:''}<div class="detail-actions">${x.media_status?.code==='in_library'?`<button class="wash-action" onclick="openWashConfirm()">${mt==='tv'?'申请洗版第 '+S.season+' 季':'申请洗版'}</button>`:x.media_status?.code==='available'?`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="openConfirm()">${mt==='tv'?'求第 '+S.season+' 季':'加入求片'}</button>`:`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="wishDetail(this)">加入许愿池</button>`}<button class="watch-action" onclick="toggleWatchlist(this)">${x.in_watchlist?'取消想看':'加入想看'}</button><button class="share" onclick="shareDetail()">分享</button></div>${mt==='tv'?'<p class="meta">剧集想看按整部作品提醒，不区分季。</p>':''}</div></section>`,S.detailFrom);scheduleChromeDynamics()}
+function showDetail(){const x=S.detail,mt=x.type,p=img(x.backdrop_path||x.poster_path),q=x.quota||{},used=mt==='tv'?q.tv_used:q.movie_used,limit=mt==='tv'?q.tv_limit:q.movie_limit,remain=limit===-1?'不限':Math.max(0,(limit||0)-(used||0));const disabled=x.media_status?.code!=='available';const seasons=mt==='tv'?(x.seasons||[]).map(s=>`<button class="season ${S.season===s.number?'selected':''}" onclick="selectSeason(${s.number})">${s.poster_path?`<img src="${esc(img(s.poster_path))}" alt="">`:'<span></span>'}<div><b>${esc(s.name||'第 '+s.number+' 季')}</b><span>${esc((s.air_date||'').slice(0,4)||'年份待定')} · ${s.episode_count||0} 集</span></div><em class="season-state ${esc(s.status?.code||'unknown')}">${esc(s.status?.text||'暂时无法确认')}</em></button>`).join(''):'';showNativeBack();document.getElementById('app').innerHTML=chrome(`<section class="detail"><div class="detail-hero">${p?`<img src="${esc(p)}" alt="${esc(x.title)}">`:''}</div><div class="detail-content"><div class="kicker">${mt==='tv'?'剧集':'电影'} · ${esc(x.year||'年份待定')}</div><h1>${esc(x.title)}</h1>${x.original_title&&x.original_title!==x.title?`<div class="meta">${esc(x.original_title)}</div>`:''}<div class="fact-row">${x.vote_average?`<span class="fact">★ ${Number(x.vote_average).toFixed(1)} · ${x.vote_count||0} 人评分</span>`:''}${x.runtime?`<span class="fact">${x.runtime} 分钟</span>`:''}${(x.genres||[]).map(g=>`<span class="fact">${esc(g)}</span>`).join('')}</div><div class="media-state"><div><b>${esc(x.media_status?.text||'可以求片')}</b><span>当前状态</span></div><span>今日剩余 ${remain}</span></div><p class="detail-copy">${esc(x.overview||'这部作品还没有简介。')}</p>${mt==='tv'?`<h2 class="season-title">选择要看的季</h2><div class="season-list">${seasons||'<div class="empty">暂无可选季</div>'}</div>`:''}<div class="detail-actions">${x.media_status?.code==='in_library'?`<button class="wash-action" onclick="openWashConfirm()">${mt==='tv'?'申请洗版第 '+S.season+' 季':'申请洗版'}</button>`:x.media_status?.code==='available'?`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="openConfirm()">${mt==='tv'?(S.season?'求第 '+S.season+' 季':'先选一季'):'加入求片'}</button>`:`<button class="primary" ${mt==='tv'&&!S.season?'disabled':''} onclick="wishDetail(this)">加入许愿池</button>`}<button class="watch-action" onclick="toggleWatchlist(this)">${x.in_watchlist?'取消想看':'加入想看'}</button><button class="share" onclick="shareDetail()">分享</button></div>${mt==='tv'?'<p class="meta">剧集想看按整部作品提醒，不区分季。</p>':''}</div></section>`,S.detailFrom);scheduleChromeDynamics()}
 async function toggleWatchlist(button){if(button.disabled)return;button.disabled=true;const x=S.detail,adding=!x.in_watchlist;try{await api('/api/miniapp/v1/watchlist',{method:adding?'POST':'DELETE',body:JSON.stringify({tmdb_id:id(x),type:x.type})});x.in_watchlist=adding;if(adding){const item={tmdb_id:id(x),type:x.type,title:x.title,year:x.year,poster_path:x.poster_path};S.watchlist=[item,...S.watchlist.filter(y=>!(id(y)===id(x)&&type(y)===x.type))]}else S.watchlist=S.watchlist.filter(y=>!(id(y)===id(x)&&type(y)===x.type));button.textContent=adding?'取消想看':'加入想看';tg?.HapticFeedback?.notificationOccurred?.('success');toast(adding?'已加入想看，入库后会提醒你':'已取消想看')}catch(e){toast(e.message||'操作失败')}finally{button.disabled=false}}
 
 function shareDetail(){const x=S.detail,kind=x.type==='tv'?'t':'m',season=x.type==='tv'?S.season:0,payload=`yh_${kind}_${id(x)}_${season}`,shareURL='https://t.me/share/url?url='+encodeURIComponent(`https://t.me/yunhaiqp_bot?start=${payload}`)+'&text='+encodeURIComponent(`云海影视 · ${x.title}${season?' 第'+season+'季':''}`);tg?.HapticFeedback?.impactOccurred?.('light');if(tg?.openTelegramLink)tg.openTelegramLink(shareURL);else window.open(shareURL,'_blank')}
