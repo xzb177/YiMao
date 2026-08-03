@@ -150,6 +150,41 @@ func TestHomeComposerUsesAssistantWithSafeFallbacks(t *testing.T) {
 	)
 }
 
+func TestRequestTimelineUsesRealEventsAndActionableStates(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function progressTone(code)",
+		"function progressLabel(code)",
+		"function relativeTime(value)",
+		"function timelineNext(code)",
+		"function requestCounts(items)",
+		"Array.isArray(d.events)?d.events:[]",
+		`class="timeline-node timeline-${nodeTone}`,
+		`aria-label="进度节点"`,
+		"重新找片",
+		"反馈问题",
+		"Number.isFinite(mid)||mid<=0",
+		"!['movie','tv'].includes(mt)",
+	)
+	rejectSource(t, html,
+		"预计完成时间",
+		"下载速度",
+		"e.progress",
+	)
+}
+
+func TestRequestArchiveShowsCountedStatusFilters(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"counts=requestCounts(all)",
+		"['pending','待审核',counts.pending]",
+		"['active','处理中',counts.active]",
+		"['done','已结束',counts.done]",
+		`aria-pressed="${S.progressType===v?'true':'false'}"`,
+		`<i class="status-dot" aria-hidden="true"></i>`,
+	)
+}
+
 func TestShellUsesContextAppBarAndEntityDock(t *testing.T) {
 	html := miniAppSource(t)
 	start := strings.Index(html, "function chrome(")
