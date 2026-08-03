@@ -3720,9 +3720,71 @@ body::before {
 }
 
 @media (min-width: 900px) {
+  .shell {
+    max-width: 900px;
+  }
+
+  .home-studio {
+    display: block;
+  }
+
+  .studio-console {
+    position: static;
+  }
+
+  .screening-flow {
+    margin-top: 24px;
+  }
+
+  .screening-scene {
+    width: 100%;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .home-studio > div {
+    min-width: 0;
+  }
+
+  .home-pulse {
+    max-width: 560px;
+  }
+
+  .search-workspace {
+    display: block;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .search-console {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .search-console .search {
+    min-width: 0;
+  }
+
+  .search-console .filter-row {
+    margin-top: 0;
+  }
+
+  .search-results {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .search-results .search-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
   .app-dock {
     right: max(12px, calc((100vw - 900px) / 2));
     left: max(12px, calc((100vw - 900px) / 2));
+    max-width: 900px;
+    margin: 0 auto;
   }
 
   .search-workspace,
@@ -3769,6 +3831,105 @@ body::before {
     left: 8px;
   }
 }
+
+/* Product depth: live library pulse and search result controls */
+.home-pulse {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 0 8px;
+  border-block: 1px solid var(--line-soft);
+}
+
+.home-pulse > div {
+  position: relative;
+  min-width: 0;
+  padding: 14px 12px;
+}
+
+.home-pulse > div + div::before {
+  content: "";
+  position: absolute;
+  inset: 14px auto 14px 0;
+  width: 1px;
+  background: var(--line-soft);
+}
+
+.home-pulse span,
+.result-tools > span {
+  display: block;
+  color: #b7b5b3;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.home-pulse b {
+  display: block;
+  margin-top: 5px;
+  color: #f3f1ef;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.home-pulse i {
+  position: absolute;
+  top: 14px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #72d49b;
+  box-shadow: 0 0 0 4px rgba(114, 212, 155, .1);
+}
+
+.home-studio .activity-section,
+.home-studio > div > .section {
+  margin-top: 26px;
+}
+
+.home-studio .activity-section .rail,
+.home-studio .recent-rail {
+  padding-bottom: 4px;
+}
+
+.result-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  margin: 2px 0 12px;
+  padding: 3px;
+  border-block: 1px solid var(--line-soft);
+}
+
+.result-tools > span {
+  margin-right: auto;
+  padding-left: 5px;
+}
+
+.sort-chip {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #bdbbb9;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.sort-chip.active {
+  background: rgba(255, 255, 255, .1);
+  color: #fff;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .12);
+}
+
+@media (max-width: 359px) {
+  .home-pulse > div { padding-inline: 9px; }
+  .home-pulse span { font-size: 10px; }
+  .home-pulse b { font-size: 20px; }
+  .sort-chip { min-width: 48px; padding-inline: 9px; }
+}
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();tg?.setHeaderColor?.('#090a0c');tg?.setBackgroundColor?.('#090a0c');
@@ -3776,7 +3937,9 @@ const storageJSON=(key,fallback)=>{try{const v=JSON.parse(localStorage.getItem(k
 const sessionJSON=(key,fallback)=>{try{const v=JSON.parse(sessionStorage.getItem(key)||'null');return v??fallback}catch{return fallback}};
 const cachedDiscover=storageJSON('yunhai_discover_cache',null);
 const cachedAssistantHistory=sessionJSON('yunhai_assistant_history',[]);
-const S={view:'home',detailError:null,meError:'',watchError:'',toolError:'',toolLoading:false,toolSeq:0,query:localStorage.getItem('yunhai_search_query')||'',loading:false,results:storageJSON('yunhai_search_results',[]),dynamic:storageJSON('yunhai_dynamic_cache',{recently_added:[],just_available:[],recent_requests:[]}),discover:cachedDiscover||{featured:[],movies:[],tv:[]},discoverLoading:!cachedDiscover,discoverError:'',discoverAuthError:false,me:null,watchlist:[],wishes:[],issues:[],adventure:null,user:tg?.initDataUnsafe?.user||null,detail:null,detailFrom:'home',detailVisible:false,season:0,submitting:false,page:Number(localStorage.getItem('yunhai_search_page'))||1,nextPage:(Number(localStorage.getItem('yunhai_search_page'))||1)+1,hasMore:localStorage.getItem('yunhai_search_more')==='1',searchType:localStorage.getItem('yunhai_search_type')||'all',progressType:'all',history:storageJSON('yunhai_search_history',[]),recent:storageJSON('yunhai_recent_views',[]),assistantHistory:Array.isArray(cachedAssistantHistory)?cachedAssistantHistory.slice(-6):[],assistantDraft:'',assistantReply:'',assistantSuggestions:[],assistantItems:[],assistantBusy:false,assistantSeq:0,searchSeq:0,detailSeq:0,meSeq:0,lastMeRefresh:0,rootMotion:'',scroll:{home:0,search:Number(localStorage.getItem('yunhai_search_scroll'))||0,me:0}};
+const storedSearchSort=localStorage.getItem('yunhai_search_sort');
+const initialSearchSort=['relevance','rating','newest'].includes(storedSearchSort)?storedSearchSort:'relevance';
+const S={view:'home',detailError:null,meError:'',watchError:'',toolError:'',toolLoading:false,toolSeq:0,query:localStorage.getItem('yunhai_search_query')||'',searchSort:initialSearchSort,loading:false,results:storageJSON('yunhai_search_results',[]),dynamic:storageJSON('yunhai_dynamic_cache',{recently_added:[],just_available:[],recent_requests:[]}),discover:cachedDiscover||{featured:[],movies:[],tv:[]},discoverLoading:!cachedDiscover,discoverError:'',discoverAuthError:false,me:null,watchlist:[],wishes:[],issues:[],adventure:null,user:tg?.initDataUnsafe?.user||null,detail:null,detailFrom:'home',detailVisible:false,season:0,submitting:false,page:Number(localStorage.getItem('yunhai_search_page'))||1,nextPage:(Number(localStorage.getItem('yunhai_search_page'))||1)+1,hasMore:localStorage.getItem('yunhai_search_more')==='1',searchType:localStorage.getItem('yunhai_search_type')||'all',progressType:'all',history:storageJSON('yunhai_search_history',[]),recent:storageJSON('yunhai_recent_views',[]),assistantHistory:Array.isArray(cachedAssistantHistory)?cachedAssistantHistory.slice(-6):[],assistantDraft:'',assistantReply:'',assistantSuggestions:[],assistantItems:[],assistantBusy:false,assistantSeq:0,searchSeq:0,detailSeq:0,meSeq:0,lastMeRefresh:0,rootMotion:'',scroll:{home:0,search:Number(localStorage.getItem('yunhai_search_scroll'))||0,me:0}};
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js=s=>JSON.stringify(String(s??''));
 const img=p=>!p?'':p.startsWith('http')?p:'https://image.tmdb.org/t/p/w780'+p;const title=x=>x.title||x.name||'未命名';const type=x=>x.media_type||x.type||'movie';const year=x=>(x.year||x.release_date||x.first_air_date||'').toString().slice(0,4);const id=x=>x.tmdb_id||x.id||0;
@@ -3833,8 +3996,8 @@ function initGlassDynamics(){if(glassMotionQuery?.matches){clearGlassDynamics();
 railMotionQuery?.addEventListener?.('change',()=>{if(railMotionQuery.matches){if(railInitFrame){cancelAnimationFrame(railInitFrame);railInitFrame=0}if(railResizeFrame){cancelAnimationFrame(railResizeFrame);railResizeFrame=0}document.querySelectorAll('.focus-rail').forEach(clearRailFocus);clearGlassDynamics()}else{initRailFocus();initGlassDynamics()}});
 
 function dynamicSections(){
-	const d=S.dynamic,sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
-	return sections.map(([key,label,hint])=>d[key]?.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+d[key].map(card).join('')+'</div></section>':'').join('');
+	const d=S.dynamic||{},used=new Set((S.recent||[]).map(mediaIdentity)),sections=[['recently_added','最近入库','刚到片库'],['just_available','现在能看','已经入库'],['recent_requests','大家刚求的','片友动态']];
+	return sections.map(([key,label,hint])=>{const items=(Array.isArray(d[key])?d[key]:[]).filter(x=>x&&Number(id(x))>0).filter(x=>{const k=mediaIdentity(x);if(used.has(k))return false;used.add(k);return true}).slice(0,6);return items.length?'<section class="section activity-section"><div class="section-head"><h2>'+label+'</h2><span>'+hint+'</span></div><div class="rail">'+items.map(card).join('')+'</div></section>':''}).join('');
 }
 function recentSection(){
 	if(!S.recent.length)return'';
@@ -3845,6 +4008,11 @@ function homeDiscoverError(){
 	const action=S.discoverAuthError?'<button class="primary" onclick="closeExpiredSession()">关闭 Mini App</button>':'<button class="primary" onclick="loadHome()">重新加载</button>';
 	return '<div class="empty discover-error" role="alert"><strong>'+(S.discoverAuthError?'会话已经过期':'片单暂时没加载出来')+'</strong><p class="detail-copy">'+esc(S.discoverError)+'</p>'+action+'</div>';
 }
+function homePulse(){
+	const d=S.dynamic||{},stats=[['recently_added','新入库'],['just_available','可观看'],['recent_requests','求片中']].map(([key,label])=>({label,count:Array.isArray(d[key])?d[key].length:0}));
+	if(!stats.some(x=>x.count))return'';
+	return '<section class="home-pulse" aria-label="片库动态">'+stats.map((x,index)=>'<div><span>'+esc(x.label)+'</span><b>'+x.count+'</b>'+(index===1?'<i aria-hidden="true"></i>':'')+'</div>').join('')+'</section>';
+}
 function home(){
 	const d=S.discover,movies=d.movies||[],shows=d.tv||[],featured=(d.featured||[]).filter(x=>x&&Number(id(x))>0),lead=featured[0]||movies.find(x=>Number(id(x))>0)||shows.find(x=>Number(id(x))>0);
 	const seen=new Set(),picks=[];
@@ -3854,7 +4022,7 @@ function home(){
 	let flow='';
 	if(S.assistantBusy){flow='<section class="screening-flow" aria-busy="true" aria-live="polite"><div class="screening-response"><p>正在从片库里收窄选择。</p></div><div class="screening-scene skeleton"></div></section>'}else if(S.assistantReply){const assistantItems=S.assistantItems.map(safeAssistantItem).filter(Boolean).slice(0,6),assistantSuggestions=S.assistantSuggestions.filter(x=>typeof x==='string'&&x.trim()).slice(0,4);flow='<section class="screening-flow" aria-label="YiMao 选片结果" aria-live="polite"><div class="screening-response"><p>'+esc(S.assistantReply)+'</p></div>'+(assistantSuggestions.length?'<div class="assistant-suggestions">'+assistantSuggestions.map(s=>'<button data-query="'+esc(s)+'" onclick="assistantQuick(this.dataset.query)">'+esc(s)+'</button>').join('')+'</div>':'')+(assistantItems.length?'<div class="grid assistant-results">'+assistantItems.map(card).join('')+'</div>':'<div class="empty assistant-empty"><strong>暂时没找到完全匹配的作品</strong><span>换个说法，我再找一轮。</span></div>')+'</section>'}else if(lead){const other=picks.filter(x=>mediaIdentity(x)!==mediaIdentity(lead));flow='<section class="screening-flow" aria-label="YiMao 推荐片单"><div class="screening-response"><p>我先开一场。第一部稳一点，后面几部把口味慢慢拉开。</p></div><button class="screening-scene" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+Number(lead.season||0)+')">'+screeningMedia(lead)+'<span class="scene-caption"><small>今晚先看这部</small><strong>'+esc(title(lead))+'</strong><span>'+esc(leadMeta)+'</span></span></button><div class="film-thread">'+other.slice(0,6).map((item,index)=>screeningTurn(item,{label:index===0?'换个气口':index===1?'再大胆一点':'顺着这条线',hint:index%2?'口碑不错':'适合接着看',wide:index===2||index===5})).join('')+'</div></section>'}else if(S.discoverLoading){flow='<section class="screening-flow" aria-busy="true" aria-label="正在排片"><div class="screening-response"><p>正在翻片库，马上给你排一场。</p></div><div class="screening-scene skeleton"></div><div class="film-thread"><div class="thread-turn"><div class="thread-art skeleton"></div></div></div></section>'}else{flow='<div class="studio-empty"><strong>放映单还没回来</strong><span>你可以直接说一句想看的，我从片名开始找。</span><button class="primary" onclick="loadHome()">重新排片</button></div>'}
 	const tools='<div class="tool-list studio-tools" aria-label="更多找片方式"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩一段剧情，再决定求哪部</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>暂时没源的，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放或求片不对劲，直接告诉我</small></span><span class="tool-arrow">›</span></button></div>';
-	return '<div class="home-studio">'+composer+'<div>'+homeDiscoverError()+flow+tools+'</div></div>';
+	return '<div class="home-studio">'+composer+'<div>'+homePulse()+homeDiscoverError()+flow+recentSection()+dynamicSections()+tools+'</div></div>';
 }
 let homeController=null;
 async function loadHome(){homeController?.abort();const controller=new AbortController();homeController=controller;S.discoverLoading=true;S.discoverError='';S.discoverAuthError=false;if(S.view==='home')render();try{const d=await api('/api/miniapp/v1/discover',{signal:controller.signal});if(homeController!==controller)return;S.discover=d;localStorage.setItem('yunhai_discover_cache',JSON.stringify(d))}catch(e){if(e?.name==='AbortError'||homeController!==controller)return;S.discoverError=e.message||'网络连接不稳定，请稍后再试';S.discoverAuthError=e.status===401||e.status===403}finally{if(homeController===controller){homeController=null;S.discoverLoading=false;if(S.view==='home')render()}}}
@@ -3866,6 +4034,12 @@ function assistantQuick(message){S.assistantDraft=String(message||'').trim();run
 function submitAssistant(event){event.preventDefault();const message=document.getElementById('assistant-q')?.value.trim()||'';runAssistant(message)}
 async function runAssistant(message){message=String(message||'').trim();if(!message||Array.from(message).length>500){toast('请输入 1 到 500 个字符');return}assistantController?.abort();const controller=new AbortController();assistantController=controller;const seq=++S.assistantSeq,history=assistantHistoryForRequest();S.assistantBusy=true;S.assistantDraft=message;S.assistantReply='';S.assistantSuggestions=[];S.assistantItems=[];render();try{const d=await api('/api/miniapp/v1/assistant',{method:'POST',signal:controller.signal,body:JSON.stringify({message,history})});if(seq!==S.assistantSeq||assistantController!==controller)return;if(d?.degraded){toast('AI 选片暂时不可用，已切换普通搜索');fallbackAssistantSearch(d.fallback_query||message,'all');return}const typeName=['movie','tv','all'].includes(d?.type)?d.type:'',reply=typeof d?.reply==='string'?d.reply.trim():'';if(!reply||!typeName){fallbackAssistantSearch(message,'all');return}S.assistantReply=reply.slice(0,600);S.assistantSuggestions=Array.isArray(d.suggestions)?d.suggestions.filter(x=>typeof x==='string').map(x=>x.trim().slice(0,60)).filter(Boolean).slice(0,4):[];S.assistantItems=Array.isArray(d.items)?d.items.map(safeAssistantItem).filter(Boolean).slice(0,6):[];S.assistantHistory=[...history,{role:'user',content:message},{role:'assistant',content:S.assistantReply}].slice(-6);sessionStorage.setItem('yunhai_assistant_history',JSON.stringify(S.assistantHistory));tg?.HapticFeedback?.impactOccurred?.('light')}catch(e){if(e?.name==='AbortError'||seq!==S.assistantSeq||assistantController!==controller)return;toast('AI 选片暂时不可用，已切换普通搜索');fallbackAssistantSearch(message,'all')}finally{if(seq===S.assistantSeq&&assistantController===controller){assistantController=null;S.assistantBusy=false;if(S.view==='home')render()}}}
 function closeExpiredSession(){if(tg?.close)tg.close();else location.reload()}
+function sortedSearchResults(){
+	const items=[...S.results];
+	if(S.searchSort==='rating')return items.sort((a,b)=>(Number(b.vote_average)||0)-(Number(a.vote_average)||0)||(Number(year(b))||0)-(Number(year(a))||0));
+	if(S.searchSort==='newest')return items.sort((a,b)=>(Number(year(b))||0)-(Number(year(a))||0)||(Number(b.vote_average)||0)-(Number(a.vote_average)||0));
+	return items;
+}
 function searchPage(){
 	const history=!S.query&&S.history.length?'<section class="search-history" aria-label="最近搜索"><div class="search-history-head"><h2>最近搜索</h2><button type="button" onclick="clearHistory()">清除</button></div><div class="search-history-list">'+S.history.map(q=>'<button type="button" data-query="'+esc(q)+'" onclick="quick(this.dataset.query)">'+esc(q)+'</button>').join('')+'</div></section>':'';
 	const starters=['沙丘','繁花','星际穿越','漫长的季节','周星驰','宫崎骏'];
@@ -3873,10 +4047,11 @@ function searchPage(){
 	const empty=S.query?'<div class="empty"><strong>没有找到匹配结果</strong><span>'+(S.hasMore?'后面还有结果，可以继续加载。':'换个片名或类型试试。')+'</span></div>':idle;
 	const filters=[['all','全部'],['movie','电影'],['tv','剧集']].map(([v,t])=>'<button type="button" class="filter '+(S.searchType===v?'active':'')+'" aria-pressed="'+(S.searchType===v?'true':'false')+'" data-type="'+esc(v)+'" onclick="setSearchType(this.dataset.type)">'+t+'</button>').join('');
 	const skeleton='<div class="search-card-skeleton" aria-hidden="true"><div class="poster skeleton"></div><span class="search-skeleton-line skeleton"></span><span class="search-skeleton-line is-meta skeleton"></span></div>';
-	const results=S.loading&&!S.results.length?Array(6).fill(skeleton).join(''):S.results.length?S.results.map(card).join(''):empty;
+	const results=S.loading&&!S.results.length?Array(6).fill(skeleton).join(''):S.results.length?sortedSearchResults().map(card).join(''):empty;
+	const sortOptions=S.query?'<div class="result-tools" role="group" aria-label="结果排序"><span>排序</span>'+[['relevance','综合'],['rating','评分'],['newest','新片']].map(([v,t])=>'<button type="button" class="sort-chip '+(S.searchSort===v?'active':'')+'" aria-pressed="'+(S.searchSort===v?'true':'false')+'" onclick="setSearchSort(\''+v+'\')">'+t+'</button>').join('')+'</div>':'';
 	const more=S.hasMore?'<button class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMore()">'+(S.loading?'加载中…':'加载更多')+'</button>':'';
 	const context=S.query?'<header class="search-result-head"><div class="search-result-context"><small>搜索结果</small><h2>'+esc(S.query)+'</h2></div><span class="search-result-count">已加载 '+S.results.length+' 部'+(S.loading?' · 搜索中':'')+'</span></header>':'';
-	return '<div class="search-workspace"><section class="search-console"><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon" aria-hidden="true">'+icons.search+'</span><label class="sr-only" for="q">搜索片名或演员</label><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'</button></form>'+history+'<div class="filter-row" role="group" aria-label="内容类型">'+filters+'</div></section><section class="search-results" aria-live="polite" aria-busy="'+String(S.loading)+'">'+context+'<div class="grid search-grid">'+results+'</div>'+more+'</section></div>';
+	return '<div class="search-workspace"><section class="search-console"><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon" aria-hidden="true">'+icons.search+'</span><label class="sr-only" for="q">搜索片名或演员</label><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'</button></form>'+history+'<div class="filter-row" role="group" aria-label="内容类型">'+filters+'</div></section><section class="search-results" aria-live="polite" aria-busy="'+String(S.loading)+'">'+context+sortOptions+'<div class="grid search-grid">'+results+'</div>'+more+'</section></div>';
 }
 function watchStackItem(x){const mid=Number(id(x)),mt=type(x)==='tv'?'tv':'movie';if(!Number.isFinite(mid)||mid<=0)return'';const p=img(x.poster_path||x.poster),y=year(x),score=Number(x.vote_average)||0;return `<button class="watch-stack-item" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})">${p?`<img src="${esc(p)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'watch-stack-poster'}))">`:'<span class="watch-stack-poster"></span>'}<span><b>${esc(title(x))}</b><span>${esc(y||'年份待定')}${score?' · '+score.toFixed(1)+' 分':''}</span></span><em aria-hidden="true">›</em></button>`}
 function mePage(){if(!S.me)return S.meError?`<section class="archive-lead"><div class="kicker">观影档案</div><h1>档案暂时没接上</h1><p>${esc(S.meError)}</p><button class="primary" onclick="goMe()">重新加载</button></section>`:`<section class="archive-lead"><div class="kicker">观影档案</div><h1>正在翻你的片单</h1><p>求片、想看和额度马上就来。</p></section><div class="archive-now skeleton"></div>`;const q=S.me.quota||{},all=S.me.requests||[],rs=S.progressType==='all'?all:all.filter(r=>progressGroup(r)===S.progressType),remain=(limit,used)=>limit===-1?'∞':Math.max(0,(limit||0)-(used||0)),tabs=[['all','全部'],['pending','待审核'],['active','处理中'],['done','已结束']],watch=(S.watchlist||[]).filter(x=>Number.isFinite(Number(id(x)))&&Number(id(x))>0),focus=all.find(r=>progressGroup(r)==='active')||all.find(r=>progressGroup(r)==='pending'),focusID=focus?Number(focus.tmdb_id):0,focusRequestID=focus?String(focus.request_id??focus.id??''):'',focusTitle=focus?String(focus.media_title||focus.title||focus.name||'正在处理的求片'):'',focusType=focus?.media_type==='tv'||focus?.media_type==='电视剧'?'tv':'movie',focusPoster=focus?img(focus.poster_path):'',focusProgress=focus&&Number(focus.progress)>0?' · '+Math.min(100,Math.round(Number(focus.progress)))+'%':'',focusActions=focus?`<div class="archive-now-actions">${focusRequestID?`<button data-id="${esc(focusRequestID)}" onclick="openProgress(this.dataset.id)">查看时间线</button>`:''}${Number.isFinite(focusID)&&focusID>0?`<button onclick="openDetail(${focusID},'${focusType}',${Number(focus.season)||0})">作品详情</button>`:''}</div>`:'<div class="archive-now-actions"><button onclick="goSearch()">去找一部</button></div>',focusBlock=focus?`<section class="archive-now">${focusPoster?`<img class="archive-now-poster" src="${esc(focusPoster)}" alt="" onerror="this.style.visibility='hidden'">`:'<span class="archive-now-poster"></span>'}<div class="archive-now-copy"><span class="archive-now-label">正在处理</span><h2>${esc(focusTitle)}</h2><p>${esc(statusText(focus))}${focusProgress}${focus.note?' · '+esc(focus.note):''}</p>${focusActions}</div></section>`:`<section class="archive-now archive-now-empty"><div class="archive-now-copy"><span class="archive-now-label">此刻</span><h2>还没有在等的片</h2><p>从一个片名开始，进度会留在这里。</p>${focusActions}</div></section>`;return `<div class="archive-workspace"><header class="archive-lead"><div class="archive-lead-row"><div><div class="kicker">${esc(S.me.user?.first_name||'影迷')}的观影档案</div><h1><span>想看的，</span><br><span>等着的，都在这。</span></h1><p>${all.length?all.length+' 条求片记录，进度都替你盯着。':'从第一部想看的片开始。'}</p></div><button class="archive-refresh" aria-label="刷新我的档案" onclick="refreshMe(this)">↻</button></div><div class="quota-ticket" aria-label="今日求片额度"><span>今日可求</span><div><b>${remain(q.movie_limit,q.movie_used)}</b><small>部电影</small></div><div><b>${remain(q.tv_limit,q.tv_used)}</b><small>部剧集</small></div></div></header>${focusBlock}<div class="archive-body"><section class="archive-section"><div class="archive-section-head"><h2>想看片单</h2><span>${watch.length} 部</span></div>${S.watchError?'<div class="empty"><strong>想看片单暂时没加载出来</strong><button class="primary" onclick="goMe(true)">重试片单</button></div>':watch.length?`<div class="watch-stack">${watch.map(watchStackItem).join('')}</div>`:'<div class="empty"><strong>这里还空着</strong><span>在作品详情点“加入想看”，入库后 Bot 会提醒你。</span><button class="primary" onclick="goSearch()">去找片</button></div>'}</section><section class="archive-section"><div class="archive-section-head"><h2>云海服务</h2><span>需要时再打开</span></div><div class="service-band"><button class="service-action primary-service" onclick="goAdventure()"><b>电影大冒险</b><span>闯五幕剧情，通关直接求片</span></button><button class="service-action" onclick="goWishes()"><b>许愿追踪</b><span>没源的片持续帮你找</span></button><button class="service-action" onclick="goSearch()"><b>拼车求片</b><span>和同好一起等片</span></button><button class="service-action" onclick="goIssues()"><b>问题反馈</b><span>看回复和处理状态</span></button></div></section><section class="archive-section archive-progress"><div class="archive-section-head"><h2>求片档案</h2><span>${all.length} 条</span></div><div class="progress-tabs">${tabs.map(([v,t])=>`<button class="progress-tab ${S.progressType===v?'active':''}" onclick="setProgressType('${v}')">${t}</button>`).join('')}</div><div class="request-list">${rs.length?rs.map(requestCard).join(''):'<div class="empty"><strong>这个分类还没有记录</strong><span>换个状态看看，或者去找一部。</span></div>'}</div></section></div></div>`}
@@ -3916,6 +4091,7 @@ function resetSearchPage(){S.page=1;S.nextPage=2;S.hasMore=false;S.results=[]}
 function quick(q){queueRootMotion('search');S.query=q;S.view='search';resetSearchPage();rememberSearch(q);doSearch(false,1)}
 function submitSearch(e){e.preventDefault();const query=document.getElementById('q').value.trim();if(!query){cancelSearch();S.query='';resetSearchPage();render();return}queueRootMotion('search');S.query=query;S.view='search';resetSearchPage();rememberSearch(S.query);doSearch(false,1)}
 function setSearchType(v){S.searchType=v;if(S.query){resetSearchPage();doSearch(false,1)}else{cancelSearch();render()}}
+function setSearchSort(v){if(!['relevance','rating','newest'].includes(v)||S.searchSort===v)return;S.searchSort=v;localStorage.setItem('yunhai_search_sort',v);render();tg?.HapticFeedback?.selectionChanged?.()}
 function rememberSearch(q){S.history=[q,...S.history.filter(x=>x!==q)].slice(0,5);localStorage.setItem('yunhai_search_history',JSON.stringify(S.history))}function clearHistory(){S.history=[];localStorage.removeItem('yunhai_search_history');render()}function clearRecent(){S.recent=[];localStorage.removeItem('yunhai_recent_views');render()}function rememberView(x){const item={tmdb_id:id(x),type:x.type||type(x),title:x.title||title(x),year:x.year||year(x),poster_path:x.poster_path||x.poster,vote_average:x.vote_average||0,season:x.type==='tv'?S.season:0};S.recent=[item,...S.recent.filter(y=>!(id(y)===item.tmdb_id&&type(y)===item.type))].slice(0,12);localStorage.setItem('yunhai_recent_views',JSON.stringify(S.recent))}function saveSearchState(){localStorage.setItem('yunhai_search_query',S.query);localStorage.setItem('yunhai_search_page',String(S.page));localStorage.setItem('yunhai_search_more',S.hasMore?'1':'0');localStorage.setItem('yunhai_search_type',S.searchType);localStorage.setItem('yunhai_search_results',JSON.stringify(S.results));localStorage.setItem('yunhai_search_scroll',String(S.scroll.search||0))}
 function loadMore(){if(!S.loading&&S.hasMore){const request={query:S.query,type:S.searchType,page:S.nextPage};doSearch(true,request.page,request)}}
 async function searchWithAssistant(query,typeName,signal){try{const d=await api('/api/miniapp/v1/assistant',{method:'POST',signal,body:JSON.stringify({message:query,history:[]})});if(d?.degraded)return[];const wanted=['movie','tv'].includes(typeName)?typeName:'';return(Array.isArray(d?.items)?d.items:[]).map(safeAssistantItem).filter(x=>x&&(!wanted||type(x)===wanted)).slice(0,12)}catch(e){if(e?.name==='AbortError')throw e;return[]}}
