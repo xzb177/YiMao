@@ -2651,18 +2651,15 @@ img {
   }
 }
 
-.search-workspace,
 .tool-workspace {
   min-width: 0;
 }
 
-.search-console,
 .tool-header {
   padding: 10px 0 26px;
   border-bottom: 1px solid var(--line);
 }
 
-.search-console > p,
 .tool-header > p {
   margin: 0 0 7px;
   color: var(--accent);
@@ -2671,7 +2668,6 @@ img {
   letter-spacing: .09em;
 }
 
-.search-console h1,
 .tool-header h1 {
   margin: 0 0 22px;
   max-width: 680px;
@@ -2680,27 +2676,281 @@ img {
   letter-spacing: -.045em;
 }
 
-.search-results,
 .tool-body {
   padding-top: 24px;
 }
 
-.search-result-head {
+.search-workspace {
+  min-width: 0;
+  padding: 12px 0 8px;
+}
+
+.view-search .app-bar {
+  border-radius: 0;
+}
+
+.search-console {
+  min-width: 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.search-workspace .search {
+  min-height: 52px;
+  margin: 0;
+  padding: 3px 3px 3px 13px;
+  border-color: #393b42;
+  background: #17181c;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, .2);
+}
+
+.search-workspace .search:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(240, 90, 79, .15), 0 10px 24px rgba(0, 0, 0, .26);
+}
+
+.search-workspace .search-icon {
+  color: #a6a7ac;
+}
+
+.search-workspace .search-submit {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.search-workspace .search-submit svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+
+.search-history {
+  min-width: 0;
+  margin-top: 14px;
+}
+
+.search-history-head {
+  min-height: 44px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
+  gap: 12px;
+}
+
+.search-history-head h2 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 680;
+}
+
+.search-history-head button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 4px;
+  background: transparent;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.search-history-list {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-history-list button {
+  min-width: 0;
+  min-height: 44px;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #131418;
+  color: #d8d6d3;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-workspace .filter-row {
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  padding: 3px;
+  border-color: #2a2c32;
+  background: #101115;
+}
+
+.search-workspace .filter {
+  min-width: 0;
+  padding: 0 8px;
+  border-radius: 5px;
+  color: #aeadb1;
+}
+
+.search-workspace .filter.active {
+  background: #292b30;
+  color: #fff;
+  box-shadow: none;
+}
+
+.search-results {
+  min-width: 0;
+  padding: 16px 0 12px;
+}
+
+.search-result-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.search-result-context {
+  min-width: 0;
+}
+
+.search-result-context small {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.3;
 }
 
 .search-result-head h2 {
   margin: 0;
-  font-size: 19px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.3;
+  font-weight: 720;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.search-result-head span {
+.search-result-count {
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: #b6b4b1;
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.search-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 8px;
+}
+
+.search-grid .media {
+  width: 100%;
+  overflow: hidden;
+}
+
+.search-grid .media h3 {
+  margin-top: 7px;
+}
+
+.search-card-skeleton {
+  min-width: 0;
+}
+
+.search-card-skeleton .poster {
+  box-shadow: none;
+}
+
+.search-skeleton-line {
+  width: 78%;
+  height: 11px;
+  display: block;
+  margin: 8px 1px 0;
+  border-radius: 3px;
+}
+
+.search-skeleton-line.is-meta {
+  width: 48%;
+  height: 8px;
+  margin-top: 6px;
+}
+
+.search-idle {
+  grid-column: 1 / -1;
+  min-height: 220px;
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: 18px 0 24px;
   color: var(--muted);
-  font-size: 13px;
+}
+
+.search-idle-copy {
+  display: grid;
+  gap: 5px;
+}
+
+.search-idle-copy strong {
+  color: var(--ink);
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+.search-idle-copy span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.search-starters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.search-starters button {
+  min-width: 0;
+  min-height: 48px;
+  overflow: hidden;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #15161a;
+  color: #d8d6d3;
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.search-workspace .empty {
+  min-height: 190px;
+  border-right: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.search-workspace .load-more {
+  margin-bottom: 8px;
 }
 
 .tool-workspace .section:first-child {
@@ -2747,6 +2997,30 @@ img {
 
   .grid {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .search-workspace {
+    padding-top: 18px;
+  }
+
+  .search-console {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    align-items: start;
+    gap: 16px;
+  }
+
+  .search-history {
+    grid-column: 1 / -1;
+  }
+
+  .search-workspace .filter-row {
+    margin-top: 0;
+  }
+
+  .search-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 20px 10px;
   }
 
   .detail h1 {
@@ -2819,19 +3093,54 @@ img {
 
   .search-workspace {
     display: grid;
-    grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
+    grid-template-columns: minmax(270px, .62fr) minmax(0, 1.38fr);
     align-items: start;
-    gap: clamp(36px, 6vw, 76px);
+    gap: clamp(32px, 5vw, 56px);
+    padding-top: 22px;
   }
 
   .search-console {
     position: sticky;
-    top: calc(var(--safe-top) + 76px);
+    top: calc(var(--safe-top) + 68px);
+    display: block;
+    padding-bottom: 0;
     border-bottom: 0;
   }
 
+  .search-history {
+    margin-top: 18px;
+  }
+
+  .search-history-list {
+    display: grid;
+    gap: 6px;
+  }
+
+  .search-history-list button {
+    width: 100%;
+    text-align: left;
+  }
+
+  .search-workspace .filter-row {
+    margin-top: 14px;
+  }
+
   .search-results {
-    padding-top: 10px;
+    padding-top: 0;
+  }
+
+  .search-results .search-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 22px 11px;
+  }
+
+  .search-idle {
+    min-height: 360px;
+    padding-top: 4px;
+  }
+
+  .search-starters {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .tool-workspace {
@@ -3106,12 +3415,16 @@ function submitAssistant(event){event.preventDefault();const message=document.ge
 async function runAssistant(message){message=String(message||'').trim();if(!message||Array.from(message).length>500){toast('请输入 1 到 500 个字符');return}assistantController?.abort();const controller=new AbortController();assistantController=controller;const seq=++S.assistantSeq,history=assistantHistoryForRequest();S.assistantBusy=true;S.assistantDraft=message;S.assistantReply='';S.assistantSuggestions=[];S.assistantItems=[];render();try{const d=await api('/api/miniapp/v1/assistant',{method:'POST',signal:controller.signal,body:JSON.stringify({message,history})});if(seq!==S.assistantSeq||assistantController!==controller)return;if(d?.degraded){toast('AI 选片暂时不可用，已切换普通搜索');fallbackAssistantSearch(d.fallback_query||message,'all');return}const typeName=['movie','tv','all'].includes(d?.type)?d.type:'',reply=typeof d?.reply==='string'?d.reply.trim():'';if(!reply||!typeName){fallbackAssistantSearch(message,'all');return}S.assistantReply=reply.slice(0,600);S.assistantSuggestions=Array.isArray(d.suggestions)?d.suggestions.filter(x=>typeof x==='string').map(x=>x.trim().slice(0,60)).filter(Boolean).slice(0,4):[];S.assistantItems=Array.isArray(d.items)?d.items.map(safeAssistantItem).filter(Boolean).slice(0,6):[];S.assistantHistory=[...history,{role:'user',content:message},{role:'assistant',content:S.assistantReply}].slice(-6);sessionStorage.setItem('yunhai_assistant_history',JSON.stringify(S.assistantHistory));tg?.HapticFeedback?.impactOccurred?.('light')}catch(e){if(e?.name==='AbortError'||seq!==S.assistantSeq||assistantController!==controller)return;toast('AI 选片暂时不可用，已切换普通搜索');fallbackAssistantSearch(message,'all')}finally{if(seq===S.assistantSeq&&assistantController===controller){assistantController=null;S.assistantBusy=false;if(S.view==='home')render()}}}
 function closeExpiredSession(){if(tg?.close)tg.close();else location.reload()}
 function searchPage(){
-	const history=!S.query&&S.history.length?'<div class="history"><b>最近搜索</b>'+S.history.map(q=>'<button data-query="'+esc(q)+'" onclick="quick(this.dataset.query)">'+esc(q)+'</button>').join('')+'<button onclick="clearHistory()">清除</button></div>':'';
-	const empty=S.query?'<div class="empty"><strong>没有找到匹配结果</strong><span>'+(S.hasMore?'后面还有结果，可以继续加载。':'换个片名或类型试试。')+'</span></div>':'<div class="empty"><strong>从一个片名开始</strong><span>电影、剧集和演员都可以搜索。</span></div>';
-	const filters=[['all','全部'],['movie','电影'],['tv','剧集']].map(([v,t])=>'<button class="filter '+(S.searchType===v?'active':'')+'" data-type="'+esc(v)+'" onclick="setSearchType(this.dataset.type)">'+t+'</button>').join('');
-	const results=S.loading&&!S.results.length?Array(6).fill('<div class="poster skeleton" aria-hidden="true"></div>').join(''):S.results.length?S.results.map(card).join(''):empty;
+	const history=!S.query&&S.history.length?'<section class="search-history" aria-label="最近搜索"><div class="search-history-head"><h2>最近搜索</h2><button type="button" onclick="clearHistory()">清除</button></div><div class="search-history-list">'+S.history.map(q=>'<button type="button" data-query="'+esc(q)+'" onclick="quick(this.dataset.query)">'+esc(q)+'</button>').join('')+'</div></section>':'';
+	const starters=['沙丘','繁花','星际穿越','漫长的季节','周星驰','宫崎骏'];
+	const idle='<div class="search-idle"><div class="search-idle-copy"><strong>从片库里找一部</strong><span>搜片名、剧名或演员，也可以从这些开始。</span></div><div class="search-starters">'+starters.map(q=>'<button type="button" data-query="'+esc(q)+'" onclick="quick(this.dataset.query)">'+esc(q)+'</button>').join('')+'</div></div>';
+	const empty=S.query?'<div class="empty"><strong>没有找到匹配结果</strong><span>'+(S.hasMore?'后面还有结果，可以继续加载。':'换个片名或类型试试。')+'</span></div>':idle;
+	const filters=[['all','全部'],['movie','电影'],['tv','剧集']].map(([v,t])=>'<button type="button" class="filter '+(S.searchType===v?'active':'')+'" aria-pressed="'+(S.searchType===v?'true':'false')+'" data-type="'+esc(v)+'" onclick="setSearchType(this.dataset.type)">'+t+'</button>').join('');
+	const skeleton='<div class="search-card-skeleton" aria-hidden="true"><div class="poster skeleton"></div><span class="search-skeleton-line skeleton"></span><span class="search-skeleton-line is-meta skeleton"></span></div>';
+	const results=S.loading&&!S.results.length?Array(6).fill(skeleton).join(''):S.results.length?S.results.map(card).join(''):empty;
 	const more=S.hasMore?'<button class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMore()">'+(S.loading?'加载中…':'加载更多')+'</button>':'';
-	return '<div class="search-workspace"><section class="search-console"><p>片名、演员，或者一句描述都行。</p><h1>'+(S.query?esc(S.query):'想找哪一部？')+'</h1><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon">'+icons.search+'</span><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名或演员"><button>搜索</button></form>'+history+'<div class="filter-row">'+filters+'</div></section><section class="search-results" aria-live="polite"><div class="search-result-head"><h2>'+(S.query?'匹配结果':'从一句话开始')+'</h2><span>'+(S.results.length?S.results.length+' 部':'')+'</span></div><div class="grid">'+results+'</div>'+more+'</section></div>';
+	const context=S.query?'<header class="search-result-head"><div class="search-result-context"><small>搜索结果</small><h2>'+esc(S.query)+'</h2></div><span class="search-result-count">已加载 '+S.results.length+' 部'+(S.loading?' · 搜索中':'')+'</span></header>':'';
+	return '<div class="search-workspace"><section class="search-console"><form class="search" role="search" onsubmit="submitSearch(event)"><span class="search-icon" aria-hidden="true">'+icons.search+'</span><label class="sr-only" for="q">搜索片名或演员</label><input id="q" type="search" autocomplete="off" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="输入片名或演员"><button class="search-submit" aria-label="搜索">'+icons.search+'</button></form>'+history+'<div class="filter-row" role="group" aria-label="内容类型">'+filters+'</div></section><section class="search-results" aria-live="polite" aria-busy="'+String(S.loading)+'">'+context+'<div class="grid search-grid">'+results+'</div>'+more+'</section></div>';
 }
 function watchStackItem(x){const mid=Number(id(x)),mt=type(x)==='tv'?'tv':'movie';if(!Number.isFinite(mid)||mid<=0)return'';const p=img(x.poster_path||x.poster),y=year(x),score=Number(x.vote_average)||0;return `<button class="watch-stack-item" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})">${p?`<img src="${esc(p)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'watch-stack-poster'}))">`:'<span class="watch-stack-poster"></span>'}<span><b>${esc(title(x))}</b><span>${esc(y||'年份待定')}${score?' · '+score.toFixed(1)+' 分':''}</span></span><em aria-hidden="true">›</em></button>`}
 function mePage(){if(!S.me)return S.meError?`<section class="archive-lead"><div class="kicker">观影档案</div><h1>档案暂时没接上</h1><p>${esc(S.meError)}</p><button class="primary" onclick="goMe()">重新加载</button></section>`:`<section class="archive-lead"><div class="kicker">观影档案</div><h1>正在翻你的片单</h1><p>求片、想看和额度马上就来。</p></section><div class="archive-now skeleton"></div>`;const q=S.me.quota||{},all=S.me.requests||[],rs=S.progressType==='all'?all:all.filter(r=>progressGroup(r)===S.progressType),remain=(limit,used)=>limit===-1?'∞':Math.max(0,(limit||0)-(used||0)),tabs=[['all','全部'],['pending','待审核'],['active','处理中'],['done','已结束']],watch=(S.watchlist||[]).filter(x=>Number.isFinite(Number(id(x)))&&Number(id(x))>0),focus=all.find(r=>progressGroup(r)==='active')||all.find(r=>progressGroup(r)==='pending'),focusID=focus?Number(focus.tmdb_id):0,focusRequestID=focus?String(focus.request_id??focus.id??''):'',focusTitle=focus?String(focus.media_title||focus.title||focus.name||'正在处理的求片'):'',focusType=focus?.media_type==='tv'||focus?.media_type==='电视剧'?'tv':'movie',focusPoster=focus?img(focus.poster_path):'',focusProgress=focus&&Number(focus.progress)>0?' · '+Math.min(100,Math.round(Number(focus.progress)))+'%':'',focusActions=focus?`<div class="archive-now-actions">${focusRequestID?`<button data-id="${esc(focusRequestID)}" onclick="openProgress(this.dataset.id)">查看时间线</button>`:''}${Number.isFinite(focusID)&&focusID>0?`<button onclick="openDetail(${focusID},'${focusType}',${Number(focus.season)||0})">作品详情</button>`:''}</div>`:'<div class="archive-now-actions"><button onclick="goSearch()">去找一部</button></div>',focusBlock=focus?`<section class="archive-now">${focusPoster?`<img class="archive-now-poster" src="${esc(focusPoster)}" alt="" onerror="this.style.visibility='hidden'">`:'<span class="archive-now-poster"></span>'}<div class="archive-now-copy"><span class="archive-now-label">正在处理</span><h2>${esc(focusTitle)}</h2><p>${esc(statusText(focus))}${focusProgress}${focus.note?' · '+esc(focus.note):''}</p>${focusActions}</div></section>`:`<section class="archive-now archive-now-empty"><div class="archive-now-copy"><span class="archive-now-label">此刻</span><h2>还没有在等的片</h2><p>从一个片名开始，进度会留在这里。</p>${focusActions}</div></section>`;return `<div class="archive-workspace"><header class="archive-lead"><div class="archive-lead-row"><div><div class="kicker">${esc(S.me.user?.first_name||'影迷')}的观影档案</div><h1><span>想看的，</span><br><span>等着的，都在这。</span></h1><p>${all.length?all.length+' 条求片记录，进度都替你盯着。':'从第一部想看的片开始。'}</p></div><button class="archive-refresh" aria-label="刷新我的档案" onclick="refreshMe(this)">↻</button></div><div class="quota-ticket" aria-label="今日求片额度"><span>今日可求</span><div><b>${remain(q.movie_limit,q.movie_used)}</b><small>部电影</small></div><div><b>${remain(q.tv_limit,q.tv_used)}</b><small>部剧集</small></div></div></header>${focusBlock}<div class="archive-body"><section class="archive-section"><div class="archive-section-head"><h2>想看片单</h2><span>${watch.length} 部</span></div>${S.watchError?'<div class="empty"><strong>想看片单暂时没加载出来</strong><button class="primary" onclick="goMe(true)">重试片单</button></div>':watch.length?`<div class="watch-stack">${watch.map(watchStackItem).join('')}</div>`:'<div class="empty"><strong>这里还空着</strong><span>在作品详情点“加入想看”，入库后 Bot 会提醒你。</span><button class="primary" onclick="goSearch()">去找片</button></div>'}</section><section class="archive-section"><div class="archive-section-head"><h2>云海服务</h2><span>需要时再打开</span></div><div class="service-band"><button class="service-action primary-service" onclick="goAdventure()"><b>电影大冒险</b><span>闯五幕剧情，通关直接求片</span></button><button class="service-action" onclick="goWishes()"><b>许愿追踪</b><span>没源的片持续帮你找</span></button><button class="service-action" onclick="goSearch()"><b>拼车求片</b><span>和同好一起等片</span></button><button class="service-action" onclick="goIssues()"><b>问题反馈</b><span>看回复和处理状态</span></button></div></section><section class="archive-section archive-progress"><div class="archive-section-head"><h2>求片档案</h2><span>${all.length} 条</span></div><div class="progress-tabs">${tabs.map(([v,t])=>`<button class="progress-tab ${S.progressType===v?'active':''}" onclick="setProgressType('${v}')">${t}</button>`).join('')}</div><div class="request-list">${rs.length?rs.map(requestCard).join(''):'<div class="empty"><strong>这个分类还没有记录</strong><span>换个状态看看，或者去找一部。</span></div>'}</div></section></div></div>`}
