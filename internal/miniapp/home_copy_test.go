@@ -228,6 +228,16 @@ func TestRootMotionIsOneShotAndReducedMotionSafe(t *testing.T) {
 	rejectSource(t, html, "animation: shine", "IntersectionObserver")
 }
 
+func TestSearchUsesAppleSystemTypographyAndAIForNaturalLanguageEmptyResults(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC"`,
+		"async function searchWithAssistant(query,typeName,signal)",
+		"if(!append&&!S.results.length&&!S.hasMore)",
+		"searchWithAssistant(current.query,current.type,controller.signal)",
+	)
+}
+
 func TestSearchRacePaginationAndPersistentErrors(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
