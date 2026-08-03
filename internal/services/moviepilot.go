@@ -559,10 +559,13 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 		payload["season"] = 1
 	}
 
-	// Add save_path if configured (for multi-server deployments)
-	if c.downloadSavePath != "" {
-		payload["save_path"] = c.downloadSavePath
-		logger.Info("[MoviePilot] Using custom save_path: %s", c.downloadSavePath)
+	// Only forward an absolute path. Empty or invalid values (for example "0")
+	// must fall back to MoviePilot's default downloader save path.
+	if savePath := strings.TrimSpace(c.downloadSavePath); strings.HasPrefix(savePath, "/") {
+		payload["save_path"] = savePath
+		logger.Info("[MoviePilot] Using custom save_path: %s", savePath)
+	} else if savePath != "" {
+		logger.Info("[MoviePilot] Ignoring invalid DOWNLOAD_SAVE_PATH; MoviePilot default will be used")
 	}
 
 	endpoint := "/api/v1/subscribe"
