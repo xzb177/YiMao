@@ -4251,6 +4251,64 @@ body::after{
   }
 }
 
+/* ============================================================
+   动效与工艺精修：进场节奏 / 海报微放大 / 焦点呼吸 / 空态氛围 / 无障碍
+   ============================================================ */
+:root{--ease:cubic-bezier(.2,.75,.3,1);--ease-spring:cubic-bezier(.34,1.4,.64,1)}
+@media (prefers-reduced-motion: no-preference){
+  /* 页面切换过渡 */
+  .root-enter-forward,.root-enter-backward{animation:rootIn .42s var(--ease) backwards}
+  @keyframes rootIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+  /* 卡片错落入场 */
+  .rail .media,.recent-rail .media{animation:cardIn .5s var(--ease) backwards}
+  .rail .media:nth-child(2),.recent-rail .media:nth-child(2){animation-delay:.05s}
+  .rail .media:nth-child(3),.recent-rail .media:nth-child(3){animation-delay:.1s}
+  .rail .media:nth-child(4),.recent-rail .media:nth-child(4){animation-delay:.15s}
+  .rail .media:nth-child(5),.recent-rail .media:nth-child(5){animation-delay:.2s}
+  @keyframes cardIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  /* 海报图微放大（只动图，卡片保持稳定） */
+  .media .poster img,.thread-art img,.scene img{transform:scale(1);transition:transform .7s var(--ease)}
+  .media:hover .poster img,.media:focus-visible .poster img,.thread-art:hover img,.scene:hover img{transform:scale(1.06)}
+  /* 主视觉卡 hover 升华 */
+  .screening-scene{transition:transform .5s var(--ease),box-shadow .5s var(--ease)}
+  .screening-scene:hover{transform:translateY(-3px);box-shadow:0 30px 70px rgba(0,0,0,.5)}
+  /* 工具行：进门轻微前倾 */
+  .tool-row{transition:transform .25s var(--ease),border-color .25s ease,background .25s ease}
+  .tool-row:hover{transform:translateX(3px);border-color:rgba(127,224,204,.38)}
+  .tool-row .g{transition:transform .3s var(--ease-spring)}
+  .tool-row:hover .g{transform:scale(1.08) rotate(-4deg)}
+  .tool-row .tool-arrow{transition:transform .25s var(--ease)}
+  .tool-row:hover .tool-arrow{transform:translateX(3px)}
+  /* dock 激活图标轻轻上浮 */
+  .nav i,.nav button svg,.prompt-send svg{transition:transform .3s var(--ease)}
+  .nav.active svg{transform:translateY(-1px)}
+  /* 时间线当前节点：呼吸光晕 */
+  .timeline-node.is-current .timeline-marker{animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 3px rgba(87,199,178,.22)}50%{box-shadow:0 0 0 7px rgba(87,199,178,.06)}}
+  /* 骨架屏流光 */
+  .skeleton{position:relative;overflow:hidden}
+  .skeleton::after{content:"";position:absolute;inset:0;transform:translateX(-100%);background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);animation:shimmer 1.3s infinite}
+  @keyframes shimmer{to{transform:translateX(100%)}}
+  /* 结果下落到视口 */
+  .grid > .media{animation:cardIn .4s var(--ease) backwards}
+}
+/* 空态氛围（纯 CSS 表现，不依赖 JS） */
+.studio-empty{position:relative;display:grid;place-items:center;text-align:center;gap:7px}
+.studio-empty::before{content:"◇";display:block;color:var(--accent);font-size:42px;line-height:1;opacity:.4;animation:none}
+.studio-empty strong{position:relative;z-index:1;color:var(--ink);font-size:15px;font-weight:700}
+.studio-empty span{position:relative;z-index:1;color:var(--dim);font-size:13px;max-width:26ch;margin:0 auto}
+.studio-empty .primary{position:relative;z-index:1;margin-top:11px}
+.studio-empty .primary{margin-left:auto;margin-right:auto}
+/* 统一焦点环为品牌青绿 */
+:focus-visible{outline:2px solid var(--accent-strong);outline-offset:2px}
+/* 关闭动效（尊重系统设置，覆盖本次新增的动画/过渡） */
+@media (prefers-reduced-motion: reduce){
+  .root-enter-forward,.root-enter-backward,.rail .media,.recent-rail .media,.grid > .media,
+  .skeleton::after,.timeline-node.is-current .timeline-marker{animation:none !important;transition:none !important}
+  .media .poster img,.thread-art img,.scene img,.tool-row,.tool-row .g,.tool-row .tool-arrow,
+  .nav svg,.nav button svg,.prompt-send svg,.screening-scene{transition:none !important}
+  .screening-scene,.media,.tool-row{transform:none !important}
+}
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();tg?.setHeaderColor?.('#090a0c');tg?.setBackgroundColor?.('#090a0c');
@@ -4261,6 +4319,75 @@ const cachedAssistantHistory=sessionJSON('yunhai_assistant_history',[]);
 const storedSearchSort=localStorage.getItem('yunhai_search_sort');
 const initialSearchSort=['relevance','rating','newest'].includes(storedSearchSort)?storedSearchSort:'relevance';
 const S={view:'home',detailError:null,meError:'',watchError:'',toolError:'',toolLoading:false,toolSeq:0,query:localStorage.getItem('yunhai_search_query')||'',searchSort:initialSearchSort,loading:false,results:storageJSON('yunhai_search_results',[]),dynamic:storageJSON('yunhai_dynamic_cache',{recently_added:[],just_available:[],recent_requests:[]}),discover:cachedDiscover||{featured:[],movies:[],tv:[]},discoverLoading:!cachedDiscover,discoverError:'',discoverAuthError:false,me:null,watchlist:[],wishes:[],issues:[],adventure:null,user:tg?.initDataUnsafe?.user||null,detail:null,detailFrom:'home',detailVisible:false,season:0,submitting:false,page:Number(localStorage.getItem('yunhai_search_page'))||1,nextPage:(Number(localStorage.getItem('yunhai_search_page'))||1)+1,hasMore:localStorage.getItem('yunhai_search_more')==='1',searchType:localStorage.getItem('yunhai_search_type')||'all',progressType:'all',history:storageJSON('yunhai_search_history',[]),recent:storageJSON('yunhai_recent_views',[]),assistantHistory:Array.isArray(cachedAssistantHistory)?cachedAssistantHistory.slice(-6):[],assistantDraft:'',assistantReply:'',assistantSuggestions:[],assistantItems:[],assistantBusy:false,assistantSeq:0,searchSeq:0,detailSeq:0,meSeq:0,lastMeRefresh:0,rootMotion:'',scroll:{home:0,search:Number(localStorage.getItem('yunhai_search_scroll'))||0,me:0}};
+/* DEMO 验收模式：仅当 URL 带 ?demo=1 时启用，注入模拟数据走真实渲染；
+   生产环境无该参数，fetch 原样放行，不影响线上与测试契约。 */
+const DEMO=new URLSearchParams(location.search).get('demo')==='1';
+if(DEMO){
+	const P=(u)=>'https://images.unsplash.com/'+u+'?auto=format&fit=crop&w=600&q=80';
+	const MOCK={
+		'/api/miniapp/v1/discover':{featured:[{tmdb_id:1,media_type:'movie',title:'银翼杀手 2049',year:2017,vote_average:8.5,poster_path:P('photo-1536440136628-849c177e76a1')}],movies:[
+			{tmdb_id:1,media_type:'movie',title:'银翼杀手 2049',year:2017,vote_average:8.5,poster_path:P('photo-1536440136628-849c177e76a1')},
+			{tmdb_id:2,media_type:'movie',title:'降临',year:2016,vote_average:8.2,poster_path:P('photo-1485846234645-a62644f84728')},
+			{tmdb_id:3,media_type:'movie',title:'星际穿越',year:2014,vote_average:9.2,poster_path:P('photo-1500534623283-312aade485b7')},
+			{tmdb_id:4,media_type:'movie',title:'沙丘',year:2021,vote_average:8.1,poster_path:P('photo-1489599849927-2ee91cede3ba')},
+			{tmdb_id:5,media_type:'movie',title:'奥本海默',year:2023,vote_average:8.6,poster_path:P('photo-1440404653325-ab127d49abc1')}
+		],tv:[
+			{tmdb_id:6,media_type:'tv',title:'真探',year:2014,vote_average:8.8,poster_path:P('photo-1478720568477-152d9b164e26')},
+			{tmdb_id:7,media_type:'tv',title:'继承之战',year:2018,vote_average:9.0,poster_path:P('photo-1536240478700-b869070f9279')}
+		]},
+		'/api/miniapp/v1/dynamic':{recently_added:[
+			{tmdb_id:1,type:'movie',title:'银翼杀手 2049',year:2017,poster_path:P('photo-1536440136628-849c177e76a1')},
+			{tmdb_id:3,type:'movie',title:'星际穿越',year:2014,poster_path:P('photo-1500534623283-312aade485b7')}
+		],just_available:[
+			{tmdb_id:4,type:'movie',title:'沙丘',year:2021,poster_path:P('photo-1489599849927-2ee91cede3ba')}
+		],recent_requests:[
+			{tmdb_id:2,type:'movie',title:'降临',year:2016,poster_path:P('photo-1485846234645-a62644f84728')},
+			{tmdb_id:6,type:'tv',title:'真探',year:2014,season:1,poster_path:P('photo-1478720568477-152d9b164e26')}
+		]},
+		'/api/miniapp/v1/me':{user:{id:101,first_name:'林'},quota:{movie_used:2,movie_limit:5,tv_used:1,tv_limit:5},requests:[
+			{request_id:'r1',tmdb_id:4,media_title:'沙丘',media_year:2021,media_type:'movie',poster_path:P('photo-1489599849927-2ee91cede3ba'),status:'approved',status_text:'搜索中',status_group:'active',created_at:'2026-08-01T10:00:00Z',can_cancel:false,business_type:'request'},
+			{request_id:'r2',tmdb_id:3,media_title:'星际穿越',media_year:2014,media_type:'movie',poster_path:P('photo-1500534623283-312aade485b7'),status:'pending',status_text:'待审核',status_group:'pending',created_at:'2026-08-02T12:00:00Z',can_cancel:true,business_type:'request'},
+			{request_id:'r3',tmdb_id:6,media_title:'真探',media_year:2014,media_type:'tv',season:1,poster_path:P('photo-1478720568477-152d9b164e26'),status:'completed',status_text:'已完成',status_group:'done',created_at:'2026-07-20T09:00:00Z',can_cancel:false,business_type:'request'}
+		]},
+		'/api/miniapp/v1/watchlist':{items:[
+			{tmdb_id:2,type:'movie',title:'降临',year:2016,poster_path:P('photo-1485846234645-a62644f84728')},
+			{tmdb_id:7,type:'tv',title:'继承之战',year:2018,poster_path:P('photo-1536240478700-b869070f9279')}
+		]},
+		'/api/miniapp/v1/wishes':{items:[
+			{tmdb_id:5,media_type:'movie',title:'奥本海默',year:2023,season:0,state:'searching',wisher_count:3,poster_path:P('photo-1440404653325-ab127d49abc1')}
+		]},
+		'/api/miniapp/v1/issues':{items:[]},
+		'/api/miniapp/v1/adventure':{state:null}
+	};
+	const MOCK_PROGRESS={events:[
+		{code:'created',text:'已提交求片请求',at:'2026-08-02T12:00:00Z'},
+		{code:'approved',text:'审核通过，开始搜索资源',at:'2026-08-02T12:30:00Z'},
+		{code:'downloading',text:'找到资源，正在下载',at:'2026-08-02T18:10:00Z'}
+	]};
+	const MOCK_DETAIL={tmdb_id:3,type:'movie',title:'星际穿越',original_title:'Interstellar',year:'2014',release_date:'2014-11-05',overview:'近未来的地球黄沙遍野，人类面临生存危机。库珀和儿女以及一队探险家，利用虫洞前往另一个星系寻找可居住的星球。',poster_path:P('photo-1500534623283-312aade485b7'),backdrop_path:P('photo-1500534623283-312aade485b7'),vote_average:9.2,vote_count:22000,runtime:169,genres:['科幻','冒险'],media_status:{code:'available',text:'可以求片'},quota:{movie_used:2,movie_limit:5,tv_used:1,tv_limit:5},in_watchlist:false};
+	const MOCK_SEARCH={results:[
+		{tmdb_id:3,media_type:'movie',title:'星际穿越',year:2014,vote_average:9.2,poster_path:P('photo-1500534623283-312aade485b7')},
+		{tmdb_id:8,media_type:'movie',title:'星际探索',year:2019,vote_average:6.6,poster_path:P('photo-1489599849927-2ee91cede3ba')}
+	],page:1,limit:12,has_more:false};
+	const __fetch=window.fetch.bind(window);
+	window.fetch=async(input,init)=>{
+		const p=String(input),opts=init||{};
+		if(opts.method==='POST'||opts.method==='DELETE'){
+			if(p.includes('/request'))return{ok:true,status:200,json:async()=>({status:'created'})};
+			if(p.includes('/wash'))return{ok:true,status:200,json:async()=>({status:'created'})};
+			if(p.includes('/assistant'))return{ok:true,status:200,json:async()=>({reply:'根据你的口味，今晚这几部应该对路。',query:'星际穿越',type:'movie',degraded:false,suggestions:['更轻松一点','更烧脑一点'],items:[{tmdb_id:3,media_type:'movie',title:'星际穿越',year:2014,vote_average:9.2,poster_path:P('photo-1500534623283-312aade485b7')}]})};
+			if(p.includes('/watchlist'))return{ok:true,status:200,json:async()=>({ok:true})};
+			if(p.includes('/adventure'))return{ok:true,status:200,json:async()=>({state:{run_id:'demo',title:'沙丘'}})};
+			return{ok:true,status:200,json:async()=>({ok:true})};
+		}
+		if(p.includes('/detail?'))return{ok:true,status:200,json:async()=>MOCK_DETAIL};
+		if(p.includes('/progress?'))return{ok:true,status:200,json:async()=>MOCK_PROGRESS};
+		if(p.includes('/search?'))return{ok:true,status:200,json:async()=>MOCK_SEARCH};
+		const hit=Object.keys(MOCK).find(k=>p.includes(k));
+		if(hit)return{ok:true,status:200,json:async()=>MOCK[hit]};
+		return __fetch(input,init);
+	};
+}
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const js=s=>JSON.stringify(String(s??''));
 const img=p=>!p?'':p.startsWith('http')?p:'https://image.tmdb.org/t/p/w780'+p;const title=x=>x.title||x.name||'未命名';const type=x=>x.media_type||x.type||'movie';const year=x=>(x.year||x.release_date||x.first_air_date||'').toString().slice(0,4);const id=x=>x.tmdb_id||x.id||0;
