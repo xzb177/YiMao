@@ -3317,6 +3317,458 @@ img {
     --glass-shift: 0px;
   }
 }
+/* Liquid Glass v2: shared material system and native root scenes. */
+:root {
+  --glass-thin: rgba(29, 30, 35, .54);
+  --glass-regular: rgba(24, 25, 30, .7);
+  --glass-thick: rgba(18, 19, 23, .88);
+  --glass-edge: rgba(255, 255, 255, .2);
+  --glass-sheen: rgba(255, 255, 255, .14);
+  --glass-saturation: 142%;
+  --glass-elevation: 0 16px 44px rgba(0, 0, 0, .32), inset 0 1px 0 rgba(255, 255, 255, .17), inset 0 -1px 0 rgba(255, 255, 255, .035);
+}
+
+body {
+  background:
+    linear-gradient(90deg, rgba(240, 90, 79, .045), transparent 26%, transparent 74%, rgba(99, 201, 141, .025)),
+    linear-gradient(180deg, #101115 0, var(--bg) 28%, #0c0d10 100%);
+  background-attachment: fixed;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(155deg, rgba(255, 255, 255, .035), transparent 31%, rgba(240, 90, 79, .028) 68%, transparent);
+}
+
+.app-bar,
+.app-dock,
+.search-workspace .search,
+.search-workspace .filter-row,
+.progress-tabs,
+.detail-actions,
+.archive-now,
+.quota-ticket,
+.request-list,
+.service-band,
+.sheet,
+.toast {
+  border-color: var(--glass-edge);
+  background-color: var(--glass-regular);
+  box-shadow: var(--glass-elevation);
+}
+
+.app-bar {
+  border-radius: 0 0 18px 18px;
+}
+
+.app-dock {
+  right: 12px;
+  bottom: max(8px, var(--safe-bottom));
+  left: 12px;
+  width: auto;
+  min-height: var(--tab-height);
+  padding: 3px 8px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 27px;
+  background: var(--glass-thin);
+}
+
+.nav.active {
+  background: rgba(255, 255, 255, .08);
+}
+
+.nav.active::after {
+  display: none;
+}
+
+.search-workspace {
+  max-width: 900px;
+  margin: 0 auto;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+.search-console {
+  display: block;
+  padding-bottom: 8px;
+  border-bottom: 0;
+}
+
+.search-workspace .search {
+  min-height: 56px;
+  margin: 0;
+  padding: 4px 4px 4px 15px;
+  border: 1px solid var(--glass-edge);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .018)), var(--glass-thin);
+}
+
+.search-workspace .search:focus-within {
+  border-color: rgba(255, 255, 255, .28);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .34), inset 0 1px 0 rgba(255, 255, 255, .22), 0 0 0 2px rgba(240, 90, 79, .07);
+}
+
+.search-workspace .search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ink);
+}
+
+.search-workspace .search input:focus {
+  border: 0;
+  box-shadow: none;
+}
+
+.search-workspace .search-submit {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  min-height: 46px;
+  border-radius: 50%;
+}
+
+.search-workspace .filter-row {
+  width: 100%;
+  max-width: 360px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 24px;
+  background: var(--glass-thin);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+
+.search-workspace .filter {
+  min-width: 0;
+  border-radius: 20px;
+}
+
+.search-workspace .filter.active {
+  background: rgba(255, 255, 255, .14);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 4px 12px rgba(0, 0, 0, .2);
+}
+
+.search-history-list,
+.search-starters {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-right: -16px;
+  margin-left: -16px;
+  padding: 0 16px 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+}
+
+.search-history-list::-webkit-scrollbar,
+.search-starters::-webkit-scrollbar,
+.watch-stack::-webkit-scrollbar {
+  display: none;
+}
+
+.search-history-list button,
+.search-starters button {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  flex: 0 0 auto;
+  border-color: rgba(255, 255, 255, .12);
+  border-radius: 22px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, .075), rgba(255, 255, 255, .035));
+  color: #d7d4d1;
+  text-align: center;
+}
+
+.search-workspace .search input::placeholder {
+  color: #c2bfbd;
+  opacity: 1;
+}
+
+.search-workspace .filter,
+.search-workspace .search-starters button,
+.search-workspace .search-history-list button {
+  color: #d7d4d1;
+}
+
+.search-workspace .search-starters,
+.search-workspace .search-history,
+.search-workspace .search-history-list,
+.search-workspace .search-starters + p,
+.search-workspace .search-history + p {
+  color: #b5b2b0;
+}
+
+.search-workspace .section-head h2,
+.search-workspace .search-results h2,
+.search-workspace .search-empty h2 {
+  color: #f0eeeb;
+}
+
+.search-workspace .section-head span,
+.search-workspace .search-empty p,
+.search-workspace .search-result-context,
+.search-workspace .search-console + p {
+  color: #b5b2b0;
+}
+
+.search-results {
+  padding-top: 18px;
+}
+
+.search-result-head {
+  border-bottom-color: rgba(255, 255, 255, .07);
+}
+
+.archive-workspace {
+  max-width: 900px;
+  margin: 0 auto;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
+}
+
+.archive-lead {
+  position: static;
+  padding: 18px 0 16px;
+}
+
+.archive-lead h1 {
+  margin-top: 4px;
+  font-size: 28px;
+  line-height: 1.12;
+  letter-spacing: 0;
+}
+
+.archive-now {
+  border: 1px solid var(--glass-edge);
+  border-radius: 8px;
+  background-color: var(--glass-regular);
+  background-image: linear-gradient(112deg, rgba(240, 90, 79, .13), rgba(255, 255, 255, .025) 54%, transparent);
+}
+
+.archive-now-label,
+.archive-now h2,
+.archive-section-head h2,
+.tool-header > p,
+.tool-header h1 {
+  letter-spacing: 0;
+}
+
+.quota-ticket {
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .045);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .06);
+}
+
+.watch-stack {
+  display: flex;
+  gap: 10px;
+  margin-right: -16px;
+  margin-left: -16px;
+  padding: 0 16px 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.watch-stack-item {
+  width: 112px;
+  min-width: 112px;
+  min-height: 196px;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.watch-stack-item img,
+.watch-stack-poster {
+  width: 112px;
+  height: 158px;
+  border-radius: 6px;
+}
+
+.watch-stack-item b {
+  margin-top: 7px;
+  font-size: 12px;
+}
+
+.watch-stack-item span {
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+.watch-stack-item em {
+  display: none;
+}
+
+.progress-tabs {
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 24px;
+  background: var(--glass-thin);
+}
+
+.progress-tab {
+  flex: 1 0 auto;
+  border-radius: 20px;
+}
+
+.request-list,
+.service-band {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, .09);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+}
+
+.request-list {
+  gap: 1px;
+}
+
+.request {
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: rgba(12, 13, 16, .46);
+}
+
+.request:last-child {
+  border-bottom: 0;
+}
+
+.detail-actions {
+  background: var(--glass-regular);
+}
+
+.sheet {
+  border-radius: 24px 24px 0 0;
+  background: var(--glass-thick);
+}
+
+.toast {
+  border-radius: 22px;
+  background: var(--glass-thick);
+  color: var(--ink);
+}
+
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-bar,
+  .app-dock,
+  .search-workspace .search,
+  .search-workspace .filter-row,
+  .progress-tabs {
+    background-color: var(--glass-thin);
+    -webkit-backdrop-filter: blur(12px) saturate(var(--glass-saturation));
+    backdrop-filter: blur(12px) saturate(var(--glass-saturation));
+  }
+
+  .detail-actions,
+  .archive-now,
+  .quota-ticket,
+  .request-list,
+  .service-band {
+    -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturation));
+    backdrop-filter: blur(20px) saturate(var(--glass-saturation));
+  }
+
+  .sheet,
+  .toast {
+    -webkit-backdrop-filter: blur(30px) saturate(var(--glass-saturation));
+    backdrop-filter: blur(30px) saturate(var(--glass-saturation));
+  }
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-bar,
+  .app-dock,
+  .search-workspace .search,
+  .search-workspace .filter-row,
+  .progress-tabs,
+  .detail-actions,
+  .archive-now,
+  .quota-ticket,
+  .request-list,
+  .service-band,
+  .sheet,
+  .toast {
+    background-color: #17181d;
+  }
+}
+
+@media (min-width: 600px) {
+  .search-console {
+    display: block;
+  }
+
+  .search-history {
+    grid-column: auto;
+    margin-top: 14px;
+  }
+
+  .search-workspace .filter-row {
+    margin-top: 12px;
+  }
+}
+
+@media (min-width: 900px) {
+  .app-dock {
+    right: max(12px, calc((100vw - 900px) / 2));
+    left: max(12px, calc((100vw - 900px) / 2));
+  }
+
+  .search-workspace,
+  .archive-workspace {
+    display: block;
+  }
+
+  .search-console,
+  .archive-lead {
+    position: static;
+  }
+
+  .search-history-list {
+    display: flex;
+    gap: 8px;
+  }
+
+  .search-results {
+    padding-top: 20px;
+  }
+
+  .search-starters {
+    display: flex;
+  }
+
+  .archive-now,
+  .archive-body {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 350px) {
+  .search-history-list,
+  .search-starters,
+  .watch-stack {
+    margin-right: -12px;
+    margin-left: -12px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .app-dock {
+    right: 8px;
+    left: 8px;
+  }
+}
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();tg?.setHeaderColor?.('#090a0c');tg?.setBackgroundColor?.('#090a0c');
