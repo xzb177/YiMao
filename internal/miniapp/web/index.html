@@ -3976,6 +3976,281 @@ body::before {
   .home-pulse b { font-size: 20px; }
   .sort-chip { min-width: 48px; padding-inline: 9px; }
 }
+/* ============================================================
+   YIMAO · DESIGN SYSTEM v2 — 「一屏一台戏」深夜点播台
+   整合原则：
+   1. 焦点纪律：一屏只突出一个主体（电影/输入），其余退让
+   2. 色彩纪律：深海青绿 = 品牌与导航；珊瑚 = 唯一动作色（发送/求片）
+   3. 材质纪律：玻璃只用在承载层（输入面板、底栏、弹层、操作条），
+      海报与背景靠氛围光与景深，不做无意义 blur
+   ============================================================ */
+:root{
+  --bg:#070b0d;
+  --bg-raised:#0e171b;
+  --panel:#132026;
+  --panel-strong:#1a2b32;
+  --ink:#eef6f3;
+  --muted:#9fb4b2;
+  --dim:#6d8584;
+  --accent:#57c7b2;
+  --accent-strong:#7fe0cc;
+  --accent-ink:#04241d;
+  --coral:#ff806c;
+  --good:#8fe0ae;
+  --warning:#f2cd8c;
+  --line:rgba(158,220,209,.15);
+  --line-soft:rgba(158,220,209,.08);
+  --glass:rgba(13,25,30,.72);
+  --glass-blur:26px;
+  --glass-sat:150%;
+  --edge:rgba(226,250,244,.2);
+  --spec:inset 0 1px 0 rgba(255,255,255,.18), inset 0 -1px 0 rgba(0,0,0,.22);
+}
+html{background:var(--bg); color-scheme:dark}
+body{
+  background:
+    radial-gradient(820px 560px at 50% -16%, rgba(58,150,137,.30), transparent 68%),
+    radial-gradient(680px 620px at -12% 60%, rgba(190,74,64,.16), transparent 72%),
+    radial-gradient(700px 560px at 114% 92%, rgba(52,104,148,.16), transparent 74%),
+    radial-gradient(520px 300px at 50% 122%, rgba(87,199,178,.10), transparent 64%),
+    var(--bg);
+  background-attachment:fixed;
+}
+body::before{
+  content:""; position:fixed; z-index:-1; inset:0; pointer-events:none; opacity:.16;
+  background-image:linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.02) 1px, transparent 1px);
+  background-size:46px 46px; mask-image:linear-gradient(to bottom, black, transparent 82%);
+}
+body::after{
+  content:""; position:fixed; z-index:-1; inset:-34% -12% auto; height:52vh; pointer-events:none;
+  background:radial-gradient(ellipse at 50% 0%, rgba(127,224,204,.10), transparent 46%); mix-blend-mode:screen;
+}
+.shell{max-width:560px; padding-right:18px; padding-left:18px}
+.home-shell{padding-top:calc(var(--safe-top) + 22px)}
+.home-shell::before{
+  content:"YIMAO · 深夜放映厅"; display:block; margin:0 0 14px;
+  color:var(--accent-strong); font-size:10px; font-weight:800; letter-spacing:3px; opacity:.85;
+}
+
+/* ---------- 玻璃承载层（统一材质） ---------- */
+.prompt-composer,.app-bar,.app-dock,.detail-actions,.sheet,.toast,
+.quota-ticket,.home-pulse,.archive-now,.progress-tabs,.tool-row,
+.wish-card,.issue-card,.request,.service-band,.adventure-ticket,.quest-tool{
+  border:1px solid var(--edge);
+  background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 46%, rgba(255,255,255,.06)), var(--glass);
+  box-shadow:var(--spec), 0 18px 44px rgba(0,0,0,.30);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+
+/* ---------- 动作色纪律：珊瑚 = 唯一的“做” ---------- */
+.primary,.prompt-send,.search button,.search-submit,.wash-action{
+  border:1px solid rgba(255,255,255,.38); border-radius:999px;
+  background:linear-gradient(180deg, rgba(255,255,255,.30), rgba(255,255,255,.05) 46%, rgba(255,255,255,.16)), linear-gradient(120deg, rgba(255,128,108,.66), rgba(255,128,108,.14) 54%, rgba(255,128,108,.40));
+  box-shadow:var(--spec), 0 10px 26px rgba(255,128,108,.30), 0 2px 8px rgba(0,0,0,.34);
+  color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.3);
+  backdrop-filter:blur(20px) saturate(165%); -webkit-backdrop-filter:blur(20px) saturate(165%);
+  transition:transform .16s ease, filter .16s ease, box-shadow .16s ease;
+}
+.primary{min-height:48px; padding:0 22px}
+.primary:hover,.search button:hover{filter:brightness(1.08)}
+.primary:active,.search button:active{transform:scale(.965)}
+.primary[disabled]{opacity:.5}
+.secondary,.sheet-close,.detail-actions .watch-action,.detail-actions .share{
+  min-height:44px; border:1px solid var(--line); border-radius:999px;
+  background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03)), rgba(20,34,41,.6);
+  box-shadow:var(--spec), 0 8px 18px rgba(0,0,0,.2); color:var(--ink);
+  backdrop-filter:blur(16px) saturate(150%); -webkit-backdrop-filter:blur(16px) saturate(150%);
+}
+.prompt-send{width:50px; min-width:50px; min-height:50px; border-radius:50%}
+.wash-action{color:#ffb09d; border-color:rgba(255,128,108,.5)}
+
+/* ---------- 筛选 / 快捷 chip（青绿玻璃） ---------- */
+.chip,.filter,.sort-chip,.prompt-kind,.search-history-list button,.search-starters button,.progress-tab{
+  border:1px solid var(--line); border-radius:999px;
+  background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.02) 50%, rgba(255,255,255,.06)), rgba(15,30,36,.55);
+  box-shadow:var(--spec), 0 6px 14px rgba(0,0,0,.16);
+  color:rgba(220,240,236,.78);
+  backdrop-filter:blur(14px) saturate(150%); -webkit-backdrop-filter:blur(14px) saturate(150%);
+}
+.chip.active,.filter.active,.sort-chip.active,.prompt-kind.active,.progress-tab.active{
+  border-color:rgba(127,224,204,.6);
+  background:linear-gradient(180deg, rgba(127,224,204,.26), rgba(127,224,204,.08) 50%, rgba(127,224,204,.18)), rgba(15,34,40,.6);
+  color:#e9fffa; box-shadow:0 8px 20px rgba(87,199,178,.22), var(--spec);
+}
+
+/* ---------- 首页：控制台 ---------- */
+.studio-intro{margin:0 0 18px}
+.studio-intro p{color:var(--accent-strong); font-size:13px; letter-spacing:.5px; font-weight:720}
+.studio-intro h1{
+  max-width:400px; margin:6px 0 0; font-size:clamp(34px,9vw,48px); line-height:1.02;
+  letter-spacing:-1.4px; font-weight:800; text-wrap:balance;
+}
+.prompt-composer{border-radius:26px}
+.prompt-composer textarea{min-height:108px; padding:20px 20px 10px; font-size:17px; color:var(--ink)}
+.prompt-composer textarea::placeholder{color:rgba(180,205,200,.55)}
+.prompt-composer-footer{min-height:56px; border-top-color:rgba(158,220,209,.14)}
+.studio-prompts{display:grid; gap:8px; margin-top:14px}
+.studio-prompts button{
+  min-height:50px; padding:0 16px; border:1px solid var(--line-soft); border-radius:16px;
+  background:linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.015)), rgba(16,30,36,.5);
+  box-shadow:var(--spec), 0 8px 18px rgba(0,0,0,.14);
+  color:rgba(220,240,236,.82); font-size:13px; text-align:left;
+  backdrop-filter:blur(14px) saturate(150%); -webkit-backdrop-filter:blur(14px) saturate(150%);
+}
+.studio-prompts button:active{color:#fff; background:rgba(87,199,178,.12)}
+
+/* ---------- 首页：放映主视觉 ---------- */
+.screening-flow{margin-top:34px}
+.screening-response{color:rgba(200,224,219,.85)}
+.screening-response::before{border-color:var(--accent)}
+.screening-scene{
+  width:100%; margin:0; border-radius:26px; overflow:hidden;
+  box-shadow:0 26px 60px rgba(0,0,0,.46);
+}
+.screening-scene .studio-artwork{border-radius:26px}
+.scene-caption{right:18px; bottom:16px; left:18px}
+.scene-caption strong{font-size:clamp(22px,6vw,28px); letter-spacing:-.4px}
+.scene-caption small{color:var(--accent-strong); font-weight:720; letter-spacing:1.5px; text-transform:uppercase}
+.film-thread{margin:30px 0 0 20px}
+.film-thread::before{background:linear-gradient(var(--accent), rgba(87,199,178,.06))}
+.thread-turn::before{border-color:var(--accent); box-shadow:0 0 0 4px rgba(87,199,178,.12)}
+.thread-art{border-radius:18px; box-shadow:0 18px 40px rgba(0,0,0,.34)}
+.thread-caption strong{font-size:16px; letter-spacing:.1px}
+.thread-caption small{color:var(--accent-strong)}
+.home-pulse{border-radius:18px; padding:13px 18px}
+.home-pulse b{color:var(--ink); font-size:22px; font-weight:800}
+.home-pulse span{color:var(--dim)}
+
+/* ---------- 海报卡片：海报即卡 ---------- */
+.media{border-radius:20px; overflow:hidden; background:transparent; transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .22s ease}
+.media .poster{border-radius:20px; overflow:hidden; background:#0b1316; box-shadow:0 14px 32px rgba(0,0,0,.4)}
+.media .poster img{width:100%; height:100%; object-fit:cover; transition:transform .4s ease}
+.media:hover .poster img{transform:scale(1.04)}
+.media h3{margin:12px 2px 0; font-size:14px; font-weight:680; letter-spacing:.1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.media .meta{margin:4px 2px 0; color:var(--dim); font-size:11px}
+.media .type-badge{
+  border:1px solid rgba(226,250,244,.28); border-radius:999px;
+  background:rgba(8,16,20,.62); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px);
+  color:#e8f7f2; font-size:10px; font-weight:750; padding:5px 9px;
+}
+.rail,.recent-rail{grid-auto-columns:41%; gap:13px; padding-top:8px; padding-bottom:14px}
+.focus-rail .media{--rail-focus:0; opacity:calc(.8 + var(--rail-focus)*.2); filter:saturate(calc(.82 + var(--rail-focus)*.18)); transform:scale(calc(.955 + var(--rail-focus)*.07)); transform-origin:center bottom}
+.section{margin-top:32px}
+.section-head h2,.recent-head h2{font-size:16px; font-weight:780; letter-spacing:.2px}
+.section-head span,.recent-head span{color:var(--dim)}
+
+/* ---------- 工具列表（首页下方） ---------- */
+.studio-tools{display:grid; gap:10px; margin-top:32px}
+.tool-row{
+  min-height:64px; display:grid; grid-template-columns:42px minmax(0,1fr) auto; align-items:center;
+  gap:12px; padding:10px 16px; border-radius:18px; text-align:left;
+}
+.tool-glyph{
+  width:42px; height:42px; display:grid; place-items:center; border-radius:14px;
+  border:1px solid var(--line); background:rgba(87,199,178,.10); color:var(--accent-strong);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.12);
+}
+.tool-row strong{display:block; font-size:14px; font-weight:720; color:var(--ink)}
+.tool-row small{display:block; margin-top:3px; font-size:11px; color:var(--dim)}
+.tool-arrow{color:var(--dim); font-size:18px}
+.tool-row:active{transform:scale(.98)}
+
+/* ---------- 顶栏 / 底栏 ---------- */
+.app-bar{
+  border-radius:0 0 22px 22px; border-top:0; border-right:0; border-left:0;
+  background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.015)), rgba(9,17,21,.72);
+  box-shadow:0 14px 34px rgba(0,0,0,.18);
+}
+.app-context strong{font-size:17px; font-weight:790}
+.app-context span{color:var(--dim)}
+.avatar{
+  border:1px solid var(--line); border-radius:50%; background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.03)), rgba(18,33,40,.7);
+  box-shadow:var(--spec); color:var(--accent-strong); font-weight:800;
+}
+.app-dock{
+  right:16px; bottom:max(10px, var(--safe-bottom)); left:16px;
+  border-radius:26px; border-color:rgba(226,250,244,.22);
+  background:linear-gradient(180deg, rgba(255,255,255,.13), rgba(255,255,255,.02) 46%, rgba(255,255,255,.08)), rgba(10,20,25,.8);
+  box-shadow:0 22px 50px rgba(0,0,0,.48), var(--spec);
+}
+.nav{border-radius:19px; color:var(--dim)}
+.nav i{transition:color .2s ease, transform .2s ease}
+.nav.active{
+  color:#fff; background:linear-gradient(180deg, rgba(127,224,204,.22), rgba(127,224,204,.05)), rgba(87,199,178,.10);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.2), 0 6px 16px rgba(87,199,178,.14);
+}
+.nav.active i{color:var(--accent-strong); transform:translateY(-1px)}
+
+/* ---------- 详情 / 档案 ---------- */
+.detail-actions{border-radius:24px; padding:9px}
+.detail-hero{border-radius:0 0 30px 30px}
+.quota-ticket{border-radius:18px}
+.request{border-radius:18px}
+.request-poster{border-radius:12px; overflow:hidden}
+.business-badge,.media-state,.status-dot{border-radius:999px}
+.archive-now{border-radius:18px}
+.tool-card,.wish-card,.issue-card{border-radius:20px}
+.compact-row{border-radius:14px}
+
+/* ---------- 弹层 / toast ---------- */
+.confirm{background:rgba(5,9,11,.72); backdrop-filter:blur(12px); -webkit-backdrop-filter:blur(12px)}
+.sheet{
+  border-radius:28px 28px 0 0; border-color:rgba(226,250,244,.2);
+  background:linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.02) 26%, rgba(255,255,255,.07)), rgba(15,27,33,.86);
+  box-shadow:0 -20px 54px rgba(0,0,0,.44), var(--spec);
+}
+.sheet::before{content:""; position:absolute; top:7px; left:50%; width:42px; height:5px; border-radius:999px; background:rgba(255,255,255,.32); transform:translateX(-50%)}
+.sheet-close{width:44px; height:44px; font-size:22px; color:var(--dim)}
+.toast{
+  border-radius:18px; background:linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,.04)), rgba(18,32,40,.9);
+  box-shadow:0 18px 44px rgba(0,0,0,.42), var(--spec); color:var(--ink);
+}
+.result-mark{color:var(--good)}
+
+/* ---------- 时间线 ---------- */
+.timeline-current{border-radius:18px}
+.timeline-marker{box-shadow:0 0 0 4px rgba(87,199,178,.14)}
+.timeline-node.is-current .timeline-marker{background:var(--accent)}
+
+/* ---------- 冒险 ---------- */
+.quest-scene{border-radius:20px}
+.quest-tool{border-radius:16px}
+.adventure-ticket{border-radius:18px}
+.finish-hero{border-radius:22px}
+
+/* ---------- 错误 / 空态 ---------- */
+.studio-empty,.empty{
+  border:1px dashed var(--line); border-radius:20px;
+  background:linear-gradient(180deg, rgba(255,255,255,.05), transparent), rgba(13,25,31,.5);
+}
+.discover-error{
+  border:1px solid rgba(242,205,140,.3); border-radius:20px;
+  background:linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.01)), rgba(46,36,26,.5);
+  box-shadow:var(--spec), 0 16px 40px rgba(0,0,0,.24);
+}
+.discover-error strong{color:#f7ddb8}
+
+/* ---------- 桌面：双栏点播台 ---------- */
+@media (min-width: 900px){
+  .shell{max-width:1080px; padding-right:26px; padding-left:26px}
+  .home-shell::before{margin-left:6px}
+  .home-studio{grid-template-columns:minmax(300px,.68fr) minmax(0,1.32fr); gap:clamp(48px,6vw,92px)}
+  .studio-console{position:sticky; top:calc(var(--safe-top) + 26px)}
+  .rail,.recent-rail{grid-auto-columns:29%}
+}
+@media (max-width: 380px){
+  .shell{padding-right:14px; padding-left:14px}
+  .studio-intro h1{font-size:32px}
+  .rail,.recent-rail{grid-auto-columns:46%}
+}
+@media (prefers-reduced-transparency: reduce){
+  .prompt-composer,.app-bar,.app-dock,.detail-actions,.sheet,.toast,.quota-ticket,
+  .home-pulse,.tool-row,.wish-card,.issue-card,.request,.avatar{
+    backdrop-filter:none; -webkit-backdrop-filter:none; background:#121c21;
+  }
+}
+
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();tg?.setHeaderColor?.('#090a0c');tg?.setBackgroundColor?.('#090a0c');
