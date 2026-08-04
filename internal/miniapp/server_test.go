@@ -65,6 +65,22 @@ func TestIndexSetsBrowserSecurityHeaders(t *testing.T) {
 	}
 }
 
+func TestSearchResultsExposeCanonicalMediaType(t *testing.T) {
+	results := []services.SearchResult{
+		{ID: 271413, Title: "完美世界剧场版", Type: "电视剧"},
+		{ID: 1534911, Title: "完美世界：火之灰烬", Type: "电影"},
+	}
+
+	normalizeSearchResultTypes(results)
+
+	if results[0].Type != "tv" {
+		t.Fatalf("TV result must keep the TMDB TV namespace, got type=%q", results[0].Type)
+	}
+	if results[1].Type != "movie" {
+		t.Fatalf("movie result must keep the TMDB movie namespace, got type=%q", results[1].Type)
+	}
+}
+
 func TestDetailRejectsNonGETMethods(t *testing.T) {
 	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
 	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
@@ -339,7 +355,7 @@ func TestSearchFilteredEmptyPageStillAdvertisesLaterUpstreamPage(t *testing.T) {
 	if err := json.Unmarshal(second.Body.Bytes(), &secondPage); err != nil {
 		t.Fatalf("decode second page: %v body=%s", err, second.Body.String())
 	}
-	if second.Code != http.StatusOK || len(secondPage.Results) != 1 || secondPage.Results[0].ID != 7 || secondPage.HasMore {
+	if second.Code != http.StatusOK || len(secondPage.Results) != 1 || secondPage.Results[0].ID != 7 || secondPage.Results[0].Type != "tv" || secondPage.HasMore {
 		t.Fatalf("unexpected second page: status=%d payload=%+v", second.Code, secondPage)
 	}
 }

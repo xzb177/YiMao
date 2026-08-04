@@ -719,7 +719,19 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	normalizeSearchResultTypes(response.Results)
 	writeJSON(w, http.StatusOK, response)
+}
+
+func normalizeSearchResultTypes(results []services.SearchResult) {
+	for i := range results {
+		switch results[i].Type {
+		case "电视剧", "tv":
+			results[i].Type = "tv"
+		case "电影", "movie":
+			results[i].Type = "movie"
+		}
+	}
 }
 
 func filterSearchResults(results []services.SearchResult, typeName string) []services.SearchResult {
