@@ -4310,6 +4310,52 @@ body::after{
   .nav svg,.nav button svg,.prompt-send svg,.screening-scene{transition:none !important}
   .screening-scene,.media,.tool-row{transform:none !important}
 }
+
+/* ============================================================
+   重构 P1/P2：核心服务入口（收敛为轻量）+ 搜索状态卡（app 方向）
+   ============================================================ */
+.core-actions{display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap}
+.core-chip{
+  display:inline-flex; align-items:center; gap:8px; min-height:38px; padding:0 13px;
+  border-radius:999px; color:var(--ink);
+  border:1px solid var(--edge); background:var(--frost), linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)), var(--glass);
+  box-shadow:var(--spec), 0 8px 18px rgba(0,0,0,.16);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
+  transition:transform .16s var(--ease), border-color .2s ease;
+}
+.core-chip:active{transform:scale(.97)}
+.core-chip:hover{border-color:rgba(87,199,178,.4)}
+.ca-ico{width:18px; height:18px; color:var(--accent-strong)}
+.core-wash .ca-ico{color:var(--accent-strong)}
+.core-chip strong{font-size:13px; font-weight:750}
+.core-chip em{font-style:normal; font-size:11px; color:var(--dim)}
+@media (prefers-reduced-motion: reduce){.core-chip{transition:none !important}}
+/* 搜索状态卡 */
+.sq-card{display:flex; flex-direction:column; border-radius:18px; overflow:hidden; cursor:pointer;
+  background:var(--frost), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015)), rgba(14,26,31,.6);
+  border:1px solid var(--edge); box-shadow:var(--spec), 0 12px 26px rgba(0,0,0,.22);
+  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
+  transition:transform .18s var(--ease)}
+.sq-card:active{transform:scale(.97)}
+.sq-poster{position:relative; aspect-ratio:2/3; background:#0b1316; overflow:hidden}
+.sq-poster img{width:100%; height:100%; object-fit:cover}
+.sq-poster .fallback{display:grid; place-items:center; height:100%; padding:8px; color:var(--dim); font-size:12px}
+.sq-badge{position:absolute; top:8px; left:8px; padding:4px 8px; border-radius:999px; font-size:10px; font-weight:750; backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px)}
+.sq-badge.active{background:var(--frost), rgba(87,199,178,.88); color:#03231c}
+.sq-badge.done{background:var(--frost), rgba(63,133,105,.88); color:#eafff4}
+.sq-body{display:flex; flex-direction:column; gap:5px; padding:10px 11px 11px}
+.sq-body h3{margin:0; font-size:13.5px; font-weight:720; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.sq-meta{margin:0; font-size:10.5px; color:var(--dim)}
+.sq-cta{margin-top:5px; min-height:34px; padding:0 12px; border:1px solid rgba(255,138,120,.5); border-radius:999px;
+  background:var(--frost), linear-gradient(180deg, rgba(255,128,108,.42), rgba(255,128,108,.32)), rgba(96,40,28,.5);
+  color:#fff; font-size:12px; font-weight:750; box-shadow:0 6px 16px rgba(255,128,108,.2), var(--spec);
+  backdrop-filter:blur(14px) saturate(142%); -webkit-backdrop-filter:blur(14px) saturate(142%)}
+.sq-cta.ghost{border-color:var(--edge); background:var(--frost), linear-gradient(180deg, rgba(87,199,178,.32), rgba(87,199,178,.16)), rgba(20,36,42,.5);
+  color:var(--ink); box-shadow:var(--spec), 0 6px 14px rgba(0,0,0,.16)}
+.sq-cta:hover{filter:brightness(1.06)}
+@media (max-width:380px){.core-actions{gap:6px}}
+@media (min-width:900px){.core-actions{max-width:520px}}
+@media (prefers-reduced-motion: reduce){.sq-card{transition:none !important}}
 </style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 <script src="https://telegram.org/js/telegram-web-app.js"></script><script>
 const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand();tg?.setHeaderColor?.('#090a0c');tg?.setBackgroundColor?.('#090a0c');
@@ -4407,6 +4453,12 @@ function handleDialogKeys(event){const dialog=document.getElementById('confirm')
 document.addEventListener('keydown',handleDialogKeys);
 const ROOT_VIEWS=['home','search','me'];
 const icons={home:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1z"/></svg>',search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>',user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="8" r="4"/><path d="M5 21a7 7 0 0 1 14 0"/></svg>',play:'<svg viewBox="0 0 24 24"><path d="m9 7 8 5-8 5z"/></svg>',game:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M8 8h8a5 5 0 0 1 4.6 7l-1 2.3a2.5 2.5 0 0 1-4.1.7l-1.2-1.2H9.7L8.5 18a2.5 2.5 0 0 1-4.1-.7l-1-2.3A5 5 0 0 1 8 8Z"/><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"/></svg>',wish:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="m12 3 2.2 5.1 5.5.5-4.2 3.7 1.2 5.4-4.7-2.8-4.7 2.8 1.2-5.4-4.2-3.7 5.5-.5z"/></svg>',message:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 5h14v11H9l-4 3z"/><path d="M8 9h8M8 12h5"/></svg>'};
+/* 核心服务收敛：求片=主输入框，洗版/闯关为轻量入口（避免与 composer 重复抢焦点） */
+function coreActions(){return '<div class="core-actions" aria-label="核心服务"><button class="core-chip core-wash" onclick="goSearch();setTimeout(function(){toast(\'搜到想升级的版本，进入详情页一键洗版\')},0)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" class="ca-ico"><path d="M4 12a8 8 0 0 1 14-5.3L20 9M20 3v6h-6M20 12a8 8 0 0 1-14 5.3L4 15M4 21v-6h6"/></svg><strong>洗版</strong><em>升级现有版本</em></button><button class="core-chip core-fun" onclick="goAdventure()"><span class="ca-ico">'+icons.game+'</span><strong>闯关</strong><em>通关优先求片</em></button></div>'}
+/* 搜索状态卡：可求片 / 求片中 / 已入库，主按钮直接行动 */
+function searchResultCard(x){const mid=Number(id(x));if(!Number.isFinite(mid)||mid<=0)return '';const name=String(title(x)),p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'',yy=year(x)||'待定',rec=(S.me&&Array.isArray(S.me.requests)?S.me.requests:[]).find(r=>Number(r.tmdb_id)===mid&&(String(r.media_type)==='tv')===(mt==='tv'));let badge='',btn='<button class="sq-cta" onclick="event.stopPropagation();openDetail('+mid+',\''+mt+'\','+(Number(x.season)||0)+')">求这部</button>';if(rec){const rid=esc(String(rec.request_id??rec.id??''));const done=progressGroup(rec)==='done'||rec.status==='completed'||rec.status==='cancelled';badge=done?'<span class="sq-badge done">已入库</span>':'<span class="sq-badge active">求片中</span>';btn='<button class="sq-cta ghost" data-id="'+rid+'" onclick="event.stopPropagation();openProgress(this.dataset.id)">看进度</button>'}return '<div class="sq-card" onclick="openDetail('+mid+',\''+mt+'\','+(Number(x.season)||0)+')"><div class="sq-poster">'+(p?'<img loading="lazy" src="'+esc(p)+'" alt="'+esc(name)+'" onerror="this.remove()">':'<span class="fallback">'+esc(name)+'</span>')+badge+'</div><div class="sq-body"><h3>'+esc(name)+'</h3><div class="sq-meta">'+esc(yy)+' · '+(mt==='tv'?'剧集':'电影')+(score?' · ★ '+score:'')+'</div>'+btn+'</div></div>'}
+/* 搜索结果状态预载：静默拉一次 /me，让状态卡能标出求片进度 */
+function ensureMeForStatus(){if(S.me||S._meLoad)return;S._meLoad=1;api('/api/miniapp/v1/me').then(function(d){if(d&&Array.isArray(d.requests)){S.me=d;const r=document.querySelector('.search-results');if(r&&r.isConnected&&S.view==='search'){const g=r.querySelector('.search-grid');if(g)g.innerHTML=sortedSearchResults().map(searchResultCard).join('')}}}).catch(function(){}).finally(function(){S._meLoad=0})}
 function card(x){const mid=Number(id(x));if(!Number.isFinite(mid)||mid<=0)return '';const p=img(x.poster_path||x.poster),mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',score=x.vote_average?Number(x.vote_average).toFixed(1):'';return `<button class="media" onclick="openDetail(${mid},'${mt}',${Number(x.season)||0})"><div class="poster">${p?`<img loading="lazy" src="${esc(p)}" alt="${esc(title(x))}" onerror="this.remove()">`:`<div class="fallback">${esc(title(x))}</div>`}<span class="type-badge">${mt==='tv'?'剧集':'电影'}</span></div><h3>${esc(title(x))}</h3><div class="meta rating">${esc(year(x)||'待定')}${score?` · <b>★</b> ${score}`:' · 待评分'}</div></button>`}
 function mediaIdentity(x){const mt=type(x)==='tv'||type(x)==='电视剧'?'tv':'movie',mid=Number(id(x));if(mid>0)return mt+':id:'+mid;const artwork=x.poster_path||x.poster||x.backdrop_path||'';return mt+':fallback:'+title(x).trim().toLowerCase()+':'+year(x)+':'+artwork}
 function screeningMedia(item,variant='lead'){const poster=img(item.poster_path||item.poster),backdrop=img(item.backdrop_path||item.backdrop)||poster,label=esc(title(item));if(!poster&&!backdrop)return'<div class="studio-artwork is-empty'+(variant==='detail'?' detail-art':'')+'" data-artwork><div class="studio-fallback" aria-hidden="true">'+label+'</div></div>';const classes=['studio-artwork',variant==='thread'?'thread-art':'',variant==='detail'?'detail-art':''].filter(Boolean).join(' ');return '<div class="'+classes+'" data-artwork>'+(backdrop?'<img class="studio-ambient" loading="lazy" src="'+esc(backdrop)+'" alt="" aria-hidden="true" onerror="screeningImageError(this,\'ambient\')">':'')+(poster?'<img class="studio-subject" loading="lazy" src="'+esc(poster)+'" alt="'+label+'" onerror="screeningImageError(this,\'subject\')">':'')+'<div class="studio-fallback" aria-hidden="true">'+label+'</div></div>'}
@@ -4471,7 +4523,7 @@ function home(){
 	let flow='';
 	if(S.assistantBusy){flow='<section class="screening-flow" aria-busy="true" aria-live="polite"><div class="screening-response"><p>正在从片库里收窄选择。</p></div><div class="screening-scene skeleton"></div></section>'}else if(S.assistantReply){const assistantItems=S.assistantItems.map(safeAssistantItem).filter(Boolean).slice(0,6),assistantSuggestions=S.assistantSuggestions.filter(x=>typeof x==='string'&&x.trim()).slice(0,4);flow='<section class="screening-flow" aria-label="YiMao 选片结果" aria-live="polite"><div class="screening-response"><p>'+esc(S.assistantReply)+'</p></div>'+(assistantSuggestions.length?'<div class="assistant-suggestions">'+assistantSuggestions.map(s=>'<button data-query="'+esc(s)+'" onclick="assistantQuick(this.dataset.query)">'+esc(s)+'</button>').join('')+'</div>':'')+(assistantItems.length?'<div class="grid assistant-results">'+assistantItems.map(card).join('')+'</div>':'<div class="empty assistant-empty"><strong>暂时没找到完全匹配的作品</strong><span>换个说法，我再找一轮。</span></div>')+'</section>'}else if(lead){const other=picks.filter(x=>mediaIdentity(x)!==mediaIdentity(lead));flow='<section class="screening-flow" aria-label="YiMao 推荐片单"><div class="screening-response"><p>我先开一场。第一部稳一点，后面几部把口味慢慢拉开。</p></div><button class="screening-scene" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+Number(lead.season||0)+')">'+screeningMedia(lead)+'<span class="scene-caption"><small>今晚先看这部</small><strong>'+esc(title(lead))+'</strong><span>'+esc(leadMeta)+'</span></span></button><div class="film-thread">'+other.slice(0,6).map((item,index)=>screeningTurn(item,{label:index===0?'换个气口':index===1?'再大胆一点':'顺着这条线',hint:index%2?'口碑不错':'适合接着看',wide:index===2||index===5})).join('')+'</div></section>'}else if(S.discoverLoading){flow='<section class="screening-flow" aria-busy="true" aria-label="正在排片"><div class="screening-response"><p>正在翻片库，马上给你排一场。</p></div><div class="screening-scene skeleton"></div><div class="film-thread"><div class="thread-turn"><div class="thread-art skeleton"></div></div></div></section>'}else{flow='<div class="studio-empty"><strong>放映单还没回来</strong><span>你可以直接说一句想看的，我从片名开始找。</span><button class="primary" onclick="loadHome()">重新排片</button></div>'}
 	const tools='<div class="tool-list studio-tools" aria-label="更多找片方式"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩一段剧情，再决定求哪部</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>暂时没源的，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放或求片不对劲，直接告诉我</small></span><span class="tool-arrow">›</span></button></div>';
-	return '<div class="home-studio">'+composer+'<div>'+homePulse()+homeDiscoverError()+flow+recentSection()+dynamicSections()+tools+'</div></div>';
+	return '<div class="home-studio">'+composer+'<div>'+coreActions()+homePulse()+homeDiscoverError()+flow+recentSection()+dynamicSections()+tools+'</div></div>';
 }
 let homeController=null;
 async function loadHome(){homeController?.abort();const controller=new AbortController();homeController=controller;S.discoverLoading=true;S.discoverError='';S.discoverAuthError=false;if(S.view==='home')render();try{const d=await api('/api/miniapp/v1/discover',{signal:controller.signal});if(homeController!==controller)return;S.discover=d;localStorage.setItem('yunhai_discover_cache',JSON.stringify(d))}catch(e){if(e?.name==='AbortError'||homeController!==controller)return;S.discoverError=e.message||'网络连接不稳定，请稍后再试';S.discoverAuthError=e.status===401||e.status===403}finally{if(homeController===controller){homeController=null;S.discoverLoading=false;if(S.view==='home')render()}}}
@@ -4496,7 +4548,7 @@ function searchPage(){
 	const empty=S.query?'<div class="empty"><strong>没有找到匹配结果</strong><span>'+(S.hasMore?'后面还有结果，可以继续加载。':'换个片名或类型试试。')+'</span></div>':idle;
 	const filters=[['all','全部'],['movie','电影'],['tv','剧集']].map(([v,t])=>'<button type="button" class="filter '+(S.searchType===v?'active':'')+'" aria-pressed="'+(S.searchType===v?'true':'false')+'" data-type="'+esc(v)+'" onclick="setSearchType(this.dataset.type)">'+t+'</button>').join('');
 	const skeleton='<div class="search-card-skeleton" aria-hidden="true"><div class="poster skeleton"></div><span class="search-skeleton-line skeleton"></span><span class="search-skeleton-line is-meta skeleton"></span></div>';
-	const results=S.loading&&!S.results.length?Array(6).fill(skeleton).join(''):S.results.length?sortedSearchResults().map(card).join(''):empty;
+	const results=S.loading&&!S.results.length?Array(6).fill(skeleton).join(''):S.results.length?(ensureMeForStatus(),sortedSearchResults().map(searchResultCard).join('')):empty;
 	const sortOptions=S.query?'<div class="result-tools" role="group" aria-label="结果排序"><span>排序</span>'+[['relevance','综合'],['rating','评分'],['newest','新片']].map(([v,t])=>'<button type="button" class="sort-chip '+(S.searchSort===v?'active':'')+'" aria-pressed="'+(S.searchSort===v?'true':'false')+'" onclick="setSearchSort(\''+v+'\')">'+t+'</button>').join('')+'</div>':'';
 	const more=S.hasMore?'<button class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMore()">'+(S.loading?'加载中…':'加载更多')+'</button>':'';
 	const context=S.query?'<header class="search-result-head"><div class="search-result-context"><small>搜索结果</small><h2>'+esc(S.query)+'</h2></div><span class="search-result-count">已加载 '+S.results.length+' 部'+(S.loading?' · 搜索中':'')+'</span></header>':'';
