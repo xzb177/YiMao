@@ -296,6 +296,16 @@ func TestRequestSubmissionPreservesStructuredFailureStates(t *testing.T) {
 	)
 }
 
+func TestSearchCanContinueWhenFilteredPageIsEmpty(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`${S.hasMore?'<button class="secondary" onclick="loadMoreSearch()">加载更多</button>':''}`,
+	)
+	if strings.Contains(html, `S.results.length&&S.hasMore`) {
+		t.Fatal("empty filtered page hides the load-more action")
+	}
+}
+
 func TestDialogTimelineAndMutationContractsRemain(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
