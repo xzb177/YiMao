@@ -777,10 +777,14 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	season, _ := strconv.Atoi(r.URL.Query().Get("season"))
-	kind := "movie"
+	kind := r.URL.Query().Get("type")
+	if kind != "movie" && kind != "tv" {
+		http.Error(w, "媒体类型无效", http.StatusBadRequest)
+		return
+	}
 	mediaType := services.MediaTypeMovie
-	if typeName := r.URL.Query().Get("type"); typeName == "tv" || typeName == "电视剧" {
-		kind, mediaType = "tv", services.MediaTypeTV
+	if kind == "tv" {
+		mediaType = services.MediaTypeTV
 	}
 	if s.deps.TMDB == nil {
 		http.Error(w, "详情暂时不可用", http.StatusServiceUnavailable)

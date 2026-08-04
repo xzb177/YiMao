@@ -133,6 +133,37 @@ func TestDetailRejectsNonGETMethods(t *testing.T) {
 	}
 }
 
+func TestDetailRejectsMissingOrUnknownMediaType(t *testing.T) {
+	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
+	for _, target := range []string{
+		"/api/miniapp/v1/detail?id=271413",
+		"/api/miniapp/v1/detail?id=271413&type=unknown",
+		"/api/miniapp/v1/detail?id=271413&type=%20TV%20",
+	} {
+		t.Run(target, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedRequest(t, http.MethodGet, target, "", 101))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("detail must fail closed instead of defaulting to movie: status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestDetailAcceptsCanonicalMediaTypes(t *testing.T) {
+	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
+	for _, mediaType := range []string{"movie", "tv"} {
+		t.Run(mediaType, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			target := "/api/miniapp/v1/detail?id=271413&type=" + mediaType
+			handler.ServeHTTP(response, signedRequest(t, http.MethodGet, target, "", 101))
+			if response.Code == http.StatusBadRequest {
+				t.Fatalf("canonical detail media type was rejected: type=%s body=%s", mediaType, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestWriteEndpointsRejectTrailingJSON(t *testing.T) {
 	carpool := services.NewCarpoolService(t.TempDir())
 	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
