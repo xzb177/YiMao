@@ -19,7 +19,7 @@ func requireSource(t *testing.T, html string, wants ...string) {
 	t.Helper()
 	for _, want := range wants {
 		if !strings.Contains(html, want) {
-			t.Fatalf("Mini App 缺少源码契约 %q", want)
+			t.Errorf("Mini App 缺少源码契约 %q", want)
 		}
 	}
 }
@@ -28,298 +28,215 @@ func rejectSource(t *testing.T, html string, stale ...string) {
 	t.Helper()
 	for _, value := range stale {
 		if strings.Contains(html, value) {
-			t.Fatalf("Mini App 仍包含废弃契约 %q", value)
+			t.Errorf("Mini App 仍包含废弃契约 %q", value)
 		}
 	}
 }
 
-func TestMiniAppUsesCinemaStudioAcrossRootPages(t *testing.T) {
+func requireOrder(t *testing.T, html string, values ...string) {
+	t.Helper()
+	last := -1
+	for _, value := range values {
+		next := strings.Index(html, value)
+		if next < 0 {
+			t.Errorf("Mini App 缺少顺序契约 %q", value)
+			return
+		}
+		if next <= last {
+			t.Errorf("Mini App 信息顺序错误：%q 必须出现在前一项之后", value)
+			return
+		}
+		last = next
+	}
+}
+
+func TestHomeIsAnActionDeskNotACinemaLandingPage(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		`class="home-studio"`,
-		`class="studio-console"`,
-		`class="prompt-composer glass-surface"`,
-		`class="screening-flow"`,
-		`class="screening-scene"`,
-		`class="film-thread"`,
-		`class="search-workspace"`,
-		`class="search-console"`,
-		`class="search-results" aria-live="polite"`,
-		`class="archive-workspace"`,
-		`class="archive-lead"`,
-		`class="archive-now"`,
-		`class="archive-body"`,
-		`class="quota-ticket"`,
-		`class="watch-stack"`,
-		`class="service-band"`,
+		`class="action-home"`,
+		`class="home-context"`,
+		`class="home-search"`,
+		"今天想找哪部？",
+		`class="task-entry-grid"`,
+		`data-action="request"`,
+		`data-action="wash"`,
+		`data-action="adventure"`,
+		"求片",
+		"洗版",
+		"闯关",
+		`class="home-active"`,
 		"正在处理",
-		"focus.media_title||focus.title||focus.name||'正在处理的求片'",
-		"r.media_title||r.title||r.name||'正在处理的求片'",
-		"focus.request_id??focus.id",
-		"r.request_id??r.id",
-		"求片档案",
-		`class="tool-workspace"`,
-		`class="tool-header"`,
-		`class="tool-body"`,
+	)
+	requireOrder(t, html,
+		`class="home-search"`,
+		`class="task-entry-grid"`,
+		`class="home-active"`,
+	)
+	rejectSource(t, html,
 		"YiMao 放映室",
+		"home-studio",
+		"studio-console",
+		"screening-flow",
+		"screening-scene",
+		"film-thread",
+		"search-workspace",
+		"archive-workspace",
+		"prompt-composer glass-surface",
+		"glass-surface",
+		"pointermove",
 		"今晚想看点什么？",
-		"电影大冒险",
-		"许愿池",
-		"问题反馈",
-	)
-	rejectSource(t, html,
-		`class="featured-home"`,
-		`class="featured-lead"`,
-		`class="featured-rail"`,
-		`class="feed-list"`,
-		`class="wide-rail"`,
-		"function feedCard(",
-		"function featuredLeadArtwork(",
-		`class="bottom glass-surface"`,
-		"AI 精选",
 	)
 }
 
-func TestMeFocusOnlyUsesOpenRequestsAndRendersTheWholeWatchlist(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"focus=all.find(r=>progressGroup(r)==='active')||all.find(r=>progressGroup(r)==='pending')",
-		"grid-template-columns: 98px minmax(0, 1fr)",
-		"watch.map(watchStackItem).join('')",
-	)
-	if strings.Contains(html, "all.find(r=>progressGroup(r)==='pending')||all[0]") {
-		t.Fatal("我的页不应把已结束请求回退成正在处理")
-	}
-	if strings.Contains(html, "watch.slice(0,4)") {
-		t.Fatal("我的页不应静默隐藏第 5 条及之后的想看记录")
-	}
-}
-
-func TestHomeTimelineUsesSingleMobileTrackAndDesktopGrid(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"margin: 26px 0 0 21px",
-		".thread-turn {",
-		"margin: 0 0 24px",
-		"width: 100%",
-		"aspect-ratio: 4 / 5",
-		".thread-turn.is-wide .thread-art {",
-		"aspect-ratio: 16 / 7",
-		"@media (min-width: 900px)",
-		"grid-template-columns: repeat(2, minmax(0, 1fr))",
-		"aspect-ratio: 2 / 3",
-	)
-	rejectSource(t, html,
-		"padding-right: 16%",
-		"padding-left: 18%",
-		"width: calc(100% + 21px)",
-		"margin-left: -21px",
-	)
-}
-
-func TestHomeArtworkUsesOneIdentityAndIndependentFallbacks(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"function mediaIdentity(x)",
-		"function screeningMedia(item,variant='lead')",
-		"function screeningImageError(image,role='subject')",
-		"data-artwork",
-		`class="studio-ambient"`,
-		`class="studio-subject"`,
-		"media.dataset[role+'Failed']='1'",
-		"if(subjectFailed&&ambientFailed)media.classList.add('is-error')",
-		"function card(x){const mid=Number(id(x));if(!Number.isFinite(mid)||mid<=0)return ''",
-		"for(const item of [...featured,...movies,...shows",
-		"mediaIdentity(x)",
-	)
-}
-
-func TestHomeComposerUsesAssistantWithSafeFallbacks(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		`onsubmit="submitAssistant(event)"`,
-		`/api/miniapp/v1/assistant`,
-		"assistantHistory.slice(-6)",
-		"assistantController?.abort()",
-		"seq!==S.assistantSeq",
-		"function safeAssistantItem(x)",
-		"Number.isFinite(mid)&&mid>0",
-		"['movie','tv','all'].includes",
-		"esc(S.assistantReply)",
-		"fallback_query||message",
-	)
-}
-
-func TestRequestTimelineUsesRealEventsAndActionableStates(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"function progressTone(code)",
-		"function progressLabel(code)",
-		"function relativeTime(value)",
-		"function timelineNext(code)",
-		"function requestCounts(items)",
-		"Array.isArray(d.events)?d.events:[]",
-		`class="timeline-node timeline-${nodeTone}`,
-		`aria-label="进度节点"`,
-		"重新找片",
-		"反馈问题",
-		"Number.isFinite(mid)||mid<=0",
-		"!['movie','tv'].includes(mt)",
-	)
-	rejectSource(t, html,
-		"预计完成时间",
-		"下载速度",
-		"e.progress",
-	)
-}
-
-func TestRequestArchiveShowsCountedStatusFilters(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"counts=requestCounts(all)",
-		"['pending','待审核',counts.pending]",
-		"['active','处理中',counts.active]",
-		"['done','已结束',counts.done]",
-		`aria-pressed="${S.progressType===v?'true':'false'}"`,
-		`<i class="status-dot" aria-hidden="true"></i>`,
-	)
-}
-
-func TestShellUsesContextAppBarAndEntityDock(t *testing.T) {
+func TestRootNavigationHasExactlyThreeProductPaths(t *testing.T) {
 	html := miniAppSource(t)
 	start := strings.Index(html, "function chrome(")
-	end := strings.Index(html, "function render(){")
+	end := strings.Index(html, "function render(")
 	if start < 0 || end <= start {
-		t.Fatal("未找到 chrome 渲染边界")
+		t.Fatal("未找到主框架渲染边界")
 	}
 	chrome := html[start:end]
 	requireSource(t, chrome,
-		"isHome=isRoot&&S.view==='home'",
-		"const appBar=isRoot&&!isHome&&meta?",
-		`<header class="app-bar">`,
-		`<div class="bottom app-dock">`,
+		`class="app-dock"`,
 		`aria-label="主导航"`,
 		`aria-current="page"`,
-		"放映室",
 		"找片",
-		"我的",
+		"任务",
+		"闯关",
 	)
-	rejectSource(t, chrome, `class="brand"`, `class="bottom glass-surface"`)
+	rejectSource(t, chrome, "放映室", "我的", `class="brand"`)
 }
 
-func TestGlobalVisualSystemIsMobileFirstAndDesktopReflows(t *testing.T) {
+func TestSearchIsGroupedAndStatusDriven(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		"--bg: #090a0c",
-		"--accent: #f05a4f",
-		"overflow-x: clip",
-		"min-width: 0",
-		"min-height: 44px",
-		"@media (min-width: 900px)",
-		".home-studio {",
-		".search-workspace {",
-		".tool-workspace {",
-		".archive-workspace {",
-		"grid-template-columns: minmax(270px, .68fr) minmax(0, 1.32fr)",
-		"@media (max-width: 350px)",
-		"@media (prefers-reduced-motion: reduce)",
-		"animation: none !important",
-		"transition: none !important",
+		"function groupedSearchResults(items)",
+		"function searchResultSection(kind,items)",
+		`class="result-lead"`,
+		`class="result-row"`,
+		"电影",
+		"剧集",
+		"original_title",
+		"genres",
+		"media_status",
+		"function detailPrimaryAction(x)",
+		"求这部",
+		"选择季",
+		"洗版",
+		"查看进度",
+		"已在库中",
+		`/api/miniapp/v1/detail?id=`,
 	)
-	rejectSource(t, html, "#e9ff5b", "--bg:#11100f", "IntersectionObserver")
+	rejectSource(t, html, "预计完成时间", "下载速度", "码率", "4K 优先")
 }
 
-func TestGlassIsLimitedAndInputDriven(t *testing.T) {
+func TestWashIsAFirstClassSearchMode(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		`class="prompt-composer glass-surface"`,
-		`class="app-bar"`,
-		"function initGlassDynamics()",
-		"document.querySelectorAll('.glass-surface').forEach(initGlassSurface)",
-		"surface.addEventListener('pointermove'",
-		"surface.addEventListener('pointerleave'",
-		"if(glassMotionQuery?.matches){clearGlassDynamics();return}",
+		"searchMode:'request'",
+		"function startSearchMode(mode)",
+		"['request','wash'].includes(mode)",
+		"已有内容换个更好的版本",
+		"新版本确认可用前，旧版会保留",
+		"const season=x.type==='tv'?S.season:0",
+		"if(x.type==='tv'&&season<=0)",
+		`/api/miniapp/v1/wash`,
+		"body:JSON.stringify(payload)",
+	)
+}
+
+func TestAdventureKeepsItsStateMachineAndReturnsToMedia(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`/api/miniapp/v1/adventure`,
+		"action:'start'",
+		"action:'choice'",
+		"action:'hint'",
+		"method:'DELETE'",
+		"function adventureResultAction(item)",
+		`data-adventure-media`,
+		"openAdventureMedia(this)",
+	)
+}
+
+func TestTasksAggregateRequestAndWashByNextAction(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function taskGroup(item)",
+		"function groupedTasks(items)",
+		"需要处理",
+		"进行中",
+		"已完成",
+		"没有找到",
+		"business_type",
+		"request",
+		"wash",
+		"function taskNext(item)",
+		"updated_at||item.created_at",
+		`/api/miniapp/v1/me`,
+		`/api/miniapp/v1/progress?request_id=`,
+	)
+}
+
+func TestAuxiliaryFeaturesRemainAvailableButSecondary(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`/api/miniapp/v1/dynamic`,
+		`/api/miniapp/v1/discover`,
+		`/api/miniapp/v1/assistant`,
+		`/api/miniapp/v1/watchlist`,
+		`/api/miniapp/v1/wishes`,
+		`/api/miniapp/v1/issues`,
+		`class="secondary-tools"`,
+	)
+}
+
+func TestDynamicMediaIsEscapedValidatedAndNotPutInJSContexts(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function esc(value)",
+		"const mid=Number(",
+		"Number.isFinite(mid)",
+		"mid<=0",
+		"['movie','tv'].includes(mt)",
+		"data-mid=",
+		"data-type=",
+		"openMediaFromElement(this)",
 	)
 	rejectSource(t, html,
-		"document.querySelectorAll('.featured-rail').forEach(initGlassRail)",
-		"function initGlassRail(",
-		"window.addEventListener('scroll'",
-		"requestAnimationFrame(loop)",
+		"onclick=\"openDetail(${item.",
+		"onclick=\"openDetail(${x.",
+		"onclick=\"openDetail(${r.",
+		"onclick=\"openDetail(${w.",
 	)
 }
 
-func TestRootMotionIsOneShotAndReducedMotionSafe(t *testing.T) {
+func TestNetworkRacesErrorsAndTelegramContractsRemain(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		"rootMotion:''",
-		"function queueRootMotion(next)",
-		"from===next){S.rootMotion=''",
-		"ROOT_VIEWS.indexOf(next)>ROOT_VIEWS.indexOf(from)?'forward':'backward'",
-		"const motion=S.rootMotion;S.rootMotion=''",
-		"root-enter-forward",
-		"root-enter-backward",
-		".tab-transition .nav.active i",
-	)
-	rejectSource(t, html, "animation: shine", "IntersectionObserver")
-}
-
-func TestSearchUsesAppleSystemTypographyAndAIForNaturalLanguageEmptyResults(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		`font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC"`,
-		"async function searchWithAssistant(query,typeName,signal)",
-		"if(!append&&!S.results.length&&!S.hasMore)",
-		"searchWithAssistant(current.query,current.type,controller.signal)",
-	)
-}
-
-func TestSearchRacePaginationAndPersistentErrors(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
+		"tg?.initData",
+		"'X-Telegram-Init-Data':tg?.initData||''",
 		"let searchController=null",
 		"searchController?.abort()",
-		"searchController=controller",
-		"{query:S.query,type:S.searchType,page:targetPage}",
-		"{signal:controller.signal}",
-		"e?.name==='AbortError'",
+		"const seq=++S.searchSeq",
+		"seq!==S.searchSeq",
 		"S.query!==current.query||S.searchType!==current.type",
-		"function loadMore(){if(!S.loading&&S.hasMore){const request={query:S.query,type:S.searchType,page:S.nextPage}",
-		"S.page=Number(d.page)||current.page",
-		"S.nextPage=Number(d.next_page)||S.page+1",
-		"S.meError=me.reason?.message",
-		"S.watchError=watch.reason?.message",
-		"function homeDiscoverError()",
-		"S.discoverAuthError=e.status===401||e.status===403",
-	)
-	rejectSource(t, html, "S.page++;doSearch(true)", "await r.text()")
-}
-
-func TestToolPagesIgnoreStaleResponses(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"toolSeq:0",
-		"const seq=++S.toolSeq",
-		"if(seq!==S.toolSeq||S.view!==view)return",
-		"if(seq===S.toolSeq&&S.view===view){S.toolLoading=false;render()}",
-		"view=S.view",
-		"if(S.view===view)await goIssues()",
+		"S.searchError=e.message",
+		`class="persistent-error"`,
+		"const seq=++S.detailSeq",
+		"if(seq!==S.detailSeq)return",
+		"const seq=++S.meSeq",
+		"if(seq!==S.meSeq||S.view!=='tasks')return",
+		"tg?.BackButton?.show()",
+		"tg?.HapticFeedback",
+		"--tg-safe-area-inset-top",
+		"--tg-content-safe-area-inset-top",
+		"env(safe-area-inset-top, 0px)",
+		"env(safe-area-inset-bottom, 0px)",
 	)
 }
 
-func TestUntrustedMediaIDsAreNumericAndInvalidEntriesAreNotClickable(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		"const mid=Number(w.tmdb_id),mt=w.media_type==='tv'||w.media_type==='电视剧'?'tv':'movie'",
-		"const mid=Number(r.tmdb_id),mt=r.media_type==='tv'||r.media_type==='电视剧'?'tv':'movie'",
-		"if(!Number.isFinite(mid)||mid<=0)return ''",
-	)
-	rejectSource(t, html,
-		"onclick=\"openDetail(${w.tmdb_id}",
-		"onclick=\"openDetail(${r.tmdb_id}",
-	)
-}
-
-func TestDialogTelegramAndSafeAreaContractsRemain(t *testing.T) {
+func TestDialogTimelineAndMutationContractsRemain(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
 		`role="dialog" aria-modal="true" aria-labelledby="dialog-title"`,
@@ -329,12 +246,41 @@ func TestDialogTelegramAndSafeAreaContractsRemain(t *testing.T) {
 		"if(event.key!=='Tab')return",
 		"restore?.isConnected",
 		"setDialogBusy(ctx.seq,true)",
-		"function backDetail(){S.detailSeq++",
-		"tg?.BackButton?.show()",
-		"tg?.HapticFeedback",
-		"--tg-safe-area-inset-top",
-		"--tg-content-safe-area-inset-top",
-		"env(safe-area-inset-top, 0px)",
-		"env(safe-area-inset-bottom, 0px)",
+		"Array.isArray(d.events)?d.events:[]",
+		`class="timeline-node timeline-${nodeTone}`,
+		`aria-label="进度节点"`,
+		`/api/miniapp/v1/request`,
+		`/api/miniapp/v1/request/cancel`,
+	)
+}
+
+func TestDemoIsReadOnlyAndCoversAllPrimaryPaths(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"const DEMO=new URLSearchParams(location.search).get('demo')==='1'",
+		"function demoResponse(path,options={})",
+		"if(DEMO&&method!=='GET')",
+		"request_id:'demo-request'",
+		"request_id:'demo-wash'",
+		"business_type:'request'",
+		"business_type:'wash'",
+		"media_status",
+		"demoAdventure",
+	)
+}
+
+func TestLayoutIsMobileFirstDenseAndMotionSafe(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"overflow-x: clip",
+		"min-width: 0",
+		"min-height: 44px",
+		"--dock-clearance:",
+		"padding-bottom: var(--dock-clearance)",
+		"@media (max-width: 350px)",
+		"@media (min-width: 900px)",
+		"@media (prefers-reduced-motion: reduce)",
+		"animation: none !important",
+		"transition: none !important",
 	)
 }
