@@ -50,6 +50,25 @@ func requireOrder(t *testing.T, html string, values ...string) {
 	}
 }
 
+func TestV11HomeRemovesDuplicateTaglineAndPrioritizesCurrentState(t *testing.T) {
+	html := miniAppSource(t)
+	if count := strings.Count(html, "私人影视任务中心"); count != 1 {
+		t.Errorf("V1.1 应只保留一处产品副标题，实际为 %d 处", count)
+	}
+	requireSource(t, html,
+		"function homeStatusSection()",
+		"最新进展",
+		"最近搜过",
+		"不知道看什么？",
+		"开始闯关",
+	)
+	requireOrder(t, html,
+		`class="home-search"`,
+		"homeStatusSection()",
+		`class="task-entry-grid"`,
+	)
+}
+
 func TestHomeIsAnActionDeskNotACinemaLandingPage(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
@@ -233,6 +252,21 @@ func TestNetworkRacesErrorsAndTelegramContractsRemain(t *testing.T) {
 		"--tg-content-safe-area-inset-top",
 		"env(safe-area-inset-top, 0px)",
 		"env(safe-area-inset-bottom, 0px)",
+	)
+}
+
+func TestV11SubmissionUsesPersistentResultInsteadOfToastOnly(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function showSubmissionResult(result,businessType)",
+		"submissionResultTitle(status,businessType)",
+		"任务已提交",
+		"当前状态",
+		"查看任务",
+		"继续找片",
+		"showSubmissionResult(result,'request')",
+		"showSubmissionResult(result,'wash')",
+		"result.request_id",
 	)
 }
 
