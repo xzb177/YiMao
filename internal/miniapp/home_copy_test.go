@@ -230,6 +230,19 @@ func TestDynamicMediaIsEscapedValidatedAndNotPutInJSContexts(t *testing.T) {
 	)
 }
 
+func TestTelegramSDKCannotBlockFirstVisiblePaint(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`<main id="app" class="shell"><section class="boot-fallback"`,
+		`<script async src="https://telegram.org/js/telegram-web-app.js" onload="initTelegramWebApp()"></script>`,
+		"function telegramWebApp()",
+	)
+	rejectSource(t, html,
+		`<main id="app" class="shell"></main>`,
+		`<script src="https://telegram.org/js/telegram-web-app.js"></script>`,
+	)
+}
+
 func TestNetworkRacesErrorsAndTelegramContractsRemain(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,

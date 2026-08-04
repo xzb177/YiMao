@@ -70,11 +70,13 @@ img{max-width:100%;display:block}
 </style>
 </head>
 <body>
-<main id="app" class="shell"></main>
+<main id="app" class="shell"><section class="boot-fallback" aria-live="polite"><div class="topbar"><h1>YiMao 任务中心</h1></div><div class="empty">正在打开任务中心…</div></section></main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <script>
-const tg=window.Telegram?.WebApp;tg?.ready();tg?.expand?.();tg?.setHeaderColor?.('#0b0d10');tg?.setBackgroundColor?.('#0b0d10');
+function telegramWebApp(){return window.Telegram?.WebApp}
+let tg=telegramWebApp();
+let telegramBackBound=false;
+function initTelegramWebApp(){tg=telegramWebApp();if(!tg)return;tg.ready();tg.expand?.();tg.setHeaderColor?.('#0b0d10');tg.setBackgroundColor?.('#0b0d10');if(!telegramBackBound&&tg.BackButton){tg.BackButton.onClick(()=>{if(S.detailVisible)backDetail();else if(S.view!=='search')navigate('search')});telegramBackBound=true}syncBack()}
 const DEMO=new URLSearchParams(location.search).get('demo')==='1';
 const S={view:'home',query:'',searchType:'all',searchMode:'request',results:[],searchError:'',loading:false,searchSeq:0,detailSeq:0,meSeq:0,detail:null,detailFrom:'home',detailVisible:false,season:0,tasks:null,adventure:null,tool:'',toolData:null,toolError:'',submitting:false};
 function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -177,8 +179,8 @@ function navigate(view){closeDialog();if(view==='search'){S.detailVisible=false;
 function goHome(){closeDialog();S.detailVisible=false;S.view='home';render()}
 function showNativeBack(){tg?.BackButton?.show()}
 function syncBack(){if(S.detailVisible)showNativeBack();else tg?.BackButton?.hide?.()}
-tg?.BackButton?.onClick?.(()=>{if(S.detailVisible)backDetail();else if(S.view!=='search')navigate('search')});
-render();syncBack();
+render();initTelegramWebApp();syncBack();
 </script>
+<script async src="https://telegram.org/js/telegram-web-app.js" onload="initTelegramWebApp()"></script>
 </body>
 </html>
