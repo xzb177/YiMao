@@ -4312,24 +4312,36 @@ body::after{
 }
 
 /* ============================================================
-   重构 P1/P2：核心服务入口（收敛为轻量）+ 搜索状态卡（app 方向）
+   首页重构 v2：求片工作台（app 方向）
+   焦点收敛：搜索求片是唯一主角 → 状态条 → 推荐流
    ============================================================ */
-.core-actions{display:flex; gap:8px; margin:0 0 16px; flex-wrap:wrap}
-.core-chip{
-  display:inline-flex; align-items:center; gap:8px; min-height:38px; padding:0 13px;
-  border-radius:999px; color:var(--ink);
-  border:1px solid var(--edge); background:var(--frost), linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.018)), var(--glass);
-  box-shadow:var(--spec), 0 8px 18px rgba(0,0,0,.16);
-  backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat)); -webkit-backdrop-filter:blur(var(--glass-blur)) saturate(var(--glass-sat));
-  transition:transform .16s var(--ease), border-color .2s ease;
-}
-.core-chip:active{transform:scale(.97)}
-.core-chip:hover{border-color:rgba(87,199,178,.4)}
-.ca-ico{width:18px; height:18px; color:var(--accent-strong)}
-.core-wash .ca-ico{color:var(--accent-strong)}
-.core-chip strong{font-size:13px; font-weight:750}
-.core-chip em{font-style:normal; font-size:11px; color:var(--dim)}
-@media (prefers-reduced-motion: reduce){.core-chip{transition:none !important}}
+/* 品牌行 + 搜索大框（求片主战场） */
+.studio-intro{margin:0 0 12px}
+.studio-intro p{font-size:10.5px; letter-spacing:1.8px; opacity:.85}
+.studio-intro h1{max-width:none; margin-top:4px; font-size:19px; line-height:1.25; letter-spacing:0; font-weight:760}
+.prompt-composer{border-radius:22px; padding:0}
+.prompt-composer textarea{min-height:60px; max-height:120px; padding:17px 17px 6px; font-size:16px; resize:vertical; border-radius:22px 22px 0 0}
+.prompt-composer-footer{border-top:0; padding:0 6px 6px; min-height:52px}
+.prompt-send{width:44px; min-width:44px; min-height:44px}
+.prompt-types{gap:4px; padding-left:4px}
+.prompt-kind{font-size:11.5px; padding:0 12px; min-height:32px}
+/* 快捷指令：一行横向 chips（不占纵向） */
+.studio-prompts{display:flex; gap:8px; margin-top:10px; overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch}
+.studio-prompts::-webkit-scrollbar{display:none}
+.studio-prompts button{flex:0 0 auto; min-height:36px; padding:0 15px; border-radius:999px; font-size:12px; border:1px solid var(--edge); background:var(--frost), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015)), var(--glass); box-shadow:var(--spec), 0 6px 14px rgba(0,0,0,.12); color:rgba(220,240,236,.8); backdrop-filter:blur(16px) saturate(138%); -webkit-backdrop-filter:blur(16px) saturate(138%)}
+.studio-prompts button:active{color:#fff}
+/* 核心轻入口（洗版/闯关）：与快捷指令同层，视觉区分弱一点 */
+.core-actions{gap:8px; margin:10px 0 0}
+.core-chip{min-height:36px; padding:0 14px; gap:7px}
+.core-chip strong{font-size:12.5px}
+.core-chip em{font-size:11px}
+/* 加载态：一行小字，不再占屏 */
+.home-loading{display:flex; align-items:center; gap:9px; margin:6px 0 0; padding:12px 14px; border-radius:16px; border:1px solid var(--edge); background:var(--frost), rgba(16,28,34,.5); color:var(--dim); font-size:12.5px; backdrop-filter:blur(16px) saturate(138%); -webkit-backdrop-filter:blur(16px) saturate(138%)}
+.home-loading i{width:15px; height:15px; border-radius:50%; border:2px solid rgba(87,199,178,.3); border-top-color:var(--accent); animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.home-loading i{animation:none !important}}
+@media (max-width:380px){.studio-intro h1{font-size:17px}.prompt-composer textarea{min-height:54px}}
+</style></head><body><div id="app"></div><div id="toast" class="toast"></div>
 /* 搜索状态卡 */
 .sq-card{display:flex; flex-direction:column; border-radius:18px; overflow:hidden; cursor:pointer;
   background:var(--frost), linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.015)), rgba(14,26,31,.6);
@@ -4519,9 +4531,9 @@ function home(){
 	const seen=new Set(),picks=[];
 	for(const item of [...featured,...movies,...shows,...(S.dynamic.recently_added||[]),...(S.dynamic.just_available||[]),...S.recent]){if(!item||Number(id(item))<=0)continue;const identity=mediaIdentity(item);if(seen.has(identity))continue;seen.add(identity);picks.push(item);if(picks.length===8)break}
 	const leadType=lead?(type(lead)==='tv'||type(lead)==='电视剧'?'tv':'movie'):'movie',leadMeta=lead?[year(lead),lead.vote_average?'评分 '+Number(lead.vote_average).toFixed(1):'',leadType==='tv'?'剧集':'电影'].filter(Boolean).join(' · '):'';
-	const composer='<section class="studio-console"><div class="studio-intro"><p>YiMao 放映室</p><h1>今晚想看点什么？</h1></div><form class="prompt-composer glass-surface" role="search" aria-label="告诉 YiMao 想看的内容" aria-busy="'+String(S.assistantBusy)+'" onsubmit="submitAssistant(event)"><textarea id="assistant-q" rows="2" maxlength="500" required autocomplete="off" enterkeyhint="send" placeholder="比如：来部节奏快、不费脑的科幻片" oninput="S.assistantDraft=this.value">'+esc(S.assistantDraft)+'</textarea><div class="prompt-composer-footer"><div class="prompt-types" aria-label="快速类型"><button type="button" class="prompt-kind" data-query="想看一部电影" onclick="assistantQuick(this.dataset.query)">电影</button><button type="button" class="prompt-kind" data-query="想看一部剧集" onclick="assistantQuick(this.dataset.query)">剧集</button><button type="button" class="prompt-kind" data-query="想看动画" onclick="assistantQuick(this.dataset.query)">动画</button></div><button class="prompt-send" aria-label="开始找片" '+(S.assistantBusy?'disabled':'')+'>'+icons.search+'</button></div></form><div class="studio-prompts"><button data-query="适合深夜一个人看的电影" onclick="assistantQuick(this.dataset.query)" '+(S.assistantBusy?'disabled':'')+'>适合深夜一个人看的</button><button data-query="两小时内的高分悬疑片" onclick="assistantQuick(this.dataset.query)" '+(S.assistantBusy?'disabled':'')+'>两小时内，悬疑，别太沉重</button></div></section>';
+	const composer='<section class="studio-console"><div class="studio-intro"><p>YiMao 放映室</p><h1>今晚想看点什么？</h1></div><form class="prompt-composer glass-surface" role="search" aria-label="告诉 YiMao 想看的内容" aria-busy="'+String(S.assistantBusy)+'" onsubmit="submitAssistant(event)"><textarea id="assistant-q" rows="2" maxlength="500" required autocomplete="off" enterkeyhint="send" placeholder="搜片名 / 演员，立即求片" oninput="S.assistantDraft=this.value">'+esc(S.assistantDraft)+'</textarea><div class="prompt-composer-footer"><div class="prompt-types" aria-label="快速类型"><button type="button" class="prompt-kind" data-query="想看一部电影" onclick="assistantQuick(this.dataset.query)">电影</button><button type="button" class="prompt-kind" data-query="想看一部剧集" onclick="assistantQuick(this.dataset.query)">剧集</button><button type="button" class="prompt-kind" data-query="想看动画" onclick="assistantQuick(this.dataset.query)">动画</button></div><button class="prompt-send" aria-label="开始找片" '+(S.assistantBusy?'disabled':'')+'>'+icons.search+'</button></div></form><div class="studio-prompts"><button data-query="适合深夜一个人看的电影" onclick="assistantQuick(this.dataset.query)" '+(S.assistantBusy?'disabled':'')+'>适合深夜一个人看的</button><button data-query="两小时内的高分悬疑片" onclick="assistantQuick(this.dataset.query)" '+(S.assistantBusy?'disabled':'')+'>两小时内，悬疑，别太沉重</button></div></section>';
 	let flow='';
-	if(S.assistantBusy){flow='<section class="screening-flow" aria-busy="true" aria-live="polite"><div class="screening-response"><p>正在从片库里收窄选择。</p></div><div class="screening-scene skeleton"></div></section>'}else if(S.assistantReply){const assistantItems=S.assistantItems.map(safeAssistantItem).filter(Boolean).slice(0,6),assistantSuggestions=S.assistantSuggestions.filter(x=>typeof x==='string'&&x.trim()).slice(0,4);flow='<section class="screening-flow" aria-label="YiMao 选片结果" aria-live="polite"><div class="screening-response"><p>'+esc(S.assistantReply)+'</p></div>'+(assistantSuggestions.length?'<div class="assistant-suggestions">'+assistantSuggestions.map(s=>'<button data-query="'+esc(s)+'" onclick="assistantQuick(this.dataset.query)">'+esc(s)+'</button>').join('')+'</div>':'')+(assistantItems.length?'<div class="grid assistant-results">'+assistantItems.map(card).join('')+'</div>':'<div class="empty assistant-empty"><strong>暂时没找到完全匹配的作品</strong><span>换个说法，我再找一轮。</span></div>')+'</section>'}else if(lead){const other=picks.filter(x=>mediaIdentity(x)!==mediaIdentity(lead));flow='<section class="screening-flow" aria-label="YiMao 推荐片单"><div class="screening-response"><p>我先开一场。第一部稳一点，后面几部把口味慢慢拉开。</p></div><button class="screening-scene" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+Number(lead.season||0)+')">'+screeningMedia(lead)+'<span class="scene-caption"><small>今晚先看这部</small><strong>'+esc(title(lead))+'</strong><span>'+esc(leadMeta)+'</span></span></button><div class="film-thread">'+other.slice(0,6).map((item,index)=>screeningTurn(item,{label:index===0?'换个气口':index===1?'再大胆一点':'顺着这条线',hint:index%2?'口碑不错':'适合接着看',wide:index===2||index===5})).join('')+'</div></section>'}else if(S.discoverLoading){flow='<section class="screening-flow" aria-busy="true" aria-label="正在排片"><div class="screening-response"><p>正在翻片库，马上给你排一场。</p></div><div class="screening-scene skeleton"></div><div class="film-thread"><div class="thread-turn"><div class="thread-art skeleton"></div></div></div></section>'}else{flow='<div class="studio-empty"><strong>放映单还没回来</strong><span>你可以直接说一句想看的，我从片名开始找。</span><button class="primary" onclick="loadHome()">重新排片</button></div>'}
+	if(S.assistantBusy){flow='<section class="screening-flow" aria-busy="true" aria-live="polite"><div class="screening-response"><p>正在从片库里收窄选择。</p></div><div class="screening-scene skeleton"></div></section>'}else if(S.assistantReply){const assistantItems=S.assistantItems.map(safeAssistantItem).filter(Boolean).slice(0,6),assistantSuggestions=S.assistantSuggestions.filter(x=>typeof x==='string'&&x.trim()).slice(0,4);flow='<section class="screening-flow" aria-label="YiMao 选片结果" aria-live="polite"><div class="screening-response"><p>'+esc(S.assistantReply)+'</p></div>'+(assistantSuggestions.length?'<div class="assistant-suggestions">'+assistantSuggestions.map(s=>'<button data-query="'+esc(s)+'" onclick="assistantQuick(this.dataset.query)">'+esc(s)+'</button>').join('')+'</div>':'')+(assistantItems.length?'<div class="grid assistant-results">'+assistantItems.map(card).join('')+'</div>':'<div class="empty assistant-empty"><strong>暂时没找到完全匹配的作品</strong><span>换个说法，我再找一轮。</span></div>')+'</section>'}else if(lead){const other=picks.filter(x=>mediaIdentity(x)!==mediaIdentity(lead));flow='<section class="screening-flow" aria-label="YiMao 推荐片单"><div class="screening-response"><p>我先开一场。第一部稳一点，后面几部把口味慢慢拉开。</p></div><button class="screening-scene" aria-label="打开 '+esc(title(lead))+'" onclick="openDetail('+Number(id(lead))+',\''+leadType+'\','+Number(lead.season||0)+')">'+screeningMedia(lead)+'<span class="scene-caption"><small>今晚先看这部</small><strong>'+esc(title(lead))+'</strong><span>'+esc(leadMeta)+'</span></span></button><div class="film-thread">'+other.slice(0,6).map((item,index)=>screeningTurn(item,{label:index===0?'换个气口':index===1?'再大胆一点':'顺着这条线',hint:index%2?'口碑不错':'适合接着看',wide:index===2||index===5})).join('')+'</div></section>'}else if(S.discoverLoading){flow='<div class="home-loading" aria-busy="true" aria-label="正在排片"><i></i>正在翻片库…</div>'}else{flow=''}
 	const tools='<div class="tool-list studio-tools" aria-label="更多找片方式"><button class="tool-row" onclick="goAdventure()"><span class="tool-glyph">'+icons.game+'</span><span><strong>电影大冒险</strong><small>玩一段剧情，再决定求哪部</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goWishes()"><span class="tool-glyph">'+icons.wish+'</span><span><strong>许愿池</strong><small>暂时没源的，放这里继续等</small></span><span class="tool-arrow">›</span></button><button class="tool-row" onclick="goIssues()"><span class="tool-glyph">'+icons.message+'</span><span><strong>问题反馈</strong><small>播放或求片不对劲，直接告诉我</small></span><span class="tool-arrow">›</span></button></div>';
 	return '<div class="home-studio">'+composer+'<div>'+coreActions()+homePulse()+homeDiscoverError()+flow+recentSection()+dynamicSections()+tools+'</div></div>';
 }
