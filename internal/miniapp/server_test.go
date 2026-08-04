@@ -3,6 +3,7 @@ package miniapp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,18 @@ import (
 )
 
 const miniAppTestToken = "123456:TEST_TOKEN_FOR_UNIT_TEST_ONLY"
+
+type requestSubmitterFunc func(services.RequestSubmission) (services.SubmissionResult, error)
+
+func (f requestSubmitterFunc) SubmitResult(input services.RequestSubmission) (services.SubmissionResult, error) {
+	return f(input)
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func signedRequest(t *testing.T, method, target, body string, userID int64) *http.Request {
 	t.Helper()
@@ -78,6 +91,32 @@ func TestSearchResultsExposeCanonicalMediaType(t *testing.T) {
 	}
 	if results[1].Type != "movie" {
 		t.Fatalf("movie result must keep the TMDB movie namespace, got type=%q", results[1].Type)
+	}
+}
+
+func TestSearchWithoutTypeCanonicalizesAndRejectsUnknownUpstreamTypes(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode([]services.SearchResult{
+			{ID: 271413, Title: "完美世界剧场版", Type: " 电视剧 "},
+			{ID: 999999, Title: "未知类型", Type: "UNKNOWN"},
+		})
+	}))
+	defer upstream.Close()
+
+	mp := services.NewMoviePilotClient(upstream.URL, "test", "")
+	handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: mp}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodGet, "/api/miniapp/v1/search?q=test", "", 101))
+
+	var payload searchResponseView
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode search response: %v body=%s", err, response.Body.String())
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if len(payload.Results) != 1 || payload.Results[0].ID != 271413 || payload.Results[0].Type != "tv" {
+		t.Fatalf("unexpected canonical search results: %+v", payload.Results)
 	}
 }
 
@@ -181,6 +220,99 @@ func TestProgressMPCompleteIsNotLibraryComplete(t *testing.T) {
 	handler.ServeHTTP(owner, signedRequest(t, http.MethodGet, "/api/miniapp/v1/progress?request_id=mp-done", "", 101))
 	if owner.Code != http.StatusOK || !strings.Contains(owner.Body.String(), `"code":"download_complete"`) || strings.Contains(owner.Body.String(), `"code":"completed"`) {
 		t.Fatalf("MP completion mislabeled: status=%d body=%s", owner.Code, owner.Body.String())
+	}
+}
+
+func TestRequestHandlerSubmissionStatusContract(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/Users/test-user/Items":
+			_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 0, "Items": []any{}})
+		case "/3/movie/42":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": 42, "title": "测试电影", "release_date": "2026-01-01"})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	originalTransport := http.DefaultTransport
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	http.DefaultTransport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host != "api.themoviedb.org" {
+			return originalTransport.RoundTrip(request)
+		}
+		clone := request.Clone(request.Context())
+		clone.URL.Scheme = upstreamURL.Scheme
+		clone.URL.Host = upstreamURL.Host
+		return originalTransport.RoundTrip(clone)
+	})
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	moviePilot := services.NewMoviePilotClient(upstream.URL, "test", "")
+	moviePilot.SetEmbyConfig(upstream.URL, "test")
+	moviePilot.SetEmbyUserID("test-user")
+	tmdb := services.NewTMDBClient("test")
+
+	internalErr := errors.New("sensitive storage details")
+	tests := []struct {
+		name        string
+		result      services.SubmissionResult
+		err         error
+		wantStatus  int
+		wantOK      bool
+		wantResult  services.SubmissionStatus
+		wantMessage string
+		wantID      string
+	}{
+		{name: "quota exceeded", result: services.SubmissionResult{Status: services.SubmissionQuotaExceeded}, err: errors.Join(services.ErrQuotaExceeded, internalErr), wantStatus: http.StatusTooManyRequests, wantResult: services.SubmissionQuotaExceeded, wantMessage: "今日求片次数已用完"},
+		{name: "not bound", result: services.SubmissionResult{Status: services.SubmissionNotBound}, wantStatus: http.StatusForbidden, wantResult: services.SubmissionNotBound, wantMessage: "需要绑定账号"},
+		{name: "explicit failed", result: services.SubmissionResult{Status: services.SubmissionFailed}, err: internalErr, wantStatus: http.StatusBadGateway, wantResult: services.SubmissionFailed, wantMessage: "提交失败，请稍后再试"},
+		{name: "unexpected error", err: internalErr, wantStatus: http.StatusBadGateway, wantResult: services.SubmissionFailed, wantMessage: "提交失败，请稍后再试"},
+		{name: "unknown status", result: services.SubmissionResult{Status: "unexpected"}, wantStatus: http.StatusBadGateway, wantResult: services.SubmissionFailed, wantMessage: "提交失败，请稍后再试"},
+		{name: "created", result: services.SubmissionResult{Status: services.SubmissionCreated, Review: &services.ReviewRequest{RequestID: "new-request"}}, wantStatus: http.StatusCreated, wantOK: true, wantResult: services.SubmissionCreated, wantID: "new-request"},
+		{name: "duplicate own", result: services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: &services.ReviewRequest{RequestID: "existing-own"}}, wantStatus: http.StatusOK, wantOK: true, wantResult: services.SubmissionDuplicateOwn, wantID: "existing-own"},
+		{name: "duplicate other", result: services.SubmissionResult{Status: services.SubmissionDuplicateOther, Review: &services.ReviewRequest{RequestID: "existing-other"}}, wantStatus: http.StatusOK, wantOK: true, wantResult: services.SubmissionDuplicateOther},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			called := false
+			submission := requestSubmitterFunc(func(input services.RequestSubmission) (services.SubmissionResult, error) {
+				called = true
+				if input.TmdbID != 42 || input.MediaType != services.MediaTypeMovie || !input.UseQuota {
+					t.Fatalf("unexpected submission input: %+v", input)
+				}
+				return tt.result, tt.err
+			})
+			handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: moviePilot, TMDB: tmdb, Submission: submission}).Handler()
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, signedRequest(t, http.MethodPost, "/api/miniapp/v1/request", `{"tmdb_id":42,"type":"movie","season":0}`, 101))
+
+			var payload struct {
+				OK        bool                      `json:"ok"`
+				Status    services.SubmissionStatus `json:"status"`
+				RequestID string                    `json:"request_id"`
+				Message   string                    `json:"message"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode submission response: %v body=%s", err, response.Body.String())
+			}
+			if !called {
+				t.Fatal("submission service was not called")
+			}
+			if response.Code != tt.wantStatus || payload.OK != tt.wantOK || payload.Status != tt.wantResult || payload.Message != tt.wantMessage {
+				t.Fatalf("http=%d payload=%+v want_http=%d want_ok=%v want_status=%s want_message=%q", response.Code, payload, tt.wantStatus, tt.wantOK, tt.wantResult, tt.wantMessage)
+			}
+			if strings.Contains(response.Body.String(), internalErr.Error()) {
+				t.Fatalf("response exposed internal error: %s", response.Body.String())
+			}
+			if payload.RequestID != tt.wantID {
+				t.Fatalf("request_id=%q want %q", payload.RequestID, tt.wantID)
+			}
+		})
 	}
 }
 

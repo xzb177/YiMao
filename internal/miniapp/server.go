@@ -29,7 +29,7 @@ type Deps struct {
 	Reviews    *services.ReviewService
 	Quota      *services.QuotaService
 	Carpool    *services.CarpoolService
-	Submission *services.RequestSubmissionService
+	Submission requestSubmitter
 	Webhook    *services.WebhookService
 	Issues     *services.IssueService
 	Wishes     *services.WishService
@@ -38,6 +38,10 @@ type Deps struct {
 	Admins     *services.AdminService
 	Assistant  *services.MiniAppAssistant
 	MaxAuthAge time.Duration
+}
+
+type requestSubmitter interface {
+	SubmitResult(services.RequestSubmission) (services.SubmissionResult, error)
 }
 
 type Server struct {
@@ -719,28 +723,39 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	normalizeSearchResultTypes(response.Results)
+	response.Results = normalizeSearchResultTypes(response.Results)
 	writeJSON(w, http.StatusOK, response)
 }
 
-func normalizeSearchResultTypes(results []services.SearchResult) {
-	for i := range results {
-		switch results[i].Type {
-		case "电视剧", "tv":
-			results[i].Type = "tv"
-		case "电影", "movie":
-			results[i].Type = "movie"
-		}
+func canonicalSearchResultType(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "电视剧", "tv":
+		return "tv", true
+	case "电影", "movie":
+		return "movie", true
+	default:
+		return "", false
 	}
+}
+
+func normalizeSearchResultTypes(results []services.SearchResult) []services.SearchResult {
+	normalized := results[:0]
+	for _, result := range results {
+		mediaType, ok := canonicalSearchResultType(result.Type)
+		if !ok {
+			continue
+		}
+		result.Type = mediaType
+		normalized = append(normalized, result)
+	}
+	return normalized
 }
 
 func filterSearchResults(results []services.SearchResult, typeName string) []services.SearchResult {
 	filtered := make([]services.SearchResult, 0, len(results))
 	for _, item := range results {
-		if typeName == "movie" && (item.Type == "电影" || item.Type == "movie") {
-			filtered = append(filtered, item)
-		}
-		if typeName == "tv" && (item.Type == "电视剧" || item.Type == "tv") {
+		mediaType, ok := canonicalSearchResultType(item.Type)
+		if ok && mediaType == typeName {
 			filtered = append(filtered, item)
 		}
 	}
@@ -1038,6 +1053,38 @@ func (s *Server) handleProgress(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"request_id": review.RequestID, "events": events})
 }
 
+func writeRequestSubmissionResult(w http.ResponseWriter, result services.SubmissionResult, err error) {
+	writeFailed := func() {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"ok": false, "status": services.SubmissionFailed, "message": "提交失败，请稍后再试"})
+	}
+	if err != nil && result.Status != services.SubmissionQuotaExceeded {
+		writeFailed()
+		return
+	}
+	switch result.Status {
+	case services.SubmissionQuotaExceeded:
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"ok": false, "status": result.Status, "message": "今日求片次数已用完"})
+	case services.SubmissionNotBound:
+		writeJSON(w, http.StatusForbidden, map[string]any{"ok": false, "status": result.Status, "message": "需要绑定账号"})
+	case services.SubmissionCreated, services.SubmissionDuplicateOwn:
+		if result.Review == nil || result.Review.RequestID == "" {
+			writeFailed()
+			return
+		}
+		statusCode := http.StatusOK
+		if result.Status == services.SubmissionCreated {
+			statusCode = http.StatusCreated
+		}
+		writeJSON(w, statusCode, map[string]any{"ok": true, "status": result.Status, "request_id": result.Review.RequestID})
+	case services.SubmissionDuplicateOther:
+		// An active request owned by another user is enough to report the
+		// deduplicated state, but its private request ID must not cross users.
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": result.Status})
+	default:
+		writeFailed()
+	}
+}
+
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.auth(w, r)
 	if !ok {
@@ -1138,15 +1185,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		MediaType: mediaType, Season: body.Season, PosterPath: posterPath, Overview: overview,
 		Origin: "miniapp", UseQuota: true,
 	})
-	if err != nil {
-		http.Error(w, "提交失败，请稍后再试", http.StatusBadGateway)
-		return
-	}
-	requestID := ""
-	if result.Review != nil {
-		requestID = result.Review.RequestID
-	}
-	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": result.Status, "request_id": requestID})
+	writeRequestSubmissionResult(w, result, err)
 }
 
 func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {

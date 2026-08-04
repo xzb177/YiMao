@@ -283,6 +283,19 @@ func TestV11SubmissionUsesPersistentResultInsteadOfToastOnly(t *testing.T) {
 	)
 }
 
+func TestRequestSubmissionPreservesStructuredFailureStates(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"constructor(message,status=0,body=null)",
+		"this.body=body",
+		"throw new APIError(message,response.status,body)",
+		"error?.body?.status",
+		"showSubmissionResult(error.body,'request')",
+		"status==='created'?'success'",
+		"status.startsWith('duplicate_')?'warning':'error'",
+	)
+}
+
 func TestDialogTimelineAndMutationContractsRemain(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
