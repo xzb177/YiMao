@@ -283,16 +283,67 @@ func TestV11SubmissionUsesPersistentResultInsteadOfToastOnly(t *testing.T) {
 	)
 }
 
-func TestRequestSubmissionPreservesStructuredFailureStates(t *testing.T) {
+func TestRequestSubmissionKeepsAPIErrorsPublic(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
 		"constructor(message,status=0,body=null)",
 		"this.body=body",
 		"throw new APIError(message,response.status,body)",
-		"error?.body?.status",
-		"showSubmissionResult(error.body,'request')",
+		"typeof body?.message==='string'?body.message",
 		"status==='created'?'success'",
 		"status.startsWith('duplicate_')?'warning':'error'",
+	)
+}
+
+func TestRequestSubmissionFailureAlwaysHasPersistentRecoverableResult(t *testing.T) {
+	html := miniAppSource(t)
+	requestStart := strings.Index(html, "async function submitRequest(button)")
+	washStart := strings.Index(html, "async function submitWash(button)")
+	resultStart := strings.Index(html, "function showSubmissionResult(result,businessType)")
+	resultEnd := strings.Index(html, "function viewSubmittedTasks()")
+	if requestStart < 0 || washStart <= requestStart || resultStart < 0 || resultEnd <= resultStart {
+		t.Fatal("未找到求片提交或结果对话框边界")
+	}
+
+	request := html[requestStart:washStart]
+	requireSource(t, request,
+		"if(error?.name==='AbortError'||!isCurrentDialog(ctx.seq))return",
+		"const failure=requestFailureResult(error)",
+		"showSubmissionResult(failure,'request')",
+	)
+	rejectSource(t, request,
+		"toast(",
+		"showSubmissionResult(error.body,'request')",
+	)
+
+	requireSource(t, html,
+		"function requestFailureResult(error)",
+		"['not_bound','quota_exceeded','in_library','upcoming','unknown','failed'].includes(bodyStatus)",
+		"status:Number(error?.status)===401?'failed':knownStatus",
+		"Number(error?.status)===401?'身份验证已失效，请重新打开 Mini App'",
+		"retryable:Number(error?.status)!==401",
+	)
+
+	result := html[resultStart:resultEnd]
+	requireSource(t, result,
+		"const message=typeof result.message==='string'?result.message:''",
+		"wash?String(result.request_id??''):typeof result.request_id==='string'?result.request_id:''",
+		"['created','duplicate_own'].includes(status)",
+		"/^[A-Za-z0-9_-]{1,128}$/.test(rawRequestID)",
+		`class="submission-identity${status==='failed'?' submission-failed':''}"`,
+		"${message?`<p class=\"submission-message\">${esc(message)}</p>`:''}",
+		"!wash&&status==='failed'&&result.retryable!==false?'<button class=\"primary\" onclick=\"openRequestConfirm()\">重试</button>':''",
+		"<button class=\"secondary\" onclick=\"continueFinding()\">继续找片</button>",
+	)
+	rejectSource(t, result,
+		"const requestID=String(result.request_id??'')",
+	)
+
+	requireSource(t, html,
+		"if(status==='failed')return label+'提交失败'",
+		".submission-identity.submission-failed{border-color:var(--bad);background:rgba(255,129,117,.08)}",
+		"async function submitWash(button)",
+		"toast(error.message||'洗版失败')",
 	)
 }
 
