@@ -138,6 +138,7 @@ func TestSearchIsGroupedAndStatusDriven(t *testing.T) {
 		"original_title",
 		"genres",
 		"media_status",
+		"x?.status?.code||'unknown'",
 		"function detailPrimaryAction(x)",
 		"求这部",
 		"选择季",

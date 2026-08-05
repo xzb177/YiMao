@@ -1491,15 +1491,23 @@ func (c *MoviePilotClient) SetRetryConfig(cfg *RetryConfig) {
 	c.retryConfig = cfg
 }
 
-func (c *MoviePilotClient) resolveEmbyUserID(embyBaseURL string) (string, error) {
+func (c *MoviePilotClient) resolveEmbyUserID(ctx context.Context, embyBaseURL string) (string, error) {
+	c.embyUserMu.Lock()
+	if c.embyUserID != "" {
+		uid := c.embyUserID
+		c.embyUserMu.Unlock()
+		return uid, nil
+	}
+	c.embyUserMu.Unlock()
+
+	uid, err := c.getEmbyFirstUserID(ctx, embyBaseURL)
+	if err != nil {
+		return "", err
+	}
 	c.embyUserMu.Lock()
 	defer c.embyUserMu.Unlock()
 	if c.embyUserID != "" {
 		return c.embyUserID, nil
-	}
-	uid, err := c.getEmbyFirstUserID(embyBaseURL)
-	if err != nil {
-		return "", err
 	}
 	c.embyUserID = uid
 	return uid, nil
@@ -1508,6 +1516,12 @@ func (c *MoviePilotClient) resolveEmbyUserID(embyBaseURL string) (string, error)
 // EmbyMediaAvailabilityByTMDB checks Emby by the exact TMDB provider ID.
 // This avoids title/year fuzzy matches from overstating availability.
 func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType MediaType) (bool, error) {
+	return c.EmbyMediaAvailabilityByTMDBContext(context.Background(), tmdbID, mediaType)
+}
+
+// EmbyMediaAvailabilityByTMDBContext is the request-scoped variant used by
+// interactive clients so abandoned searches stop their Emby lookups.
+func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDBContext(ctx context.Context, tmdbID int, mediaType MediaType) (bool, error) {
 	if tmdbID <= 0 {
 		return false, fmt.Errorf("invalid TMDB ID")
 	}
@@ -1515,7 +1529,7 @@ func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType Med
 		return false, fmt.Errorf("Emby availability is not configured")
 	}
 	embyBaseURL := strings.TrimRight(c.embyURL, "/")
-	embyUserID, err := c.resolveEmbyUserID(embyBaseURL)
+	embyUserID, err := c.resolveEmbyUserID(ctx, embyBaseURL)
 	if err != nil {
 		return false, fmt.Errorf("cannot resolve Emby user: %w", err)
 	}
@@ -1529,7 +1543,7 @@ func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType Med
 	values.Set("Recursive", "true")
 	values.Set("Limit", "1")
 	itemsURL := fmt.Sprintf("%s/Users/%s/Items?%s", embyBaseURL, url.PathEscape(embyUserID), values.Encode())
-	req, err := http.NewRequest(http.MethodGet, itemsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, itemsURL, nil)
 	if err != nil {
 		return false, err
 	}
@@ -1545,12 +1559,26 @@ func (c *MoviePilotClient) EmbyMediaAvailabilityByTMDB(tmdbID int, mediaType Med
 		return false, fmt.Errorf("Emby items API returned status %d", resp.StatusCode)
 	}
 	var result struct {
-		TotalRecordCount int `json:"TotalRecordCount"`
+		Items []struct {
+			ID string `json:"Id"`
+		} `json:"Items"`
+		TotalRecordCount *int `json:"TotalRecordCount"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxResponseBodySize)).Decode(&result); err != nil {
 		return false, err
 	}
-	return result.TotalRecordCount > 0, nil
+	if result.TotalRecordCount == nil || *result.TotalRecordCount < 0 {
+		return false, fmt.Errorf("Emby items API returned missing or invalid TotalRecordCount")
+	}
+	if len(result.Items) != *result.TotalRecordCount {
+		return false, fmt.Errorf("Emby items API returned incomplete result: got %d of %d", len(result.Items), *result.TotalRecordCount)
+	}
+	for _, item := range result.Items {
+		if strings.TrimSpace(item.ID) == "" {
+			return false, fmt.Errorf("Emby items API returned invalid item identity")
+		}
+	}
+	return *result.TotalRecordCount > 0, nil
 }
 
 type EmbyPublicMedia struct {
@@ -1570,7 +1598,7 @@ func (c *MoviePilotClient) EmbyRecentlyAdded(limit int) ([]EmbyPublicMedia, erro
 		return nil, fmt.Errorf("Emby availability is not configured")
 	}
 	base := strings.TrimRight(c.embyURL, "/")
-	userID, err := c.resolveEmbyUserID(base)
+	userID, err := c.resolveEmbyUserID(context.Background(), base)
 	if err != nil {
 		return nil, err
 	}
@@ -1623,7 +1651,7 @@ func (c *MoviePilotClient) EmbyAvailableSeasonsByTMDB(tmdbID int) (map[int]bool,
 		return nil, fmt.Errorf("invalid or unconfigured Emby season lookup")
 	}
 	base := strings.TrimRight(c.embyURL, "/")
-	userID, err := c.resolveEmbyUserID(base)
+	userID, err := c.resolveEmbyUserID(context.Background(), base)
 	if err != nil {
 		return nil, err
 	}
@@ -1636,13 +1664,23 @@ func (c *MoviePilotClient) EmbyAvailableSeasonsByTMDB(tmdbID int) (map[int]bool,
 		Items []struct {
 			ID string `json:"Id"`
 		} `json:"Items"`
+		TotalRecordCount *int `json:"TotalRecordCount"`
 	}
 	if err := c.embyGetJSON(fmt.Sprintf("%s/Users/%s/Items?%s", base, url.PathEscape(userID), values.Encode()), &series); err != nil {
 		return nil, err
 	}
+	if series.TotalRecordCount == nil || *series.TotalRecordCount < 0 {
+		return nil, fmt.Errorf("Emby series result missing or invalid TotalRecordCount")
+	}
+	if *series.TotalRecordCount != len(series.Items) {
+		return nil, fmt.Errorf("Emby series result truncated: got %d of %d", len(series.Items), *series.TotalRecordCount)
+	}
 	result := map[int]bool{}
-	if len(series.Items) == 0 || series.Items[0].ID == "" {
+	if len(series.Items) == 0 {
 		return result, nil
+	}
+	if len(series.Items) != 1 || strings.TrimSpace(series.Items[0].ID) == "" {
+		return nil, fmt.Errorf("Emby series result contains invalid item identity")
 	}
 	seasonValues := url.Values{}
 	seasonValues.Set("ParentId", series.Items[0].ID)
@@ -1652,19 +1690,25 @@ func (c *MoviePilotClient) EmbyAvailableSeasonsByTMDB(tmdbID int) (map[int]bool,
 	seasonValues.Set("Limit", "10000")
 	var seasons struct {
 		Items []struct {
-			IndexNumber int `json:"IndexNumber"`
+			IndexNumber *int `json:"IndexNumber"`
 		} `json:"Items"`
-		TotalRecordCount int `json:"TotalRecordCount"`
+		TotalRecordCount *int `json:"TotalRecordCount"`
 	}
 	if err := c.embyGetJSON(fmt.Sprintf("%s/Users/%s/Items?%s", base, url.PathEscape(userID), seasonValues.Encode()), &seasons); err != nil {
 		return nil, err
 	}
-	if seasons.TotalRecordCount > len(seasons.Items) {
-		return nil, fmt.Errorf("Emby season result truncated: got %d of %d", len(seasons.Items), seasons.TotalRecordCount)
+	if seasons.TotalRecordCount == nil || *seasons.TotalRecordCount < 0 {
+		return nil, fmt.Errorf("Emby season result missing or invalid TotalRecordCount")
+	}
+	if *seasons.TotalRecordCount != len(seasons.Items) {
+		return nil, fmt.Errorf("Emby season result truncated: got %d of %d", len(seasons.Items), *seasons.TotalRecordCount)
 	}
 	for _, item := range seasons.Items {
-		if item.IndexNumber > 0 {
-			result[item.IndexNumber] = true
+		if item.IndexNumber == nil || *item.IndexNumber < 0 {
+			return nil, fmt.Errorf("Emby season result contains invalid IndexNumber")
+		}
+		if *item.IndexNumber > 0 {
+			result[*item.IndexNumber] = true
 		}
 	}
 	return result, nil
@@ -1724,7 +1768,7 @@ func (c *MoviePilotClient) EmbyMediaAvailability(name string, year string, media
 	embyUserID := c.embyUserID
 	if embyUserID == "" {
 		// Fallback: try to get the first admin user from Emby
-		if uid, err := c.getEmbyFirstUserID(embyBaseURL); err == nil {
+		if uid, err := c.getEmbyFirstUserID(context.Background(), embyBaseURL); err == nil {
 			embyUserID = uid
 		} else {
 			logger.Debug("[MoviePilot] EmbyMediaAvailability: no user ID configured and cannot discover one: %v", err)
@@ -1831,9 +1875,9 @@ func (c *MoviePilotClient) EmbyMediaExists(name string, year string, mediaType M
 
 // getEmbyFirstUserID fetches the first admin user ID from Emby.
 // Used as a fallback when embyUserID is not configured.
-func (c *MoviePilotClient) getEmbyFirstUserID(embyBaseURL string) (string, error) {
+func (c *MoviePilotClient) getEmbyFirstUserID(ctx context.Context, embyBaseURL string) (string, error) {
 	usersURL := embyBaseURL + "/Users?IsDisabled=false"
-	req, err := http.NewRequest("GET", usersURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, usersURL, nil)
 	if err != nil {
 		return "", err
 	}

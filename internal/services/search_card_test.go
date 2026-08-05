@@ -326,7 +326,7 @@ func TestEmbyUserDiscoveryPrefersNestedAdminAndCaches(t *testing.T) {
 			calls++
 			_, _ = w.Write([]byte(`[{"Id":"limited","Policy":{"IsAdministrator":false}},{"Id":"admin","Policy":{"IsAdministrator":true}}]`))
 		case "/Users/admin/Items":
-			_, _ = w.Write([]byte(`{"TotalRecordCount":1}`))
+			_, _ = w.Write([]byte(`{"TotalRecordCount":1,"Items":[{"Id":"media-1"}]}`))
 		default:
 			http.NotFound(w, r)
 		}

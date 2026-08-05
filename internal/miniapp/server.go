@@ -1,6 +1,7 @@
 package miniapp
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -168,11 +169,16 @@ const (
 )
 
 type searchResponseView struct {
-	Results  []services.SearchResult `json:"results"`
-	Page     int                     `json:"page"`
-	Limit    int                     `json:"limit"`
-	HasMore  bool                    `json:"has_more"`
-	NextPage int                     `json:"next_page,omitempty"`
+	Results  []searchResultView `json:"results"`
+	Page     int                `json:"page"`
+	Limit    int                `json:"limit"`
+	HasMore  bool               `json:"has_more"`
+	NextPage int                `json:"next_page,omitempty"`
+}
+
+type searchResultView struct {
+	services.SearchResult
+	Status detailStatus `json:"media_status"`
 }
 
 func NewServer(deps Deps) *Server {
@@ -390,6 +396,9 @@ func (s *Server) handleTelegramSDK(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
+	if r.Method == http.MethodHead {
+		return
+	}
 	_, _ = w.Write(data)
 }
 
@@ -690,7 +699,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	} else if limit > maxSearchLimit {
 		limit = maxSearchLimit
 	}
-	response := searchResponseView{Results: []services.SearchResult{}, Page: page, Limit: limit}
+	response := searchResponseView{Results: []searchResultView{}, Page: page, Limit: limit}
 	if query == "" {
 		writeJSON(w, http.StatusOK, response)
 		return
@@ -711,8 +720,6 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	} else {
 		typeName = ""
 	}
-	response.Results = result.Results
-
 	// A client page remains one upstream page. For typed searches, look ahead a
 	// bounded number of pages and point the cursor at the next page that actually
 	// contains the requested type, so "load more" never leads to a known-empty
@@ -746,8 +753,48 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	response.Results = normalizeSearchResultTypes(response.Results)
+	response.Results = s.searchResultViews(r.Context(), normalizeSearchResultTypes(result.Results))
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) searchResultViews(ctx context.Context, results []services.SearchResult) []searchResultView {
+	views := make([]searchResultView, len(results))
+	semaphore := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, result := range results {
+		views[i] = searchResultView{
+			SearchResult: result,
+			Status:       detailStatus{Code: "unknown", Text: "选择季后确认状态"},
+		}
+		if result.Type != "movie" {
+			continue
+		}
+		views[i].Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
+		if s.deps.MoviePilot == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(index int, tmdbID int) {
+			defer wg.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				return
+			}
+			exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(ctx, tmdbID, services.MediaTypeMovie)
+			if err != nil || ctx.Err() != nil {
+				return
+			}
+			if exists {
+				views[index].Status = detailStatus{Code: "in_library", Text: "库中可看"}
+				return
+			}
+			views[index].Status = detailStatus{Code: "available", Text: "可以求片"}
+		}(i, result.ID)
+	}
+	wg.Wait()
+	return views
 }
 
 func canonicalSearchResultType(value string) (string, bool) {
@@ -814,6 +861,9 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view := detailResponse{ID: id, Type: kind, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	if kind == "tv" && season <= 0 {
+		view.Status = detailStatus{Code: "unknown", Text: "选择季后确认状态"}
+	}
 	wishJoined := false
 	if s.deps.Carpool != nil {
 		view.InWatchlist = s.deps.Carpool.Contains(id, kind, user.ID)
@@ -881,7 +931,7 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 		view.Year = view.ReleaseDate[:4]
 	}
 	if mediaType == services.MediaTypeMovie {
-		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDB(id, mediaType)
+		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(r.Context(), id, mediaType)
 		if err != nil {
 			view.Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
 		} else if exists {
@@ -895,6 +945,9 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if season > 0 {
+		if !wishJoined {
+			view.Status = detailStatus{Code: "unknown", Text: "季状态暂时无法确认"}
+		}
 		for _, item := range view.Seasons {
 			if item.Number == season {
 				if !wishJoined {

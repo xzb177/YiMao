@@ -114,7 +114,7 @@ function rememberSearch(query){const value=String(query??'').trim();if(!value)re
 function repeatRecentSearch(element){const query=String(element?.dataset?.query||'').trim();if(!query)return;S.query=query;S.view='search';S.results=[];S.searchError='';render();searchNow(false)}
 function taskCompact(item){const id=Number(item.tmdb_id);const type=mediaType(item);return `<button class="active-item" data-mid="${Number.isFinite(id)&&id>0?id:0}" data-type="${type}" data-season="${Number(item.season)||0}" onclick="openMediaFromElement(this)">${poster(item)?`<img class="poster" src="${esc(poster(item))}" alt="">`:'<span class="poster"></span>'}<span><strong>${esc(mediaTitle(item))}</strong><small>${item.business_type==='wash'?'洗版任务':'求片任务'} · ${esc(item.status_text||taskNext(item))}</small></span><em class="status-text">看进度</em></button>`}
 function groupedSearchResults(items){const groups={movie:[],tv:[]};for(const item of Array.isArray(items)?items:[]){const kind=mediaType(item);if(groups[kind])groups[kind].push(item)}return groups}
-function statusCode(x){return String(x?.media_status?.code||x?.status?.code||'available')}
+function statusCode(x){return String(x?.media_status?.code||x?.status?.code||'unknown')}
 function detailPrimaryAction(x){const status=statusCode(x);if(status==='in_library')return'已在库中 · 洗版';if(status==='requested'||status==='subscribed')return'查看进度';if(status==='unknown')return'状态待确认';return x.type==='tv'?'选择季':'求这部'}
 function resultButton(x){const mt=mediaType(x),id=Number(mediaID(x));if(!Number.isFinite(id)||id<=0)return'';return `<span class="result-action">${esc(detailPrimaryAction(x))}</span>`}
 function resultStatus(x){return `<span class="status-pill">${esc(x?.media_status?.text||'状态待确认')}</span>`}

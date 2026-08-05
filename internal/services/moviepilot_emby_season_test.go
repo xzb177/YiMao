@@ -23,11 +23,11 @@ func TestEmbyMediaAvailabilityByTMDBSeason(t *testing.T) {
 					t.Fatalf("missing Emby token")
 				}
 				if r.URL.Query().Get("AnyProviderIdEquals") == "tmdb.123" {
-					_ = json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"Id": "series-1"}}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"Id": "series-1"}}, "TotalRecordCount": 1})
 					return
 				}
 				if r.URL.Query().Get("ParentId") == "series-1" {
-					_ = json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"IndexNumber": 1}, {"IndexNumber": 2}}})
+					_ = json.NewEncoder(w).Encode(map[string]any{"Items": []map[string]any{{"IndexNumber": 1}, {"IndexNumber": 2}}, "TotalRecordCount": 2})
 					return
 				}
 				http.Error(w, "unexpected request", http.StatusBadRequest)

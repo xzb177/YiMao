@@ -44,7 +44,13 @@ func (l *tmdbRequestLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/3/movie/271413":
 		_ = json.NewEncoder(w).Encode(map[string]string{"title": "test movie"})
 	case "/3/tv/271413":
-		_ = json.NewEncoder(w).Encode(map[string]string{"name": "test tv"})
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name":           "test tv",
+			"first_air_date": "2026-01-01",
+			"seasons": []map[string]any{
+				{"season_number": 1, "episode_count": 8, "name": "第 1 季", "air_date": "2026-01-01"},
+			},
+		})
 	default:
 		http.NotFound(w, r)
 	}
@@ -168,6 +174,136 @@ func TestSearchWithoutTypeCanonicalizesAndRejectsUnknownUpstreamTypes(t *testing
 	}
 	if len(payload.Results) != 1 || payload.Results[0].ID != 271413 || payload.Results[0].Type != "tv" {
 		t.Fatalf("unexpected canonical search results: %+v", payload.Results)
+	}
+}
+
+func TestSearchUsesExactEmbyAvailabilityStatus(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/media/search":
+			_ = json.NewEncoder(w).Encode([]services.SearchResult{
+				{ID: 101, Title: "库中电影", Type: "电影"},
+				{ID: 202, Title: "可求电影", Type: "movie"},
+				{ID: 303, Title: "状态未知电影", Type: "电影"},
+				{ID: 404, Title: "剧集", Type: "电视剧"},
+				{ID: 505, Title: "响应不完整电影", Type: "电影"},
+			})
+		case "/Users/test-user/Items":
+			tmdbID := r.URL.Query().Get("AnyProviderIdEquals")
+			if got := r.URL.Query().Get("IncludeItemTypes"); got != "Movie" {
+				t.Fatalf("unexpected Emby media type: %q", got)
+			}
+			switch tmdbID {
+			case "tmdb.101":
+				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 1, "Items": []map[string]any{{"Id": "movie-101"}}})
+			case "tmdb.202":
+				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 0})
+			case "tmdb.303":
+				http.Error(w, "unavailable", http.StatusBadGateway)
+			case "tmdb.505":
+				_ = json.NewEncoder(w).Encode(map[string]any{})
+			default:
+				t.Fatalf("unexpected Emby lookup: %q", tmdbID)
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	mp := services.NewMoviePilotClient(upstream.URL, "test", "")
+	mp.SetEmbyConfig(upstream.URL, "test")
+	mp.SetEmbyUserID("test-user")
+	handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: mp}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodGet, "/api/miniapp/v1/search?q=test&limit=12", "", 101))
+
+	var payload struct {
+		Results []struct {
+			ID     int          `json:"tmdb_id"`
+			Type   string       `json:"type"`
+			Status detailStatus `json:"media_status"`
+		} `json:"results"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode search response: %v body=%s", err, response.Body.String())
+	}
+	if response.Code != http.StatusOK || len(payload.Results) != 5 {
+		t.Fatalf("unexpected search response: status=%d body=%s", response.Code, response.Body.String())
+	}
+	wants := []detailStatus{
+		{Code: "in_library", Text: "库中可看"},
+		{Code: "available", Text: "可以求片"},
+		{Code: "unknown", Text: "媒体库状态暂时无法确认"},
+		{Code: "unknown", Text: "选择季后确认状态"},
+		{Code: "unknown", Text: "媒体库状态暂时无法确认"},
+	}
+	for i, want := range wants {
+		if got := payload.Results[i].Status; got != want {
+			t.Errorf("result[%d] status=%+v want %+v", i, got, want)
+		}
+	}
+}
+
+func TestTVDetailWithoutSeasonFailsClosed(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/api/v1/media/"):
+			_ = json.NewEncoder(w).Encode(services.MediaInfo{
+				ID:    271413,
+				Title: "剧集",
+				SeasonInfo: []services.SeasonInfo{
+					{SeasonNumber: 1, EpisodeCount: 8, Name: "第 1 季"},
+				},
+			})
+		case r.URL.Path == "/Users/test-user/Items":
+			_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 0})
+		case r.URL.Path == "/api/v1/subscribe/":
+			_ = json.NewEncoder(w).Encode([]services.SubscribeStatus{})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	mp := services.NewMoviePilotClient(upstream.URL, "test", "")
+	mp.SetEmbyConfig(upstream.URL, "test")
+	mp.SetEmbyUserID("test-user")
+	mp.WarmupSubscriptionCache()
+	tmdb, _ := newCountingTMDBClient(t)
+	handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: mp, TMDB: tmdb}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodGet, "/api/miniapp/v1/detail?id=271413&type=tv", "", 101))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Status  detailStatus   `json:"media_status"`
+		Seasons []detailSeason `json:"seasons"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Status.Code != "unknown" {
+		t.Fatalf("status=%q, want unknown", payload.Status.Code)
+	}
+	if len(payload.Seasons) != 1 || payload.Seasons[0].Number != 1 {
+		t.Fatalf("seasons=%+v, want season 1", payload.Seasons)
+	}
+
+	invalidSeason := httptest.NewRecorder()
+	handler.ServeHTTP(invalidSeason, signedRequest(t, http.MethodGet, "/api/miniapp/v1/detail?id=271413&type=tv&season=99", "", 101))
+	if invalidSeason.Code != http.StatusOK {
+		t.Fatalf("invalid season status=%d body=%s", invalidSeason.Code, invalidSeason.Body.String())
+	}
+	var invalidPayload struct {
+		Status detailStatus `json:"media_status"`
+	}
+	if err := json.Unmarshal(invalidSeason.Body.Bytes(), &invalidPayload); err != nil {
+		t.Fatalf("decode invalid season response: %v body=%s", err, invalidSeason.Body.String())
+	}
+	if invalidPayload.Status.Code != "unknown" {
+		t.Fatalf("invalid season status=%q, want unknown", invalidPayload.Status.Code)
 	}
 }
 
