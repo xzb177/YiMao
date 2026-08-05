@@ -189,6 +189,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/miniapp", s.handleIndex)
 	mux.HandleFunc("/miniapp/", s.handleIndex)
+	mux.HandleFunc("/miniapp/telegram-web-app.js", s.handleTelegramSDK)
 	mux.HandleFunc("/api/miniapp/v1/search", s.handleSearch)
 	mux.HandleFunc("/api/miniapp/v1/assistant", s.handleAssistant)
 	mux.HandleFunc("/api/miniapp/v1/detail", s.handleDetail)
@@ -364,6 +365,28 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	_, _ = w.Write(data)
+}
+
+func (s *Server) handleTelegramSDK(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/miniapp/telegram-web-app.js" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	data, err := webFS.ReadFile("web/telegram-web-app.js")
+	if err != nil {
+		http.Error(w, "Mini App SDK unavailable", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
