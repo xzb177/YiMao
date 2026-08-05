@@ -30,6 +30,57 @@ func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, erro
 	return f(request)
 }
 
+type tmdbRequestLog struct {
+	mu    sync.Mutex
+	paths []string
+}
+
+func (l *tmdbRequestLog) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	l.mu.Lock()
+	l.paths = append(l.paths, r.URL.Path)
+	l.mu.Unlock()
+
+	switch r.URL.Path {
+	case "/3/movie/271413":
+		_ = json.NewEncoder(w).Encode(map[string]string{"title": "test movie"})
+	case "/3/tv/271413":
+		_ = json.NewEncoder(w).Encode(map[string]string{"name": "test tv"})
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func (l *tmdbRequestLog) Paths() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]string(nil), l.paths...)
+}
+
+func newCountingTMDBClient(t *testing.T) (*services.TMDBClient, *tmdbRequestLog) {
+	t.Helper()
+	requests := &tmdbRequestLog{}
+	upstream := httptest.NewServer(requests)
+	t.Cleanup(upstream.Close)
+
+	upstreamURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Host != "api.themoviedb.org" {
+			return originalTransport.RoundTrip(request)
+		}
+		clone := request.Clone(request.Context())
+		clone.URL.Scheme = upstreamURL.Scheme
+		clone.URL.Host = upstreamURL.Host
+		return originalTransport.RoundTrip(clone)
+	})
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
+	return services.NewTMDBClient("test"), requests
+}
+
 func signedRequest(t *testing.T, method, target, body string, userID int64) *http.Request {
 	t.Helper()
 	values := signedInitDataValues(userID)
@@ -134,7 +185,8 @@ func TestDetailRejectsNonGETMethods(t *testing.T) {
 }
 
 func TestDetailRejectsMissingOrUnknownMediaType(t *testing.T) {
-	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
+	tmdb, requests := newCountingTMDBClient(t)
+	handler := NewServer(Deps{BotToken: miniAppTestToken, TMDB: tmdb}).Handler()
 	for _, target := range []string{
 		"/api/miniapp/v1/detail?id=271413",
 		"/api/miniapp/v1/detail?id=271413&type=unknown",
@@ -148,17 +200,26 @@ func TestDetailRejectsMissingOrUnknownMediaType(t *testing.T) {
 			}
 		})
 	}
+	if paths := requests.Paths(); len(paths) != 0 {
+		t.Fatalf("invalid media types reached TMDB: paths=%v", paths)
+	}
 }
 
 func TestDetailAcceptsCanonicalMediaTypes(t *testing.T) {
-	handler := NewServer(Deps{BotToken: miniAppTestToken}).Handler()
 	for _, mediaType := range []string{"movie", "tv"} {
 		t.Run(mediaType, func(t *testing.T) {
+			tmdb, requests := newCountingTMDBClient(t)
+			moviePilot := services.NewMoviePilotClient("", "", "")
+			handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: moviePilot, TMDB: tmdb}).Handler()
 			response := httptest.NewRecorder()
 			target := "/api/miniapp/v1/detail?id=271413&type=" + mediaType
 			handler.ServeHTTP(response, signedRequest(t, http.MethodGet, target, "", 101))
-			if response.Code == http.StatusBadRequest {
-				t.Fatalf("canonical detail media type was rejected: type=%s body=%s", mediaType, response.Body.String())
+			if response.Code != http.StatusOK {
+				t.Fatalf("canonical detail media type failed: type=%s status=%d body=%s", mediaType, response.Code, response.Body.String())
+			}
+			wantPath := "/3/" + mediaType + "/271413"
+			if paths := requests.Paths(); len(paths) != 1 || paths[0] != wantPath {
+				t.Fatalf("TMDB paths=%v want [%s]", paths, wantPath)
 			}
 		})
 	}
