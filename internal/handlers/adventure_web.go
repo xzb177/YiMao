@@ -354,21 +354,19 @@ func (h *AdventureHandler) finishAdventureWebClaimed(userID int64, state *Advent
 
 	op := h.adventureOp(userID)
 	op.Lock()
+	defer op.Unlock()
 	if !h.adventureEpochCurrent(userID, epoch) || h.sessionMgr == nil {
-		op.Unlock()
 		return nil, ErrAdventureExpired
 	}
 	sess := h.sessionMgr.GetOrCreate(userID)
 	currentValue, ok := sess.Get("adventure_state")
 	current, ok := currentValue.(*AdventureState)
 	if !ok || current != state {
-		op.Unlock()
 		return nil, ErrAdventureExpired
 	}
 	state.ChoiceLock.Lock()
 	if state.Phase != AdventurePhaseFinishing || !state.FinishClaimed {
 		state.ChoiceLock.Unlock()
-		op.Unlock()
 		return nil, ErrAdventureExpired
 	}
 	state.Success, state.InProgress, state.Phase = success, false, AdventurePhaseFinished
@@ -377,7 +375,6 @@ func (h *AdventureHandler) finishAdventureWebClaimed(userID int64, state *Advent
 	view := adventureWebView(state)
 	view.Message = message
 	state.ChoiceLock.Unlock()
-	op.Unlock()
 
 	if h.socialDB != nil {
 		_ = h.socialDB.SaveAdventureRecord(userID, h.getUserName(userID), state.MovieInfo.Title, state.MovieInfo.Year,

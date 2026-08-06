@@ -854,10 +854,14 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 	h.saveState(ctx.UserID, advState) // 持久化
 
 	// 发送提示 + 更新场景卡片
+	epoch := h.adventureEpochValue(ctx.UserID)
 	go func() {
-		newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(hintMsg, "", nil)
-		// 重新发送场景卡片（更新HP和按钮状态）
-		h.sendSceneCard(ctx.UserID, ctx.ChatID, advState)
+		if !h.withAdventureEpoch(ctx.UserID, epoch, func() {
+			newUserScopedSender(h.telegram, ctx.ChatID, ctx.UserID).SendMessage(hintMsg, "", nil)
+			h.sendSceneCard(ctx.UserID, ctx.ChatID, advState)
+		}) {
+			return
+		}
 	}()
 
 	return &callback.Response{
@@ -1039,11 +1043,12 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 		return &callback.Response{CallbackMsg: "❌ 没有进行中的冒险", ShowAlert: true}, nil
 	}
 	advState.ChoiceLock.Lock()
-	defer advState.ChoiceLock.Unlock()
 	if ctx.Callback == nil || !validateAdventureCallback(advState, ctx.Callback.Params, AdventurePhaseRevive) {
+		advState.ChoiceLock.Unlock()
 		return expiredAdventureCallback(), nil
 	}
 	if !canFreeRevive(advState, time.Now().Format("2006-01-02")) {
+		advState.ChoiceLock.Unlock()
 		return &callback.Response{CallbackMsg: "❌ 当前没有可用的免费复活", ShowAlert: true}, nil
 	}
 
@@ -1056,6 +1061,7 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	advState.InProgress = true
 	advState.LastFreeReviveDate = today
 	advState.PerfectRun = false // 受伤害了，不算完美
+	advState.ChoiceLock.Unlock()
 
 	if h.sessionMgr != nil {
 		sess.Set("adventure_state", advState)
@@ -1300,7 +1306,9 @@ func (h *AdventureHandler) runAdventureStart(userID int64, chatID int64, movieNa
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Panic for user %d: %v", userID, r)
-			sender.SendMessage("❌ 冒险启动出错了，请稍后再试", "", nil)
+			h.withAdventureEpoch(userID, epoch, func() {
+				sender.SendMessage("❌ 冒险启动出错了，请稍后再试", "", nil)
+			})
 		}
 		h.releaseAdventureGeneration(userID, epoch)
 	}()
@@ -1408,8 +1416,12 @@ func (h *AdventureHandler) runAdventureStart(userID int64, chatID int64, movieNa
 		return
 	}
 
-	if tipMsg != nil {
-		sender.DeleteMessage(tipMsg)
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		if tipMsg != nil {
+			sender.DeleteMessage(tipMsg)
+		}
+	}) {
+		return
 	}
 
 	vengeanceActive := startLevel > 1
@@ -1539,8 +1551,12 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 	}
 	h.saveState(userID, state) // 持久化
 
-	if loadingMsg != nil {
-		sender.DeleteMessage(loadingMsg)
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		if loadingMsg != nil {
+			sender.DeleteMessage(loadingMsg)
+		}
+	}) {
+		return
 	}
 
 	h.sendSceneCard(userID, chatID, state)
@@ -1761,7 +1777,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 	// 通关 → 自动提交求片请求
 	if success && h.onAdventureSuccess != nil {
-		go h.onAdventureSuccess(
+		h.onAdventureSuccess(
 			userID, chatID,
 			state.MovieInfo.Title, state.MovieInfo.Year,
 			state.MovieInfo.TMDBID, normalizeAdventureMediaType(state.MovieInfo.MediaType), state.MovieInfo.Genres,
@@ -1858,7 +1874,7 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		sender.SendRichMessage(card.Markdown, kb.Build())
 
 		// 通关奖励：免费开盲盒
-		go h.sendRewardBlindBox(userID, chatID, state, result.Grade)
+		h.sendRewardBlindBox(userID, chatID, state, result.Grade)
 	} else {
 		card := richmessage.BuildAdventureFailCard(richmessage.AdventureFailCardData{
 			MovieTitle:     state.MovieInfo.Title,
