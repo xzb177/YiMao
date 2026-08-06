@@ -55,6 +55,9 @@ func TestCreateWashIfNoActiveSimilarAndComplete(t *testing.T) {
 	if _, err := svc.Approve(first.RequestID, 99, first.ApproveToken); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.ClaimWash(first.RequestID, 99); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := svc.CompleteWash(first.RequestID, 99, []string{"/old/s02e01.mkv", "/new/s02e01.mkv"}); err != nil {
 		t.Fatal(err)
 	}
@@ -84,11 +87,14 @@ func TestCompleteWashRequiresBaselineNewSourceAndPreservedOldSource(t *testing.T
 			if _, err := svc.Approve(r.RequestID, 99, r.ApproveToken); err != nil {
 				t.Fatal(err)
 			}
+			if _, err := svc.ClaimWash(r.RequestID, 99); err != nil {
+				t.Fatal(err)
+			}
 			if _, err := svc.CompleteWash(r.RequestID, 99, tt.current); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("err=%v, want %q", err, tt.wantErr)
 			}
-			if got, _ := svc.GetRequest(r.RequestID); got.Status != "approved" {
-				t.Fatalf("failed verification changed status to %q", got.Status)
+			if got, _ := svc.GetRequest(r.RequestID); got.Status != "claimed" || got.WashLastError == "" {
+				t.Fatalf("failed verification state=%q error=%q", got.Status, got.WashLastError)
 			}
 		})
 	}
@@ -103,11 +109,51 @@ func TestCompleteWashIsIdempotentAfterVerifiedCompletion(t *testing.T) {
 	if _, err := svc.Approve(r.RequestID, 99, r.ApproveToken); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := svc.ClaimWash(r.RequestID, 99); err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 2; i++ {
 		got, err := svc.CompleteWash(r.RequestID, 99, []string{"old", "new"})
 		if err != nil || got.Status != "completed" {
 			t.Fatalf("call %d: got=%v err=%v", i+1, got, err)
 		}
+	}
+}
+
+func TestWashClaimReleaseAndFailureOwnership(t *testing.T) {
+	svc := NewReviewService(t.TempDir(), false)
+	r := &ReviewRequest{RequestID: "wash-claim", BusinessType: BusinessTypeWash, TmdbID: 550, MediaType: MediaTypeMovie, WashBaseline: []string{"old"}}
+	if err := svc.CreateRequest(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Approve(r.RequestID, 99, r.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ClaimWash(r.RequestID, 100); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.ClaimWash(r.RequestID, 101); err == nil {
+		t.Fatal("second administrator claimed the work order")
+	}
+	if err := svc.RecordWashVerificationFailure(r.RequestID, 101, "wrong admin"); err == nil {
+		t.Fatal("unowned failure was recorded")
+	}
+	if err := svc.RecordWashVerificationFailure(r.RequestID, 100, "等待 Emby 扫描"); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := svc.GetRequest(r.RequestID)
+	if stored.Status != "claimed" || stored.WashLastError != "等待 Emby 扫描" {
+		t.Fatalf("stored=%#v", stored)
+	}
+	if err := svc.ReleaseWash(r.RequestID, 101); err == nil {
+		t.Fatal("other administrator released the work order")
+	}
+	if err := svc.ReleaseWash(r.RequestID, 100); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ = svc.GetRequest(r.RequestID)
+	if stored.Status != "approved" || stored.WashClaimedBy != 0 {
+		t.Fatalf("released=%#v", stored)
 	}
 }
 

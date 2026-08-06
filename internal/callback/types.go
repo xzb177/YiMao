@@ -100,6 +100,10 @@ var validActions = map[Action]bool{
 	"review_reject":        true,
 	"review_cancel":        true,
 	"review_complete_wash": true,
+	"review_claim_wash":    true,
+	"review_release_wash":  true,
+	"review_retry_wash":    true,
+	"review_detail_wash":   true,
 	"my_reviews":           true,
 	"review_list":          true,
 	// Short format actions (to keep CallbackData under 64 bytes)

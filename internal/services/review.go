@@ -73,7 +73,11 @@ type ReviewRequest struct {
 	// WashBaseline captures the exact Emby media-source paths present when a
 	// wash work order is created. Legacy work orders intentionally have no
 	// baseline and therefore cannot be marked complete without recovery.
-	WashBaseline []string `json:"wash_baseline,omitempty"`
+	WashBaseline   []string   `json:"wash_baseline,omitempty"`
+	WashClaimedBy  int64      `json:"wash_claimed_by,omitempty"`
+	WashClaimedAt  *time.Time `json:"wash_claimed_at,omitempty"`
+	WashLastError  string     `json:"wash_last_error,omitempty"`
+	WashVerifiedAt *time.Time `json:"wash_verified_at,omitempty"`
 }
 
 const (
@@ -499,11 +503,16 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 	if review.Status == "completed" {
 		return cloneReview(review), nil
 	}
-	if review.Status != "approved" {
-		return nil, fmt.Errorf("wash work order is not completable")
+	if review.Status != "claimed" {
+		return nil, fmt.Errorf("洗版工单必须先认领后才能完成")
+	}
+	if review.WashClaimedBy != adminID {
+		return nil, fmt.Errorf("洗版工单已由其他管理员认领")
 	}
 	if len(review.WashBaseline) == 0 {
-		return nil, fmt.Errorf("缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线")
+		review.WashLastError = "缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线"
+		_ = s.saveLocked()
+		return nil, fmt.Errorf("%s", review.WashLastError)
 	}
 	current := make(map[string]struct{}, len(currentSources))
 	for _, source := range currentSources {
@@ -519,7 +528,9 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 		}
 		baseline[source] = struct{}{}
 		if _, preserved := current[source]; !preserved {
-			return nil, fmt.Errorf("旧版未保留：缺少基线 MediaSource %q", source)
+			review.WashLastError = fmt.Sprintf("旧版未保留：缺少基线 MediaSource %q", source)
+			_ = s.saveLocked()
+			return nil, fmt.Errorf("%s", review.WashLastError)
 		}
 	}
 	if len(baseline) == 0 {
@@ -533,16 +544,105 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 		}
 	}
 	if !newSource {
-		return nil, fmt.Errorf("未发现新增的不同 MediaSource")
+		review.WashLastError = "未发现新增的不同 MediaSource"
+		_ = s.saveLocked()
+		return nil, fmt.Errorf("%s", review.WashLastError)
 	}
 
+	now := time.Now()
 	previousStatus, previousBy, previousAt := review.Status, review.ReviewedBy, review.ReviewedAt
-	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", adminID, time.Now()
+	previousError, previousVerified := review.WashLastError, review.WashVerifiedAt
+	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", adminID, now
+	review.WashLastError = ""
+	review.WashVerifiedAt = &now
 	if err := s.saveLocked(); err != nil {
 		review.Status, review.ReviewedBy, review.ReviewedAt = previousStatus, previousBy, previousAt
+		review.WashLastError, review.WashVerifiedAt = previousError, previousVerified
 		return nil, err
 	}
 	return cloneReview(review), nil
+}
+
+// RecordWashVerificationFailure persists the latest verification failure without
+// changing the workflow state, so the work order remains retryable and auditable.
+func (s *ReviewService) RecordWashVerificationFailure(requestID string, adminID int64, reason string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review == nil || review.NormalizedBusinessType() != BusinessTypeWash {
+		return fmt.Errorf("wash work order not found")
+	}
+	if review.Status != "claimed" || review.WashClaimedBy != adminID {
+		return fmt.Errorf("只能记录自己认领的洗版工单")
+	}
+	previous := review.WashLastError
+	review.WashLastError = strings.TrimSpace(reason)
+	if err := s.saveLocked(); err != nil {
+		review.WashLastError = previous
+		return err
+	}
+	return nil
+}
+
+// ClaimWash atomically assigns an approved wash work order to one administrator.
+func (s *ReviewService) ClaimWash(requestID string, adminID int64) (*ReviewRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review == nil || review.NormalizedBusinessType() != BusinessTypeWash {
+		return nil, fmt.Errorf("wash work order not found")
+	}
+	if review.Status == "claimed" {
+		if review.WashClaimedBy == adminID {
+			return cloneReview(review), nil
+		}
+		return nil, fmt.Errorf("洗版工单已由其他管理员认领")
+	}
+	if review.Status != "approved" {
+		return nil, fmt.Errorf("当前状态为 %s，不能认领", review.Status)
+	}
+	now := time.Now()
+	previousStatus, previousBy, previousAt := review.Status, review.WashClaimedBy, review.WashClaimedAt
+	review.Status, review.WashClaimedBy, review.WashClaimedAt = "claimed", adminID, &now
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.WashClaimedBy, review.WashClaimedAt = previousStatus, previousBy, previousAt
+		return nil, err
+	}
+	return cloneReview(review), nil
+}
+
+// ReleaseWash returns a claimed wash work order to the approved queue.
+func (s *ReviewService) ReleaseWash(requestID string, adminID int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review == nil || review.NormalizedBusinessType() != BusinessTypeWash {
+		return fmt.Errorf("wash work order not found")
+	}
+	if review.Status != "claimed" || review.WashClaimedBy != adminID {
+		return fmt.Errorf("只能释放自己认领的洗版工单")
+	}
+	previousStatus, previousBy, previousAt := review.Status, review.WashClaimedBy, review.WashClaimedAt
+	review.Status, review.WashClaimedBy, review.WashClaimedAt = "approved", 0, nil
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.WashClaimedBy, review.WashClaimedAt = previousStatus, previousBy, previousAt
+		return err
+	}
+	return nil
+}
+
+// GetWashRequests returns all non-terminal wash work orders, newest first.
+func (s *ReviewService) GetWashRequests() []*ReviewRequest {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	items := make([]*ReviewRequest, 0)
+	for _, review := range s.reviews {
+		if review != nil && review.NormalizedBusinessType() == BusinessTypeWash && review.Status != "completed" && review.Status != "rejected" && review.Status != "cancelled" {
+			items = append(items, cloneReview(review))
+		}
+	}
+	sort.Slice(items, func(i, j int) bool { return items[i].CreatedAt.After(items[j].CreatedAt) })
+	return items
 }
 
 // RestoreQuotaOnce 按请求记录的实际成本返还，持久化标记保证重试及重启后幂等。

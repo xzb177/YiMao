@@ -60,6 +60,14 @@ func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error
 		return h.handleCancel(ctx)
 	case "review_complete_wash":
 		return h.handleCompleteWash(ctx)
+	case "review_claim_wash":
+		return h.handleClaimWash(ctx)
+	case "review_release_wash":
+		return h.handleReleaseWash(ctx)
+	case "review_retry_wash":
+		return h.handleRetryWash(ctx)
+	case "review_detail_wash":
+		return h.handleWashDetail(ctx)
 	case "my_reviews":
 		return h.handleMyReviews(ctx)
 	case "review_list":
@@ -377,17 +385,21 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
 	}
 	if len(review.WashBaseline) == 0 {
+		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, "缺少创建时基线：旧工单不能自动验证")
 		return &callback.Response{Text: "⚠️ 这是旧版洗版工单，缺少创建时的媒体基线，无法安全验证完成。\n\n请保留当前资源，并让用户重新创建洗版工单；新工单会自动采集基线后再验证。", CallbackMsg: "缺少基线，已安全拒绝", ShowAlert: true}, nil
 	}
 	if h.webhookService == nil {
-		return &callback.Response{Text: "⚠️ 暂时无法连接媒体库核验，工单仍保持已批准状态，请恢复 Emby 连接后重试。", CallbackMsg: "媒体库核验不可用", ShowAlert: true}, nil
+		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, "媒体库核验服务不可用")
+		return &callback.Response{Text: "⚠️ 暂时无法连接媒体库核验，工单仍保持认领状态，请恢复 Emby 连接后重试。", CallbackMsg: "媒体库核验不可用", ShowAlert: true}, nil
 	}
 	currentSources, verifyErr := h.webhookService.CaptureEmbyWashBaseline(review.TmdbID, review.MediaType, review.Season)
 	if verifyErr != nil {
+		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, verifyErr.Error())
 		return &callback.Response{Text: "⚠️ 媒体库核验失败，未标记完成。请确认 Emby 已扫描新旧版本后重试。", CallbackMsg: "核验失败", ShowAlert: true}, nil
 	}
 	review, err := h.reviewService.CompleteWash(requestID, ctx.UserID, currentSources)
 	if err != nil {
+		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, err.Error())
 		return &callback.Response{Text: fmt.Sprintf("⚠️ 洗版尚未通过安全验证，未标记完成。\n\n%s\n\n请保留旧版、等待 Emby 扫描出新增版本后重试。", err.Error()), CallbackMsg: "验证未通过", ShowAlert: true}, nil
 	}
 	icon := "🎬"
@@ -401,6 +413,90 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 		}
 	}
 	return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s\n\n已验证新增版本且旧版仍保留。", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
+}
+
+func (h *ReviewHandler) washFromContext(ctx *callback.Context) (*services.ReviewRequest, string, error) {
+	requestID := ctx.Callback.Params["id"]
+	if requestID == "" {
+		return nil, "", fmt.Errorf("缺少工单 ID")
+	}
+	review, ok := h.reviewService.GetRequest(requestID)
+	if !ok || review == nil || review.NormalizedBusinessType() != services.BusinessTypeWash {
+		return nil, "", fmt.Errorf("找不到洗版工单")
+	}
+	return review, requestID, nil
+}
+
+func (h *ReviewHandler) handleClaimWash(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
+	}
+	_, requestID, err := h.washFromContext(ctx)
+	if err != nil {
+		return &callback.Response{Text: err.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
+	}
+	review, err := h.reviewService.ClaimWash(requestID, ctx.UserID)
+	if err != nil {
+		return &callback.Response{Text: "⚠️ " + err.Error(), CallbackMsg: "认领失败", ShowAlert: true}, nil
+	}
+	return h.renderWashDetail(review, true), nil
+}
+
+func (h *ReviewHandler) handleReleaseWash(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
+	}
+	_, requestID, err := h.washFromContext(ctx)
+	if err != nil {
+		return &callback.Response{Text: err.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
+	}
+	if err := h.reviewService.ReleaseWash(requestID, ctx.UserID); err != nil {
+		return &callback.Response{Text: "⚠️ " + err.Error(), CallbackMsg: "释放失败", ShowAlert: true}, nil
+	}
+	review, _ := h.reviewService.GetRequest(requestID)
+	return h.renderWashDetail(review, true), nil
+}
+
+func (h *ReviewHandler) handleRetryWash(ctx *callback.Context) (*callback.Response, error) {
+	return h.handleCompleteWash(ctx)
+}
+
+func (h *ReviewHandler) handleWashDetail(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
+	}
+	review, _, err := h.washFromContext(ctx)
+	if err != nil {
+		return &callback.Response{Text: err.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
+	}
+	return h.renderWashDetail(review, true), nil
+}
+
+func (h *ReviewHandler) renderWashDetail(review *services.ReviewRequest, edit bool) *callback.Response {
+	if review == nil {
+		return &callback.Response{Text: "找不到洗版工单", ShowAlert: true}
+	}
+	status := review.Status
+	if review.WashLastError != "" {
+		status += "\n最近失败：" + review.WashLastError
+	}
+	text := fmt.Sprintf("♻️ 洗版工单\n\n《%s》", review.MediaTitle)
+	if review.MediaYear > 0 {
+		text += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+	text += fmt.Sprintf("\n状态：%s\n申请人：%s\n创建时间：%s\n旧版基线：%d 个", status, review.TelegramName, review.CreatedAt.Format("2006-01-02 15:04"), len(review.WashBaseline))
+	keyboard := &callback.Keyboard{}
+	id := map[string]string{"id": review.RequestID}
+	if review.Status == "approved" {
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🙋 认领", CallbackData: callback.BuildCallback("review_claim_wash", id)}})
+	}
+	if review.Status == "claimed" {
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "✅ 核验完成", CallbackData: callback.BuildCallback("review_complete_wash", id)}, {Text: "↩️ 释放", CallbackData: callback.BuildCallback("review_release_wash", id)}})
+	}
+	if review.Status == "claimed" && review.WashLastError != "" {
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🔁 重新核验", CallbackData: callback.BuildCallback("review_retry_wash", id)}})
+	}
+	return &callback.Response{Text: text, Edit: edit, Keyboard: keyboard}
 }
 
 // handleReject handles reject callback
@@ -604,9 +700,9 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 	}
 
 	pending := h.reviewService.GetPendingRequests()
-	approvedWash := h.reviewService.GetApprovedWashRequests()
+	washQueue := h.reviewService.GetWashRequests()
 
-	if len(pending) == 0 && len(approvedWash) == 0 {
+	if len(pending) == 0 && len(washQueue) == 0 {
 		return &callback.Response{
 			RichMessage: "📋 待审核求片\n\n暂无待审核请求 ✨",
 			Edit:        true,
@@ -625,18 +721,27 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 	}
 	card := richmessage.BuildPendingReviewsCard(items)
 	keyboard := &callback.Keyboard{}
-	if len(approvedWash) > 0 {
-		card.Markdown += fmt.Sprintf("\n\n♻️ **待完成洗版：%d 条**", len(approvedWash))
-		limit := len(approvedWash)
+	if len(washQueue) > 0 {
+		card.Markdown += fmt.Sprintf("\n\n♻️ **洗版工作台：%d 条**", len(washQueue))
+		limit := len(washQueue)
 		if limit > 10 {
 			limit = 10
 		}
-		for _, review := range approvedWash[:limit] {
+		for _, review := range washQueue[:limit] {
 			label := review.MediaTitle
 			if review.Season > 0 {
 				label += fmt.Sprintf(" S%02d", review.Season)
 			}
-			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "✅ 完成 " + label, CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}})
+			status := review.Status
+			if review.WashClaimedBy != 0 {
+				status += fmt.Sprintf(" · 管理员 %d", review.WashClaimedBy)
+			}
+			if review.WashLastError != "" {
+				status = "⚠️ " + status
+			}
+			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard,
+				[]callback.Button{{Text: "♻️ " + label + " · " + status, CallbackData: callback.BuildCallback("review_detail_wash", map[string]string{"id": review.RequestID})}},
+			)
 		}
 	}
 	return &callback.Response{
