@@ -258,7 +258,7 @@ func TestNetworkRacesErrorsAndTelegramContractsRemain(t *testing.T) {
 		"S.searchError=e.message",
 		`class="persistent-error"`,
 		"const seq=++S.detailSeq",
-		"if(seq!==S.detailSeq)return",
+		"if(seq!==S.detailSeq||!S.detailVisible)return",
 		"const seq=++S.meSeq",
 		"if(seq!==S.meSeq||S.view!=='tasks')return",
 		"tg?.BackButton?.show()",

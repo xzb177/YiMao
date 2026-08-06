@@ -140,12 +140,14 @@ type AdventureHandler struct {
 	// 冒险成功后的求片回调（由 main 注入，解耦 requestHandler）
 	onAdventureSuccess func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, mediaType string, genres []string, score int, grade string)
 
-	mu            sync.Mutex
-	generating    map[int64]bool
-	gambleStash   map[int64]*gambleStashEntry // 双倍或归零暂存 (userID → items+state)
-	gambleStashMu sync.Mutex
-	shareMu       sync.Mutex
-	sharedRuns    map[string]struct{}
+	mu             sync.Mutex
+	generating     map[int64]uint64
+	adventureEpoch map[int64]uint64
+	adventureOps   map[int64]*sync.Mutex
+	gambleStash    map[int64]*gambleStashEntry // 双倍或归零暂存 (userID → items+state)
+	gambleStashMu  sync.Mutex
+	shareMu        sync.Mutex
+	sharedRuns     map[string]struct{}
 }
 
 type gambleStashEntry struct {
@@ -164,14 +166,16 @@ func NewAdventureHandler(
 	groupChatID int64,
 ) *AdventureHandler {
 	return &AdventureHandler{
-		adventureSvc: adventureSvc,
-		tmdbClient:   tmdbClient,
-		sessionMgr:   sessionMgr,
-		telegram:     telegram,
-		userMapping:  userMapping,
-		groupChatID:  groupChatID,
-		generating:   make(map[int64]bool),
-		sharedRuns:   make(map[string]struct{}),
+		adventureSvc:   adventureSvc,
+		tmdbClient:     tmdbClient,
+		sessionMgr:     sessionMgr,
+		telegram:       telegram,
+		userMapping:    userMapping,
+		groupChatID:    groupChatID,
+		generating:     make(map[int64]uint64),
+		adventureEpoch: make(map[int64]uint64),
+		adventureOps:   make(map[int64]*sync.Mutex),
+		sharedRuns:     make(map[string]struct{}),
 	}
 }
 
@@ -272,7 +276,7 @@ func (h *AdventureHandler) HandleGoCommand(telegram *services.TelegramClient, ms
 		return
 	}
 
-	go h.startAdventureAsync(userID, chatID, movieName)
+	h.startAdventureAsync(userID, chatID, movieName)
 }
 
 // startWeeklyBossAsync 发起本周挑战
@@ -281,11 +285,7 @@ func (h *AdventureHandler) startWeeklyBossAsync(userID int64, chatID int64, wb *
 		_, _ = newUserScopedSender(h.telegram, chatID, userID).SendMessage("🎯 本周挑战尚未更新", "", nil)
 		return
 	}
-	// 以梦魇模式启动冒险
-	go func() {
-		h.startAdventureAsyncLevel(userID, chatID, wb.MovieName, 1, "")
-		// 标记为梦魇模式（需要修改 state 的 IsWeeklyBoss）
-	}()
+	h.startAdventureAsyncLevel(userID, chatID, wb.MovieName, 1, "")
 }
 
 // SetBlindBoxService 注入盲盒服务（用于通关奖励）
@@ -355,6 +355,76 @@ func (h *AdventureHandler) removeState(userID int64) {
 	}
 }
 
+func (h *AdventureHandler) adventureOp(userID int64) *sync.Mutex {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.adventureOps == nil {
+		h.adventureOps = make(map[int64]*sync.Mutex)
+	}
+	mu := h.adventureOps[userID]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		h.adventureOps[userID] = mu
+	}
+	return mu
+}
+
+func (h *AdventureHandler) adventureEpochValue(userID int64) uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.adventureEpoch[userID]
+}
+
+func (h *AdventureHandler) nextAdventureEpoch(userID int64) uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.adventureEpoch == nil {
+		h.adventureEpoch = make(map[int64]uint64)
+	}
+	h.adventureEpoch[userID]++
+	return h.adventureEpoch[userID]
+}
+
+func (h *AdventureHandler) claimAdventureGeneration(userID int64) uint64 {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.adventureEpoch == nil {
+		h.adventureEpoch = make(map[int64]uint64)
+	}
+	if h.generating == nil {
+		h.generating = make(map[int64]uint64)
+	}
+	h.adventureEpoch[userID]++
+	epoch := h.adventureEpoch[userID]
+	h.generating[userID] = epoch
+	return epoch
+}
+
+func (h *AdventureHandler) releaseAdventureGeneration(userID int64, epoch uint64) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.generating[userID] == epoch {
+		delete(h.generating, userID)
+	}
+}
+
+func (h *AdventureHandler) adventureEpochCurrent(userID int64, epoch uint64) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.adventureEpoch[userID] == epoch
+}
+
+func (h *AdventureHandler) withAdventureEpoch(userID int64, epoch uint64, fn func()) bool {
+	op := h.adventureOp(userID)
+	op.Lock()
+	defer op.Unlock()
+	if !h.adventureEpochCurrent(userID, epoch) {
+		return false
+	}
+	fn()
+	return true
+}
+
 // getOrRestoreState 优先从 session 内存获取，没有则从 DB 恢复
 func (h *AdventureHandler) getOrRestoreState(userID int64, sess *session.Session) *AdventureState {
 	if sess == nil {
@@ -366,13 +436,29 @@ func (h *AdventureHandler) getOrRestoreState(userID int64, sess *session.Session
 			return advState
 		}
 	}
+	// 记录 epoch，避免退出期间从 DB 恢复旧状态。
+	epoch := h.adventureEpochValue(userID)
 	// 内存没有，尝试从 DB 恢复
 	restored := h.loadState(userID)
+	if h.adventureEpochValue(userID) != epoch {
+		return nil
+	}
 	if restored != nil && restored.InProgress {
-		// 写回 session
+		// 与 quit 的 epoch 更新和 session 删除串行化，避免旧状态被写回。
+		h.mu.Lock()
+		if h.adventureEpoch[userID] != epoch {
+			h.mu.Unlock()
+			return nil
+		}
 		sess.Set("adventure_state", restored)
+		h.mu.Unlock()
 		logger.Info("[Adventure] 从DB恢复冒险状态 user=%d movie=%s level=%d hp=%d",
-			userID, restored.MovieInfo.Title, restored.Level, restored.HP)
+			userID, func() string {
+				if restored.MovieInfo != nil {
+					return restored.MovieInfo.Title
+				}
+				return ""
+			}(), restored.Level, restored.HP)
 		return restored
 	}
 	return nil
@@ -427,6 +513,10 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 		"{{", "", "}}", "",
 	).Replace(movieName)
 
+	op := h.adventureOp(userID)
+	op.Lock()
+	defer op.Unlock()
+
 	sess := h.sessionMgr.GetOrCreate(userID)
 	if sess == nil {
 		return false
@@ -443,14 +533,23 @@ func (h *AdventureHandler) HandleAdventureText(userID int64, chatID int64, movie
 		return true
 	}
 
-	go h.startAdventureAsync(userID, chatID, movieName)
+	h.nextAdventureEpoch(userID)
+	h.startAdventureAsync(userID, chatID, movieName)
 	return true
 }
 
 // handleStart 点击“电影冒险”或每日挑战启动
 func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Response, error) {
-	// New daily-challenge callbacks carry a short session reference. Legacy
-	// URL-escaped movie callbacks remain readable for cards already sent.
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
+	return h.handleStartLocked(ctx)
+}
+
+func (h *AdventureHandler) handleStartLocked(ctx *callback.Context) (*callback.Response, error) {
+	// 新的 start 使所有旧异步任务失效。
+	h.nextAdventureEpoch(ctx.UserID)
+	// New daily-challenge callbacks carry a short session reference.
 	movieName := ""
 	params := map[string]string{}
 	if ctx.Callback != nil && ctx.Callback.Params != nil {
@@ -480,7 +579,7 @@ func (h *AdventureHandler) handleStart(ctx *callback.Context) (*callback.Respons
 			}
 		}
 		h.removeState(ctx.UserID)
-		go h.startAdventureAsync(ctx.UserID, ctx.ChatID, movieName)
+		h.startAdventureAsync(ctx.UserID, ctx.ChatID, movieName)
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("🎬 正在为「%s」生成冒险…", movieName),
 		}, nil
@@ -514,6 +613,9 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	if h.sessionMgr == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
 
 	choiceIdx := -1
 	if ctx.Callback != nil && ctx.Callback.Params != nil {
@@ -603,7 +705,8 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 			}
 			sess.Set("adventure_state", advState)
 			h.saveState(ctx.UserID, advState)
-			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, true)
+			epoch := h.adventureEpochValue(ctx.UserID)
+			go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, true, epoch)
 
 			return &callback.Response{
 				CallbackMsg: fmt.Sprintf("✅ %s\n🔥 连击 x%d！进入最终决战...", choice.Result, advState.Combo),
@@ -614,7 +717,8 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		advState.Phase = AdventurePhaseGenerating
 		sess.Set("adventure_state", advState)
 		h.saveState(ctx.UserID, advState)
-		go h.handleCorrectChoice(ctx.UserID, ctx.ChatID, advState, choice.Result)
+		epoch := h.adventureEpochValue(ctx.UserID)
+		go h.handleCorrectChoice(ctx.UserID, ctx.ChatID, advState, choice.Result, epoch)
 		return &callback.Response{
 			CallbackMsg: fmt.Sprintf("✅ %s\n🔥 连击 x%d", choice.Result, advState.Combo),
 			ShowAlert:   false,
@@ -638,11 +742,11 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 		if advState.InProgress {
 			advState.Phase = AdventurePhaseRevive
 			h.saveState(ctx.UserID, advState)
-			go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result)
+			go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result, h.adventureEpochValue(ctx.UserID))
 		} else {
 			if claimAdventureFinish(advState, false) {
 				h.saveState(ctx.UserID, advState)
-				go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false)
+				go h.finishAdventureAsync(ctx.UserID, ctx.ChatID, advState, false, h.adventureEpochValue(ctx.UserID))
 			}
 		}
 		return &callback.Response{
@@ -654,7 +758,7 @@ func (h *AdventureHandler) handleChoice(ctx *callback.Context) (*callback.Respon
 	// 还活着
 	sess.Set("adventure_state", advState)
 	h.saveState(ctx.UserID, advState) // 持久化
-	go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result)
+	go h.sendDamageCard(ctx.UserID, ctx.ChatID, advState, damage, choice.Result, h.adventureEpochValue(ctx.UserID))
 
 	return &callback.Response{
 		CallbackMsg: fmt.Sprintf("💥 %s\n❤️ -%d HP（剩余 %d%%）", choice.Result, damage, advState.HP),
@@ -668,6 +772,9 @@ func (h *AdventureHandler) handleHint(ctx *callback.Context) (*callback.Response
 	if h.sessionMgr == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
 
 	sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 	if sess == nil {
@@ -764,6 +871,9 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 	if h.sessionMgr == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
 	sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 	if sess == nil {
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
@@ -799,16 +909,17 @@ func (h *AdventureHandler) handleRetry(ctx *callback.Context) (*callback.Respons
 		}
 	}
 
-	// 无条件清除所有旧状态
+	// 无条件清除所有旧状态，并使旧异步下一关失效。
+	h.nextAdventureEpoch(ctx.UserID)
 	sess.Delete("adventure_state")
 	sess.Delete("pending_adventure_input")
 	h.removeState(ctx.UserID) // 清除持久化
 
 	if movieName == "" {
-		return h.handleStart(ctx)
+		return h.handleStartLocked(ctx)
 	}
 
-	go h.startAdventureAsyncLevel(ctx.UserID, ctx.ChatID, movieName, startLevel, vengeanceMsg)
+	h.startAdventureAsyncLevel(ctx.UserID, ctx.ChatID, movieName, startLevel, vengeanceMsg)
 	return &callback.Response{
 		CallbackMsg: fmt.Sprintf("🔄 正在重新开始《%s》...", movieName),
 		ShowAlert:   false,
@@ -882,6 +993,11 @@ func (h *AdventureHandler) handleShare(ctx *callback.Context) (*callback.Respons
 	}, nil
 }
 func (h *AdventureHandler) handleQuit(ctx *callback.Context) (*callback.Response, error) {
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
+	// 先使当前代际失效，再清除 session/DB。旧异步写回必须匹配新 epoch。
+	h.nextAdventureEpoch(ctx.UserID)
 	// 无条件清除所有冒险相关状态
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(ctx.UserID)
@@ -910,6 +1026,9 @@ func (h *AdventureHandler) handleRevive(ctx *callback.Context) (*callback.Respon
 	if h.sessionMgr == nil {
 		return &callback.Response{CallbackMsg: "❌ 服务未就绪", ShowAlert: true}, nil
 	}
+	op := h.adventureOp(ctx.UserID)
+	op.Lock()
+	defer op.Unlock()
 	sess := h.sessionMgr.GetOrCreate(ctx.UserID)
 	if sess == nil {
 		return &callback.Response{CallbackMsg: "❌ 会话异常", ShowAlert: true}, nil
@@ -1171,39 +1290,38 @@ func (h *AdventureHandler) startAdventureAsync(userID int64, chatID int64, movie
 
 // startAdventureAsyncLevel 开始冒险（指定起始关卡 + 复仇信息）
 func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, movieName string, startLevel int, preMsg string) {
+	epoch := h.claimAdventureGeneration(userID)
+	go h.runAdventureStart(userID, chatID, movieName, startLevel, preMsg, epoch)
+}
+
+func (h *AdventureHandler) runAdventureStart(userID int64, chatID int64, movieName string, startLevel int, preMsg string, epoch uint64) {
+	op := h.adventureOp(userID)
 	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Panic for user %d: %v", userID, r)
 			sender.SendMessage("❌ 冒险启动出错了，请稍后再试", "", nil)
 		}
-		h.mu.Lock()
-		delete(h.generating, userID)
-		h.mu.Unlock()
+		h.releaseAdventureGeneration(userID, epoch)
 	}()
 
-	h.mu.Lock()
-	if h.generating[userID] {
-		h.mu.Unlock()
+	if !h.adventureEpochCurrent(userID, epoch) {
 		return
 	}
-	h.generating[userID] = true
-	h.mu.Unlock()
 
-	// 超时清理：120秒后强制清除generating标记
-	go func(uid int64) {
-		time.Sleep(120 * time.Second)
-		h.mu.Lock()
-		if h.generating[uid] {
-			delete(h.generating, uid)
-			logger.Info("[Adventure] Force cleaned generating flag for user %d (timeout)", uid)
-		}
-		h.mu.Unlock()
-	}(userID)
+	var loadingMsg *types.TelegramMessage
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		loadingMsg, _ = sender.SendMessage("⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
+	}) {
+		return
+	}
 
-	loadingMsg, _ := sender.SendMessage("⚔️ 正在进入「"+movieName+"」的世界...", "", nil)
-
-	// 清除旧的冒险状态
+	// 仅当前代际可以清理旧状态；过期 goroutine 不得碰新局。
+	op.Lock()
+	if !h.adventureEpochCurrent(userID, epoch) {
+		op.Unlock()
+		return
+	}
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(userID)
 		if sess != nil {
@@ -1212,16 +1330,23 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		}
 	}
 	h.removeState(userID)
+	op.Unlock()
 
 	movieInfo, err := h.adventureSvc.SearchMovieInfo(movieName)
 	if err != nil {
-		if loadingMsg != nil {
-			sender.DeleteMessage(loadingMsg)
-		}
-		logger.Info("[冒险] 搜索电影失败: query=%q err=%v", movieName, err)
-		if _, sendErr := sender.SendMessage(fmt.Sprintf("没搜到《%s》。换个中文名、英文名，或者带上年份再试。", movieName), "", nil); sendErr != nil {
-			logger.Info("[冒险] 发送搜索失败提示失败: %v", sendErr)
-		}
+		h.withAdventureEpoch(userID, epoch, func() {
+			if loadingMsg != nil {
+				sender.DeleteMessage(loadingMsg)
+			}
+			logger.Info("[冒险] 搜索电影失败: query=%q err=%v", movieName, err)
+			if _, sendErr := sender.SendMessage(fmt.Sprintf("没搜到《%s》。换个中文名、英文名，或者带上年份再试。", movieName), "", nil); sendErr != nil {
+				logger.Info("[冒险] 发送搜索失败提示失败: %v", sendErr)
+			}
+		})
+		return
+	}
+
+	if !h.adventureEpochCurrent(userID, epoch) {
 		return
 	}
 
@@ -1241,31 +1366,37 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		NemesisCount: nemesisCount,
 	})
 
-	if loadingMsg != nil {
-		sender.DeleteMessage(loadingMsg)
-	}
-	sender.SendRichMessage(entryCard.Markdown, nil)
-
-	// 复仇模式提示消息
-	if preMsg != "" {
-		sender.SendMessage(preMsg, "Markdown", nil)
-	}
-
-	// 再次挑战提示
-	if nemesisCount > 0 {
-		var retryMsg string
-		if nemesisCount == 1 {
-			retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你曾在这里止步 1 次，这次可以带着上次的线索继续。", movieInfo.Title)
-		} else {
-			retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你已尝试过 %d 次，每一次记录都为你保留。", movieInfo.Title, nemesisCount)
+	// 发送入口和进度消息也与 quit/retry 线性化，旧局不会在退出后补发。
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		if loadingMsg != nil {
+			sender.DeleteMessage(loadingMsg)
 		}
-		_, _ = sender.SendMessage(retryMsg, "Markdown", nil)
+		sender.SendRichMessage(entryCard.Markdown, nil)
+		if preMsg != "" {
+			sender.SendMessage(preMsg, "Markdown", nil)
+		}
+		if nemesisCount > 0 {
+			var retryMsg string
+			if nemesisCount == 1 {
+				retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你曾在这里止步 1 次，这次可以带着上次的线索继续。", movieInfo.Title)
+			} else {
+				retryMsg = fmt.Sprintf("↻ **再次挑战《%s》**\n\n你已尝试过 %d 次，每一次记录都为你保留。", movieInfo.Title, nemesisCount)
+			}
+			_, _ = sender.SendMessage(retryMsg, "Markdown", nil)
+		}
+	}) {
+		return
 	}
 
 	// 生成起始关
 	levelLabel := fmt.Sprintf("第 %d 关", startLevel)
 	tip := randomMovieTip()
-	tipMsg, _ := sender.SendMessage(fmt.Sprintf("⏳ 正在构造%s...\n\n%s", levelLabel, tip), "", nil)
+	var tipMsg *types.TelegramMessage
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		tipMsg, _ = sender.SendMessage(fmt.Sprintf("⏳ 正在构造%s...\n\n%s", levelLabel, tip), "", nil)
+	}) {
+		return
+	}
 
 	scene, err := h.adventureSvc.GenerateScene(movieInfo, startLevel, adventureMaxLevels, nil, adventureMaxHP)
 	if err != nil {
@@ -1273,6 +1404,9 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		scene = h.adventureSvc.GenerateFallbackScene(movieInfo, startLevel, adventureMaxLevels)
 	}
 	scene.TotalLevels = adventureMaxLevels
+	if h.adventureEpochValue(userID) != epoch {
+		return
+	}
 
 	if tipMsg != nil {
 		sender.DeleteMessage(tipMsg)
@@ -1318,6 +1452,14 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		StreakRewards:   streakRewards,
 	}
 
+	if h.adventureEpochValue(userID) != epoch {
+		return
+	}
+	op.Lock()
+	if h.adventureEpochValue(userID) != epoch {
+		op.Unlock()
+		return
+	}
 	if h.sessionMgr != nil {
 		sess := h.sessionMgr.GetOrCreate(userID)
 		if sess != nil {
@@ -1325,12 +1467,16 @@ func (h *AdventureHandler) startAdventureAsyncLevel(userID int64, chatID int64, 
 		}
 	}
 	h.saveState(userID, state)
-
+	if !h.adventureEpochCurrent(userID, epoch) {
+		op.Unlock()
+		return
+	}
 	h.sendSceneCard(userID, chatID, state)
+	op.Unlock()
 }
 
 // handleCorrectChoice 选对后的处理 — 只发场景卡片，反馈内嵌
-func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state *AdventureState, choiceResult string) {
+func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state *AdventureState, choiceResult string, epoch uint64) {
 	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
@@ -1340,7 +1486,12 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 
 	// 生成下一关（不发单独的combo卡片，反馈直接写在场景卡片里）
 	tip := randomMovieTip()
-	loadingMsg, _ := sender.SendMessage(fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
+	var loadingMsg *types.TelegramMessage
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		loadingMsg, _ = sender.SendMessage(fmt.Sprintf("⏳ 正在构造第 %d 关...\n\n%s", state.Level, tip), "", nil)
+	}) {
+		return
+	}
 
 	scene, err := h.adventureSvc.GenerateScene(state.MovieInfo, state.Level+1, state.TotalLevels, state.History, state.HP)
 	if err != nil {
@@ -1348,6 +1499,12 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 		scene = h.adventureSvc.GenerateFallbackScene(state.MovieInfo, state.Level+1, state.TotalLevels)
 	}
 	scene.TotalLevels = state.TotalLevels
+	if h.adventureEpochValue(userID) != epoch {
+		return
+	}
+	op := h.adventureOp(userID)
+	op.Lock()
+	defer op.Unlock()
 	state.ChoiceLock.Lock()
 	if state.Phase != AdventurePhaseGenerating || state.ResolvedTurn != state.Turn {
 		state.ChoiceLock.Unlock()
@@ -1360,8 +1517,9 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 		return
 	}
 	sess := h.sessionMgr.GetOrCreate(userID)
-	current := h.getOrRestoreState(userID, sess)
-	if current == nil || current.RunID != state.RunID || current.Turn != state.Turn || current.Phase != AdventurePhaseGenerating {
+	currentValue, ok := sess.Get("adventure_state")
+	current, ok := currentValue.(*AdventureState)
+	if !ok || current != state || current.RunID != state.RunID || current.Turn != state.Turn || current.Phase != AdventurePhaseGenerating {
 		state.ChoiceLock.Unlock()
 		return
 	}
@@ -1373,6 +1531,9 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 	state.Phase = AdventurePhasePlaying
 	state.ChoiceLock.Unlock()
 
+	if h.adventureEpochValue(userID) != epoch {
+		return
+	}
 	if sess != nil {
 		sess.Set("adventure_state", state)
 	}
@@ -1386,7 +1547,14 @@ func (h *AdventureHandler) handleCorrectChoice(userID int64, chatID int64, state
 }
 
 // sendDamageCard 发送受伤卡片 + 剩余选项（含每日免费复活检查）
-func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *AdventureState, damage int, choiceResult string) {
+func (h *AdventureHandler) sendDamageCard(userID int64, chatID int64, state *AdventureState, damage int, choiceResult string, epoch uint64) {
+	op := h.adventureOp(userID)
+	op.Lock()
+	if !h.adventureEpochCurrent(userID, epoch) {
+		op.Unlock()
+		return
+	}
+	defer op.Unlock()
 	sender := newUserScopedSender(h.telegram, chatID, userID)
 	defer func() {
 		if r := recover(); r != nil {
@@ -1510,17 +1678,20 @@ func normalizeAdventureMediaType(mediaType string) string {
 }
 
 // finishAdventureAsync 完成冒险
-func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, state *AdventureState, success bool) {
+func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, state *AdventureState, success bool, epoch uint64) {
 	sender := newUserScopedSender(h.telegram, chatID, userID)
-	state.Success = success
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Info("[Adventure] Finish panic: %v", r)
-			sender.SendMessage("❌ 结局生成出错了", "", nil)
 		}
 	}()
 
-	loadingMsg, _ := sender.SendMessage("🎬 生成结局...", "", nil)
+	var loadingMsg *types.TelegramMessage
+	if !h.withAdventureEpoch(userID, epoch, func() {
+		loadingMsg, _ = sender.SendMessage("🎬 生成结局...", "", nil)
+	}) {
+		return
+	}
 
 	result, err := h.adventureSvc.GenerateEndScene(
 		state.MovieInfo, state.History, success, state.HP, state.MaxCombo, state.TotalLevels,
@@ -1529,7 +1700,39 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 		logger.Info("[Adventure] End scene AI failed: %v", err)
 		result = h.adventureSvc.GenerateFallbackResult(state.MovieInfo, success, state.HP, state.Level-1, state.TotalLevels)
 	}
+	if h.adventureEpochValue(userID) != epoch {
+		return
+	}
+
+	// 结算提交是旧任务触发任何业务副作用前的线性化点。quit/retry/start
+	// 若先取得 operation gate，会递增 epoch 并使本任务直接退出。
+	op := h.adventureOp(userID)
+	op.Lock()
+	if !h.adventureEpochCurrent(userID, epoch) || h.sessionMgr == nil {
+		op.Unlock()
+		return
+	}
+	defer op.Unlock()
+	sess := h.sessionMgr.GetOrCreate(userID)
+	currentValue, ok := sess.Get("adventure_state")
+	current, ok := currentValue.(*AdventureState)
+	if !ok || current != state {
+		return
+	}
+	state.ChoiceLock.Lock()
+	if state.Phase != AdventurePhaseFinishing || !state.FinishClaimed {
+		state.ChoiceLock.Unlock()
+		return
+	}
 	result = finalizeAdventureResult(state, success, result)
+	state.Success = success
+	state.Phase = AdventurePhaseFinished
+	state.InProgress = false
+	sess.Set("adventure_state", state)
+	h.saveState(userID, state)
+	state.ChoiceLock.Unlock()
+	// 终态提交后保持 operation gate，直至记录、奖励、通知、求片和结果卡
+	// 全部完成，避免 quit/retry 插入旧任务副作用窗口。
 
 	if loadingMsg != nil {
 		h.telegram.DeleteMessage(chatID, loadingMsg.MessageID)
@@ -1681,16 +1884,6 @@ func (h *AdventureHandler) finishAdventureAsync(userID int64, chatID int64, stat
 
 		sender.SendRichMessage(card.Markdown, kb.Build())
 	}
-	state.ChoiceLock.Lock()
-	state.Phase = AdventurePhaseFinished
-	state.InProgress = false
-	state.ChoiceLock.Unlock()
-	if h.sessionMgr != nil {
-		if sess := h.sessionMgr.GetOrCreate(userID); sess != nil {
-			sess.Set("adventure_state", state)
-		}
-	}
-	h.saveState(userID, state)
 }
 
 // sendSceneCard 发送场景卡片
