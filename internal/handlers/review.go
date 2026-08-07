@@ -82,7 +82,7 @@ func duplicateSubscriptionFeedback(ctx *callback.Context, requesterID int64) (*c
 		Text:        "⚠️ 已有相同求片正在处理\n\n这条求片已经在处理，不用重复提交。",
 		CallbackMsg: "已有订阅",
 		Edit:        true,
-	}, ctx == nil || ctx.ChatID != requesterID
+	}, ctx == nil || (ctx.UserID != requesterID && ctx.ChatID != requesterID)
 }
 
 func (h *ReviewHandler) notifyDuplicateSubscriptionRequester(requesterID int64, markdown string) error {

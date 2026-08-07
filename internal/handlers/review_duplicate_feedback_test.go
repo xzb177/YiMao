@@ -24,12 +24,39 @@ func TestDuplicateSubscriptionFeedbackUsesOneVisibleChannelInRequesterDM(t *test
 }
 
 func TestDuplicateSubscriptionFeedbackKeepsRequesterNotificationForOtherChat(t *testing.T) {
-	resp, sendSeparate := duplicateSubscriptionFeedback(&callback.Context{ChatID: 99}, 42)
+	resp, sendSeparate := duplicateSubscriptionFeedback(&callback.Context{UserID: 99, ChatID: 99}, 42)
 	if !sendSeparate {
-		t.Fatal("approval from another chat must still notify the requester")
+		t.Fatal("approval from another user must still notify the requester")
 	}
 	if resp.ShowAlert || !resp.Edit {
 		t.Fatalf("response=%+v", resp)
+	}
+}
+
+func TestDuplicateSubscriptionFeedbackUsesOneVisibleChannelWhenRequesterApprovesInGroup(t *testing.T) {
+	resp, sendSeparate := duplicateSubscriptionFeedback(&callback.Context{UserID: 42, ChatID: -1001, ChatType: "supergroup"}, 42)
+	if sendSeparate {
+		t.Fatal("requester acting in a group must not receive a second DM")
+	}
+	if resp.ShowAlert || !resp.Edit || resp.CallbackMsg != "已有订阅" {
+		t.Fatalf("response=%+v", resp)
+	}
+}
+
+func TestDuplicateSubscriptionFeedbackNotifiesRequesterWhenOtherAdminApprovesInGroup(t *testing.T) {
+	resp, sendSeparate := duplicateSubscriptionFeedback(&callback.Context{UserID: 99, ChatID: -1001, ChatType: "group"}, 42)
+	if !sendSeparate {
+		t.Fatal("another admin acting in a group must notify the requester")
+	}
+	if resp.ShowAlert || !resp.Edit {
+		t.Fatalf("response=%+v", resp)
+	}
+}
+
+func TestDuplicateSubscriptionFeedbackConservativelyNotifiesWithoutContext(t *testing.T) {
+	_, sendSeparate := duplicateSubscriptionFeedback(nil, 42)
+	if !sendSeparate {
+		t.Fatal("missing callback context must preserve requester notification")
 	}
 }
 
