@@ -85,6 +85,32 @@ func duplicateSubscriptionFeedback(ctx *callback.Context, requesterID int64) (*c
 	}, ctx == nil || ctx.ChatID != requesterID
 }
 
+func (h *ReviewHandler) notifyDuplicateSubscriptionRequester(requesterID int64, markdown string) error {
+	if h.telegram == nil {
+		return fmt.Errorf("notify requester: telegram client is not configured")
+	}
+	if _, err := h.telegram.SendRichMessage(requesterID, markdown, nil); err != nil {
+		return fmt.Errorf("notify requester: %w", err)
+	}
+	return nil
+}
+
+func duplicateSubscriptionPersistenceFailure() *callback.Response {
+	return &callback.Response{
+		Text:        "⚠️ 已找到现有订阅，但状态保存失败，未通知原请求人。",
+		CallbackMsg: "保存失败",
+		Edit:        true,
+	}
+}
+
+func duplicateSubscriptionNotificationFailure() *callback.Response {
+	return &callback.Response{
+		Text:        "⚠️ 已有订阅，但没能通知原请求人，请手动告知。",
+		CallbackMsg: "通知失败",
+		Edit:        true,
+	}
+}
+
 // handleApprove handles approve callback
 // Supports two formats:
 // - Legacy: "review_approve:id:xxx:token:yyy"
@@ -262,12 +288,17 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			fmt.Sprintf("当前进度：%s", stateText),
 		)
 		resp, sendSeparate := duplicateSubscriptionFeedback(ctx, review.TelegramID)
-		if sendSeparate {
-			h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
+		// Persist the authoritative subscription link before any best-effort
+		// notification so an unreachable DM cannot leave an approved request stale.
+		if err := h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State); err != nil {
+			return duplicateSubscriptionPersistenceFailure(), fmt.Errorf("persist existing subscription link: %w", err)
 		}
-		// Sync review with existing subscription info when possible
-		// Note: UpdateSubscriptionInfo failure is not critical here since we're returning an intercept response
-		_ = h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State)
+		if sendSeparate {
+			if err := h.notifyDuplicateSubscriptionRequester(review.TelegramID, blockedCard.Markdown); err != nil {
+				logger.Info("[ReviewHandler] Duplicate subscription requester notification failed: %v", err)
+				return duplicateSubscriptionNotificationFailure(), nil
+			}
+		}
 		return resp, nil
 	}
 
