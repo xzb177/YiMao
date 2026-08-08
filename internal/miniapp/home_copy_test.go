@@ -50,32 +50,46 @@ func requireOrder(t *testing.T, html string, values ...string) {
 	}
 }
 
-func TestV11HomeRemovesDuplicateTaglineAndPrioritizesCurrentState(t *testing.T) {
+func TestV11HomeFollowsTheWatchToPlaybackPath(t *testing.T) {
 	html := miniAppSource(t)
-	if count := strings.Count(html, "私人影视任务中心"); count != 1 {
-		t.Errorf("V1.1 应只保留一处产品副标题，实际为 %d 处", count)
+	if count := strings.Count(html, "私人影视任务中心"); count != 2 {
+		t.Errorf("文档标题与首页副标题应各保留一处，实际为 %d 处", count)
 	}
 	requireSource(t, html,
-		"function homeStatusSection()",
-		"最新进展",
-		"最近搜过",
-		"不知道看什么？",
-		"开始闯关",
+		"function homeWorkbench()",
+		"function homeTonightSection()",
+		"function homeBlockerSection()",
+		"function homeActiveSection()",
+		"今晚要看",
+		"卡住的事",
+		"正在替你办",
+		"快捷任务",
+		`class="home-section home-shortcuts"`,
+		`/api/miniapp/v1/dynamic`,
+		"recently_added",
 	)
 	requireOrder(t, html,
-		`class="home-search"`,
-		"homeStatusSection()",
-		`class="task-entry-grid"`,
+		`${homeTonightSection()}`,
+		`${homeBlockerSection()}`,
+		`${homeActiveSection()}`,
+		`class="home-section home-shortcuts"`,
 	)
 }
 
-func TestHomeIsAnActionDeskNotACinemaLandingPage(t *testing.T) {
+func TestHomeIsACinematicActionDeskWithRealTaskState(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
 		`class="action-home"`,
 		`class="home-context"`,
+		`class="context-line"`,
+		`class="profile-trigger"`,
+		"今晚看点什么",
+		"把想看的，<br>一次搞定。",
+		"你的私人影视任务中心",
 		`class="home-search"`,
-		"今天想找哪部？",
+		"搜片名、演员或关键词",
+		`class="home-workbench"`,
+		`class="home-section home-shortcuts"`,
 		`class="task-entry-grid"`,
 		`data-action="request"`,
 		`data-action="wash"`,
@@ -83,13 +97,13 @@ func TestHomeIsAnActionDeskNotACinemaLandingPage(t *testing.T) {
 		"求片",
 		"洗版",
 		"闯关",
-		`class="home-active"`,
-		"正在处理",
+		`class="status-beacon `,
 	)
 	requireOrder(t, html,
+		`class="home-context"`,
 		`class="home-search"`,
+		`class="home-workbench"`,
 		`class="task-entry-grid"`,
-		`class="home-active"`,
 	)
 	rejectSource(t, html,
 		"YiMao 放映室",
@@ -100,10 +114,45 @@ func TestHomeIsAnActionDeskNotACinemaLandingPage(t *testing.T) {
 		"film-thread",
 		"search-workspace",
 		"archive-workspace",
-		"prompt-composer glass-surface",
-		"glass-surface",
 		"pointermove",
-		"今晚想看点什么？",
+		"CINEMA / HUB",
+		"product-kicker",
+	)
+}
+
+func TestCinematicSkinIsRestrainedMotionSafeAndTaskFirst(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"--glass:",
+		"--glass-strong:",
+		"--soft-shadow:",
+		"backdrop-filter:blur(",
+		"animation:statusPulse",
+		"@keyframes statusPulse",
+		"transform:translateY(1px)",
+		"function taskAccessibleLabel(item)",
+		`aria-label="${esc(taskAccessibleLabel(item))}"`,
+		"查看全部",
+	)
+	rejectSource(t, html,
+		"CINEMA / HUB",
+		"product-kicker",
+		`aria-label="打开任务"`,
+	)
+}
+
+func TestHomeDistinguishesLoadFailuresFromEmptyState(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function homeLoadError(message)",
+		"媒体库暂时没加载成功",
+		"任务暂时没加载成功",
+		`onclick="loadHome()"`,
+		">重试</button>",
+		"S.homeDynamic?.error",
+		"S.tasks?.error",
+		"if(S.tasks?.error)S.tasks={...S.tasks,error:''}",
+		"if(S.homeDynamic?.error)S.homeDynamic={...S.homeDynamic,error:''}",
 	)
 }
 
@@ -116,7 +165,7 @@ func TestRootNavigationHasExactlyThreeProductPaths(t *testing.T) {
 	}
 	chrome := html[start:end]
 	requireSource(t, chrome,
-		`class="app-dock"`,
+		`class="app-dock glass-dock"`,
 		`aria-label="主导航"`,
 		`aria-current="page"`,
 		"找片",
