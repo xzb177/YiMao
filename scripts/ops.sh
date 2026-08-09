@@ -68,8 +68,8 @@ build_image() {
     rev=$(revision)
     image=${YIMAO_IMAGE:-yimao:$rev}
     info "Building verified image for revision $rev"
-    docker build --target verify -t "yimao:verify-$rev" .
-    docker build --build-arg "REVISION=$rev" -t "$image" .
+    docker build --target verify -t "yimao:verify-$rev" . >&2
+    docker build --build-arg "REVISION=$rev" -t "$image" . >&2
     actual=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
     [ "$actual" = "$rev" ] || die "image revision mismatch: expected $rev, got $actual"
     printf '%s\n' "$image"
