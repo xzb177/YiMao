@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/xzb177/yimao/internal/miniapp"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/internal/version"
 )
 
 // Dependencies holds all service dependencies for the server
@@ -97,16 +99,11 @@ func New(
 			code = http.StatusServiceUnavailable
 		}
 		w.WriteHeader(code)
-		fmt.Fprintf(w, `{"status":"%s","dependencies":{`, status)
-		first := true
-		for name, dependencyStatus := range checks {
-			if !first {
-				fmt.Fprint(w, ",")
-			}
-			fmt.Fprintf(w, `%q:%q`, name, dependencyStatus)
-			first = false
-		}
-		fmt.Fprint(w, `}}`)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":       status,
+			"version":      version.Version,
+			"dependencies": checks,
+		})
 	}))
 
 	// Debug endpoint — always requires API auth (no public fallback)

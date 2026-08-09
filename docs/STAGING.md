@@ -1,6 +1,6 @@
 # YiMao Staging 与真机验收
 
-本流程用于 `v1.0.0-rc` 前的隔离验收。它不会读取生产 `.env`，不会使用生产数据目录，也不会操作 `yimao` 正式容器。Staging 主机需要 Docker 与 Docker Compose v2；所有 Go 测试和构建都强制在 Docker 的 Go 1.24 环境中执行。
+本流程用于 `v1.1.0-rc` 前的隔离验收。它不会读取生产 `.env`，不会使用生产数据目录，也不会操作 `yimao` 正式容器。Staging 主机需要 Docker 与 Docker Compose v2；所有 Go 测试和构建都强制在 Docker 的 Go 1.24 环境中执行。
 
 ## 隔离边界
 
@@ -106,7 +106,7 @@ SOAK_INTERVAL_SECONDS=300 \
 
 ## 验收门槛
 
-进入 `v1.0.0-rc.1` 必须同时满足：
+进入 `v1.1.0-rc.1` 必须同时满足：
 
 - 自动 Smoke 0 失败；如 `STAGING_REQUIRE_CHAT=true`，不得有跳过项；
 - 人工核心链路全部通过；

@@ -17,6 +17,7 @@ import (
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/internal/version"
 	"github.com/xzb177/yimao/pkg/logger"
 )
 
@@ -92,7 +93,7 @@ func (r *Router) handleHealth(w http.ResponseWriter, req *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "ok",
 		"service": "yimao",
-		"version": "2.0.0",
+		"version": version.Version,
 	})
 }
 

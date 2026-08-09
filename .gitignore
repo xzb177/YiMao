@@ -32,6 +32,9 @@ yimao-*
 
 # Backup directories and files
 backup-*/
+backups/
+env.backup
+env.backup-*
 *.bak
 
 # OS

@@ -44,7 +44,9 @@ FROM alpine:latest
 # Supply the immutable source commit in production builds:
 # docker build --build-arg REVISION="$(git rev-parse HEAD)" .
 ARG REVISION=unknown
-LABEL org.opencontainers.image.revision=$REVISION
+ARG VERSION=1.1.0
+LABEL org.opencontainers.image.revision=$REVISION \
+      org.opencontainers.image.version=$VERSION
 
 # Noto Sans CJK provides modern, high-quality Chinese typography for search cards.
 RUN apk add --no-cache ca-certificates tzdata shadow su-exec docker-cli font-noto-cjk
@@ -52,8 +54,9 @@ ENV YIMAO_CJK_FONT=/usr/share/fonts/noto/NotoSansCJK-Regular.ttc
 
 WORKDIR /app
 
-# Copy binary from builder
-COPY --from=builder /app/yimao .
+# Copy the binary from the verified stage so a production build cannot bypass
+# formatting, vet and unit-test gates through an unrelated cached branch.
+COPY --from=verify /app/yimao .
 
 # Create data directory
 RUN mkdir -p /app/data

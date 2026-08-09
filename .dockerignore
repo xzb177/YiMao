@@ -28,6 +28,9 @@ logs/
 /tmp/
 backup-*/
 backup_*/
+backups/
+env.backup
+env.backup-*
 .learnings/
 recovery/
 *.db

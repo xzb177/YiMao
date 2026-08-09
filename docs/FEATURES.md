@@ -59,12 +59,4 @@
 
 ## 部署
 
-```bash
-cp .env.example .env
-vim .env
-./scripts/preflight.sh --env  # 只检查，不启动、不重启服务
-docker compose up -d
-curl -fsS http://localhost:8080/health
-```
-
-生产环境更新前请先备份 `data/` 与 `.env`，并确认 GitHub Actions 与本地 preflight 均通过。
+部署、备份、升级和回滚统一见 [DEPLOY.md](DEPLOY.md)，不要复制 SQLite 主文件或绕过 `manage.sh` 直接替换生产容器。

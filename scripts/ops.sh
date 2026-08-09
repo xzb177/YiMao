@@ -1,219 +1,534 @@
-#!/bin/bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-# ========================================
-# YiMao 运维管理脚本（路径自适应版）
-# 用法: ./scripts/ops.sh [命令]
-# ========================================
+PROJECT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+CONTAINER_NAME=${YIMAO_CONTAINER_NAME:-yimao}
+VOLUME_NAME=${YIMAO_VOLUME_NAME:-yimao-data}
+BACKUP_ROOT=${YIMAO_BACKUP_DIR:-$PROJECT_DIR/backups}
+ENV_FILE=${YIMAO_ENV_FILE:-$PROJECT_DIR/.env}
+COMPOSE_FILE=$PROJECT_DIR/docker-compose.yml
+cd "$PROJECT_DIR"
 
-# 动态获取项目根目录
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CONTAINER_NAME="yimao"
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
-
-cd "$PROJECT_DIR" || exit 1
-
-HEALTH_PORT=8080
-if [ -f "$PROJECT_DIR/.env" ]; then
-    configured_port=$(awk -F= '$1 == "PORT" { print $2 }' "$PROJECT_DIR/.env" | tail -n 1 | tr -d '[:space:]')
-    if [[ "$configured_port" =~ ^[0-9]+$ ]]; then
-        HEALTH_PORT="$configured_port"
-    fi
-fi
+info() { printf '[YiMao] %s\n' "$*" >&2; }
+die() { printf '[YiMao] ERROR: %s\n' "$*" >&2; exit 1; }
 
 compose() {
     if docker compose version >/dev/null 2>&1; then
-        docker compose -f "$COMPOSE_FILE" "$@"
+        YIMAO_ENV_FILE="$ENV_FILE" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
     elif command -v docker-compose >/dev/null 2>&1; then
-        docker-compose -f "$COMPOSE_FILE" "$@"
+        YIMAO_ENV_FILE="$ENV_FILE" docker-compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
     else
-        echo -e "${RED}未找到 Docker Compose${NC}" >&2
-        return 1
+        die "Docker Compose is required"
+    fi
+}
+
+get_env() {
+    key=$1
+    [ -f "$ENV_FILE" ] || return 0
+    awk -F= -v key="$key" '$1 == key { value=substr($0,index($0,"=")+1) } END { print value }' "$ENV_FILE"
+}
+
+revision() {
+    git rev-parse HEAD 2>/dev/null || printf unknown
+}
+
+port() {
+    value=$(get_env PORT)
+    case "$value" in ''|*[!0-9]*) printf 8080 ;; *) printf '%s' "$value" ;; esac
+}
+
+require_runtime() {
+    command -v docker >/dev/null 2>&1 || die "Docker is required"
+    docker info >/dev/null 2>&1 || die "Docker daemon is unavailable or permission is denied"
+    command -v curl >/dev/null 2>&1 || die "curl is required"
+    command -v sha256sum >/dev/null 2>&1 || die "sha256sum is required"
+    [ -S /var/run/docker.sock ] || die "/var/run/docker.sock is unavailable"
+}
+
+prepare_env() {
+    if [ ! -f "$ENV_FILE" ]; then
+        cp .env.example "$ENV_FILE"
+        chmod 600 "$ENV_FILE"
+        info "Created $ENV_FILE with mode 0600"
+        info "Fill TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS, MOVIEPILOT_URL, MOVIEPILOT_API_KEY and API_KEYS, then run ./manage.sh install again."
+        exit 2
+    fi
+    mode=$(stat -c %a "$ENV_FILE" 2>/dev/null || stat -f %Lp "$ENV_FILE")
+    [ "$mode" = 600 ] || die "$ENV_FILE must have mode 0600 (run: chmod 600 .env)"
+    admin_ids=$(get_env ADMIN_USER_IDS)
+    [ -n "$admin_ids" ] || die "ADMIN_USER_IDS is required; its first ID becomes root admin"
+}
+
+preflight() {
+    prepare_env
+    "$PROJECT_DIR/scripts/preflight.sh" --env-file "$ENV_FILE" --engine docker
+}
+
+build_image() {
+    rev=$(revision)
+    image=${YIMAO_IMAGE:-yimao:$rev}
+    info "Building verified image for revision $rev"
+    docker build --target verify -t "yimao:verify-$rev" .
+    docker build --build-arg "REVISION=$rev" -t "$image" .
+    actual=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")
+    [ "$actual" = "$rev" ] || die "image revision mismatch: expected $rev, got $actual"
+    printf '%s\n' "$image"
+}
+
+wait_healthy() {
+    attempts=${YIMAO_HEALTH_ATTEMPTS:-24}
+    i=1
+    while [ "$i" -le "$attempts" ]; do
+        state=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)
+        if [ "$state" = healthy ] && curl -fsS --max-time 5 "http://127.0.0.1:$(port)/health" >/dev/null; then
+            return 0
+        fi
+        [ "$state" = exited ] || [ "$state" = dead ] || sleep 5
+        i=$((i + 1))
+    done
+    docker logs --tail 80 "$CONTAINER_NAME" >&2 || true
+    return 1
+}
+
+run_container() {
+    image=$1
+    docker volume create "$VOLUME_NAME" >/dev/null
+    docker run -d \
+        --name "$CONTAINER_NAME" \
+        --network host \
+        --restart unless-stopped \
+        --env-file "$ENV_FILE" \
+        -e DATA_DIR=/app/data \
+        -v "$VOLUME_NAME:/app/data" \
+        -v /var/run/docker.sock:/var/run/docker.sock \
+        "$image" >/dev/null
+}
+
+data_mount() {
+    mounts=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{println .Type "|" .Name "|" .Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)
+    lines=$(printf '%s\n' "$mounts" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
+    [ "$lines" = 1 ] || die "container $CONTAINER_NAME must have exactly one /app/data mount"
+    printf '%s\n' "$mounts"
+}
+
+require_managed_data_volume() {
+    mount=$(data_mount)
+    mount_type=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $1}')
+    mount_name=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $2}')
+    if [ "$mount_type" != volume ] || [ "$mount_name" != "$VOLUME_NAME" ]; then
+        die "container $CONTAINER_NAME uses a non-managed /app/data mount; migrate it to named volume $VOLUME_NAME before install/update"
+    fi
+}
+
+deploy_image() (
+    image=$1
+    rollback_backup=${2:-}
+    old=""
+    previous_image=""
+    safety_volume=""
+    safety_complete=0
+    transaction_active=0
+
+    recover_deploy() {
+        [ "$transaction_active" -eq 1 ] || return 0
+        trap - EXIT HUP INT TERM
+        info "Deployment interrupted; restoring previous release"
+        if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            docker rm -f "$CONTAINER_NAME" >/dev/null
+        fi
+        if [ -n "$safety_volume" ] && [ "$safety_complete" -eq 1 ]; then
+            if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+                docker volume rm "$VOLUME_NAME" >/dev/null
+            fi
+            docker volume create "$VOLUME_NAME" >/dev/null
+            docker run --rm --entrypoint /bin/sh -v "$safety_volume:/source:ro" -v "$VOLUME_NAME:/restore" "$image" \
+                -c 'set -o pipefail; cd /source && tar -cf - . | tar -xf - -C /restore'
+            docker volume rm "$safety_volume" >/dev/null
+        elif [ -n "$safety_volume" ]; then
+            docker volume rm "$safety_volume" >/dev/null 2>&1 || true
+        elif [ -n "$rollback_backup" ]; then
+            if [ -n "$old" ] && docker inspect "$old" >/dev/null 2>&1; then
+                docker rm -f "$old" >/dev/null
+            fi
+            restore_backup "$rollback_backup" "$previous_image"
+        elif [ -n "$old" ]; then
+            docker rename "$old" "$CONTAINER_NAME"
+            docker start "$CONTAINER_NAME" >/dev/null
+            wait_healthy
+        fi
+        transaction_active=0
+    }
+    finish_deploy() {
+        status=$?
+        trap - EXIT HUP INT TERM
+        if [ "$transaction_active" -eq 1 ]; then
+            set +e
+            (set -e; recover_deploy)
+            recovery_status=$?
+            set -e
+            [ "$recovery_status" -eq 0 ] || info "Automatic deployment recovery failed; use the verified backup: $rollback_backup"
+        fi
+        exit "$status"
+    }
+    trap finish_deploy EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        old="${CONTAINER_NAME}-rollback-$(date +%Y%m%d%H%M%S)"
+        previous_image=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME")
+        info "Preserving current container as $old"
+        transaction_active=1
+        docker stop -t 20 "$CONTAINER_NAME" >/dev/null
+        docker rename "$CONTAINER_NAME" "$old"
+    elif docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+        safety_volume="${VOLUME_NAME}-install-safety-$(date +%Y%m%d%H%M%S)-$$"
+        transaction_active=1
+        docker volume create "$safety_volume" >/dev/null
+        if ! docker run --rm --entrypoint /bin/sh -v "$VOLUME_NAME:/source:ro" -v "$safety_volume:/safety" "$image" \
+            -c 'set -o pipefail; cd /source && tar -cf - . | tar -xf - -C /safety'; then
+            docker volume rm "$safety_volume" >/dev/null 2>&1 || true
+            die "could not preserve the existing data volume before install"
+        fi
+        safety_complete=1
+    fi
+
+    # First installs have no previous container, but a failed candidate must
+    # still be removed by the transaction trap.
+    transaction_active=1
+    run_container "$image"
+    wait_healthy || die "new container failed health checks; automatic recovery started"
+
+    if [ -n "$old" ]; then
+        docker rm "$old" >/dev/null
+    fi
+    transaction_active=0
+    trap - EXIT HUP INT TERM
+    if [ -n "$safety_volume" ]; then
+        docker volume rm "$safety_volume" >/dev/null || die "container is healthy but install safety volume cleanup failed: $safety_volume"
+    fi
+    info "Container is healthy: image=$image revision=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
+)
+
+backup_data() (
+    require_runtime
+    prepare_env
+    docker inspect "$CONTAINER_NAME" >/dev/null 2>&1 || die "container $CONTAINER_NAME does not exist; nothing can be backed up consistently"
+    backup_image=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME")
+    mount=$(data_mount)
+    mount_type=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $1}')
+    mount_name=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $2}')
+    mount_source=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $3}')
+    case "$mount_type" in
+        volume) backup_mount="type=volume,src=$mount_name,dst=/source,readonly" ;;
+        bind) backup_mount="type=bind,src=$mount_source,dst=/source,readonly" ;;
+        *) die "unsupported /app/data mount type: $mount_type" ;;
+    esac
+    mkdir -p "$BACKUP_ROOT"
+    chmod 700 "$BACKUP_ROOT"
+    stamp=$(date +%Y%m%d_%H%M%S)
+    target=$(mktemp -d "$BACKUP_ROOT/$stamp.XXXXXX") || die "could not create a unique backup directory"
+    chmod 700 "$target"
+
+    was_running=0
+    backup_complete=0
+    recover_service() {
+        status=$?
+        trap - EXIT HUP INT TERM
+        if [ "$was_running" -eq 1 ] && [ "$backup_complete" -eq 0 ]; then
+            if ! docker start "$CONTAINER_NAME" >/dev/null; then
+                info "Backup interrupted and the service could not be restarted"
+                exit 1
+            fi
+            if ! wait_healthy; then
+                info "Backup interrupted and the restarted service is not healthy"
+                exit 1
+            fi
+        fi
+        exit "$status"
+    }
+    trap recover_service EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null || true)" = true ]; then
+        was_running=1
+        info "Stopping YiMao briefly for a consistent SQLite/WAL backup"
+        docker stop -t 20 "$CONTAINER_NAME" >/dev/null
+    fi
+
+    if ! docker run --rm --entrypoint /bin/sh --mount "$backup_mount" "$backup_image" \
+        -c 'cd /source && tar -czf - .' > "$target/data.tar.gz"; then
+        die "volume backup failed"
+    fi
+
+    {
+        docker inspect -f 'image={{.Config.Image}}' "$CONTAINER_NAME"
+        docker inspect -f 'revision={{index .Config.Labels "org.opencontainers.image.revision"}}' "$CONTAINER_NAME"
+        docker inspect -f 'network={{.HostConfig.NetworkMode}}' "$CONTAINER_NAME"
+        docker inspect -f 'restart={{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_NAME"
+    } > "$target/container.state"
+    cp "$ENV_FILE" "$target/env.backup"
+    chmod 600 "$target/env.backup" "$target/container.state" 2>/dev/null || true
+    (cd "$target" && sha256sum data.tar.gz container.state env.backup > SHA256SUMS)
+    (cd "$target" && sha256sum -c SHA256SUMS >/dev/null)
+
+    if [ "$was_running" -eq 1 ]; then
+        docker start "$CONTAINER_NAME" >/dev/null
+        wait_healthy || die "backup succeeded but service did not recover"
+    fi
+    backup_complete=1
+    trap - EXIT HUP INT TERM
+    info "Backup verified: $target"
+    printf '%s\n' "$target"
+)
+
+restore_backup() (
+    require_runtime
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        require_managed_data_volume
+    fi
+    target=${1:-}
+    requested_image=${2:-}
+    [ -n "$target" ] || die "usage: ./manage.sh rollback BACKUP_DIR"
+    [ -d "$target" ] || die "backup directory not found: $target"
+    target=$(CDPATH= cd -- "$target" && pwd)
+    (cd "$target" && sha256sum -c SHA256SUMS) || die "backup checksum verification failed"
+    image=$(awk -F= '$1 == "image" {print substr($0,index($0,"=")+1)}' "$target/container.state")
+    [ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1 || die "rollback image is unavailable: $image"
+
+    stamp=$(date +%Y%m%d%H%M%S)
+    restore_volume="${VOLUME_NAME}-restore-$stamp"
+    safety_volume="${VOLUME_NAME}-safety-$stamp"
+    env_safety=""
+    env_existed=0
+    volume_existed=0
+    current_image="$requested_image"
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        current_image=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME")
+    fi
+    if [ -f "$ENV_FILE" ]; then
+        env_safety=$(mktemp "${ENV_FILE}.rollback.XXXXXX")
+        chmod 600 "$env_safety"
+        cp "$ENV_FILE" "$env_safety"
+        env_existed=1
+    elif [ -n "$current_image" ]; then
+        env_safety=$(mktemp "${ENV_FILE}.rollback.XXXXXX")
+        chmod 600 "$env_safety"
+        docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONTAINER_NAME" > "$env_safety"
+    fi
+    transaction_active=0
+
+    recover_restore() {
+        [ "$transaction_active" -eq 1 ] || return 0
+        trap - EXIT HUP INT TERM
+        info "Rollback interrupted; restoring the pre-rollback release"
+        if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+            docker rm -f "$CONTAINER_NAME" >/dev/null
+        fi
+        if [ "$volume_existed" -eq 1 ] && docker volume inspect "$safety_volume" >/dev/null 2>&1; then
+            if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+                docker volume rm "$VOLUME_NAME" >/dev/null
+            fi
+            docker volume create "$VOLUME_NAME" >/dev/null
+            docker run --rm --entrypoint /bin/sh -v "$safety_volume:/source:ro" -v "$VOLUME_NAME:/restore" "$image" \
+                -c 'set -o pipefail; cd /source && tar -cf - . | tar -xf - -C /restore'
+        elif docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+            docker volume rm "$VOLUME_NAME" >/dev/null
+        fi
+        if [ -n "$env_safety" ]; then
+            cp "$env_safety" "$ENV_FILE"
+            chmod 600 "$ENV_FILE"
+        else
+            rm -f "$ENV_FILE"
+        fi
+        if [ -n "$current_image" ]; then
+            run_container "$current_image"
+            [ "$env_existed" -eq 1 ] || rm -f "$ENV_FILE"
+            wait_healthy
+        elif [ "$env_existed" -eq 0 ]; then
+            rm -f "$ENV_FILE"
+        fi
+        transaction_active=0
+    }
+    finish_restore() {
+        status=$?
+        trap - EXIT HUP INT TERM
+        recovered=1
+        if [ "$transaction_active" -eq 1 ]; then
+            set +e
+            (set -e; recover_restore)
+            recovery_status=$?
+            set -e
+            [ "$recovery_status" -eq 0 ] || recovered=0
+        fi
+        if [ "$recovered" -eq 1 ]; then
+            docker volume rm "$restore_volume" "$safety_volume" >/dev/null 2>&1 || true
+            [ -z "$env_safety" ] || rm -f "$env_safety"
+        else
+            info "Automatic rollback recovery failed; safety volume and environment copy were preserved"
+        fi
+        exit "$status"
+    }
+    trap finish_restore EXIT
+    trap 'exit 129' HUP
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    docker volume create "$restore_volume" >/dev/null
+    docker run --rm -i --entrypoint /bin/sh -v "$restore_volume:/restore" "$image" \
+        -c 'cd /restore && tar -xzf -' < "$target/data.tar.gz"
+
+    if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+        volume_existed=1
+        docker volume create "$safety_volume" >/dev/null
+        docker run --rm --entrypoint /bin/sh -v "$VOLUME_NAME:/source:ro" -v "$safety_volume:/safety" "$image" \
+            -c 'set -o pipefail; cd /source && tar -cf - . | tar -xf - -C /safety'
+    fi
+
+    transaction_active=1
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    if docker volume inspect "$VOLUME_NAME" >/dev/null 2>&1; then
+        docker volume rm "$VOLUME_NAME" >/dev/null
+    fi
+    docker volume create "$VOLUME_NAME" >/dev/null
+    docker run --rm --entrypoint /bin/sh -v "$restore_volume:/source:ro" -v "$VOLUME_NAME:/restore" "$image" \
+        -c 'set -o pipefail; cd /source && tar -cf - . | tar -xf - -C /restore'
+    cp "$target/env.backup" "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+    run_container "$image"
+    wait_healthy || die "restored container failed health checks"
+
+    transaction_active=0
+    trap - EXIT HUP INT TERM
+    docker volume rm "$restore_volume" "$safety_volume" >/dev/null 2>&1 || true
+    [ -z "$env_safety" ] || rm -f "$env_safety"
+    info "Rollback completed from $target"
+)
+
+telegram_menu() {
+    require_runtime
+    prepare_env
+    base=$(get_env MINI_APP_URL)
+    [ -n "$base" ] || die "MINI_APP_URL is required, for example https://bot.example.com/miniapp"
+    case "$base" in https://*) ;; *) die "MINI_APP_URL must use https://" ;; esac
+    case "$base" in *\"*|*\\*|*[[:space:]]*) die "MINI_APP_URL contains unsupported characters" ;; esac
+    rev=$(docker inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$CONTAINER_NAME" 2>/dev/null || revision)
+    separator='?'; case "$base" in *\?*) separator='&' ;; esac
+    url="${base}${separator}v=${rev}"
+    token=$(get_env TELEGRAM_BOT_TOKEN)
+    payload=$(printf '{"menu_button":{"type":"web_app","text":"打开 YiMao","web_app":{"url":"%s"}}}' "$url")
+    response=$(printf 'url = "https://api.telegram.org/bot%s/setChatMenuButton"\nsilent\nshow-error\nfail\nheader = "Content-Type: application/json"\ndata = "%s"\n' "$token" "$(printf '%s' "$payload" | sed 's/"/\\"/g')" | curl --config -)
+    printf '%s' "$response" | grep -q '"ok":true' || die "Telegram rejected setChatMenuButton"
+    info "Telegram default Mini App menu updated for revision $rev"
+}
+
+doctor() {
+    require_runtime
+    prepare_env
+    if docker compose version >/dev/null 2>&1 || command -v docker-compose >/dev/null 2>&1; then
+        compose config --quiet
+    else
+        info "Docker Compose is unavailable; skipping the optional Compose rendering check"
+    fi
+    "$PROJECT_DIR/scripts/preflight.sh" --env-file "$ENV_FILE" --engine docker
+    docker inspect "$CONTAINER_NAME" >/dev/null 2>&1 || die "container $CONTAINER_NAME does not exist"
+    network=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$CONTAINER_NAME")
+    restart=$(docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' "$CONTAINER_NAME")
+    mounts=$(docker inspect -f '{{range .Mounts}}{{println .Destination}}{{end}}' "$CONTAINER_NAME")
+    [ "$network" = host ] || die "container network is $network, expected host"
+    [ "$restart" = unless-stopped ] || die "restart policy is $restart, expected unless-stopped"
+    printf '%s\n' "$mounts" | grep -qx /app/data || die "data volume is not mounted"
+    printf '%s\n' "$mounts" | grep -qx /var/run/docker.sock || die "Docker socket is not mounted"
+    wait_healthy || die "health check failed"
+    info "Doctor passed: config, build, topology and dependencies are healthy"
+}
+
+install_service() {
+    require_runtime
+    prepare_env
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        require_managed_data_volume
+    fi
+    preflight
+    image=$(build_image) || die "verified image build failed"
+    rollback_backup=""
+    if docker inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+        rollback_backup=$(backup_data) || die "pre-deployment backup failed"
+    fi
+    deploy_image "$image" "$rollback_backup"
+    if [ -n "$(get_env MINI_APP_URL)" ]; then telegram_menu; fi
+    info "Install complete. Send /start to the Bot, then /link USERNAME or /link USERNAME PASSWORD."
+}
+
+update_service() {
+    require_runtime
+    prepare_env
+    [ -z "$(git status --porcelain)" ] || die "working tree contains tracked or untracked changes; commit or stash before update"
+    require_managed_data_volume
+    git fetch --prune origin
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)
+    [ -n "$upstream" ] || die "current branch has no upstream"
+    git merge --ff-only "$upstream"
+    preflight
+    image=$(build_image) || die "verified image build failed"
+    rollback_backup=$(backup_data) || die "pre-deployment backup failed"
+    deploy_image "$image" "$rollback_backup"
+    if [ -n "$(get_env MINI_APP_URL)" ]; then telegram_menu; fi
+    info "Update complete"
+}
+
+uninstall_service() {
+    delete_data=0
+    [ "${1:-}" != --delete-data ] || delete_data=1
+    docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+    if [ "$delete_data" -eq 1 ]; then
+        docker volume rm "$VOLUME_NAME"
+        info "Application and data volume removed"
+    else
+        info "Application removed; data volume $VOLUME_NAME was preserved"
     fi
 }
 
 show_help() {
-    echo -e "${BLUE}=== YiMao 运维管理脚本 ===${NC}"
-    echo ""
-    echo "用法: ./scripts/ops.sh [命令]"
-    echo ""
-    echo "命令:"
-    echo "  status      查看服务状态"
-    echo "  logs        查看实时日志（logs-f 兼容别名）"
-    echo "  logs-error  只看错误日志"
-    echo "  shell       进入容器 shell"
-    echo "  exec        在容器内执行命令"
-    echo "  restart     重启服务"
-    echo "  build       部署前验收并构建镜像，不重启"
-    echo "  rebuild     部署前验收、重新构建并启动"
-    echo "  stop        停止服务"
-    echo "  start       启动服务"
-    echo "  update      更新代码并重启"
-    echo "  clean       清理图片缓存"
-    echo "  backup      备份配置和数据"
-    echo "  preflight   部署前验收（不启动、不重启服务）"
-    echo "  health      健康检查"
-    echo ""
-}
+    cat <<'EOF'
+Usage: ./manage.sh COMMAND
 
-show_status() {
-    echo -e "${BLUE}=== 服务状态 ===${NC}"
-    docker ps -a --filter "name=$CONTAINER_NAME" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-    echo ""
-    echo -e "${BLUE}=== 资源使用 ===${NC}"
-    docker stats "$CONTAINER_NAME" --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}" 2>/dev/null || echo "容器未运行"
-    echo ""
-}
-
-show_logs() {
-    docker logs "$CONTAINER_NAME" --tail 50 -f
-}
-
-show_error_logs() {
-    docker logs "$CONTAINER_NAME" 2>&1 | grep -i "error\|fail\|panic" | tail -20 || true
-}
-
-open_shell() {
-    docker exec -it "$CONTAINER_NAME" /bin/sh
-}
-
-exec_in_container() {
-    if [ $# -eq 0 ]; then
-        echo -e "${RED}exec 需要提供命令${NC}" >&2
-        return 2
-    fi
-    docker exec -it "$CONTAINER_NAME" "$@"
-}
-
-build_service() {
-    echo -e "${YELLOW}先执行部署前验收...${NC}"
-    preflight_check
-    echo -e "${YELLOW}验收通过，构建镜像...${NC}"
-    compose build --no-cache
-}
-
-restart_service() {
-    echo -e "${YELLOW}重启服务...${NC}"
-    docker restart "$CONTAINER_NAME"
-    sleep 3
-    show_status
-}
-
-stop_service() {
-    echo -e "${YELLOW}停止服务...${NC}"
-    docker stop "$CONTAINER_NAME"
-}
-
-start_service() {
-    echo -e "${YELLOW}启动服务...${NC}"
-    docker start "$CONTAINER_NAME" 2>/dev/null || compose up -d
-    sleep 3
-    show_status
-}
-
-rebuild_service() {
-    echo -e "${YELLOW}先执行部署前验收...${NC}"
-    preflight_check
-    echo -e "${YELLOW}验收通过，备份当前数据...${NC}"
-    backup_data
-    echo -e "${YELLOW}备份完成，重新构建服务...${NC}"
-    compose build --no-cache
-    compose up -d --force-recreate
-    echo -e "${GREEN}构建完成！${NC}"
-    show_status
-}
-
-update_code() {
-    echo -e "${YELLOW}更新代码...${NC}"
-    git fetch origin
-    LOCAL=$(git rev-parse @)
-    REMOTE=$(git rev-parse @{u})
-
-    if [ "$LOCAL" = "$REMOTE" ]; then
-        echo -e "${GREEN}已是最新版本${NC}"
-    else
-        echo -e "${YELLOW}发现更新，正在拉取...${NC}"
-        git pull --ff-only origin master
-        echo -e "${GREEN}更新完成，重启服务...${NC}"
-        rebuild_service
-    fi
-}
-
-clean_cache() {
-    echo -e "${YELLOW}清理图片缓存...${NC}"
-    rm -rf "$PROJECT_DIR"/data/image_cache/*.jpg 2>/dev/null
-    echo -e "${GREEN}缓存清理完成${NC}"
-}
-
-backup_data() {
-    BACKUP_DIR="$PROJECT_DIR/backup-$(date +%Y%m%d_%H%M%S)"
-    echo -e "${YELLOW}备份到 $BACKUP_DIR${NC}"
-    mkdir -p "$BACKUP_DIR"
-    if [ -d "$PROJECT_DIR/data" ]; then
-        cp -r "$PROJECT_DIR/data" "$BACKUP_DIR/"
-    else
-        mkdir -p "$BACKUP_DIR/data"
-    fi
-    if [ -f "$PROJECT_DIR/.env" ]; then
-        cp "$PROJECT_DIR/.env" "$BACKUP_DIR/"
-    fi
-    echo -e "${GREEN}备份完成${NC}"
-}
-
-preflight_check() {
-    sh "$PROJECT_DIR/scripts/preflight.sh" --env
-}
-
-health_check() {
-    echo -e "${BLUE}=== 健康检查 ===${NC}"
-    failed=0
-
-    if docker ps --format '{{.Names}}' | grep -qx "$CONTAINER_NAME"; then
-        echo -e "${GREEN}✓ 容器运行中${NC}"
-    else
-        echo -e "${RED}✗ 容器未运行${NC}"
-        failed=1
-    fi
-
-    if curl -fsS "http://localhost:${HEALTH_PORT}/health" > /dev/null 2>&1; then
-        echo -e "${GREEN}✓ HTTP API 正常${NC}"
-    else
-        echo -e "${RED}✗ HTTP API 异常${NC}"
-        failed=1
-    fi
-
-    ERROR_COUNT=$(docker logs "$CONTAINER_NAME" --tail 100 2>&1 | grep -ciE 'error|panic' || true)
-    if [ "$ERROR_COUNT" -eq 0 ]; then
-        echo -e "${GREEN}✓ 最近日志无 error/panic${NC}"
-    else
-        echo -e "${YELLOW}⚠ 最近日志发现 $ERROR_COUNT 个 error/panic 记录${NC}"
-    fi
-
-    return "$failed"
+  install              validate, build, start and wait for health
+  backup               stop briefly and back up the active /app/data mount safely
+  update               fast-forward, verify, back up and transactionally deploy
+  rollback BACKUP_DIR  restore image, environment and data from a verified backup
+  telegram             set the default Telegram Mini App menu and revision
+  uninstall            remove the app but preserve the data volume
+  doctor               validate config, build, topology and health
+  status               show container status and immutable revision
+  health               wait for Docker and HTTP health checks
+  logs                 follow application logs
+  restart              restart and wait for health
+  start                 start the existing container
+  stop                  stop the existing container
+  preflight             run tests and config validation without deployment
+  compose               print the resolved Compose configuration
+EOF
 }
 
 case "${1:-help}" in
-    status)     show_status ;;
-    logs|logs-f) show_logs ;;
-    logs-error)  show_error_logs ;;
-    shell)       open_shell ;;
-    exec)        shift; exec_in_container "$@" ;;
-    restart)     restart_service ;;
-    build)       build_service ;;
-    rebuild)     rebuild_service ;;
-    stop)       stop_service ;;
-    start)      start_service ;;
-    update)     update_code ;;
-    clean)      clean_cache ;;
-    backup)     backup_data ;;
-    preflight)  preflight_check ;;
-    health)     health_check ;;
+    install) install_service ;;
+    backup) backup_data ;;
+    update) update_service ;;
+    rollback) shift; restore_backup "${1:-}" ;;
+    telegram) telegram_menu ;;
+    uninstall) shift; uninstall_service "${1:-}" ;;
+    doctor) doctor ;;
+    status) docker inspect -f 'name={{.Name}} image={{.Config.Image}} revision={{index .Config.Labels "org.opencontainers.image.revision"}} state={{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}} restarts={{.RestartCount}}' "$CONTAINER_NAME" ;;
+    health) require_runtime; wait_healthy || die "health check failed"; info "Health check passed" ;;
+    logs|logs-f) docker logs --tail 100 -f "$CONTAINER_NAME" ;;
+    restart) docker restart "$CONTAINER_NAME" >/dev/null; wait_healthy ;;
+    start) docker start "$CONTAINER_NAME" ;;
+    stop) docker stop -t 20 "$CONTAINER_NAME" ;;
+    preflight) require_runtime; preflight ;;
+    compose) prepare_env; compose config ;;
     help|--help|-h) show_help ;;
-    *)
-        echo -e "${RED}未知命令: $1${NC}"
-        show_help
-        exit 1
-        ;;
+    *) show_help >&2; exit 2 ;;
 esac

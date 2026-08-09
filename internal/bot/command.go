@@ -16,6 +16,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/internal/ui"
+	"github.com/xzb177/yimao/internal/version"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 	"github.com/xzb177/yimao/pkg/validation"
@@ -593,7 +594,7 @@ func BuildStatusMessage(msg *types.TelegramMessage, cfg *config.Config, adminSer
 	isAdmin := adminService != nil && msg != nil && adminService.IsAdmin(msg.From.ID)
 	var sb strings.Builder
 	sb.WriteString("🎬 <b>云海求片助手</b>\n\n")
-	sb.WriteString("📊 版本: <code>v1.0</code>\n")
+	sb.WriteString(fmt.Sprintf("📊 版本: <code>v%s</code>\n", version.Version))
 	sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
 	if msg != nil {
 		sb.WriteString(fmt.Sprintf("👤 当前用户: <code>%d</code>\n", msg.From.ID))

@@ -6,6 +6,7 @@ CHECK_ENV=0
 ENV_FILE=""
 COMPOSE_FILE="docker-compose.yml"
 ENGINE="auto"
+RUN_LIFECYCLE=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -39,8 +40,12 @@ while [ $# -gt 0 ]; do
       ENGINE="$2"
       shift 2
       ;;
+    --lifecycle)
+      RUN_LIFECYCLE=1
+      shift
+      ;;
     *)
-      echo "Usage: $0 [--env | --env-file PATH] [--compose-file PATH] [--engine auto|go|docker]" >&2
+      echo "Usage: $0 [--env | --env-file PATH] [--compose-file PATH] [--engine auto|go|docker] [--lifecycle]" >&2
       exit 2
       ;;
   esac
@@ -121,6 +126,9 @@ if [ "$CHECK_ENV" -eq 1 ]; then
 fi
 
 USE_GO=0
+echo "[run] deployment contract"
+"$PROJECT_DIR/scripts/tests/deployment_contract.sh"
+
 case "$ENGINE" in
   go)
     command -v go >/dev/null 2>&1 || { echo "Go is required by --engine go" >&2; exit 1; }
@@ -168,15 +176,44 @@ echo "[ok] build and tests"
 if command -v docker >/dev/null 2>&1; then
   if docker compose version >/dev/null 2>&1; then
     if [ "$CHECK_ENV" -eq 1 ]; then
-      docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet
+      YIMAO_ENV_FILE="$ENV_FILE" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet
     else
       docker compose -f "$COMPOSE_FILE" config --quiet
     fi
     echo "[ok] docker compose config"
   elif command -v docker-compose >/dev/null 2>&1; then
-    docker-compose -f "$COMPOSE_FILE" config --quiet
+    if [ "$CHECK_ENV" -eq 1 ]; then
+      YIMAO_ENV_FILE="$ENV_FILE" docker-compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" config --quiet
+    else
+      docker-compose -f "$COMPOSE_FILE" config --quiet
+    fi
     echo "[ok] docker-compose config"
   fi
+fi
+
+if [ "$RUN_LIFECYCLE" -eq 1 ]; then
+  command -v docker >/dev/null 2>&1 || { echo "Docker is required by --lifecycle" >&2; exit 1; }
+  echo "[run] isolated deployment lifecycle"
+  lifecycle_tmp_root=${YIMAO_TEST_TMP_ROOT:-$PROJECT_DIR/.hermes/yimao-lifecycle-tests}
+  lifecycle_host_tmp_root=${YIMAO_TEST_HOST_TMP_ROOT:-$lifecycle_tmp_root}
+  lifecycle_marker="$lifecycle_tmp_root/.daemon-visibility.$$.marker"
+  mkdir -p "$lifecycle_tmp_root"
+  cleanup_lifecycle_marker() { rm -f "$lifecycle_marker"; }
+  lifecycle_hup() { exit 129; }
+  lifecycle_int() { exit 130; }
+  lifecycle_term() { exit 143; }
+  trap cleanup_lifecycle_marker EXIT
+  trap lifecycle_hup HUP
+  trap lifecycle_int INT
+  trap lifecycle_term TERM
+  printf '%s\n' "$$" > "$lifecycle_marker"
+  docker run --rm --mount "type=bind,src=$lifecycle_host_tmp_root,dst=/probe,readonly" alpine:latest \
+    sh -c 'test -f "/probe/$(basename "$1")"' sh "$(basename "$lifecycle_marker")"
+  cleanup_lifecycle_marker
+  trap - EXIT HUP INT TERM
+  YIMAO_TEST_TMP_ROOT="$lifecycle_tmp_root" \
+  YIMAO_TEST_HOST_TMP_ROOT="$lifecycle_host_tmp_root" \
+    "$PROJECT_DIR/scripts/tests/deployment_lifecycle.sh"
 fi
 
 echo "Preflight passed. No service was started or restarted."
