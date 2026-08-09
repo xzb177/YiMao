@@ -26,6 +26,30 @@ func TestMiniAppLoadsTelegramSDKFromSameOrigin(t *testing.T) {
 	}
 }
 
+func TestMiniAppWaitsForTelegramSDKBeforeAuthenticatedRequests(t *testing.T) {
+	handler := NewServer(Deps{}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/miniapp", nil))
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	for _, contract := range []string{
+		"const telegramReady=new Promise",
+		"resolveTelegramReady?.()",
+		"await telegramReady",
+		"tg=telegramWebApp()||tg",
+		"if(!tg)return",
+		"resolveTelegramReady?.();resolveTelegramReady=null",
+		`onload="initTelegramWebApp()" onerror="resolveTelegramReady?.()"`,
+	} {
+		if !strings.Contains(body, contract) {
+			t.Fatalf("Mini App must wait for Telegram SDK before authenticated requests: missing %q", contract)
+		}
+	}
+}
+
 func TestMiniAppAdventureEmptyStateDoesNotReloadContinuously(t *testing.T) {
 	handler := NewServer(Deps{}).Handler()
 	response := httptest.NewRecorder()

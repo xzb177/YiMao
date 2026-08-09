@@ -284,7 +284,7 @@ func TestTelegramSDKCannotBlockFirstVisiblePaint(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
 		`<main id="app" class="shell"><section class="boot-fallback"`,
-		`<script async src="/miniapp/telegram-web-app.js" onload="initTelegramWebApp()"></script>`,
+		`<script async src="/miniapp/telegram-web-app.js" onload="initTelegramWebApp()" onerror="resolveTelegramReady?.()"></script>`,
 		"function telegramWebApp()",
 	)
 	rejectSource(t, html,

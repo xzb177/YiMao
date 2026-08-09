@@ -90,8 +90,10 @@ img{max-width:100%;display:block}
 <script>
 function telegramWebApp(){return window.Telegram?.WebApp}
 let tg=telegramWebApp();
+let resolveTelegramReady;
+const telegramReady=new Promise(resolve=>{resolveTelegramReady=resolve});
 let telegramBackBound=false;
-function initTelegramWebApp(){tg=telegramWebApp();if(!tg)return;tg.ready();tg.expand?.();tg.setHeaderColor?.('#0b0d10');tg.setBackgroundColor?.('#0b0d10');if(!telegramBackBound&&tg.BackButton){tg.BackButton.onClick(()=>{if(S.detailVisible)backDetail();else if(S.view!=='search')navigate('search')});telegramBackBound=true}syncBack()}
+function initTelegramWebApp(){tg=telegramWebApp();if(!tg)return;resolveTelegramReady?.();resolveTelegramReady=null;tg.ready();tg.expand?.();tg.setHeaderColor?.('#0b0d10');tg.setBackgroundColor?.('#0b0d10');if(!telegramBackBound&&tg.BackButton){tg.BackButton.onClick(()=>{if(S.detailVisible)backDetail();else if(S.view!=='search')navigate('search')});telegramBackBound=true}syncBack()}
 const DEMO=new URLSearchParams(location.search).get('demo')==='1';
 const S={view:'home',query:'',searchType:'all',searchMode:'request',results:[],searchError:'',loading:false,searchSeq:0,detailSeq:0,meSeq:0,homeSeq:0,homeLoading:false,homeDynamic:null,detail:null,detailFrom:'home',detailVisible:false,season:0,tasks:null,adventure:null,adventureLoaded:false,adventureLoading:false,adventureBusy:false,adventureSeq:0,tool:'',toolData:null,toolError:'',toolSeq:0,submitting:false};
 function esc(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -115,7 +117,7 @@ if(p.includes('/watchlist'))return{ok:true,status:200,json:async()=>({items:[]})
 if(p.includes('/wishes')||p.includes('/issues'))return{ok:true,status:200,json:async()=>({items:[]})};
 if(p.includes('/assistant'))return{ok:true,status:200,json:async()=>({reply:'可以从这几部开始。',items:[movie]})};return null}
 class APIError extends Error{constructor(message,status=0,body=null){super(message);this.status=status;this.body=body}}
-async function api(path,options={}){const demo=demoResponse(path,options);if(demo)return demo.json();let response;try{response=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg?.initData||'',...(options.headers||{})}})}catch(error){if(error?.name==='AbortError')throw error;throw new APIError('网络连接不稳定，请稍后再试')}if(!response.ok){let body=null;try{body=await response.json()}catch{}const message=typeof body?.message==='string'?body.message:response.status>=500?'服务暂时繁忙，请稍后再试':response.status===401?'Mini App 会话已过期，请从 Telegram 重新打开':'请求没有完成，请稍后再试';throw new APIError(message,response.status,body)}return response.json()}
+async function api(path,options={}){const demo=demoResponse(path,options);if(demo)return demo.json();await telegramReady;tg=telegramWebApp()||tg;let response;try{response=await fetch(path,{...options,headers:{'Content-Type':'application/json','X-Telegram-Init-Data':tg?.initData||'',...(options.headers||{})}})}catch(error){if(error?.name==='AbortError')throw error;throw new APIError('网络连接不稳定，请稍后再试')}if(!response.ok){let body=null;try{body=await response.json()}catch{}const message=typeof body?.message==='string'?body.message:response.status>=500?'服务暂时繁忙，请稍后再试':response.status===401?'Mini App 会话已过期，请从 Telegram 重新打开':'请求没有完成，请稍后再试';throw new APIError(message,response.status,body)}return response.json()}
 function toast(message){const node=document.getElementById('toast');node.textContent=message;node.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>node.classList.remove('show'),2400)}
 function icon(name){if(name==='search')return'<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg>';if(name==='tasks')return'<svg viewBox="0 0 24 24"><path d="M5 5h14v14H5z"></path><path d="m8 12 2 2 5-5"></path></svg>';return'<svg viewBox="0 0 24 24"><path d="M8 8h8a5 5 0 0 1 4.5 7l-1 2a2.5 2.5 0 0 1-4.1.6L14 16H10l-1.4 1.6a2.5 2.5 0 0 1-4.1-.6l-1-2A5 5 0 0 1 8 8Z"></path><path d="M8 11v4M6 13h4M16 12h.01M18 14h.01"></path></svg>'}
 function chrome(content,active=S.view){const current=active==='tasks'?'tasks':active==='adventure'?'adventure':'search';return `${content}<nav class="app-dock glass-dock" aria-label="主导航"><button data-view="search" ${current==='search'?'aria-current="page"':''} onclick="navigate('search')">${icon('search')}找片</button><button data-view="tasks" ${current==='tasks'?'aria-current="page"':''} onclick="navigate('tasks')">${icon('tasks')}任务</button><button data-view="adventure" ${current==='adventure'?'aria-current="page"':''} onclick="navigate('adventure')">${icon('adventure')}闯关</button></nav>`}
@@ -207,6 +209,6 @@ function showNativeBack(){tg?.BackButton?.show()}
 function syncBack(){if(S.detailVisible)showNativeBack();else tg?.BackButton?.hide?.()}
 render();initTelegramWebApp();syncBack();
 </script>
-<script async src="/miniapp/telegram-web-app.js" onload="initTelegramWebApp()"></script>
+<script async src="/miniapp/telegram-web-app.js" onload="initTelegramWebApp()" onerror="resolveTelegramReady?.()"></script>
 </body>
 </html>
