@@ -105,7 +105,7 @@ type ReviewService struct {
 	reviewsFile     string
 	reviews         map[string]*ReviewRequest // requestID -> review
 	mu              sync.RWMutex
-	washDispatching map[string]bool // requestID -> in-flight MoviePilot dispatch
+	washDispatching map[string]bool   // requestID -> in-flight MoviePilot dispatch
 	moviepilot      *MoviePilotClient // For updating subscription status
 	autoResubscribe bool
 	// OnSubscriptionComplete 订阅完成时的通知回调（由 main 注入）。
