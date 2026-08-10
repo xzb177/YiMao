@@ -528,6 +528,71 @@ func (s *WebhookService) GetEmbyMediaInfo(itemID string) (map[string]interface{}
 	return result, nil
 }
 
+func (s *WebhookService) fetchEmbyMediaSourcePaths(itemID string) ([]string, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" || strings.TrimSpace(itemID) == "" {
+		return nil, fmt.Errorf("Emby media source lookup is not configured")
+	}
+
+	endpoint := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=MediaSources",
+		strings.TrimRight(s.embyURL, "/"), url.PathEscape(s.embyUserID), url.PathEscape(itemID))
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Emby-Token", s.embyAPIKey)
+	req.Header.Set("Accept", "application/json")
+	ctx, cancel := context.WithTimeout(req.Context(), 5*time.Second)
+	defer cancel()
+
+	resp, err := s.embyHTTPClient().Do(req.WithContext(ctx))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+	}
+
+	var item struct {
+		MediaSources []struct {
+			Path string `json:"Path"`
+		} `json:"MediaSources"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&item); err != nil {
+		return nil, err
+	}
+	paths := make([]string, 0, len(item.MediaSources))
+	for _, source := range item.MediaSources {
+		if path := strings.TrimSpace(source.Path); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("Emby item has no MediaSource paths")
+	}
+	return paths, nil
+}
+
+func (s *WebhookService) fetchEmbyItemTMDBID(itemID string) (string, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" || strings.TrimSpace(itemID) == "" {
+		return "", fmt.Errorf("Emby item identity lookup is not configured")
+	}
+	endpoint := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=ProviderIds",
+		strings.TrimRight(s.embyURL, "/"), url.PathEscape(s.embyUserID), url.PathEscape(itemID))
+	var item struct {
+		ProviderIDs map[string]string `json:"ProviderIds"`
+	}
+	if err := s.getEmbyJSON(endpoint, &item); err != nil {
+		return "", err
+	}
+	for _, key := range []string{"Tmdb", "tmdb"} {
+		if tmdbID := strings.TrimSpace(item.ProviderIDs[key]); tmdbID != "" {
+			return tmdbID, nil
+		}
+	}
+	return "", fmt.Errorf("Emby item has no TMDB provider ID")
+}
+
 func (s *WebhookService) SearchEmbyMedia(title string, year int, mediaType MediaType) (*EmbySearchResult, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby URL or API key not configured")

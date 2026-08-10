@@ -184,6 +184,21 @@ func (s *WebhookService) handleItemAdded(payload EmbyWebhookPayload) error {
 	if itemName == "" && payload.Item != nil {
 		itemName = payload.Item.Name
 	}
+	// Completion is a state transition, not a notification side effect. Keep it
+	// before both episode aggregation and the notification preference gate.
+	libraryMediaType := "movie"
+	if itemType == "Series" || itemType == "Episode" || itemType == "Season" {
+		libraryMediaType = "tv"
+	}
+	tmdbID := s.extractTMDBID(nil, payload)
+	if itemType == "Episode" && tmdbID == "" && payload.Item != nil {
+		var err error
+		tmdbID, err = s.fetchEmbyItemTMDBID(payload.Item.SeriesId)
+		if err != nil {
+			logger.Info("[洗版自动完成] 无法获取剧集 TMDB 身份 series=%s: %v", payload.Item.SeriesId, err)
+		}
+	}
+	s.completeWashOnLibraryAdd(tmdbID, libraryMediaType, embyWebhookSeason(payload), payload.getItemID())
 
 	// 彻底切断单集直发通道：所有剧集类型必须进入聚合队列
 	if itemType == "Episode" {

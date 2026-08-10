@@ -233,6 +233,47 @@ func reviewMatchesLibraryAdd(rv *ReviewRequest, tmdbID int, mediaType string, se
 	return true
 }
 
+func (s *WebhookService) completeWashOnLibraryAdd(tmdbIDStr, mediaType string, season int, itemID string) {
+	if s.review == nil || strings.TrimSpace(tmdbIDStr) == "" || strings.TrimSpace(itemID) == "" {
+		return
+	}
+	tmdbID := 0
+	if _, err := fmt.Sscanf(tmdbIDStr, "%d", &tmdbID); err != nil || tmdbID == 0 {
+		logger.Info("[洗版自动完成] TMDB ID 解析失败: %s", tmdbIDStr)
+		return
+	}
+
+	var matched []*ReviewRequest
+	for _, review := range s.review.GetApprovedWashRequests() {
+		if reviewMatchesLibraryAdd(review, tmdbID, mediaType, season) {
+			matched = append(matched, review)
+		}
+	}
+	if len(matched) == 0 {
+		return
+	}
+
+	var currentSources []string
+	var err error
+	if mediaType == "tv" {
+		currentSources, err = s.CaptureEmbyWashBaseline(tmdbID, MediaTypeTV, season)
+	} else {
+		currentSources, err = s.fetchEmbyMediaSourcePaths(itemID)
+	}
+	if err != nil {
+		logger.Info("[洗版自动完成] Emby MediaSource 核验失败 item=%s: %v", itemID, err)
+		return
+	}
+	for _, review := range matched {
+		completed, err := s.review.CompleteWashAutomatically(review.RequestID, currentSources)
+		if err != nil {
+			logger.Info("[洗版自动完成] 暂不完成 request=%s: %v", review.RequestID, err)
+			continue
+		}
+		logger.Info("[洗版自动完成] 已完成 request=%s title=%s sources=%d", completed.RequestID, completed.MediaTitle, len(currentSources))
+	}
+}
+
 // notifyRequesterOnLibraryAdd 入库后私聊通知求片用户。
 // 查找匹配 TMDB ID + mediaType + season 的审核请求，向求片人发送「已入库」私信。
 func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType string, title string, season int) {

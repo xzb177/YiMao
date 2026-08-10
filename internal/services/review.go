@@ -509,6 +509,32 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 	if review.WashClaimedBy != adminID {
 		return nil, fmt.Errorf("洗版工单已由其他管理员认领")
 	}
+	return s.completeWashVerifiedLocked(review, adminID, currentSources)
+}
+
+// CompleteWashAutomatically closes an unclaimed approved wash work order after
+// Emby independently confirms that the old sources remain and a new source was
+// added. Claimed work orders stay under the owning administrator's control.
+func (s *ReviewService) CompleteWashAutomatically(requestID string, currentSources []string) (*ReviewRequest, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	review, ok := s.reviews[requestID]
+	if !ok || review == nil {
+		return nil, fmt.Errorf("review request not found")
+	}
+	if review.NormalizedBusinessType() != BusinessTypeWash {
+		return nil, fmt.Errorf("wash work order is not completable")
+	}
+	if review.Status == "completed" {
+		return cloneReview(review), nil
+	}
+	if review.Status != "approved" {
+		return nil, fmt.Errorf("当前状态为 %s，不能自动完成", review.Status)
+	}
+	return s.completeWashVerifiedLocked(review, 0, currentSources)
+}
+
+func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, completedBy int64, currentSources []string) (*ReviewRequest, error) {
 	if len(review.WashBaseline) == 0 {
 		review.WashLastError = "缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线"
 		_ = s.saveLocked()
@@ -552,7 +578,7 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 	now := time.Now()
 	previousStatus, previousBy, previousAt := review.Status, review.ReviewedBy, review.ReviewedAt
 	previousError, previousVerified := review.WashLastError, review.WashVerifiedAt
-	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", adminID, now
+	review.Status, review.ReviewedBy, review.ReviewedAt = "completed", completedBy, now
 	review.WashLastError = ""
 	review.WashVerifiedAt = &now
 	if err := s.saveLocked(); err != nil {
