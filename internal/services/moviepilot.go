@@ -286,19 +286,21 @@ type SearchResponse struct {
 
 // SubscribeItem represents a subscription item from MoviePilot API
 type SubscribeItem struct {
-	ID           int           `json:"id"`
-	Name         string        `json:"name"`
-	Year         string        `json:"year"`
-	Type         string        `json:"type"`
-	Poster       string        `json:"poster"`
-	State        string        `json:"state"`
-	Username     string        `json:"username"`
-	UserID       FlexibleInt64 `json:"user_id"` // Use FlexibleInt64 for robust parsing
-	Date         string        `json:"date"`
-	Season       int           `json:"season"`
-	TotalEpisode int           `json:"total_episode"`
-	LackEpisode  int           `json:"lack_episode"` // Missing episodes
-	TMDBID       int           `json:"tmdbid"`       // TMDB ID for Emby lookup
+	ID              int           `json:"id"`
+	Name            string        `json:"name"`
+	Year            string        `json:"year"`
+	Type            string        `json:"type"`
+	Poster          string        `json:"poster"`
+	State           string        `json:"state"`
+	Username        string        `json:"username"`
+	UserID          FlexibleInt64 `json:"user_id"` // Use FlexibleInt64 for robust parsing
+	Date            string        `json:"date"`
+	Season          int           `json:"season"`
+	TotalEpisode    int           `json:"total_episode"`
+	LackEpisode     int           `json:"lack_episode"` // Missing episodes
+	TMDBID          int           `json:"tmdbid"`       // TMDB ID for Emby lookup
+	BestVersion     int           `json:"best_version"`
+	BestVersionFull int           `json:"best_version_full"`
 }
 
 // Request represents a media request
@@ -603,6 +605,89 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 		MediaType: mediaType,
 		Status:    "pending",
 	}, nil
+}
+
+// RequestWash creates and verifies a native MoviePilot best-version subscription.
+// MoviePilot de-duplicates without considering best_version, so verification
+// prevents an existing ordinary subscription from being reported as a wash.
+func (c *MoviePilotClient) RequestWash(name string, year int, tmdbID int, mediaType MediaType, season int) (*Request, error) {
+	mediaTypeStr := "电影"
+	if mediaType == MediaTypeTV {
+		mediaTypeStr = "电视剧"
+		if season <= 0 {
+			season = 1
+		}
+	}
+	yearStr := ""
+	if year > 0 {
+		yearStr = strconv.Itoa(year)
+	}
+	payload := map[string]interface{}{
+		"name":         name,
+		"year":         yearStr,
+		"type":         mediaTypeStr,
+		"tmdbid":       tmdbID,
+		"best_version": 1,
+	}
+	if mediaType == MediaTypeTV {
+		payload["season"] = season
+		payload["best_version_full"] = 1
+	}
+	if savePath := strings.TrimSpace(c.downloadSavePath); strings.HasPrefix(savePath, "/") {
+		payload["save_path"] = savePath
+	}
+
+	body, err := c.makeRequest(http.MethodPost, "/api/v1/subscribe", payload)
+	if err != nil {
+		return nil, err
+	}
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    struct {
+			ID int `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return nil, fmt.Errorf("failed to decode wash subscription response: %w", err)
+	}
+	if !response.Success || response.Data.ID <= 0 {
+		return nil, fmt.Errorf("wash subscription failed: %s", response.Message)
+	}
+
+	detailBody, err := c.makeRequest(http.MethodGet, fmt.Sprintf("/api/v1/subscribe/%d", response.Data.ID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("verify wash subscription %d: %w", response.Data.ID, err)
+	}
+	var detail SubscribeItem
+	if err := json.Unmarshal(detailBody, &detail); err != nil {
+		return nil, fmt.Errorf("decode wash subscription %d: %w", response.Data.ID, err)
+	}
+	wantType := "电影"
+	if mediaType == MediaTypeTV {
+		wantType = "电视剧"
+	}
+	if detail.ID != response.Data.ID || detail.TMDBID != tmdbID || detail.Type != wantType ||
+		detail.BestVersion != 1 || (mediaType == MediaTypeTV && detail.Season != season) {
+		return nil, fmt.Errorf("MoviePilot subscription %d is not a wash subscription", response.Data.ID)
+	}
+	searchBody, err := c.makeRequest(http.MethodGet, fmt.Sprintf("/api/v1/subscribe/search/%d", response.Data.ID), nil)
+	if err != nil {
+		return nil, fmt.Errorf("start wash subscription %d search: %w", response.Data.ID, err)
+	}
+	var searchResponse struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(searchBody, &searchResponse); err != nil {
+		return nil, fmt.Errorf("decode wash subscription %d search response: %w", response.Data.ID, err)
+	}
+	if !searchResponse.Success {
+		return nil, fmt.Errorf("start wash subscription %d search: %s", response.Data.ID, searchResponse.Message)
+	}
+
+	c.InvalidateSubscriptionsCache()
+	return &Request{ID: response.Data.ID, MediaID: tmdbID, MediaType: mediaType, Status: "pending"}, nil
 }
 
 // triggerSubscriptionSearch 触发订阅搜索，确保订阅能开始下载

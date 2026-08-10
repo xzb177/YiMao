@@ -165,6 +165,12 @@ func calculateBackoff(attempt int, cfg *RetryConfig) time.Duration {
 // cloneRequest creates a shallow copy of an HTTP request for retry
 func cloneRequest(req *http.Request) *http.Request {
 	r := req.Clone(req.Context())
+	if req.GetBody != nil {
+		body, err := req.GetBody()
+		if err == nil {
+			r.Body = body
+		}
+	}
 
 	// Reset URL if needed (it may have been modified during redirects)
 	r.URL = req.URL

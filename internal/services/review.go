@@ -105,6 +105,7 @@ type ReviewService struct {
 	reviewsFile     string
 	reviews         map[string]*ReviewRequest // requestID -> review
 	mu              sync.RWMutex
+	washDispatching map[string]bool // requestID -> in-flight MoviePilot dispatch
 	moviepilot      *MoviePilotClient // For updating subscription status
 	autoResubscribe bool
 	// OnSubscriptionComplete 订阅完成时的通知回调（由 main 注入）。
@@ -211,8 +212,95 @@ func (s *ReviewService) SetUserMapping(um UserMappingStore) {
 // SetMoviePilotClient sets the MoviePilot client (called after initialization)
 func (s *ReviewService) SetMoviePilotClient(mp *MoviePilotClient) {
 	s.moviepilot = mp
+	// Recover approvals created before wash dispatch was implemented. Recovery
+	// is idempotent because MoviePilot de-duplicates media identity and
+	// RequestWash verifies that any returned subscription is actually a wash.
+	go s.recoverApprovedWashes()
 	// Start subscription status refresh routine
 	go s.refreshSubscriptionStatus()
+}
+
+// DispatchApprovedWash submits an approved, unclaimed wash and atomically links
+// the verified MoviePilot subscription. It never marks the work order complete;
+// Emby source verification remains authoritative for completion.
+func (s *ReviewService) DispatchApprovedWash(requestID string) (*Request, error) {
+	return s.DispatchApprovedWashWithClient(requestID, s.moviepilot)
+}
+
+// DispatchApprovedWashWithClient is used by the approval handler, which owns
+// the same configured MoviePilot client before background polling is started.
+func (s *ReviewService) DispatchApprovedWashWithClient(requestID string, moviepilot *MoviePilotClient) (*Request, error) {
+	s.mu.Lock()
+	stored, ok := s.reviews[requestID]
+	review := cloneReview(stored)
+	if !ok || review == nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("review request not found: %s", requestID)
+	}
+	if review.NormalizedBusinessType() != BusinessTypeWash || review.Status != "approved" {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("request is not an approved wash")
+	}
+	if review.WashClaimedBy != 0 {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("wash is claimed by an administrator")
+	}
+	if review.SubscriptionID > 0 {
+		s.mu.Unlock()
+		return &Request{ID: review.SubscriptionID, MediaID: review.TmdbID, MediaType: review.MediaType, Status: review.SubscriptionState}, nil
+	}
+	if moviepilot == nil {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("MoviePilot service unavailable")
+	}
+	if s.washDispatching == nil {
+		s.washDispatching = make(map[string]bool)
+	}
+	if s.washDispatching[requestID] {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("wash dispatch is already in progress")
+	}
+	s.washDispatching[requestID] = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.washDispatching, requestID)
+		s.mu.Unlock()
+	}()
+	season := review.Season
+	if review.MediaType == MediaTypeTV && season <= 0 {
+		season = 1
+	}
+	req, err := moviepilot.RequestWash(review.MediaTitle, review.MediaYear, review.TmdbID, review.MediaType, season)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.LinkSubscription(requestID, req.ID, "N"); err != nil {
+		return nil, fmt.Errorf("link wash subscription %d: %w", req.ID, err)
+	}
+	return req, nil
+}
+
+func (s *ReviewService) recoverApprovedWashes() {
+	s.mu.RLock()
+	requestIDs := make([]string, 0)
+	for requestID, review := range s.reviews {
+		if review != nil && review.NormalizedBusinessType() == BusinessTypeWash &&
+			review.Status == "approved" && review.SubscriptionID == 0 && review.WashClaimedBy == 0 {
+			requestIDs = append(requestIDs, requestID)
+		}
+	}
+	s.mu.RUnlock()
+	for _, requestID := range requestIDs {
+		if _, err := s.DispatchApprovedWash(requestID); err != nil {
+			logger.Warn("[ReviewService] 恢复历史洗版派发失败 request=%s: %v", requestID, err)
+			if markErr := s.MarkStuck(requestID, err.Error()); markErr != nil {
+				logger.Error("[ReviewService] 保存历史洗版派发失败状态失败 request=%s: %v", requestID, markErr)
+			}
+		} else {
+			logger.Info("[ReviewService] 已恢复历史洗版派发 request=%s", requestID)
+		}
+	}
 }
 
 // load loads reviews from file
@@ -630,6 +718,9 @@ func (s *ReviewService) ClaimWash(requestID string, adminID int64) (*ReviewReque
 	}
 	if review.Status != "approved" {
 		return nil, fmt.Errorf("当前状态为 %s，不能认领", review.Status)
+	}
+	if s.washDispatching[requestID] {
+		return nil, fmt.Errorf("洗版任务正在派发，请稍后再认领")
 	}
 	now := time.Now()
 	previousStatus, previousBy, previousAt := review.Status, review.WashClaimedBy, review.WashClaimedAt
@@ -1475,6 +1566,10 @@ func (s *ReviewService) retryStuckRequests() {
 	if s.moviepilot == nil {
 		return
 	}
+	// Wash dispatch uses its own verified best-version contract. Re-run it on
+	// every recovery cycle so a successful MoviePilot create followed by a
+	// transient detail/search/local-write failure can be linked without restart.
+	s.recoverApprovedWashes()
 
 	stuck := s.getSubscriptionRecoveryCandidates()
 	if len(stuck) == 0 {
@@ -1767,13 +1862,13 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 			season = 1
 		}
 
-		req, err := s.moviepilot.RequestMedia(
-			review.MediaTitle,
-			review.MediaYear,
-			review.TmdbID,
-			mpMediaType,
-			season,
-		)
+		var req *Request
+		var err error
+		if review.NormalizedBusinessType() == BusinessTypeWash {
+			req, err = s.moviepilot.RequestWash(review.MediaTitle, review.MediaYear, review.TmdbID, mpMediaType, season)
+		} else {
+			req, err = s.moviepilot.RequestMedia(review.MediaTitle, review.MediaYear, review.TmdbID, mpMediaType, season)
+		}
 		if err != nil {
 			logger.Info("[ReviewService] Failed to resubscribe %s: %v", requestID, err)
 			continue
@@ -1803,8 +1898,13 @@ func (s *ReviewService) resubscribeRecycledRequests(requestIDs []string) {
 		}
 		s.mu.Unlock()
 		if !linked {
-			if err := s.moviepilot.DeleteRequest(req.ID); err != nil {
-				logger.Info("[ReviewService] Failed to compensate unlinked subscription %d: %v", req.ID, err)
+			// A wash POST may return an existing subscription because MoviePilot
+			// de-duplicates by media identity. Never delete that subscription when
+			// the local link fails; recovery can safely verify and relink it.
+			if review.NormalizedBusinessType() != BusinessTypeWash {
+				if err := s.moviepilot.DeleteRequest(req.ID); err != nil {
+					logger.Info("[ReviewService] Failed to compensate unlinked subscription %d: %v", req.ID, err)
+				}
 			}
 			continue
 		}

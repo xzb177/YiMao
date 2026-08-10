@@ -191,9 +191,19 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		}, err
 	}
 
-	// Wash approvals stay as local work orders. They must never create or
-	// overwrite an ordinary MoviePilot subscription.
+	// Wash approvals dispatch a native MoviePilot best-version subscription.
+	// RequestWash verifies best_version so MP de-duplication cannot silently
+	// reuse an ordinary subscription and report it as a wash.
 	if review.NormalizedBusinessType() == services.BusinessTypeWash {
+		_, err = h.reviewService.DispatchApprovedWashWithClient(requestID, h.moviepilot)
+		if err != nil {
+			if markErr := h.reviewService.MarkStuck(requestID, err.Error()); markErr != nil {
+				return nil, fmt.Errorf("persist wash dispatch failure: %w", markErr)
+			}
+			logger.Warn("[ReviewHandler] 洗版派发失败 request=%s: %v", requestID, err)
+			return &callback.Response{Text: fmt.Sprintf("⚠️ 洗版已批准，但派发失败\n\n♻️ %s\n\n工单已保留，后台恢复会再次校验并关联，不会误标为完成。", review.MediaTitle), CallbackMsg: "派发失败", ShowAlert: true, Edit: true}, nil
+		}
+
 		icon := "🎬"
 		if review.MediaType == services.MediaTypeTV {
 			icon = "📺"
@@ -210,8 +220,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 				}
 			}
 		}
-		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版工单已被批准", review.MediaTitle))
-		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ %s\n\n资源处理并验证完成后，请点击下方按钮收口。", review.MediaTitle), CallbackMsg: "已批准", ShowAlert: true, Edit: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "✅ 标记洗版完成", CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}}}}}, nil
+		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版任务已启动", review.MediaTitle))
+		return &callback.Response{Text: fmt.Sprintf("✅ 洗版任务已启动\n\n♻️ %s\n\nMoviePilot 已开始搜索；Emby 确认保留旧来源并新增来源后，工单会自动完成。", review.MediaTitle), CallbackMsg: "洗版已启动", ShowAlert: true, Edit: true}, nil
 	}
 
 	// Submit to MoviePilot
