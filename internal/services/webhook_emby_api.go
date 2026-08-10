@@ -888,6 +888,9 @@ func (s *WebhookService) embyHTTPClient() *http.Client {
 		s.embyClient = &http.Client{
 			Timeout:   10 * time.Second,
 			Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: s.embySkipTLSVerify}},
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
 		}
 	})
 	return s.embyClient

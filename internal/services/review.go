@@ -536,9 +536,7 @@ func (s *ReviewService) CompleteWashAutomatically(requestID string, currentSourc
 
 func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, completedBy int64, currentSources []string) (*ReviewRequest, error) {
 	if len(review.WashBaseline) == 0 {
-		review.WashLastError = "缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线"
-		_ = s.saveLocked()
-		return nil, fmt.Errorf("%s", review.WashLastError)
+		return nil, s.setWashVerificationErrorLocked(review, "缺少创建时基线：旧工单不能自动验证；请重新创建洗版工单以采集基线")
 	}
 	current := make(map[string]struct{}, len(currentSources))
 	for _, source := range currentSources {
@@ -554,9 +552,7 @@ func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, comple
 		}
 		baseline[source] = struct{}{}
 		if _, preserved := current[source]; !preserved {
-			review.WashLastError = fmt.Sprintf("旧版未保留：缺少基线 MediaSource %q", source)
-			_ = s.saveLocked()
-			return nil, fmt.Errorf("%s", review.WashLastError)
+			return nil, s.setWashVerificationErrorLocked(review, fmt.Sprintf("旧版未保留：缺少基线 MediaSource %q", source))
 		}
 	}
 	if len(baseline) == 0 {
@@ -570,9 +566,7 @@ func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, comple
 		}
 	}
 	if !newSource {
-		review.WashLastError = "未发现新增的不同 MediaSource"
-		_ = s.saveLocked()
-		return nil, fmt.Errorf("%s", review.WashLastError)
+		return nil, s.setWashVerificationErrorLocked(review, "未发现新增的不同 MediaSource")
 	}
 
 	now := time.Now()
@@ -587,6 +581,16 @@ func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, comple
 		return nil, err
 	}
 	return cloneReview(review), nil
+}
+
+func (s *ReviewService) setWashVerificationErrorLocked(review *ReviewRequest, reason string) error {
+	previous := review.WashLastError
+	review.WashLastError = reason
+	if err := s.saveLocked(); err != nil {
+		review.WashLastError = previous
+		return err
+	}
+	return fmt.Errorf("%s", reason)
 }
 
 // RecordWashVerificationFailure persists the latest verification failure without

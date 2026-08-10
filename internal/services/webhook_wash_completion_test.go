@@ -3,9 +3,35 @@ package services
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestEmbyAuthenticatedRequestDoesNotFollowRedirect(t *testing.T) {
+	var redirectedRequests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirectedRequests.Add(1)
+		if token := r.Header.Get("X-Emby-Token"); token != "" {
+			t.Fatalf("Emby token leaked across redirect: %q", token)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusFound)
+	}))
+	defer source.Close()
+
+	webhook := &WebhookService{embyURL: source.URL, embyAPIKey: "secret", embyUserID: "user"}
+	if _, err := webhook.fetchEmbyMediaSourcePaths("item-1"); err == nil {
+		t.Fatal("redirecting Emby response must fail closed")
+	}
+	if got := redirectedRequests.Load(); got != 0 {
+		t.Fatalf("redirect target received %d requests", got)
+	}
+}
 
 func newApprovedWashForWebhookTest(t *testing.T, baseline []string) *ReviewService {
 	t.Helper()

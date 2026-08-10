@@ -93,6 +93,42 @@ func TestCreateRequestRollsBackMemoryWhenPersistenceFails(t *testing.T) {
 	}
 }
 
+func TestCompleteWashVerificationFailureRollsBackWhenPersistenceFails(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseline []string
+		current  []string
+	}{
+		{name: "missing baseline"},
+		{name: "old source missing", baseline: []string{"/old.mkv"}, current: []string{"/new.mkv"}},
+		{name: "no new source", baseline: []string{"/old.mkv"}, current: []string{"/old.mkv"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := NewReviewService(t.TempDir(), false)
+			review := &ReviewRequest{
+				RequestID: "wash-persist-failure", BusinessType: BusinessTypeWash,
+				TelegramID: 7, TmdbID: 550, MediaType: MediaTypeMovie,
+				WashBaseline: tt.baseline, WashLastError: "previous error",
+			}
+			if err := s.CreateRequest(review); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Approve(review.RequestID, 99, review.ApproveToken); err != nil {
+				t.Fatal(err)
+			}
+			s.reviewsFile = filepath.Join(t.TempDir(), "missing", "review_requests.json")
+			if _, err := s.CompleteWashAutomatically(review.RequestID, tt.current); err == nil {
+				t.Fatal("expected persistence error")
+			}
+			stored, ok := s.GetRequest(review.RequestID)
+			if !ok || stored.WashLastError != "previous error" {
+				t.Fatalf("verification error was not rolled back: %#v", stored)
+			}
+		})
+	}
+}
+
 func TestReviewReadAPIsReturnDetachedSnapshots(t *testing.T) {
 	s := NewReviewService(t.TempDir(), false)
 	review := &ReviewRequest{RequestID: "detached", TelegramID: 1, TmdbID: 550, MediaType: MediaTypeMovie, MediaTitle: "原名", EmbyInfo: &EmbySearchResult{Title: "媒体库原名"}}
