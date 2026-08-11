@@ -286,7 +286,8 @@ func (s *ReviewService) recoverApprovedWashes() {
 	requestIDs := make([]string, 0)
 	for requestID, review := range s.reviews {
 		if review != nil && review.NormalizedBusinessType() == BusinessTypeWash &&
-			review.Status == "approved" && review.SubscriptionID == 0 && review.WashClaimedBy == 0 {
+			review.Status == "approved" && review.SubscriptionID == 0 && review.WashClaimedBy == 0 &&
+			review.RetryCount < MaxApproveRetry && !isNonRetryableApproveError(review.LastError) {
 			requestIDs = append(requestIDs, requestID)
 		}
 	}
@@ -1163,6 +1164,7 @@ func isNonRetryableApproveError(errMsg string) bool {
 		"tmdb id invalid",
 		"invalid tmdb",
 		"media not found",
+		"is not a wash subscription",
 	}
 	lower := strings.ToLower(errMsg)
 	for _, pattern := range patterns {

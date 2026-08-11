@@ -80,6 +80,44 @@ func TestRecoverApprovedWashesOnlyDispatchesEligibleHistory(t *testing.T) {
 	}
 }
 
+func TestRecoverApprovedWashesSkipsPermanentSubscriptionConflict(t *testing.T) {
+	var calls atomic.Int32
+	server := newWashMoviePilotServer(t, &calls)
+	defer server.Close()
+
+	service := &ReviewService{
+		reviewsFile: filepath.Join(t.TempDir(), "review_requests.json"),
+		reviews: map[string]*ReviewRequest{
+			"conflict": {
+				RequestID:    "conflict",
+				BusinessType: BusinessTypeWash,
+				Status:       "approved",
+				Stuck:        true,
+				RetryCount:   219,
+				LastError:    "MoviePilot subscription 14794 is not a wash subscription",
+				MediaTitle:   "Conflict",
+				TmdbID:       550,
+				MediaType:    MediaTypeMovie,
+			},
+		},
+		moviepilot: NewMoviePilotClient(server.URL, "unused", ""),
+	}
+
+	service.recoverApprovedWashes()
+	if calls.Load() != 0 {
+		t.Fatalf("permanent conflict was dispatched %d times, want 0", calls.Load())
+	}
+	if got := service.reviews["conflict"]; !got.Stuck || got.RetryCount != 219 || got.SubscriptionID != 0 {
+		t.Fatalf("permanent conflict state changed: %+v", got)
+	}
+}
+
+func TestWashSubscriptionConflictIsNonRetryable(t *testing.T) {
+	if !isNonRetryableApproveError("MoviePilot subscription 14794 is not a wash subscription") {
+		t.Fatal("wash subscription identity conflict must be non-retryable")
+	}
+}
+
 func TestRetryStuckRequestsRetriesApprovedWashWithoutRestart(t *testing.T) {
 	var calls atomic.Int32
 	server := newWashMoviePilotServer(t, &calls)
