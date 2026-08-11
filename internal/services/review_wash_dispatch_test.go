@@ -93,7 +93,7 @@ func TestRecoverApprovedWashesSkipsPermanentSubscriptionConflict(t *testing.T) {
 				BusinessType: BusinessTypeWash,
 				Status:       "approved",
 				Stuck:        true,
-				RetryCount:   219,
+				RetryCount:   MaxApproveRetry - 1,
 				LastError:    "MoviePilot subscription 14794 is not a wash subscription",
 				MediaTitle:   "Conflict",
 				TmdbID:       550,
@@ -107,7 +107,7 @@ func TestRecoverApprovedWashesSkipsPermanentSubscriptionConflict(t *testing.T) {
 	if calls.Load() != 0 {
 		t.Fatalf("permanent conflict was dispatched %d times, want 0", calls.Load())
 	}
-	if got := service.reviews["conflict"]; !got.Stuck || got.RetryCount != 219 || got.SubscriptionID != 0 {
+	if got := service.reviews["conflict"]; !got.Stuck || got.RetryCount != MaxApproveRetry-1 || got.SubscriptionID != 0 {
 		t.Fatalf("permanent conflict state changed: %+v", got)
 	}
 }
