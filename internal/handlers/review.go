@@ -3,12 +3,14 @@ package handlers
 import (
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/logger"
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // ReviewHandler handles review request callbacks
@@ -21,9 +23,85 @@ type ReviewHandler struct {
 	quotaService   *services.QuotaService
 	webhookService *services.WebhookService
 	groupChatID    int64 // 群组 ChatID，审批通过时发送群通知；0=不发
+	approvalOnce   sync.Once
+	approvalLocks  *requestLockTable
 	// OnCarpoolNotify 拼车用户通知回调（拒绝/撤回时触发）。
 	// 参数：tmdbID, mediaType, title, reason
 	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
+}
+
+type requestLockEntry struct {
+	mu   sync.Mutex
+	refs int
+}
+
+type requestLockTable struct {
+	mu      sync.Mutex
+	entries map[string]*requestLockEntry
+}
+
+func newRequestLockTable() *requestLockTable {
+	return &requestLockTable{entries: make(map[string]*requestLockEntry)}
+}
+
+func (t *requestLockTable) lock(key string) func() {
+	t.mu.Lock()
+	entry := t.entries[key]
+	if entry == nil {
+		entry = &requestLockEntry{}
+		t.entries[key] = entry
+	}
+	entry.refs++
+	t.mu.Unlock()
+
+	entry.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			entry.mu.Unlock()
+
+			t.mu.Lock()
+			entry.refs--
+			if entry.refs == 0 && t.entries[key] == entry {
+				delete(t.entries, key)
+			}
+			t.mu.Unlock()
+		})
+	}
+}
+
+func (t *requestLockTable) count() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.entries)
+}
+
+func (t *requestLockTable) references(key string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if entry := t.entries[key]; entry != nil {
+		return entry.refs
+	}
+	return 0
+}
+
+func (h *ReviewHandler) requestApprovalLocks() *requestLockTable {
+	h.approvalOnce.Do(func() {
+		h.approvalLocks = newRequestLockTable()
+	})
+	return h.approvalLocks
+}
+
+func (h *ReviewHandler) lockApprovalRequest(requestID string) func() {
+	return h.requestApprovalLocks().lock(requestID)
+}
+
+func (h *ReviewHandler) approvalLockCount() int {
+	return h.requestApprovalLocks().count()
+}
+
+func (h *ReviewHandler) approvalLockReferences(requestID string) int {
+	return h.requestApprovalLocks().references(requestID)
 }
 
 func NewReviewHandler(
@@ -144,9 +222,10 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	var token string
 	var requestID string
+	shortFormat := ctx.Callback.Action == "rv_a"
 
 	// Check format: legacy has "id" param, short format has token directly
-	if ctx.Callback.Action == "rv_a" {
+	if shortFormat {
 		// Short format: "rv_a:TOKEN" - token is after colon
 		parts := strings.Split(ctx.Callback.Raw, ":")
 		if len(parts) >= 2 {
@@ -156,20 +235,6 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if token != "" {
 			if review, found := h.reviewService.GetRequestByToken(token); found {
 				requestID = review.RequestID
-				// Check if already processed
-				if review.Status != "pending" {
-					statusText := "已批准"
-					if review.Status == "rejected" {
-						statusText = "已拒绝"
-					}
-					logger.Info("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, review.Status)
-					return &callback.Response{
-						Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
-						CallbackMsg: "已被处理",
-						ShowAlert:   true,
-						Edit:        true,
-					}, nil
-				}
 			}
 		}
 	} else {
@@ -184,6 +249,24 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			CallbackMsg: "无效",
 			ShowAlert:   true,
 		}, nil
+	}
+	releaseApproval := h.lockApprovalRequest(requestID)
+	defer releaseApproval()
+
+	if shortFormat {
+		if current, found := h.reviewService.GetRequestByToken(token); found && current.Status != "pending" {
+			statusText := "已批准"
+			if current.Status == "rejected" {
+				statusText = "已拒绝"
+			}
+			logger.Info("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, current.Status)
+			return &callback.Response{
+				Text:        fmt.Sprintf("✅ 此请求已被%s", statusText),
+				CallbackMsg: "已被处理",
+				ShowAlert:   true,
+				Edit:        true,
+			}, nil
+		}
 	}
 
 	// Approve the review with token verification
@@ -386,8 +469,11 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		titleText += " · " + seasonText
 	}
 
-	// Notify user about approval. 如果审批人就是求片人，避免同一聊天重复出现两条通过通知。
-	if ctx.UserID != review.TelegramID {
+	// The callback response already reaches the requester in a private chat. A
+	// group/topic callback still needs a separate DM, even when the requester is
+	// also the approving administrator.
+	var requesterNotifyErr error
+	if ctx.ChatID != review.TelegramID {
 		approveCard := richmessage.BuildReviewApprovedCard(richmessage.ReviewApprovedData{
 			Title:      review.MediaTitle,
 			Year:       review.MediaYear,
@@ -397,11 +483,56 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		})
 		approveKb := services.NewKeyboardBuilder()
 		approveKb.AddButton("📍 查看求片进度", "my_requests")
-		h.telegram.SendRichMessage(review.TelegramID, approveCard.Markdown, approveKb.Build())
+		_, requesterNotifyErr = h.telegram.SendRichMessage(review.TelegramID, approveCard.Markdown, approveKb.Build())
+		if requesterNotifyErr != nil {
+			logger.Warn("[ReviewHandler] 求片批准私聊通知发送失败 user=%d: %v", review.TelegramID, requesterNotifyErr)
+		}
 	}
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
+
+	var groupNotifyErr error
+	if h.groupChatID != 0 {
+		groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
+			Title:      review.MediaTitle,
+			Year:       review.MediaYear,
+			MediaType:  mediaTypeText,
+			MediaIcon:  mediaIcon,
+			SeasonText: seasonText,
+			Requester:  review.TelegramName,
+			TMDBID:     review.TmdbID,
+		})
+		var options []*types.TelegramSendOptions
+		if ctx.ChatID == h.groupChatID && ctx.MessageThreadID != 0 {
+			options = append(options, &types.TelegramSendOptions{MessageThreadID: ctx.MessageThreadID})
+		}
+		_, groupNotifyErr = h.telegram.SendRichMessage(h.groupChatID, groupCard.Markdown, nil, options...)
+		if groupNotifyErr != nil {
+			logger.Warn("[ReviewHandler] 求片批准群通知发送失败 group=%d: %v", h.groupChatID, groupNotifyErr)
+		}
+	}
+
+	if requesterNotifyErr != nil || groupNotifyErr != nil {
+		failureText := "申请人私聊通知失败"
+		callbackMsg := "私聊通知失败"
+		actionText := "请手动私聊申请人告知"
+		if requesterNotifyErr == nil {
+			failureText = "群通知失败"
+			callbackMsg = "群通知失败"
+			actionText = "请手动在群内告知"
+		} else if groupNotifyErr != nil {
+			failureText = "申请人私聊通知失败、群通知失败"
+			callbackMsg = "私聊和群通知失败"
+			actionText = "请手动联系申请人并在群内告知"
+		}
+		return &callback.Response{
+			Text:        fmt.Sprintf("⚠️ 审核与订阅已成功，但%s\n\n%s\n\n%s，不要重复审批。", failureText, titleText, actionText),
+			CallbackMsg: callbackMsg,
+			ShowAlert:   true,
+			Edit:        true,
+		}, nil
+	}
 
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n%s\n\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),

@@ -151,14 +151,14 @@ func richMessageEnabled() bool {
 // SendRichMessage sends markdown through the typed Bot API 10.2 transport.
 // Bot API 10.2 does not document ephemeral targeting for sendRichMessage;
 // callers needing private group output must use SendMessage with send options.
-func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	return c.SendStructuredRichMessage(chatID, &types.TelegramInputRichMessage{Markdown: markdown}, keyboard)
+func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
+	return c.SendStructuredRichMessage(chatID, &types.TelegramInputRichMessage{Markdown: markdown}, keyboard, options...)
 }
 
 // SendRichMessageWithPhoto embeds a photo in the same Rich Message card. The
 // media is referenced by an internal tg:// ID, so users see one unified card
 // instead of a separate photo message followed by duplicated text.
-func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	rich := &types.TelegramInputRichMessage{
 		Markdown: "![](tg://photo?id=poster)\n\n" + markdown,
 		Media: []types.TelegramInputRichMessageMedia{{
@@ -166,13 +166,13 @@ func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo 
 			Media: types.TelegramRichPhoto{Type: "photo", Media: photo},
 		}},
 	}
-	return c.SendStructuredRichMessage(chatID, rich, keyboard)
+	return c.SendStructuredRichMessage(chatID, rich, keyboard, options...)
 }
 
 // SendStructuredRichMessage sends typed InputRichMessage content. The keyboard
-// stays at sendRichMessage top level. Ephemeral parameters are intentionally
-// absent because Bot API 10.2 does not support them for this method.
-func (c *TelegramClient) SendStructuredRichMessage(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+// stays at sendRichMessage top level. Forum topic context is preserved without
+// adding the unsupported ephemeral targeting parameters used by sendMessage.
+func (c *TelegramClient) SendStructuredRichMessage(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	if !richMessageEnabled() {
 		return nil, fmt.Errorf("rich message disabled by ENABLE_RICH_MESSAGE")
 	}
@@ -199,15 +199,16 @@ func (c *TelegramClient) SendStructuredRichMessage(chatID int64, richMessage *ty
 	if keyboard != nil {
 		payload["reply_markup"] = keyboard
 	}
+	applyRichMessageThreadOption(payload, options)
 	for _, media := range richMessage.Media {
 		if len(media.Upload) > 0 {
-			return c.sendStructuredRichMessageMultipart(chatID, richMessage, keyboard)
+			return c.sendStructuredRichMessageMultipart(chatID, richMessage, keyboard, options)
 		}
 	}
 	return c.makeRequest(fmt.Sprintf("%s/sendRichMessage", c.baseURL), payload)
 }
 
-func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard, options []*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	if err := writer.WriteField("chat_id", strconv.FormatInt(chatID, 10)); err != nil {
@@ -226,6 +227,11 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 			return nil, fmt.Errorf("marshal reply_markup: %w", err)
 		}
 		if err := writer.WriteField("reply_markup", string(keyboardJSON)); err != nil {
+			return nil, err
+		}
+	}
+	if len(options) > 0 && options[0] != nil && options[0].MessageThreadID != 0 {
+		if err := writer.WriteField("message_thread_id", strconv.FormatInt(options[0].MessageThreadID, 10)); err != nil {
 			return nil, err
 		}
 	}
@@ -255,7 +261,7 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("telegram multipart request failed: %w", err)
+		return nil, fmt.Errorf("telegram multipart request failed: %w", telegramNetworkError(err))
 	}
 	defer resp.Body.Close()
 	return decodeTelegramMessageResponse(resp)
@@ -297,6 +303,13 @@ func applyTelegramSendOptions(payload map[string]interface{}, options []*types.T
 	if option.ReplyParameters != nil {
 		payload["reply_parameters"] = option.ReplyParameters
 	}
+}
+
+func applyRichMessageThreadOption(payload map[string]interface{}, options []*types.TelegramSendOptions) {
+	if len(options) == 0 || options[0] == nil || options[0].MessageThreadID == 0 {
+		return
+	}
+	payload["message_thread_id"] = options[0].MessageThreadID
 }
 
 func applyTelegramSendOptionsToMultipart(writer *multipart.Writer, options []*types.TelegramSendOptions) {
@@ -978,7 +991,7 @@ func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) 
 		}
 		resp, err := c.httpClient.Do(req)
 		if err != nil {
-			return nil, err
+			return nil, telegramNetworkError(err)
 		}
 		if resp.StatusCode != 429 {
 			return resp, nil
@@ -997,6 +1010,16 @@ func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) 
 		time.Sleep(time.Duration(retryAfter) * time.Second)
 	}
 	return nil, fmt.Errorf("telegram API rate limited after %d retries", maxRetries)
+}
+
+func telegramNetworkError(err error) error {
+	for {
+		urlErr, ok := err.(*url.Error)
+		if !ok {
+			return err
+		}
+		err = urlErr.Err
+	}
 }
 
 // normalizeTelegramPayload sanitizes text and keyboards immediately before
