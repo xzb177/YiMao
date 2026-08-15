@@ -11,6 +11,12 @@ import (
 const (
 	maxMonitorOverviewBody = 256 << 10
 	maxMonitorSnapshotAge  = 3 * time.Minute
+	maxMonitorFutureSkew   = 5 * time.Minute
+
+	maxMonitorTaskCount     int64 = 10_000_000
+	maxMonitorActivityCount int64 = 1_000_000_000
+	maxMonitorBytesPerSec   int64 = 1 << 50
+	maxMonitorFreeBytes     int64 = 1 << 62
 )
 
 type monitorOverviewPayload struct {
@@ -128,8 +134,8 @@ func (s *Server) fetchMonitorOverview(r *http.Request) (*monitorOverviewPayload,
 	if payload.Snapshot == nil {
 		return nil, fmt.Errorf("monitor snapshot missing")
 	}
-	if _, err := time.Parse(time.RFC3339, payload.Snapshot.UpdatedAt); err != nil {
-		return nil, fmt.Errorf("monitor timestamp invalid: %w", err)
+	if err := validateMonitorSnapshot(payload.Snapshot, time.Now()); err != nil {
+		return nil, err
 	}
 	if payload.Snapshot.QBit.FreeSpaceOnDisk == nil {
 		freeBytes, err := s.fetchMonitorQBitFreeSpace(r)
@@ -137,10 +143,64 @@ func (s *Server) fetchMonitorOverview(r *http.Request) (*monitorOverviewPayload,
 			return nil, err
 		}
 		payload.Snapshot.QBit.FreeSpaceOnDisk = &freeBytes
-	} else if *payload.Snapshot.QBit.FreeSpaceOnDisk < 0 {
-		return nil, fmt.Errorf("monitor free space invalid")
 	}
 	return &payload, nil
+}
+
+func validateMonitorSnapshot(snapshot *monitorSnapshot, now time.Time) error {
+	updated, err := time.Parse(time.RFC3339, snapshot.UpdatedAt)
+	if err != nil {
+		return fmt.Errorf("monitor timestamp invalid: %w", err)
+	}
+	if updated.After(now.Add(maxMonitorFutureSkew)) {
+		return fmt.Errorf("monitor timestamp invalid")
+	}
+
+	qbitValues := []struct {
+		name  string
+		value int64
+		max   int64
+	}{
+		{name: "active tasks", value: snapshot.QBit.ActiveTasks, max: maxMonitorTaskCount},
+		{name: "stalled tasks", value: snapshot.QBit.StalledTasks, max: maxMonitorTaskCount},
+		{name: "error tasks", value: snapshot.QBit.ErrorTasks, max: maxMonitorTaskCount},
+		{name: "total tasks", value: snapshot.QBit.TotalTasks, max: maxMonitorTaskCount},
+		{name: "download speed", value: snapshot.QBit.DownloadSpeed, max: maxMonitorBytesPerSec},
+		{name: "upload speed", value: snapshot.QBit.UploadSpeed, max: maxMonitorBytesPerSec},
+	}
+	for _, value := range qbitValues {
+		if err := validateMonitorAggregate(value.name, value.value, value.max); err != nil {
+			return err
+		}
+	}
+
+	activityValues := []struct {
+		name  string
+		value int64
+	}{
+		{name: "downloads 24h", value: snapshot.MoviePilot.Downloads24H},
+		{name: "transfers 24h", value: snapshot.MoviePilot.Transfers24H},
+		{name: "transfer success 24h", value: snapshot.MoviePilot.TransferSuccess24H},
+		{name: "transfer failed 24h", value: snapshot.MoviePilot.TransferFailed24H},
+	}
+	for _, value := range activityValues {
+		if err := validateMonitorAggregate(value.name, value.value, maxMonitorActivityCount); err != nil {
+			return err
+		}
+	}
+	if snapshot.QBit.FreeSpaceOnDisk != nil {
+		if err := validateMonitorAggregate("free space", *snapshot.QBit.FreeSpaceOnDisk, maxMonitorFreeBytes); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateMonitorAggregate(name string, value, max int64) error {
+	if value < 0 || value > max {
+		return fmt.Errorf("monitor %s invalid", name)
+	}
+	return nil
 }
 
 func (s *Server) fetchMonitorQBitFreeSpace(r *http.Request) (int64, error) {
@@ -175,8 +235,11 @@ func (s *Server) fetchMonitorQBitFreeSpace(r *http.Request) (int64, error) {
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return 0, err
 	}
-	if payload.ServerState == nil || payload.ServerState.FreeSpaceOnDisk == nil || *payload.ServerState.FreeSpaceOnDisk < 0 {
+	if payload.ServerState == nil || payload.ServerState.FreeSpaceOnDisk == nil {
 		return 0, fmt.Errorf("monitor free space invalid")
+	}
+	if err := validateMonitorAggregate("free space", *payload.ServerState.FreeSpaceOnDisk, maxMonitorFreeBytes); err != nil {
+		return 0, err
 	}
 	return *payload.ServerState.FreeSpaceOnDisk, nil
 }
@@ -194,38 +257,31 @@ func projectMonitorOverview(snapshot *monitorSnapshot, now time.Time) monitorRes
 		UpdatedAt: snapshot.UpdatedAt,
 		State:     overallMonitorState(snapshot.UpdatedAt, pipeline, now),
 		Storage: monitorStorage{
-			FreeBytes: nonNegativePointer(snapshot.QBit.FreeSpaceOnDisk),
+			FreeBytes: monitorPointerValue(snapshot.QBit.FreeSpaceOnDisk),
 		},
 		Queue: monitorQueue{
-			ActiveTasks:   nonNegative(snapshot.QBit.ActiveTasks),
-			StalledTasks:  nonNegative(snapshot.QBit.StalledTasks),
-			ErrorTasks:    nonNegative(snapshot.QBit.ErrorTasks),
-			TotalTasks:    nonNegative(snapshot.QBit.TotalTasks),
-			DownloadSpeed: nonNegative(snapshot.QBit.DownloadSpeed),
-			UploadSpeed:   nonNegative(snapshot.QBit.UploadSpeed),
+			ActiveTasks:   snapshot.QBit.ActiveTasks,
+			StalledTasks:  snapshot.QBit.StalledTasks,
+			ErrorTasks:    snapshot.QBit.ErrorTasks,
+			TotalTasks:    snapshot.QBit.TotalTasks,
+			DownloadSpeed: snapshot.QBit.DownloadSpeed,
+			UploadSpeed:   snapshot.QBit.UploadSpeed,
 		},
 		Activity: monitorActivity{
-			Downloads24H:       nonNegative(snapshot.MoviePilot.Downloads24H),
-			Transfers24H:       nonNegative(snapshot.MoviePilot.Transfers24H),
-			TransferSuccess24H: nonNegative(snapshot.MoviePilot.TransferSuccess24H),
-			TransferFailed24H:  nonNegative(snapshot.MoviePilot.TransferFailed24H),
+			Downloads24H:       snapshot.MoviePilot.Downloads24H,
+			Transfers24H:       snapshot.MoviePilot.Transfers24H,
+			TransferSuccess24H: snapshot.MoviePilot.TransferSuccess24H,
+			TransferFailed24H:  snapshot.MoviePilot.TransferFailed24H,
 		},
 		Pipeline: pipeline,
 	}
 }
 
-func nonNegativePointer(value *int64) int64 {
+func monitorPointerValue(value *int64) int64 {
 	if value == nil {
 		return 0
 	}
-	return nonNegative(*value)
-}
-
-func nonNegative(value int64) int64 {
-	if value < 0 {
-		return 0
-	}
-	return value
+	return *value
 }
 
 func downloadPipelineState(qbit monitorQBitSnapshot) string {
@@ -252,6 +308,9 @@ func servicePipelineState(status string) string {
 func overallMonitorState(updatedAt string, pipeline []monitorPipeline, now time.Time) string {
 	updated, err := time.Parse(time.RFC3339, updatedAt)
 	if err != nil {
+		return "unknown"
+	}
+	if updated.After(now.Add(maxMonitorFutureSkew)) {
 		return "unknown"
 	}
 	if now.Sub(updated) > maxMonitorSnapshotAge {

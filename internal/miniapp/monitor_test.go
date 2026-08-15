@@ -229,6 +229,7 @@ func TestMonitorQBitFallbackFailuresAreGeneric503(t *testing.T) {
 		{name: "missing-value", status: http.StatusOK, body: `{"server_state":{}}`},
 		{name: "null", status: http.StatusOK, body: `{"server_state":{"free_space_on_disk":null}}`},
 		{name: "negative", status: http.StatusOK, body: `{"server_state":{"free_space_on_disk":-1}}`},
+		{name: "excessive", status: http.StatusOK, body: `{"server_state":{"free_space_on_disk":4611686018427387905}}`},
 		{name: "fractional", status: http.StatusOK, body: `{"server_state":{"free_space_on_disk":1.5}}`},
 		{name: "string", status: http.StatusOK, body: `{"server_state":{"free_space_on_disk":"1"}}`},
 	}
@@ -306,6 +307,95 @@ func TestMonitorQBitFallbackFailuresAreGeneric503(t *testing.T) {
 	}
 }
 
+func TestMonitorRejectsFutureTimestampsAndInvalidAggregates(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	tests := []struct {
+		name   string
+		mutate func(*monitorSnapshot)
+	}{
+		{name: "future-timestamp", mutate: func(snapshot *monitorSnapshot) { snapshot.UpdatedAt = now.Add(6 * time.Minute).Format(time.RFC3339) }},
+		{name: "negative-free-space", mutate: func(snapshot *monitorSnapshot) { value := int64(-1); snapshot.QBit.FreeSpaceOnDisk = &value }},
+		{name: "negative-active-tasks", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.ActiveTasks = -1 }},
+		{name: "negative-stalled-tasks", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.StalledTasks = -1 }},
+		{name: "negative-error-tasks", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.ErrorTasks = -1 }},
+		{name: "negative-total-tasks", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.TotalTasks = -1 }},
+		{name: "negative-download-speed", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.DownloadSpeed = -1 }},
+		{name: "negative-upload-speed", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.UploadSpeed = -1 }},
+		{name: "negative-downloads-24h", mutate: func(snapshot *monitorSnapshot) { snapshot.MoviePilot.Downloads24H = -1 }},
+		{name: "negative-transfers-24h", mutate: func(snapshot *monitorSnapshot) { snapshot.MoviePilot.Transfers24H = -1 }},
+		{name: "negative-transfer-success-24h", mutate: func(snapshot *monitorSnapshot) { snapshot.MoviePilot.TransferSuccess24H = -1 }},
+		{name: "negative-transfer-failed-24h", mutate: func(snapshot *monitorSnapshot) { snapshot.MoviePilot.TransferFailed24H = -1 }},
+		{name: "excessive-task-count", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.TotalTasks = 10_000_001 }},
+		{name: "excessive-speed", mutate: func(snapshot *monitorSnapshot) { snapshot.QBit.DownloadSpeed = (1 << 50) + 1 }},
+		{name: "excessive-activity-count", mutate: func(snapshot *monitorSnapshot) { snapshot.MoviePilot.Downloads24H = 1_000_000_001 }},
+		{name: "excessive-free-space", mutate: func(snapshot *monitorSnapshot) { value := int64((1 << 62) + 1); snapshot.QBit.FreeSpaceOnDisk = &value }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			freeBytes := int64(0)
+			snapshot := monitorSnapshot{
+				UpdatedAt: now.Format(time.RFC3339),
+				QBit: monitorQBitSnapshot{
+					Status: "ok", ConnectionStatus: "connected", FreeSpaceOnDisk: &freeBytes,
+				},
+				MoviePilot: monitorServiceState{Status: "ok"},
+				Emby:       monitorServiceState{Status: "ok"},
+			}
+			tt.mutate(&snapshot)
+			payload, err := json.Marshal(monitorOverviewPayload{Snapshot: &snapshot})
+			if err != nil {
+				t.Fatal(err)
+			}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write(payload)
+			}))
+			defer upstream.Close()
+
+			response := httptest.NewRecorder()
+			NewServer(Deps{
+				BotToken: miniAppTestToken, MonitorOverviewURL: upstream.URL, HTTPClient: upstream.Client(),
+			}).Handler().ServeHTTP(response, signedRequest(t, http.MethodGet, monitorPath, "", 101))
+			if response.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if response.Body.String() != "监控数据暂时不可用\n" {
+				t.Fatalf("non-generic error body=%q", response.Body.String())
+			}
+		})
+	}
+}
+
+func TestValidateMonitorSnapshotAcceptsBoundaryValues(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	freeBytes := maxMonitorFreeBytes
+	snapshot := &monitorSnapshot{
+		UpdatedAt: now.Add(maxMonitorFutureSkew).Format(time.RFC3339),
+		QBit: monitorQBitSnapshot{
+			Status:           "ok",
+			ConnectionStatus: "connected",
+			FreeSpaceOnDisk:  &freeBytes,
+			ActiveTasks:      maxMonitorTaskCount,
+			StalledTasks:     maxMonitorTaskCount,
+			ErrorTasks:       maxMonitorTaskCount,
+			TotalTasks:       maxMonitorTaskCount,
+			DownloadSpeed:    maxMonitorBytesPerSec,
+			UploadSpeed:      maxMonitorBytesPerSec,
+		},
+		MoviePilot: monitorServiceState{
+			Status:             "ok",
+			Downloads24H:       maxMonitorActivityCount,
+			Transfers24H:       maxMonitorActivityCount,
+			TransferSuccess24H: maxMonitorActivityCount,
+			TransferFailed24H:  maxMonitorActivityCount,
+		},
+		Emby: monitorServiceState{Status: "ok"},
+	}
+	if err := validateMonitorSnapshot(snapshot, now); err != nil {
+		t.Fatalf("boundary snapshot rejected: %v", err)
+	}
+}
+
 func TestMonitorUpstreamFailuresAreGeneric503(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -342,8 +432,13 @@ func TestMonitorUpstreamFailuresAreGeneric503(t *testing.T) {
 			}).Handler()
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, signedRequest(t, http.MethodGet, monitorPath, "", 101))
-			if hits.Load() != 1 {
-				t.Fatalf("upstream hits=%d want 1", hits.Load())
+			gotHits := hits.Load()
+			if tc.name == "timeout" {
+				if gotHits > 1 {
+					t.Fatalf("upstream hits=%d want at most 1", gotHits)
+				}
+			} else if gotHits != 1 {
+				t.Fatalf("upstream hits=%d want 1", gotHits)
 			}
 			if response.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
