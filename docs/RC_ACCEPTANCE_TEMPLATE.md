@@ -23,6 +23,8 @@
 | Telegram identity / polling / commands | ⬜ | |
 | MoviePilot authenticated read | ⬜ | |
 | Telegram send/delete | ⬜ | |
+| Mini App monitor auth / DTO / limits / generic 503 | ⬜ | |
+| Monitor upstream header isolation / overview-qB fallback | ⬜ | |
 | 72h soak | ⬜ | |
 
 ## 人工真机矩阵
@@ -35,7 +37,15 @@
 | 求片进度与隐私 | ⬜ | |
 | 反馈、图片、管理员回复 | ⬜ | |
 | AI 解说切换与过期按钮 | ⬜ | |
-| Mini App 监控视图与故障降级 | ⬜ | |
+| `/ai` 搜索兼容提示与 `/narrate` 解说入口 | ⬜ | |
+| Mini App App-first 首页与四列移动底栏 | ⬜ | |
+| Mini App request mode、分页/取消/race guards | ⬜ | |
+| Mini App Dialog、safe-area 与错误恢复 | ⬜ | |
+| Mini App 监控视图、`no-store` 与通用故障降级 | ⬜ | |
+| 洗版批准后的短 callback 安全完成确认 | ⬜ | |
+| 洗版认领/释放/重试与 MediaSource 完成门槛 | ⬜ | |
+| 未认领 approved 洗版的 Emby 自动完成 | ⬜ | |
+| Roulette 进入与再次旋转双 action | ⬜ | |
 | 群聊隐私与 ephemeral | ⬜ | |
 | 已下线旧按钮不再路由 | ⬜ | |
 | 超长中文/Emoji/特殊字符 | ⬜ | |

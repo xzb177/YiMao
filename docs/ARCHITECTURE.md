@@ -77,7 +77,9 @@ Telegram chat menu
 
 HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能用静态页面访问绕过身份校验。Mini App 发布后通过 `./manage.sh telegram` 更新菜单中的 `?v=<OCI Git revision>`，避免 Telegram WebView 长期缓存旧 bundle。
 
-`GET /api/miniapp/v1/monitor` 使用 Telegram `initData` 鉴权，只投影安全聚合字段；上游非 2xx、非法 JSON、非法时间/数值或响应超限时统一 fail closed，不把私有 URL、路径、容器元数据或告警详情暴露给客户端。
+Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任务、监控四列。搜索在求片和洗版模式间显式切换；请求链使用 `mode: 'request'`，分页、取消和较早响应不能覆盖更新状态。
+
+`GET /api/miniapp/v1/monitor` 使用 Telegram `initData` 本地鉴权，只投影固定安全 DTO。服务端只向显式配置的 overview 发起短超时请求，缺少空闲空间时才查询 qB fallback；请求不继承浏览器的 `initData`、Cookie 或 Authorization。响应体有上限，JSON、RFC3339 时间、未来时钟偏差和所有聚合数值都严格校验。上游缺失、非 2xx、过大、过期或非法时统一返回通用 `503`，并设置 `no-store`，不向客户端暴露私有 URL、路径、容器元数据或告警详情。
 
 ## 5. 普通求片主链路
 
@@ -102,7 +104,9 @@ HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能�
 
 ### 洗版
 
-管理员或用户从媒体详情创建 wash 工单。系统记录目标版本/季信息，由管理员审核后调用 MoviePilot 执行，完成后由 Emby 事件确认目标媒体可见。旧版本是否删除属于独立清理动作，不能由识别失败路径直接删除。
+管理员或用户从媒体详情创建 wash 工单，系统同时记录目标版本/季度和 Emby MediaSource 基线。管理员批准后进入短 callback 的详情确认；打开确认页不会改变工单，点击完成才原子认领并执行核验。工作台还支持认领、释放和失败后重试，claimed 工单仍视为活动重复项。
+
+完成条件是每个旧 MediaSource 仍存在且至少出现一个不同的新 MediaSource。核验不可用或失败时保持工单未完成；缺少基线的旧工单安全拒绝并要求重新创建。未被管理员认领的 approved 工单也可在 Emby 入库事件满足同一条件后自动完成。旧版本删除属于独立清理动作，不能由识别失败或完成路径直接触发。
 
 ### 许愿池
 
@@ -133,6 +137,7 @@ HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能�
 - 管理 API 在启用 auth 时要求 `API_KEYS`；关闭 auth 时仅允许 localhost。
 - 入站 webhook 支持 secret/signature 校验，公网代理只暴露必要路径。
 - Mini App API 校验 Telegram `initData`；不接受浏览器自造的 user ID。
+- Mini App 监控 URL 默认空且只能由部署注入；入站身份头和 Cookie 不会转发到监控上游。
 - Docker socket 仅用于 MoviePilot 密码重置等明确功能，应限制主机暴露面。
 - 日志和最终报告不输出 Token、密码、完整内网地址或 API Key。
 

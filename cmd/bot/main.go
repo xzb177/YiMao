@@ -859,16 +859,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("admin_todo", adminHandler.Handle)
 	registry.RegisterFunc("admin_request_stats", adminHandler.Handle)
 
-	// Review system callbacks
-	registry.RegisterFunc("review_approve", reviewHandler.Handle)
-	registry.RegisterFunc("review_reject", reviewHandler.Handle)
-	registry.RegisterFunc("review_cancel", reviewHandler.Handle)
-	registry.RegisterFunc("review_complete_wash", reviewHandler.Handle)
-	registry.RegisterFunc("my_reviews", reviewHandler.Handle)
-	registry.RegisterFunc("review_list", reviewHandler.Handle)
-	// Short format callbacks (to keep CallbackData under 64 bytes)
-	registry.RegisterFunc("rv_a", reviewHandler.Handle)
-	registry.RegisterFunc("rv_r", reviewHandler.Handle)
+	registerReviewCallbacks(registry, reviewHandler)
 
 	// Emby library check callbacks
 	registry.RegisterFunc("force_subscribe", requestHandler.HandleForceSubscribe)
@@ -979,6 +970,16 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	}
 
 	return registry, resultDeps
+}
+
+func registerReviewCallbacks(registry *callback.Registry, reviewHandler *handlers.ReviewHandler) {
+	for _, action := range []callback.Action{
+		"review_approve", "review_reject", "review_cancel",
+		"review_complete_wash", "review_claim_wash", "review_release_wash", "review_retry_wash", "review_detail_wash",
+		"my_reviews", "review_list", "rv_a", "rv_r",
+	} {
+		registry.RegisterFunc(action, reviewHandler.Handle)
+	}
 }
 
 // setupBotCommands sets up the bot command menu

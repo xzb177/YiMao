@@ -474,9 +474,9 @@ func parseMiniAppStartPayload(payload string) (miniAppDeepLink, bool) {
 }
 
 func SendMiniAppDeepLink(telegram *services.TelegramClient, chatID int64, link miniAppDeepLink) {
-	base := strings.TrimSpace(os.Getenv("MINIAPP_URL"))
+	base := services.ValidatedMiniAppURL()
 	u, err := url.Parse(base)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
+	if base == "" || err != nil {
 		SendStartMenu(telegram, chatID, false)
 		return
 	}

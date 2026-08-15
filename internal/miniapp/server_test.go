@@ -624,6 +624,31 @@ func TestUserRequestStatusMPCompleteWaitsForEmby(t *testing.T) {
 	}
 }
 
+func TestPublicReviewStatusHidesWashClaimAssignment(t *testing.T) {
+	tests := []struct {
+		name       string
+		status     string
+		wantStatus string
+		wantText   string
+		wantGroup  string
+	}{
+		{name: "approved", status: "approved", wantStatus: "approved", wantText: "洗版处理中", wantGroup: "active"},
+		{name: "claimed", status: "claimed", wantStatus: "approved", wantText: "洗版处理中", wantGroup: "active"},
+		{name: "completed", status: "completed", wantStatus: "completed", wantText: "洗版完成", wantGroup: "done"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			status, text, group := publicReviewStatus(&services.ReviewRequest{
+				BusinessType: services.BusinessTypeWash,
+				Status:       tt.status,
+			})
+			if status != tt.wantStatus || text != tt.wantText || group != tt.wantGroup {
+				t.Fatalf("status=%q text=%q group=%q", status, text, group)
+			}
+		})
+	}
+}
+
 func TestIssuesAreUserScopedAndRepliesHideInternalIDs(t *testing.T) {
 	issues := services.NewIssueService(t.TempDir())
 	owned, err := issues.CreateIssue(101, "测试", "播放有问题", "会卡住", "movie", "550", "测试电影")

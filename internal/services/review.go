@@ -462,7 +462,7 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 		if review.MediaType == MediaTypeTV && current.Season != review.Season {
 			continue
 		}
-		if current.Status == "pending" || current.Status == "approved" {
+		if isActiveReviewStatus(current.Status) {
 			return cloneReview(current), false, nil
 		}
 	}
@@ -483,6 +483,10 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 		return nil, false, err
 	}
 	return cloneReview(review), true, nil
+}
+
+func isActiveReviewStatus(status string) bool {
+	return status == "pending" || status == "approved" || status == "claimed"
 }
 
 // CompleteWash closes an approved wash work order only after verifying that
@@ -870,7 +874,7 @@ func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmd
 		}
 
 		// Active statuses considered duplicate to prevent repeated submissions
-		if review.Status == "pending" || review.Status == "approved" {
+		if isActiveReviewStatus(review.Status) {
 			return cloneReview(review), true
 		}
 	}
@@ -898,7 +902,7 @@ func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType
 		if mediaType == MediaTypeTV && review.Season != season {
 			continue
 		}
-		if review.Status == "pending" || review.Status == "approved" {
+		if isActiveReviewStatus(review.Status) {
 			return cloneReview(review), true
 		}
 	}

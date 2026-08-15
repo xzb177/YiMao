@@ -168,11 +168,16 @@ func TestRootNavigationHasExactlyThreeProductPaths(t *testing.T) {
 		`class="app-dock glass-dock"`,
 		`aria-label="主导航"`,
 		`aria-current="page"`,
+		`data-view="home"`,
+		"首页",
 		"找片",
 		"任务",
 		"监控",
 		`data-view="monitor"`,
 	)
+	if count := strings.Count(chrome, `<button data-view=`); count != 4 {
+		t.Fatalf("移动端底栏按钮数=%d，需要首页加三条产品路径", count)
+	}
 	rejectSource(t, chrome, "放映室", "我的", "闯关", `class="brand"`)
 }
 
@@ -204,6 +209,9 @@ func TestWashIsAFirstClassSearchMode(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
 		"mode:'request'",
+		"S.mode=mode",
+		"S.mode==='request'",
+		"S.mode==='wash'",
 		"function startSearchMode(mode)",
 		"['request','wash'].includes(mode)",
 		"已有内容换个更好的版本",
@@ -213,6 +221,7 @@ func TestWashIsAFirstClassSearchMode(t *testing.T) {
 		`/api/miniapp/v1/wash`,
 		"body:JSON.stringify(payload)",
 	)
+	rejectSource(t, html, "S.searchMode")
 }
 
 func TestMonitorUsesSafeNativeOverviewPage(t *testing.T) {

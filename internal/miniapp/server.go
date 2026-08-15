@@ -623,7 +623,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		if review == nil || (review.NormalizedBusinessType() != services.BusinessTypeRequest && review.NormalizedBusinessType() != services.BusinessTypeWash) {
 			continue
 		}
-		status, text, group := userRequestStatus(review)
+		status, text, group := publicReviewStatus(review)
 		note := ""
 		if review.Status == "rejected" {
 			note = "未通过审核，可稍后换个版本或作品重试"
@@ -631,13 +631,6 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			note = "已由你主动撤回"
 		} else if review.Stuck {
 			note = "系统正在自动重试，无需重复提交"
-		}
-		if review.NormalizedBusinessType() == services.BusinessTypeWash {
-			if review.Status == "completed" {
-				status, text, group = "completed", "洗版完成", "done"
-			} else if review.Status == "approved" {
-				status, text, group = "approved", "洗版处理中", "active"
-			}
 		}
 		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note, BusinessType: review.NormalizedBusinessType()})
 	}
@@ -653,6 +646,23 @@ func publicQuota(quota *services.UserQuota) *quotaView {
 		return nil
 	}
 	return &quotaView{MovieUsed: quota.MovieUsed, MovieLimit: quota.MovieLimit, TVUsed: quota.TVUsed, TVLimit: quota.TVLimit}
+}
+
+func publicReviewStatus(review *services.ReviewRequest) (string, string, string) {
+	status, text, group := userRequestStatus(review)
+	if review.NormalizedBusinessType() != services.BusinessTypeWash {
+		return status, text, group
+	}
+	switch review.Status {
+	case "completed":
+		return "completed", "洗版完成", "done"
+	case "approved", "claimed":
+		// claimed is internal admin-workbench state. Keep the user timeline
+		// stable and do not expose assignment implementation details.
+		return "approved", "洗版处理中", "active"
+	default:
+		return status, text, group
+	}
 }
 
 func userRequestStatus(review *services.ReviewRequest) (string, string, string) {

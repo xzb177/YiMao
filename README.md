@@ -25,6 +25,13 @@ Telegram Bot / Mini App
 
 “MoviePilot 下载完成”和“Emby 已经可以看”是两个不同状态。YiMao 不会在外部系统失败时把错误伪装成空态或成功。
 
+## 当前产品入口
+
+- Bot 以搜索求片为默认路径，保留详情/季度、候选资源、求片进度、想看/拼车、许愿池、洗版、问题反馈和入库通知。
+- Mini App 是 App-first 任务中心：首页先展示“今晚要看 / 卡住的事 / 正在替你办”，再进入找片、求片/洗版提交、任务时间线、想看、许愿、反馈和只读监控。
+- 游戏中心只保留电影情报站、盲盒、命运轮盘和观影画像；Roulette 的进入和再转一次回调都可用。
+- 管理员负责求片/洗版审核、洗版认领与 MediaSource 安全核验、反馈处理和通知设置。洗版完成必须先进入明确确认，不会绕过旧版保留检查。
+
 ## 新用户一键部署
 
 前置条件：Linux、Docker daemon、Git、curl，以及宿主机可访问的 MoviePilot。
@@ -96,11 +103,11 @@ chmod 600 .env
 - `POST /webhook`：Telegram webhook 模式
 - `POST /webhook/moviepilot`、`POST /webhook/mp`：MoviePilot 事件
 - `POST /webhook/emby`：Emby 事件
-- `GET /miniapp`：Mini App shell
-- `/api/miniapp/v1/*`：Telegram initData 鉴权后的 Mini App API；`/monitor` 仅返回白名单聚合字段，不透传内部地址、凭据或运维控制项。
+- `GET /miniapp`：App-first Mini App shell
+- `/api/miniapp/v1/*`：Telegram initData 鉴权后的搜索、详情、任务、求片/洗版、反馈与监控 API；`/monitor` 仅返回白名单聚合字段。
 - `/api/summary`、`/api/stats`、`/api/admins*`：受 API auth 或 localhost 限制的管理 API
 
-设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。
+设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。监控上游必须由部署环境显式注入，上游异常时统一返回通用不可用结果，不转发 initData、Cookie 或 Authorization。
 
 ## 存储
 

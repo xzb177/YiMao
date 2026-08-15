@@ -36,6 +36,13 @@ func TestWashApprovalNotifiesRequesterAndConfiguredGroupWithoutPrivacyLeak(t *te
 	if err != nil || resp == nil {
 		t.Fatalf("resp=%v err=%v", resp, err)
 	}
+	if resp.Keyboard == nil || len(resp.Keyboard.InlineKeyboard) != 1 || len(resp.Keyboard.InlineKeyboard[0]) != 1 {
+		t.Fatalf("approval response missing detail route: %#v", resp.Keyboard)
+	}
+	detailButton := resp.Keyboard.InlineKeyboard[0][0]
+	if detailButton.Text != "📋 查看洗版工单" || !strings.HasPrefix(detailButton.CallbackData, "review_detail_wash:token:") || len(detailButton.CallbackData) > 64 {
+		t.Fatalf("approval bypassed safe detail confirmation: %#v", detailButton)
+	}
 	if len(payloads) != 2 {
 		t.Fatalf("sent %d notifications, want private + group", len(payloads))
 	}
@@ -73,5 +80,37 @@ func TestCompleteLegacyWashFailsClosedWithRecoveryPath(t *testing.T) {
 	}
 	if got, _ := reviews.GetRequest(r.RequestID); got.Status != "approved" {
 		t.Fatalf("status=%q, want approved", got.Status)
+	}
+}
+
+func TestWashDetailRoutesToSafeCompletionConfirmation(t *testing.T) {
+	t.Setenv("ADMIN_USER_IDS", "99")
+	reviews := services.NewReviewService(t.TempDir(), false)
+	r := &services.ReviewRequest{RequestID: "wash-detail", BusinessType: services.BusinessTypeWash, TelegramID: 42, MediaTitle: "Concert", Season: 1, WashBaseline: []string{"old"}}
+	if err := reviews.CreateRequest(r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := reviews.Approve(r.RequestID, 99, r.ApproveToken); err != nil {
+		t.Fatal(err)
+	}
+	h := NewReviewHandler(nil, nil, nil, services.NewAdminService(t.TempDir()), reviews, nil, nil, 0)
+	data := callback.BuildCallback("review_detail_wash", map[string]string{"token": r.ApproveToken})
+	if len(data) > 64 {
+		t.Fatalf("callback_data=%d bytes, want <=64: %q", len(data), data)
+	}
+	parsed, err := callback.NewParser().Parse(data)
+	if err != nil {
+		t.Fatalf("parse callback: %v", err)
+	}
+	resp, err := h.Handle(&callback.Context{UserID: 99, Callback: parsed})
+	if err != nil || resp == nil || resp.Keyboard == nil {
+		t.Fatalf("resp=%v err=%v", resp, err)
+	}
+	button := resp.Keyboard.InlineKeyboard[0][0]
+	if button.Text != "✅ 标记洗版完成" || !strings.HasPrefix(button.CallbackData, "review_complete_wash:token:") || len(button.CallbackData) > 64 {
+		t.Fatalf("unexpected completion button: %#v", button)
+	}
+	if got, _ := reviews.GetRequest(r.RequestID); got.Status != "approved" || got.WashClaimedBy != 0 {
+		t.Fatalf("opening confirmation mutated work order: %#v", got)
 	}
 }

@@ -58,6 +58,10 @@ func TestCreateWashIfNoActiveSimilarAndComplete(t *testing.T) {
 	if _, err := svc.ClaimWash(first.RequestID, 99); err != nil {
 		t.Fatal(err)
 	}
+	third := &ReviewRequest{RequestID: "wash-3", BusinessType: BusinessTypeWash, TelegramID: 9, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards"}
+	if existing, created, err := svc.CreateRequestIfNoActiveSimilar(third); err != nil || created || existing.RequestID != first.RequestID || existing.Status != "claimed" {
+		t.Fatalf("claimed duplicate create: existing=%v created=%v err=%v", existing, created, err)
+	}
 	if _, err := svc.CompleteWash(first.RequestID, 99, []string{"/old/s02e01.mkv", "/new/s02e01.mkv"}); err != nil {
 		t.Fatal(err)
 	}

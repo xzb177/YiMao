@@ -1273,8 +1273,30 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 				logger.Warn("[Telegram] Dropping oversized callback button %q (%d bytes)", button.Text, len(button.CallbackData))
 				continue
 			}
-			if button.CallbackData == "" && button.URL == "" {
+			actionCount := 0
+			if button.CallbackData != "" {
+				actionCount++
+			}
+			if button.URL != "" {
+				actionCount++
+			}
+			if button.WebApp != nil {
+				actionCount++
+			}
+			// Telegram inline buttons must carry exactly one action. Rejecting
+			// ambiguous combinations here prevents malformed payloads from
+			// reaching the transport even if a caller builds one manually.
+			if actionCount != 1 {
+				logger.Warn("[Telegram] Dropping inline button with invalid action count: text=%q count=%d", button.Text, actionCount)
 				continue
+			}
+			if button.WebApp != nil {
+				webAppURL := validateWebAppTransportURL(button.WebApp.URL)
+				if webAppURL == "" {
+					logger.Warn("[Telegram] Dropping inline button with invalid Web App URL: text=%q", button.Text)
+					continue
+				}
+				button.WebApp = &types.TelegramWebAppInfo{URL: webAppURL}
 			}
 			cleanRow = append(cleanRow, button)
 		}
@@ -1617,12 +1639,83 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 		kb.NewRow()
 		kb.AddButton("🛠️ 管理", "admin_menu")
 	}
-	if url := strings.TrimSpace(os.Getenv("MINIAPP_URL")); strings.HasPrefix(url, "https://") {
+	if url := ValidatedMiniAppURL(); url != "" {
 		kb.NewRow()
 		kb.AddWebAppButton("🎞️ 打开云海小程序", url)
 	}
 
 	return kb.Build()
+}
+
+func validateMiniAppURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		parsed.RawQuery != "" || parsed.Fragment != "" || strings.Contains(raw, "#") {
+		return ""
+	}
+	return raw
+}
+
+func validateWebAppTransportURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	parsed, err := url.ParseRequestURI(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil ||
+		parsed.Fragment != "" || strings.Contains(raw, "#") {
+		return ""
+	}
+	if parsed.RawQuery == "" {
+		return raw
+	}
+
+	query, err := url.ParseQuery(parsed.RawQuery)
+	if err != nil {
+		return ""
+	}
+	for key, values := range query {
+		if len(values) != 1 {
+			return ""
+		}
+		switch key {
+		case "tmdb_id", "type", "season":
+		default:
+			return ""
+		}
+	}
+	tmdbValues, typeValues := query["tmdb_id"], query["type"]
+	if len(tmdbValues) != 1 || len(typeValues) != 1 {
+		return ""
+	}
+	tmdbID, err := strconv.Atoi(tmdbValues[0])
+	if err != nil || tmdbID <= 0 {
+		return ""
+	}
+	mediaType := typeValues[0]
+	seasonValues := query["season"]
+	if mediaType == "movie" {
+		if len(seasonValues) != 0 {
+			return ""
+		}
+	} else if mediaType == "tv" {
+		if len(seasonValues) != 1 {
+			return ""
+		}
+		season, err := strconv.Atoi(seasonValues[0])
+		if err != nil || season <= 0 || season > 999 {
+			return ""
+		}
+	} else {
+		return ""
+	}
+	return raw
+}
+
+// ValidatedMiniAppURL returns the configured public Telegram Mini App URL only
+// when it is an absolute HTTPS URL without credentials, query parameters or a
+// fragment. Keeping this check in one place prevents /start, deep-link and
+// transport validation from drifting apart or forwarding accidental secrets.
+func ValidatedMiniAppURL() string {
+	return validateMiniAppURL(os.Getenv("MINI_APP_URL"))
 }
 
 // BuildGameCenterKeyboard builds the single canonical game-center menu.

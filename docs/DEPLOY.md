@@ -146,6 +146,8 @@ https://bot.example.com/miniapp
 MINI_APP_URL=https://bot.example.com/miniapp
 ```
 
+这里必须填写不含凭据、query 参数或 fragment 的 HTTPS 基础 URL。影视详情入口需要的 `tmdb_id`、`type`、`season` 由应用校验后生成，不应手工写进环境变量。
+
 然后执行：
 
 ```bash
@@ -155,6 +157,19 @@ MINI_APP_URL=https://bot.example.com/miniapp
 脚本从运行镜像读取 OCI revision，并将 `?v=<revision>` 加到 Telegram 默认 Web App URL。每次升级成功后也会自动刷新。菜单文本和 URL 不包含 Token。
 
 若需要 chat-specific 菜单，需使用 Telegram Bot API 单独指定 `chat_id`；默认脚本只设置全局菜单，避免覆盖已有私聊定制。
+
+### Mini App 监控上游
+
+监控上游地址没有源码或示例宿主端口默认值。只有部署了对应的只读聚合接口时才显式配置：
+
+```dotenv
+MONITOR_OVERVIEW_URL=
+MONITOR_QBIT_MAINDATA_URL=
+```
+
+`MONITOR_QBIT_MAINDATA_URL` 只在 overview 没有空闲空间字段时作为 fallback。两项都为空时监控接口安全返回通用不可用结果，不影响搜索、求片和任务进度。
+
+监控请求使用短 timeout、响应体上限和严格 JSON/RFC3339/数值校验，只向 Mini App 返回固定聚合字段。Telegram `initData`、Cookie、Authorization 以及内部 URL/路径不会转发或回显；反向代理也不应为这些上游请求注入用户认证头。
 
 ## 6. Emby 与 MoviePilot Webhook
 

@@ -49,31 +49,47 @@ func NewReviewHandler(
 }
 
 func (h *ReviewHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	action := ctx.Callback.Action
+	if ctx == nil || ctx.Callback == nil {
+		return nil, nil
+	}
+	handler := h.handlerFor(ctx.Callback.Action)
+	if handler == nil {
+		return nil, nil
+	}
+	return handler(ctx)
+}
 
+// Supports reports whether this handler has a concrete dispatch path for the
+// action. It shares the exact dispatch table used by Handle so wiring tests can
+// verify allowlist -> registry -> handler consistency without invoking services.
+func (h *ReviewHandler) Supports(action callback.Action) bool {
+	return h.handlerFor(action) != nil
+}
+
+func (h *ReviewHandler) handlerFor(action callback.Action) callback.HandlerFunc {
 	switch action {
 	case "review_approve", "rv_a":
-		return h.handleApprove(ctx)
+		return h.handleApprove
 	case "review_reject", "rv_r":
-		return h.handleReject(ctx)
+		return h.handleReject
 	case "review_cancel":
-		return h.handleCancel(ctx)
+		return h.handleCancel
 	case "review_complete_wash":
-		return h.handleCompleteWash(ctx)
+		return h.handleCompleteWash
 	case "review_claim_wash":
-		return h.handleClaimWash(ctx)
+		return h.handleClaimWash
 	case "review_release_wash":
-		return h.handleReleaseWash(ctx)
+		return h.handleReleaseWash
 	case "review_retry_wash":
-		return h.handleRetryWash(ctx)
+		return h.handleRetryWash
 	case "review_detail_wash":
-		return h.handleWashDetail(ctx)
+		return h.handleWashDetail
 	case "my_reviews":
-		return h.handleMyReviews(ctx)
+		return h.handleMyReviews
 	case "review_list":
-		return h.handleReviewList(ctx)
+		return h.handleReviewList
 	default:
-		return nil, nil
+		return nil
 	}
 }
 
@@ -211,7 +227,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			}
 		}
 		h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》的洗版工单已被批准", review.MediaTitle))
-		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ %s\n\n资源处理并验证完成后，请点击下方按钮收口。", review.MediaTitle), CallbackMsg: "已批准", ShowAlert: true, Edit: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "✅ 标记洗版完成", CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": review.ApproveToken})}}}}}, nil
+		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已批准\n\n♻️ %s\n\n资源处理完成后，请先查看工单并确认安全核验。", review.MediaTitle), CallbackMsg: "已批准", ShowAlert: true, Edit: true, Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "📋 查看洗版工单", CallbackData: callback.BuildCallback("review_detail_wash", map[string]string{"token": review.ApproveToken})}}}}}, nil
 	}
 
 	// Submit to MoviePilot
@@ -399,18 +415,9 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 	if !h.adminService.IsAdmin(ctx.UserID) {
 		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
 	}
-	requestID := ctx.Callback.Params["id"]
-	var review *services.ReviewRequest
-	if token := ctx.Callback.Params["token"]; token != "" {
-		if found, ok := h.reviewService.GetRequestByToken(token); ok {
-			review, requestID = found, found.RequestID
-		}
-	}
-	if review == nil {
-		review, _ = h.reviewService.GetRequest(requestID)
-	}
-	if review == nil {
-		return &callback.Response{CallbackMsg: "找不到洗版工单", ShowAlert: true}, nil
+	review, requestID, resolveErr := h.washFromContext(ctx)
+	if resolveErr != nil {
+		return &callback.Response{Text: resolveErr.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
 	}
 	if review.Status == "completed" {
 		return &callback.Response{Text: fmt.Sprintf("✅ 洗版工单已完成\n\n♻️ %s", review.MediaTitle), CallbackMsg: "已完成", Edit: true}, nil
@@ -418,6 +425,15 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 	if len(review.WashBaseline) == 0 {
 		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, "缺少创建时基线：旧工单不能自动验证")
 		return &callback.Response{Text: "⚠️ 这是旧版洗版工单，缺少创建时的媒体基线，无法安全验证完成。\n\n请保留当前资源，并让用户重新创建洗版工单；新工单会自动采集基线后再验证。", CallbackMsg: "缺少基线，已安全拒绝", ShowAlert: true}, nil
+	}
+	if review.Status == "approved" {
+		claimed, err := h.reviewService.ClaimWash(requestID, ctx.UserID)
+		if err != nil {
+			return &callback.Response{Text: "⚠️ " + err.Error(), CallbackMsg: "认领失败", ShowAlert: true}, nil
+		}
+		review = claimed
+	} else if review.Status != "claimed" || review.WashClaimedBy != ctx.UserID {
+		return &callback.Response{Text: "⚠️ 洗版工单状态已变化，请返回工作台刷新。", CallbackMsg: "工单已变化", ShowAlert: true}, nil
 	}
 	if h.webhookService == nil {
 		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, "媒体库核验服务不可用")
@@ -447,11 +463,22 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 }
 
 func (h *ReviewHandler) washFromContext(ctx *callback.Context) (*services.ReviewRequest, string, error) {
-	requestID := ctx.Callback.Params["id"]
-	if requestID == "" {
-		return nil, "", fmt.Errorf("缺少工单 ID")
+	if ctx == nil || ctx.Callback == nil {
+		return nil, "", fmt.Errorf("缺少工单引用")
 	}
-	review, ok := h.reviewService.GetRequest(requestID)
+	requestID := strings.TrimSpace(ctx.Callback.Params["id"])
+	var review *services.ReviewRequest
+	var ok bool
+	if token := strings.TrimSpace(ctx.Callback.Params["token"]); token != "" {
+		review, ok = h.reviewService.GetRequestByToken(token)
+		if ok && review != nil {
+			requestID = review.RequestID
+		}
+	} else if requestID != "" {
+		review, ok = h.reviewService.GetRequest(requestID)
+	} else {
+		return nil, "", fmt.Errorf("缺少工单引用")
+	}
 	if !ok || review == nil || review.NormalizedBusinessType() != services.BusinessTypeWash {
 		return nil, "", fmt.Errorf("找不到洗版工单")
 	}
@@ -500,7 +527,32 @@ func (h *ReviewHandler) handleWashDetail(ctx *callback.Context) (*callback.Respo
 	if err != nil {
 		return &callback.Response{Text: err.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
 	}
+	if token := strings.TrimSpace(ctx.Callback.Params["token"]); token != "" && review.Status == "approved" {
+		return h.renderWashCompletionConfirmation(review, token), nil
+	}
 	return h.renderWashDetail(review, true), nil
+}
+
+func (h *ReviewHandler) renderWashCompletionConfirmation(review *services.ReviewRequest, token string) *callback.Response {
+	season := ""
+	if review.Season > 0 {
+		season = fmt.Sprintf(" S%02d", review.Season)
+	}
+	return &callback.Response{
+		Text: fmt.Sprintf("♻️ 洗版完成确认\n\n%s%s\n\n请确认 Emby 已出现新版本且旧版仍保留。点击后系统会先认领工单，再核验 MediaSource；验证失败不会标记完成。", review.MediaTitle, season),
+		Edit: true,
+		Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{
+			Text:         "✅ 标记洗版完成",
+			CallbackData: callback.BuildCallback("review_complete_wash", map[string]string{"token": token}),
+		}}}},
+	}
+}
+
+func washCallbackParams(review *services.ReviewRequest) map[string]string {
+	if review != nil && review.ApproveToken != "" {
+		return map[string]string{"token": review.ApproveToken}
+	}
+	return map[string]string{"id": review.RequestID}
 }
 
 func (h *ReviewHandler) renderWashDetail(review *services.ReviewRequest, edit bool) *callback.Response {
@@ -517,15 +569,15 @@ func (h *ReviewHandler) renderWashDetail(review *services.ReviewRequest, edit bo
 	}
 	text += fmt.Sprintf("\n状态：%s\n申请人：%s\n创建时间：%s\n旧版基线：%d 个", status, review.TelegramName, review.CreatedAt.Format("2006-01-02 15:04"), len(review.WashBaseline))
 	keyboard := &callback.Keyboard{}
-	id := map[string]string{"id": review.RequestID}
+	ref := washCallbackParams(review)
 	if review.Status == "approved" {
-		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🙋 认领", CallbackData: callback.BuildCallback("review_claim_wash", id)}})
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🙋 认领", CallbackData: callback.BuildCallback("review_claim_wash", ref)}})
 	}
 	if review.Status == "claimed" {
-		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "✅ 核验完成", CallbackData: callback.BuildCallback("review_complete_wash", id)}, {Text: "↩️ 释放", CallbackData: callback.BuildCallback("review_release_wash", id)}})
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "✅ 核验完成", CallbackData: callback.BuildCallback("review_complete_wash", ref)}, {Text: "↩️ 释放", CallbackData: callback.BuildCallback("review_release_wash", ref)}})
 	}
 	if review.Status == "claimed" && review.WashLastError != "" {
-		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🔁 重新核验", CallbackData: callback.BuildCallback("review_retry_wash", id)}})
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🔁 重新核验", CallbackData: callback.BuildCallback("review_retry_wash", ref)}})
 	}
 	return &callback.Response{Text: text, Edit: edit, Keyboard: keyboard}
 }
@@ -771,7 +823,7 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 				status = "⚠️ " + status
 			}
 			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard,
-				[]callback.Button{{Text: "♻️ " + label + " · " + status, CallbackData: callback.BuildCallback("review_detail_wash", map[string]string{"id": review.RequestID})}},
+				[]callback.Button{{Text: "♻️ " + label + " · " + status, CallbackData: callback.BuildCallback("review_detail_wash", washCallbackParams(review))}},
 			)
 		}
 	}

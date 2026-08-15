@@ -33,7 +33,7 @@ chmod 600 .env.staging
 - `STAGING_SMOKE_CHAT_ID`：可选；填写后 Smoke 会静默发送一条测试消息并立即删除
 - `STAGING_REQUIRE_CHAT=true`：如要求消息发送/删除必须通过
 
-可选的 Emby、TMDB、AI 配置也必须指向测试服务。不要复制生产凭据。
+Mini App 真机验收还需填写测试环境的 `MINI_APP_URL`；必须是无凭据、无 query、无 fragment 的 HTTPS 基础 URL。监控上游没有默认值；只有准备了隔离的测试 overview 时才显式填写 `MONITOR_OVERVIEW_URL`，需要空闲空间 fallback 时再填写 `MONITOR_QBIT_MAINDATA_URL`。可选的 Emby、TMDB、AI 配置也必须指向测试服务。不要复制生产凭据。
 
 ## 启动与自动 Smoke
 
@@ -86,8 +86,17 @@ SOAK_INTERVAL_SECONDS=300 \
 - [ ] 「求片进度」与片单不泄露其他用户数据
 - [ ] 问题反馈、快捷选项、图片、管理员回复完整可达
 - [ ] AI 解说无剧透/剧透切换不串片；过期按钮有友好提示
-- [ ] Mini App 监控页展示可用空间、队列摘要和三段链路；异常不泄露上游详情
-- [ ] 游戏中心只展示解说、盲盒、轮盘和画像，已下线的旧按钮不再出现
+- [ ] Mini App 首屏为任务首页；首页、找片、任务、监控四列底栏均可进入且 safe-area 正确
+- [ ] 求片模式使用 request action-chain；快速翻页、取消和重复点击不会被旧响应覆盖或重复提交
+- [ ] Dialog、超时/断网错误和重试恢复不会丢失当前媒体、季度或模式
+- [ ] Mini App 监控页展示可用空间、队列摘要和三段链路；响应带 `no-store`，异常只显示通用不可用结果
+- [ ] 缺少/伪造/过期/future-skew `initData` 被拒绝，监控上游收不到入站 `initData`、Cookie 或 Authorization
+- [ ] 监控上游非 2xx、超限响应、非法 JSON/RFC3339/数值均返回通用 `503`，overview 缺空闲空间时 qB fallback 正常
+- [ ] 游戏中心只展示解说、盲盒、轮盘和画像；轮盘进入与“再转一次”均可用，已下线旧按钮不再出现
+- [ ] `/ai` 只返回搜索兼容提示，`/narrate` 才进入 AI 电影解说
+- [ ] 洗版批准按钮先进入 <=64 字节 callback 的完成确认，查看详情本身不认领、不完成
+- [ ] 洗版认领/释放/重试正常；旧版缺失、新版未出现或 Emby 不可用时均不得完成
+- [ ] 未认领的 approved 洗版仅在 Emby 确认旧版保留且新 MediaSource 出现后自动完成
 
 ### 群聊与隐私
 

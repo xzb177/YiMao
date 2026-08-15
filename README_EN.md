@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Telegram media request assistant focused on search, subscription, progress tracking, and library notifications, with a safe monitoring view and media-discovery tools. Deep MoviePilot + Emby/Jellyfin integration.**
+**Telegram media task center for search, requests, progress, safe upgrades, and playback-ready notifications, with an App-first Mini App and MoviePilot + Emby/Jellyfin integration.**
 
 [中文](README.md) · [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org) [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com) [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -21,10 +21,10 @@ Default path:
   🔍 Search & Request — Search → One-click Subscribe → Track → Notify
 
 Mini App:
-  📡 Monitoring — Free space → Queue summary → Download/organize/library health
+  Home → Search/detail → Request or wash → Task timeline → Safe monitoring
 ```
 
-Search & Request remains the default path; Game Center provides independent discovery and viewing tools.
+Search & Request remains the default Bot path. The Mini App opens directly on the real task home.
 
 ---
 
@@ -36,22 +36,32 @@ Search & Request remains the default path; Game Center provides independent disc
 - One-click subscribe with quota checking and duplicate detection
 - Series support with season selection
 
-### 📡 Mini App Monitoring
-- Shows free space, a download queue summary, and 24-hour import activity
-- Shows download → organize → library pipeline health
-- Returns only user-safe aggregate state; internal addresses, paths, container details, and operations are not exposed
-- Authenticates Telegram Mini App `initData` and uses generic unavailable responses for upstream failures
+### Mini App Task Center
+- App-first home with ready-to-watch items, blockers, active work, request, and wash shortcuts
+- Search/detail, season selection, request results, task progress, cancellation, watchlist, wishes, and issue reporting
+- Native dialogs, safe-area support, a stable four-column mobile dock, request race guards, and recoverable error states
+- Read-only monitoring for free space, queue activity, and download → organize → library health
+- Telegram `initData` authentication, same-origin SDK, allowlisted monitoring DTOs, bounded upstream responses, generic `503` failures, and `no-store`
 
 ### 🎮 Game Center
 - Intelligence Station (AI movie narration)
 - Movie blind box and destiny roulette
 - Viewing profile
 
+Roulette remains available through both its entry and spin actions.
+
 ### 📊 Request Tracking
 - `/requests` — unified request view grouped by status
 - Subscription status sync from MoviePilot (searching → downloading → completed)
 - Episode progress bar in import notifications
 - Candidate resource indicators (⚡ abundant / 🔄 waiting / 🐢 no source)
+- Request and wash tasks share one timeline; pending tasks can be cancelled by their owner
+- Watchlist/carpool arrivals, issue feedback, and per-user completion notifications remain isolated by user
+
+### Administrator Workflow
+- Review request and wash work orders, handle feedback, and manage notification settings
+- Claim/release wash work, retain the old version, and verify a distinct new Emby MediaSource before completion
+- Approved wash details use a short Telegram callback and an explicit completion confirmation; viewing details never completes the work order
 
 ### 🌟 Wish Pool
 - `/wish` — add unfindable content to wish pool
@@ -84,9 +94,16 @@ Search & Request remains the default path; Game Center provides independent disc
 | `/game` | Game center | All |
 | `/wish` | Wish pool | All |
 | `/requests` | Request progress | All |
+| `/watchlist` | Same request-progress view | All |
 | `/quota` | Check quota | All |
 | `/link` | Bind MoviePilot account | All |
+| `/unlink` | Confirm and remove the account binding | Private/direct |
+| `/resetpw` | Reset the bound account password | Private/direct |
 | `/portrait` | Viewing profile | All |
+| `/narrate` | AI movie narration | Private menu |
+| `/review` | Write a movie review | Private menu |
+| `/status` | Bot status and redacted admin diagnostics | Private/direct |
+| `/id` | Current chat and user IDs | Direct |
 | `/help` | Help | All |
 
 ---
@@ -110,15 +127,17 @@ The service listens on `:8080`; `/health` is the health endpoint. New deployment
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TELEGRAM_BOT_TOKEN` | — | Bot token from @BotFather |
-| `MOVIEPILOT_URL` | `http://localhost:4500` | MoviePilot address |
+| `MOVIEPILOT_URL` | — | Required MoviePilot address; set the deployment URL explicitly |
 | `MOVIEPILOT_API_KEY` | — | MoviePilot API Key |
 | `EMBY_URL` | — | Emby/Jellyfin URL |
 | `EMBY_API_KEY` | — | Emby API Key |
 | `TMDB_API_KEY` | — | TMDB API Key (v3 auth) |
-| `OPENAI_API_KEY` | — | AI provider key for recommendations and movie narration |
+| `OPENAI_API_KEY` | — | AI provider key for movie narration and the optional assistant |
 | `OPENAI_BASE_URL` | — | AI provider base URL |
 | `OPENAI_MODEL` | — | AI model name |
+| `MINI_APP_URL` | — | Public HTTPS Mini App base URL used by Telegram menus and Bot buttons; credentials, query parameters and fragments are rejected |
 | `MONITOR_OVERVIEW_URL` | — | Overview source URL; production must use an address reachable from the container |
+| `MONITOR_QBIT_MAINDATA_URL` | — | Optional free-space fallback when overview omits it |
 | `WEBHOOK_SECRET` | — | HMAC-SHA256 secret for inbound webhooks |
 | `ENABLE_API_AUTH` | `true` | Enables HTTP API key authentication |
 | `API_KEYS` | — | JSON object of HTTP API keys; required when auth is enabled |
@@ -141,6 +160,8 @@ Before release, run the isolated [staging and device acceptance workflow](docs/S
 | `GET /health` | Health check |
 
 When `WEBHOOK_SECRET` is set, requests must include `?token=<secret>` or `X-Webhook-Signature: sha256=<hex>`.
+
+Monitoring upstream URLs have no source-code host/port defaults. They must be injected by deployment, and client `initData`, `Cookie`, and `Authorization` headers are never forwarded upstream.
 
 ---
 
