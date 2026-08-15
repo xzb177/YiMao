@@ -115,13 +115,13 @@ func BuildWelcomeMessage(userName string) RichMessage {
 	builder.BoldParagraph("想看的，交给云海")
 	builder.Divider()
 
-	// Quick guide（copy_consistency_test 锁定三个标签及顺序）
-	guide := "🔍 搜索求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n⚔️ 电影冒险 — 可选的五关互动玩法"
+	// Quick guide keeps the request workflow first and concise.
+	guide := "🔍 搜索求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n🎮 游戏中心 — 盲盒、轮盘、解说与观影画像"
 	builder.Paragraph(guide)
 	builder.Divider()
 
 	// Tips (collapsible)。仅保留引导区没有覆盖的信息，避免同卡重复。
-	tips := "• 支持电影、剧集、综艺与纪录片\n• 电影冒险通关后会自动提交请求\n• 下载完成并入库后，将收到私聊通知"
+	tips := "• 支持电影、剧集、综艺与纪录片\n• 游戏中心提供随机发现与观影工具\n• 下载完成并入库后，将收到私聊通知"
 	builder.Details("💡 使用技巧", tips, false)
 
 	return builder.Build()

@@ -1,6 +1,6 @@
 # YiMao
 
-YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；AI、电影冒险和许愿池是增强能力，不是部署主链路的前置条件。
+YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；AI、只读运行监控和许愿池是增强能力，不是部署主链路的前置条件。
 
 ## 工作方式
 
@@ -97,7 +97,7 @@ chmod 600 .env
 - `POST /webhook/moviepilot`、`POST /webhook/mp`：MoviePilot 事件
 - `POST /webhook/emby`：Emby 事件
 - `GET /miniapp`：Mini App shell
-- `/api/miniapp/v1/*`：Telegram initData 鉴权后的 Mini App API
+- `/api/miniapp/v1/*`：Telegram initData 鉴权后的 Mini App API；`/monitor` 仅返回白名单聚合字段，不透传内部地址、凭据或运维控制项。
 - `/api/summary`、`/api/stats`、`/api/admins*`：受 API auth 或 localhost 限制的管理 API
 
 设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。

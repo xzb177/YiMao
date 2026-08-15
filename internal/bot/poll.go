@@ -17,53 +17,45 @@ import (
 
 // Dependencies holds bot dependencies
 type Dependencies struct {
-	Telegram         *services.TelegramClient
-	MoviePilot       *services.MoviePilotClient
-	SessionMgr       *session.Manager
-	UserMapping      services.UserMappingStore
-	BindingRequest   *services.BindingRequestService
-	AdminService     *services.AdminService
-	AdminHandler     *handlers.AdminHandler
-	QuotaService     *services.QuotaService
-	SearchHistory    *services.SearchHistoryService
-	SearchHistoryDB  *services.SearchHistoryDB
-	TMDB             *services.TMDBClient
-	IssueService     *services.IssueService
-	FeedbackHandler  *handlers.FeedbackHandler
-	FallbackService  *services.SearchFallbackService
-	WishHandler      *handlers.WishHandler       // #6 许愿池
-	MyRequests       *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
-	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler  // 电影冒险
-	RankHandler      *handlers.RankHandler       // 冒险者公会排行
-	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler      // 本周挑战
+	Telegram        *services.TelegramClient
+	MoviePilot      *services.MoviePilotClient
+	SessionMgr      *session.Manager
+	UserMapping     services.UserMappingStore
+	BindingRequest  *services.BindingRequestService
+	AdminService    *services.AdminService
+	AdminHandler    *handlers.AdminHandler
+	QuotaService    *services.QuotaService
+	SearchHistory   *services.SearchHistoryService
+	SearchHistoryDB *services.SearchHistoryDB
+	TMDB            *services.TMDBClient
+	IssueService    *services.IssueService
+	FeedbackHandler *handlers.FeedbackHandler
+	FallbackService *services.SearchFallbackService
+	WishHandler     *handlers.WishHandler       // #6 许愿池
+	MyRequests      *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
+	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // PollDeps holds dependencies for polling (reduced set)
 type PollDeps struct {
-	Registry         *callback.Registry
-	Telegram         *services.TelegramClient
-	MoviePilot       *services.MoviePilotClient
-	SessionMgr       *session.Manager
-	UserMapping      services.UserMappingStore
-	BindingRequest   *services.BindingRequestService
-	AdminService     *services.AdminService
-	AdminHandler     *handlers.AdminHandler // For admin management flows
-	QuotaService     *services.QuotaService
-	SearchHistory    *services.SearchHistoryService // Legacy, for backward compatibility
-	SearchHistoryDB  *services.SearchHistoryDB      // New, advanced features
-	TMDB             *services.TMDBClient
-	IssueService     *services.IssueService
-	FeedbackHandler  *handlers.FeedbackHandler
-	FallbackService  *services.SearchFallbackService
-	WishHandler      *handlers.WishHandler       // #6 许愿池
-	MyRequests       *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
-	GameHandler      *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler *handlers.AdventureHandler  // 电影冒险
-	RankHandler      *handlers.RankHandler       // 冒险者公会排行
-	StatsHandler     *handlers.StatsHandler      // 个人冒险面板
-	DreamHandler     *handlers.DreamHandler      // 本周挑战
+	Registry        *callback.Registry
+	Telegram        *services.TelegramClient
+	MoviePilot      *services.MoviePilotClient
+	SessionMgr      *session.Manager
+	UserMapping     services.UserMappingStore
+	BindingRequest  *services.BindingRequestService
+	AdminService    *services.AdminService
+	AdminHandler    *handlers.AdminHandler // For admin management flows
+	QuotaService    *services.QuotaService
+	SearchHistory   *services.SearchHistoryService // Legacy, for backward compatibility
+	SearchHistoryDB *services.SearchHistoryDB      // New, advanced features
+	TMDB            *services.TMDBClient
+	IssueService    *services.IssueService
+	FeedbackHandler *handlers.FeedbackHandler
+	FallbackService *services.SearchFallbackService
+	WishHandler     *handlers.WishHandler       // #6 许愿池
+	MyRequests      *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
+	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // StartPolling starts the Telegram update polling
@@ -79,28 +71,24 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 	// Convert to PollDeps
 	pollDeps := &PollDeps{
-		Registry:         registry,
-		Telegram:         deps.Telegram,
-		MoviePilot:       deps.MoviePilot,
-		SessionMgr:       deps.SessionMgr,
-		UserMapping:      deps.UserMapping,
-		BindingRequest:   deps.BindingRequest,
-		AdminService:     deps.AdminService,
-		AdminHandler:     deps.AdminHandler,
-		QuotaService:     deps.QuotaService,
-		SearchHistory:    deps.SearchHistory,
-		SearchHistoryDB:  deps.SearchHistoryDB,
-		TMDB:             deps.TMDB,
-		IssueService:     deps.IssueService,
-		FeedbackHandler:  deps.FeedbackHandler,
-		FallbackService:  services.NewSearchFallbackService(deps.MoviePilot),
-		WishHandler:      deps.WishHandler,
-		MyRequests:       deps.MyRequests,
-		GameHandler:      deps.GameHandler,
-		AdventureHandler: deps.AdventureHandler,
-		RankHandler:      deps.RankHandler,
-		StatsHandler:     deps.StatsHandler,
-		DreamHandler:     deps.DreamHandler,
+		Registry:        registry,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		AdminHandler:    deps.AdminHandler,
+		QuotaService:    deps.QuotaService,
+		SearchHistory:   deps.SearchHistory,
+		SearchHistoryDB: deps.SearchHistoryDB,
+		TMDB:            deps.TMDB,
+		IssueService:    deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
+		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
+		WishHandler:     deps.WishHandler,
+		MyRequests:      deps.MyRequests,
+		GameHandler:     deps.GameHandler,
 	}
 
 	for {
@@ -172,7 +160,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler, deps.RankHandler, deps.StatsHandler, deps.DreamHandler)
+		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
 		return
 	}
 
@@ -189,7 +177,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 		}
 		// 其它命令(如 /start /requests)：已清除 pending 态，直接执行命令。
 		msg.Text = sanitizedText // Update with sanitized text
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests, deps.RankHandler, deps.StatsHandler, deps.DreamHandler, deps.AdventureHandler)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
 		return
 	}
 
@@ -399,13 +387,6 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 			}
 		}
 
-		// 检查是否处于电影冒险待输入状态
-		if deps.AdventureHandler != nil {
-			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, sanitizedText) {
-				return
-			}
-		}
-
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
 }
@@ -441,7 +422,6 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		"pending_issue_reply",
 		// 游戏功能 pending 状态
 		"pending_narrate_input",
-		"pending_adventure_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {
@@ -464,7 +444,7 @@ func allDigits(s string) bool {
 
 // HandleGroupChatMessage handles messages in group chats
 // 群组只做轻量引导和通知，不在群里展开搜索结果/求片进度，避免暴露观影隐私。
-func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler, rankHandler *handlers.RankHandler, statsHandler *handlers.StatsHandler, dreamHandler *handlers.DreamHandler) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
@@ -479,7 +459,7 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/adventure", "/go":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
 		// Ephemeral command response: visible only to the invoking member. Fail
 		// closed instead of posting private details when delivery is unavailable.
 		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
@@ -501,24 +481,6 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 		}
 	case "/review", "/评价", "/影评":
 		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
-	case "/rank", "/排行":
-		if rankHandler != nil {
-			rankHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		} else {
-			telegram.SendMessage(msg.Chat.ID, "📊 排行服务未就绪", "", nil)
-		}
-	case "/dream":
-		if dreamHandler != nil {
-			dreamHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		} else {
-			_, _ = telegram.SendMessage(msg.Chat.ID, "🎯 本周挑战暂不可用", "", nil)
-		}
-	case "/mystats":
-		if statsHandler != nil {
-			statsHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		} else {
-			telegram.SendMessage(msg.Chat.ID, "📈 个人面板未就绪", "", nil)
-		}
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)

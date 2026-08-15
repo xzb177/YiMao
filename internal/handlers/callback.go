@@ -388,13 +388,7 @@ func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Respons
 		msg.Text("3. 选择搜索结果查看详情").Newline()
 		msg.Text("4. 点「求片」或「订阅」").Newline()
 		msg.Newline()
-		msg.Bold("电影冒险（可选）：").Newline()
-		msg.Text("1. 点「电影冒险」").Newline()
-		msg.Text("2. 输入影片名称").Newline()
-		msg.Text("3. 以主角视角完成五关互动").Newline()
-		msg.Text("4. 通关后自动提交求片").Newline()
-		msg.Newline()
-		msg.Italic("搜索求片无需闯关；想换一种体验时，再选择电影冒险。")
+		msg.Italic("想随机发现影片，可以从游戏中心进入盲盒或命运轮盘。")
 
 	case "link":
 		msg.Bold("🔗 怎么绑定").Newline()

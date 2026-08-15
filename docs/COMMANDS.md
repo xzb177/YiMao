@@ -14,12 +14,7 @@
 | `/watchlist` | 查看求片进度，与 `/requests` 同源 |
 | `/wish` | 查看许愿池 |
 | `/wish <片名>` | 把暂时无源的影片加入许愿池 |
-| `/adventure` | 开始电影冒险 |
 | `/game` | 打开游戏中心 |
-| `/rank` | 查看冒险排行 |
-| `/mystats` | 查看个人冒险战绩 |
-| `/go` | 快速开始电影冒险 |
-| `/dream` | 开始本周挑战 |
 | `/portrait` | 生成观影画像 |
 | `/review` | 写影评 |
 | `/link` | 绑定 MoviePilot 账号 |

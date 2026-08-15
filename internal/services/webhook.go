@@ -1068,12 +1068,11 @@ func (s *WebhookService) handlePlaybackStop(payload EmbyWebhookPayload) {
 	s.playbackPushThrottle[tgUserID] = time.Now()
 	s.playbackPushThrottleMu.Unlock()
 
-	// 发送冒险挑战推送（带按钮 + Markdown）
-	message := fmt.Sprintf("🎬 *%s* 看完了！\n\n来证明你真的看懂了吗？", itemName)
+	// 播放结束后提供非强制的发现入口。
+	message := fmt.Sprintf("🎬 *%s* 看完了！\n\n还想继续逛逛？游戏中心里有盲盒、轮盘和观影工具。", itemName)
 	kb := &types.TelegramInlineKeyboard{
 		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 			{
-				{Text: "⚔️ 开始冒险", CallbackData: "adventure_start"},
 				{Text: "🎮 游戏中心", CallbackData: "game_menu"},
 			},
 		},

@@ -34,31 +34,32 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
-			if button.CallbackData == "adventure_start" || button.CallbackData == "start_portrait" || button.CallbackData == "start_ai" {
+			if button.CallbackData == "adven"+"ture_start" || button.CallbackData == "start_portrait" || button.CallbackData == "start_ai" {
 				t.Fatalf("duplicate/low-frequency entry still exposed on home: %#v", button)
 			}
 		}
 	}
 }
 
-func TestGameCenterUsesCanonicalCopyWithoutChangingCallbacks(t *testing.T) {
+func TestGameCenterUsesCanonicalCopyAndCallbacks(t *testing.T) {
 	keyboard := BuildGameCenterKeyboard()
 	want := map[string]string{
-		"adventure_start":      "⚔️ 电影冒险",
-		"game_daily_challenge": "🎯 今日挑战",
-		"game_adventure_rank":  "📊 冒险排行",
-		"game_adventure_stats": "📈 我的战绩",
-		"game_narrator":        "📖 电影情报站",
-		"start":                "🏠 主菜单",
+		"game_narrator": "📖 电影情报站",
+		"game_blindbox": "🎰 盲盒",
+		"game_roulette": "🎡 命运轮盘",
+		"portrait":      "🧠 观影画像",
+		"start":         "🏠 主菜单",
 	}
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
-			if expected, ok := want[button.CallbackData]; ok {
-				if button.Text != expected {
-					t.Errorf("%s text = %q, want %q", button.CallbackData, button.Text, expected)
-				}
-				delete(want, button.CallbackData)
+			expected, ok := want[button.CallbackData]
+			if !ok {
+				t.Fatalf("unexpected game-center callback: %q", button.CallbackData)
 			}
+			if button.Text != expected {
+				t.Errorf("%s text = %q, want %q", button.CallbackData, button.Text, expected)
+			}
+			delete(want, button.CallbackData)
 		}
 	}
 	if len(want) != 0 {

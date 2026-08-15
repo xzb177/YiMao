@@ -62,10 +62,8 @@ type ReviewRequest struct {
 	// OrphanRetryCount 订阅在 MP 中找不到时的重试次数（最多 3 次后标记取消）
 	OrphanRetryCount int `json:"orphan_retry_count,omitempty"`
 
-	// 求片路径追踪
-	RequestOrigin  string `json:"request_origin,omitempty"`  // "normal" | "adventure"
-	AdventureScore int    `json:"adventure_score,omitempty"` // 冒险得分
-	AdventureGrade string `json:"adventure_grade,omitempty"` // 冒险评级 SSS-SS-S-A-B-C-D
+	// 求片路径追踪（normal、wish、wash 等来源）
+	RequestOrigin string `json:"request_origin,omitempty"`
 
 	QuotaCost     int  `json:"quota_cost,omitempty"`     // 创建时实际扣除配额；0 表示旧 JSON
 	QuotaRestored bool `json:"quota_restored,omitempty"` // 已返还，持久化保证幂等
@@ -407,8 +405,8 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 
 	review.CreatedAt = time.Now()
 	review.Status = "pending"
-	// 冒险通关不消耗配额；普通/旧入口缺失成本时按媒体类型补齐。
-	if review.QuotaCost <= 0 && review.RequestOrigin != "adventure" && review.NormalizedBusinessType() == BusinessTypeRequest {
+	// 普通/旧入口缺失成本时按媒体类型补齐。
+	if review.QuotaCost <= 0 && review.NormalizedBusinessType() == BusinessTypeRequest {
 		review.QuotaCost = 1
 		if review.MediaType == MediaTypeTV {
 			review.QuotaCost = 3
@@ -698,14 +696,6 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 		return false, nil
 	}
 	cost := review.QuotaCost
-	if cost == 0 && review.RequestOrigin == "adventure" {
-		review.QuotaRestored = true
-		if err := s.saveLocked(); err != nil {
-			review.QuotaRestored = false
-			return false, err
-		}
-		return false, nil
-	}
 	if cost <= 0 {
 		cost = 1
 		if review.MediaType == MediaTypeTV {

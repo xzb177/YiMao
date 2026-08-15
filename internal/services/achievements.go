@@ -187,35 +187,6 @@ var AllAchievements = []Achievement{
 		XP:          15,
 	},
 
-	// 挑战成就
-	{
-		ID:          "first_challenge",
-		Name:        "挑战新手",
-		Description: "完成第一个每日挑战",
-		Icon:        "🎯",
-		Category:    "challenge",
-		Condition:   "完成1个挑战",
-		XP:          5,
-	},
-	{
-		ID:          "challenge_7",
-		Name:        "挑战达人",
-		Description: "连续7天完成挑战",
-		Icon:        "🔥",
-		Category:    "challenge",
-		Condition:   "连续7天挑战",
-		XP:          30,
-	},
-	{
-		ID:          "challenge_30",
-		Name:        "挑战大师",
-		Description: "连续30天完成挑战",
-		Icon:        "👑",
-		Category:    "challenge",
-		Condition:   "连续30天挑战",
-		XP:          50,
-	},
-
 	// 特殊成就
 	{
 		ID:          "night_owl",

@@ -50,23 +50,21 @@ type submissionQuota interface {
 }
 
 type RequestSubmission struct {
-	BusinessType   string
-	TelegramID     int64
-	TelegramName   string
-	TmdbID         int
-	MediaTitle     string
-	MediaYear      int
-	MediaType      MediaType
-	Season         int
-	PosterPath     string
-	Overview       string
-	EmbyInfo       *EmbySearchResult
-	Origin         string
-	Priority       string
-	AdventureScore int
-	AdventureGrade string
-	UseQuota       bool
-	WashBaseline   []string
+	BusinessType string
+	TelegramID   int64
+	TelegramName string
+	TmdbID       int
+	MediaTitle   string
+	MediaYear    int
+	MediaType    MediaType
+	Season       int
+	PosterPath   string
+	Overview     string
+	EmbyInfo     *EmbySearchResult
+	Origin       string
+	Priority     string
+	UseQuota     bool
+	WashBaseline []string
 }
 
 type RequestSubmissionService struct {
@@ -164,7 +162,7 @@ func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64
 	if origin == "" {
 		origin = "normal"
 	}
-	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, AdventureScore: in.AdventureScore, AdventureGrade: in.AdventureGrade, WashBaseline: append([]string(nil), in.WashBaseline...)}
+	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, WashBaseline: append([]string(nil), in.WashBaseline...)}
 	if in.UseQuota {
 		review.QuotaCost = quotaCost
 	}

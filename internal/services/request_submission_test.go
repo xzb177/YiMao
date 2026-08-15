@@ -147,13 +147,11 @@ func TestSubmitInvalidInput(t *testing.T) {
 		}
 	}
 }
-func TestSubmitNoQuotaAndNotifyPanicIsolationCopy(t *testing.T) {
+func TestSubmitNotifyPanicIsolationCopy(t *testing.T) {
 	q := &fakeSubmissionQuota{}
 	got := make(chan *ReviewRequest, 1)
 	s := newSubmissionTestService(t, q, func(r *ReviewRequest) { got <- r; r.MediaTitle = "mutated"; panic("boom") })
 	in := validSubmission(1, MediaTypeMovie)
-	in.UseQuota = false
-	in.Origin = "adventure"
 	in.MediaTitle = "original"
 	result, err := s.SubmitResult(in)
 	if err != nil {
@@ -165,7 +163,7 @@ func TestSubmitNoQuotaAndNotifyPanicIsolationCopy(t *testing.T) {
 		t.Fatal("notify not called")
 	}
 	time.Sleep(10 * time.Millisecond)
-	if q.used != 0 || result.Review.QuotaCost != 0 || result.Review.MediaTitle != "original" {
+	if q.used != 1 || result.Review.QuotaCost != 1 || result.Review.MediaTitle != "original" {
 		t.Fatalf("used=%d result=%+v", q.used, result.Review)
 	}
 }

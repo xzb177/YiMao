@@ -38,7 +38,6 @@ type Dependencies struct {
 	Reviews           *services.ReviewService
 	Carpool           *services.CarpoolService
 	WishService       *services.WishService
-	AdventureHandler  *handlers.AdventureHandler
 }
 
 // New creates a new HTTP server
@@ -174,8 +173,10 @@ func New(
 		BotToken: cfg.TelegramBotToken, MoviePilot: deps.MoviePilot,
 		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService, Carpool: deps.Carpool,
 		Submission: deps.RequestSubmission, Webhook: deps.WebhookService,
-		Issues: deps.IssueService, Wishes: deps.WishService, Adventure: deps.AdventureHandler,
-		Telegram: deps.Telegram, Admins: deps.AdminService, Assistant: newMiniAppAssistant(cfg), MaxAuthAge: 24 * time.Hour,
+		Issues: deps.IssueService, Wishes: deps.WishService,
+		Telegram: deps.Telegram, Admins: deps.AdminService, Assistant: newMiniAppAssistant(cfg),
+		MonitorOverviewURL: cfg.MonitorOverviewURL, MonitorQBitMainDataURL: cfg.MonitorQBitMainDataURL,
+		HTTPClient: &http.Client{Timeout: 4 * time.Second}, MaxAuthAge: 24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
 	mux.Handle("/miniapp", miniAppHandler)

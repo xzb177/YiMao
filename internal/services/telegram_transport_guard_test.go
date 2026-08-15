@@ -124,7 +124,6 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", ""},
 		{"❌ 取消", "cancel", ""},
 		{"❌ 取消反馈", "cancel", ""},
-		{"🚪 退出冒险", "adventure_quit", telegramButtonStyleDanger},
 		{"⏹️ 停止追问", "feedback:stop_follow:1", telegramButtonStyleDanger},
 		{"🚫 取消订阅", "cancel_subscription:1", telegramButtonStyleDanger},
 		{"🚫 关闭", "admin_issue_close:id:1", telegramButtonStyleDanger},

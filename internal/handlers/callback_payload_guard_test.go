@@ -128,34 +128,3 @@ func TestCompactNarrationCallbackParses(t *testing.T) {
 		t.Fatalf("unexpected callback: %#v", parsed)
 	}
 }
-
-func TestDailyChallengeUsesSessionBackedCallback(t *testing.T) {
-	manager := session.NewManager(time.Hour, 10)
-	handler := &GameHandler{sessionMgr: manager}
-	response, err := handler.handleDailyChallenge(&callback.Context{
-		UserID:   99,
-		Callback: &callback.Callback{Action: "game_daily_challenge", Params: map[string]string{}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if response.Keyboard == nil || len(response.Keyboard.InlineKeyboard) == 0 {
-		t.Fatal("missing daily-challenge keyboard")
-	}
-
-	button := response.Keyboard.InlineKeyboard[0][0]
-	if len(button.CallbackData) > 64 {
-		t.Fatalf("daily challenge callback is %d bytes", len(button.CallbackData))
-	}
-	parsed, err := callback.NewParser().Parse(button.CallbackData)
-	if err != nil {
-		t.Fatal(err)
-	}
-	ref := parsed.Params["ref"]
-	if parsed.Action != "adventure_start" || ref == "" {
-		t.Fatalf("unexpected callback: %#v", parsed)
-	}
-	if title, ok := manager.GetOrCreate(99).GetString("adventure_movie_" + ref); !ok || title == "" {
-		t.Fatalf("missing session-backed challenge title for ref %q", ref)
-	}
-}

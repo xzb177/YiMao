@@ -246,7 +246,7 @@ func HandleWebhookMessage(
 			}
 		}
 		// 其它命令(如 /start /requests)：已清除 pending 态，直接落到下方命令处理。
-		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests, deps.RankHandler, deps.StatsHandler, deps.DreamHandler, deps.AdventureHandler)
+		HandleCommand(deps.Telegram, msg, cfg, deps.AdminService, deps.BindingRequest, deps.QuotaService, deps.UserMapping, deps.SessionMgr, deps.WishHandler, deps.MyRequests)
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
 		return
@@ -368,15 +368,6 @@ func HandleWebhookMessage(
 			}
 		}
 
-		// 检查是否处于电影冒险待输入状态
-		if deps.AdventureHandler != nil {
-			if deps.AdventureHandler.HandleAdventureText(msg.From.ID, msg.Chat.ID, msg.Text) {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, "OK")
-				return
-			}
-		}
-
 		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}
 
@@ -417,7 +408,6 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"pending_issue_reply",
 		// 游戏功能 pending 状态
 		"pending_narrate_input",
-		"pending_adventure_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {
@@ -497,7 +487,7 @@ func HandleWebhookGroupChat(
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait", "/adventure", "/go":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
 		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
 	case "/game", "/游戏", "/游戏中心":
 		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())

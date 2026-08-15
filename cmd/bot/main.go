@@ -125,7 +125,6 @@ func main() {
 		Reviews:           depsWithHandlers.ReviewService,
 		Carpool:           depsWithHandlers.CarpoolService,
 		WishService:       depsWithHandlers.WishService,
-		AdventureHandler:  depsWithHandlers.AdventureHandler,
 	}, securityService)
 
 	// Start server in background
@@ -213,10 +212,6 @@ type Dependencies struct {
 	RequestSubmission *services.RequestSubmissionService
 	MyRequestsHandler *handlers.MyRequestsHandler // 求片进度聚合视图（/requests 命令复用）
 	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
-	AdventureHandler  *handlers.AdventureHandler  // 电影冒险
-	RankHandler       *handlers.RankHandler       // 冒险排行
-	StatsHandler      *handlers.StatsHandler      // 个人冒险战绩
-	DreamHandler      *handlers.DreamHandler      // 本周挑战
 }
 
 // initServices initializes all services
@@ -746,121 +741,19 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	}
 
 	// ====== 游戏化服务 ======
-	rankSvc := services.NewRankService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
 	personalitySvc := services.NewPersonalityService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
 	narratorSvc := services.NewNarratorService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
 	blindBoxSvc := services.NewBlindBoxService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
 	rouletteSvc := services.NewRouletteService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
 	socialDB, socialErr := services.NewSocialDB(deps.Cfg.DataDir)
 	if socialErr != nil {
-		logger.Info("[initRegistry] ⚠️ SocialDB init failed: %v", socialErr)
+		logger.Info("[initRegistry] SocialDB init failed: %v", socialErr)
 	}
 	emotionSvc := services.NewEmotionTimelineService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	// 电影冒险服务
-	adventureSvc := services.NewAdventureService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	adventureHandler := handlers.NewAdventureHandler(adventureSvc, deps.TMDBClient, deps.SessionMgr, deps.Telegram, deps.UserMapping, groupChatID)
-	if socialDB != nil {
-		adventureHandler.SetSocialDB(socialDB)
-		// 自动生成本周挑战（如果没有的话）
-		if deps.Cfg.TMDBAPIKey != "" {
-			go socialDB.AutoGenerateWeeklyBoss(deps.Cfg.TMDBAPIKey)
-		}
-		// 定期清理过期的冒险会话（每30分钟）
-		go func() {
-			ticker := time.NewTicker(30 * time.Minute)
-			defer ticker.Stop()
-			for range ticker.C {
-				if cleaned, err := socialDB.CleanStaleAdventureSessions(); err == nil && cleaned > 0 {
-					logger.Info("[Adventure] 清理过期冒险会话: %d 条", cleaned)
-				}
-			}
-		}()
-		// 回归钩子：每 6 小时检查超 48h 未冒险的用户，带 per-user 24h 冷却
-		if deps.Telegram != nil {
-			go func() {
-				ticker := time.NewTicker(6 * time.Hour)
-				defer ticker.Stop()
-				lastReminded := make(map[int64]time.Time) // per-user 冷却
-				for range ticker.C {
-					inactiveUsers, err := socialDB.GetInactiveUsersWithNemesis()
-					if err != nil || len(inactiveUsers) == 0 {
-						continue
-					}
-					var reminded int
-					for _, uid := range inactiveUsers {
-						// 24h 冷却：同用户不重复推送
-						if last, ok := lastReminded[uid]; ok && time.Since(last) < 24*time.Hour {
-							continue
-						}
-						userName := "冒险者"
-						if deps.UserMapping != nil {
-							if name, err2 := deps.UserMapping.GetMoviePilotUsername(uid); err2 == nil && name != "" {
-								userName = name
-							}
-						}
-						// 文案变化：根据冷却状态调整语气
-						var msg string
-						if _, remindedBefore := lastReminded[uid]; remindedBefore {
-							msg = fmt.Sprintf("⚔️ %s，你的冒险记录仍在周榜上。\n\n有空时，欢迎回来继续挑战。\n\n/go 开始冒险", userName)
-						} else {
-							msg = fmt.Sprintf("⚔️ %s，好久不见。\n\n上次的冒险记录还为你保留着；想继续时，随时回来。\n\n/go 开始冒险", userName)
-						}
-						deps.Telegram.SendMessage(uid, msg, "", nil)
-						lastReminded[uid] = time.Now()
-						reminded++
-					}
-					if reminded > 0 {
-						logger.Info("[ReturnHook] 推送召回 %d 位冒险者 (跳过 %d 位冷却中)", reminded, len(inactiveUsers)-reminded)
-					}
-				}
-			}()
-		}
-	}
-	// 注入盲盒服务（用于通关奖励）
-	if blindBoxSvc != nil {
-		adventureHandler.SetBlindBoxService(blindBoxSvc)
-	}
-	// 注入观影历史服务（用于个性化推荐）
 	viewingSvc := services.NewViewingHistoryService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
-	adventureHandler.SetViewingHistoryService(viewingSvc)
-	// 冒险通关 → 自动提交求片请求（不消耗配额，冒险本身就是代价）
-	adventureHandler.SetOnAdventureSuccess(func(userID int64, chatID int64, movieName string, movieYear int, tmdbID int, mediaType string, genres []string, score int, grade string) {
-		if deps.ReviewService == nil {
-			return
-		}
-		userName := ""
-		if deps.UserMapping != nil {
-			if name, err := deps.UserMapping.GetMoviePilotUsername(userID); err == nil && name != "" {
-				userName = name
-			}
-		}
-		if userName == "" {
-			userName = fmt.Sprintf("用户%d", userID)
-		}
-		requestMediaType := services.MediaTypeMovie
-		if mediaType == "tv" {
-			requestMediaType = services.MediaTypeTV
-		}
-		_, err := submissionService.Submit(services.RequestSubmission{
-			TelegramID: userID, TelegramName: userName, TmdbID: tmdbID, MediaTitle: movieName,
-			MediaYear: movieYear, MediaType: requestMediaType, Priority: "high",
-			Origin: "adventure", AdventureScore: score, AdventureGrade: grade, UseQuota: false,
-		})
-		if err != nil {
-			logger.Info("[Adventure] 求片提交失败: %v", err)
-			deps.Telegram.SendMessage(chatID, "❌ 求片自动提交失败，请返回主菜单选择「搜索求片」重试", "", nil)
-			return
-		}
-		logger.Info("[Adventure] 冒险通关自动提交求片: %s (%d), 用户 %d, 评级 %s", movieName, movieYear, userID, grade)
-	})
-	gameHandler := handlers.NewGameHandler(rankSvc, personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, adventureHandler, groupChatID)
+	gameHandler := handlers.NewGameHandler(personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID)
 	gameHandler.SetViewingHistoryService(viewingSvc)
 	logger.Info("[initRegistry] Game services initialized")
-
-	// 新冒险功能 handlers
-	rankHandler := handlers.NewRankHandler(socialDB, deps.Telegram, deps.UserMapping, groupChatID)
-	statsHandler := handlers.NewStatsHandler(socialDB, deps.Telegram, deps.UserMapping)
-	dreamHandler := handlers.NewDreamHandler(socialDB, deps.Telegram, adventureHandler, deps.UserMapping)
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
@@ -915,7 +808,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// 游戏化功能回调
 	registry.RegisterFunc("game_menu", gameHandler.Handle)
-	registry.RegisterFunc("game_rank", gameHandler.Handle)
 	registry.RegisterFunc("game_personality", gameHandler.Handle)
 	registry.RegisterFunc("game_narrator", gameHandler.Handle)
 	registry.RegisterFunc("game_narrate", gameHandler.Handle)
@@ -934,23 +826,8 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("game_blindbox_personality", gameHandler.Handle)
 	registry.RegisterFunc("game_contract_complete", gameHandler.Handle)
 	registry.RegisterFunc("game_compare", gameHandler.Handle)
-	registry.RegisterFunc("game_daily_challenge", gameHandler.Handle)
-	registry.RegisterFunc("game_daily_complete", gameHandler.Handle)
 	registry.RegisterFunc("game_achievements", gameHandler.Handle)
-	// 电影冒险回调
-	registry.RegisterFunc("adventure_start", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_choice", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_hint", adventureHandler.Handle) // 🎬 问导演
-	registry.RegisterFunc("adventure_retry", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_quit", adventureHandler.Handle)
-	registry.RegisterFunc("adventure_share", adventureHandler.Handle)         // 📢 分享战绩
-	registry.RegisterFunc("adventure_revive", adventureHandler.Handle)        // 🩸 每日免费复活
-	registry.RegisterFunc("adventure_gamble", adventureHandler.Handle)        // 🎰 双倍或归零
-	registry.RegisterFunc("adventure_gamble_safe", adventureHandler.Handle)   // 📦 安全领取
-	registry.RegisterFunc("adventure_gamble_triple", adventureHandler.Handle) // 尝试三倍奖励
-	registry.RegisterFunc("game_adventure_stats", gameHandler.Handle)
-	registry.RegisterFunc("game_adventure_rank", gameHandler.Handle)
-	logger.Info("[initRegistry] Game callbacks registered (27+5 actions)")
+	logger.Info("[initRegistry] Game callbacks registered")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
@@ -1099,10 +976,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		RequestSubmission: submissionService,
 		MyRequestsHandler: myRequestsHandler,
 		GameHandler:       gameHandler,
-		AdventureHandler:  adventureHandler,
-		RankHandler:       rankHandler,
-		StatsHandler:      statsHandler,
-		DreamHandler:      dreamHandler,
 	}
 
 	return registry, resultDeps
@@ -1113,7 +986,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	privateCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 打开主菜单"},
 		{Command: "search", Description: "🔍 搜索求片"},
-		{Command: "adventure", Description: "⚔️ 电影冒险"},
 		{Command: "requests", Description: "📊 求片进度"},
 		{Command: "wish", Description: "✨ 许愿求片（无源片众筹）"},
 		{Command: "link", Description: "🔗 绑定账号"},
@@ -1122,10 +994,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "game", Description: "🎮 游戏中心"},
 		{Command: "narrate", Description: "🎬 AI 电影解说"},
 		{Command: "review", Description: "✍️ 写影评"},
-		{Command: "rank", Description: "📊 冒险排行"},
-		{Command: "mystats", Description: "📈 我的战绩"},
-		{Command: "go", Description: "⚔️ 开始冒险"},
-		{Command: "dream", Description: "🎯 本周挑战"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommandsForScope(privateCommands, "", map[string]interface{}{"type": "all_private_chats"}); err != nil {
@@ -1140,13 +1008,11 @@ func setupBotCommands(telegram *services.TelegramClient) {
 	groupCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 私密主菜单", IsEphemeral: true},
 		{Command: "search", Description: "🔍 私密搜索求片", IsEphemeral: true},
-		{Command: "adventure", Description: "⚔️ 私密电影冒险", IsEphemeral: true},
 		{Command: "requests", Description: "📊 私密求片进度", IsEphemeral: true},
 		{Command: "wish", Description: "✨ 私密许愿", IsEphemeral: true},
 		{Command: "quota", Description: "💎 私密查看配额", IsEphemeral: true},
 		{Command: "portrait", Description: "🧠 私密观影画像", IsEphemeral: true},
 		{Command: "game", Description: "🎮 私密游戏中心", IsEphemeral: true},
-		{Command: "go", Description: "⚔️ 私密开始冒险", IsEphemeral: true},
 	}
 	if err := telegram.SetMyCommandsForScope(groupCommands, "", map[string]interface{}{"type": "all_group_chats"}); err != nil {
 		logger.Info("⚠️  Failed to set group/community bot commands: %v", err)
@@ -1176,25 +1042,21 @@ func setupWebhook(telegram *services.TelegramClient, cfg *config.Config) {
 // toBotDeps converts main Dependencies to bot Dependencies
 func toBotDeps(deps *Dependencies) *bot.Dependencies {
 	return &bot.Dependencies{
-		Telegram:         deps.Telegram,
-		MoviePilot:       deps.MoviePilot,
-		SessionMgr:       deps.SessionMgr,
-		UserMapping:      deps.UserMapping,
-		BindingRequest:   deps.BindingRequest,
-		AdminService:     deps.AdminService,
-		AdminHandler:     deps.AdminHandler,
-		QuotaService:     deps.QuotaService,
-		SearchHistory:    deps.SearchHistory,
-		SearchHistoryDB:  deps.SearchHistoryDB,
-		TMDB:             deps.TMDBClient,
-		IssueService:     deps.IssueService,
-		FeedbackHandler:  deps.FeedbackHandler,
-		WishHandler:      deps.WishHandler,
-		MyRequests:       deps.MyRequestsHandler,
-		GameHandler:      deps.GameHandler,
-		AdventureHandler: deps.AdventureHandler,
-		RankHandler:      deps.RankHandler,
-		StatsHandler:     deps.StatsHandler,
-		DreamHandler:     deps.DreamHandler,
+		Telegram:        deps.Telegram,
+		MoviePilot:      deps.MoviePilot,
+		SessionMgr:      deps.SessionMgr,
+		UserMapping:     deps.UserMapping,
+		BindingRequest:  deps.BindingRequest,
+		AdminService:    deps.AdminService,
+		AdminHandler:    deps.AdminHandler,
+		QuotaService:    deps.QuotaService,
+		SearchHistory:   deps.SearchHistory,
+		SearchHistoryDB: deps.SearchHistoryDB,
+		TMDB:            deps.TMDBClient,
+		IssueService:    deps.IssueService,
+		FeedbackHandler: deps.FeedbackHandler,
+		WishHandler:     deps.WishHandler,
+		MyRequests:      deps.MyRequestsHandler,
+		GameHandler:     deps.GameHandler,
 	}
 }

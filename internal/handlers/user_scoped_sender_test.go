@@ -27,7 +27,7 @@ func TestUserScopedSenderGroupAsyncOutputTargetsReceiver(t *testing.T) {
 	client.SetBaseURLForTest(server.URL, server.Client())
 	sender := newUserScopedSender(client, -1001, 42)
 
-	if _, err := sender.SendMessage("async adventure result", "Markdown", nil); err != nil {
+	if _, err := sender.SendMessage("async game result", "Markdown", nil); err != nil {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	payload := <-requests

@@ -117,7 +117,7 @@ func checkTelegramCommands(cfg *smokeConfig) checkResult {
 		for _, command := range response.Result {
 			got[command.Command] = true
 		}
-		for _, required := range []string{"start", "search", "requests", "adventure", "help"} {
+		for _, required := range []string{"start", "search", "requests", "help"} {
 			if !got[required] {
 				return "", fmt.Errorf("missing private command %s", required)
 			}

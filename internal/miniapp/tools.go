@@ -1,7 +1,6 @@
 package miniapp
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 )
 
@@ -229,76 +227,4 @@ func (s *Server) createWish(w http.ResponseWriter, r *http.Request, user AuthUse
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": status, "wisher_count": s.deps.Wishes.CountWishers(key)})
-}
-
-func (s *Server) handleAdventure(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.auth(w, r)
-	if !ok {
-		return
-	}
-	if s.deps.Adventure == nil {
-		http.Error(w, "大冒险暂时不可用", http.StatusServiceUnavailable)
-		return
-	}
-	if r.Method == http.MethodGet {
-		writeJSON(w, http.StatusOK, map[string]any{"state": s.deps.Adventure.WebCurrent(user.ID)})
-		return
-	}
-	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-	if r.Method == http.MethodDelete {
-		s.deps.Adventure.WebQuit(user.ID)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-		return
-	}
-	var body struct {
-		Action string `json:"action"`
-		Movie  string `json:"movie"`
-		RunID  string `json:"run_id"`
-		Turn   int    `json:"turn"`
-		Choice int    `json:"choice"`
-	}
-	if decodeJSONBody(w, r, &body, 8<<10) != nil {
-		http.Error(w, "操作参数不完整", http.StatusBadRequest)
-		return
-	}
-	var state *handlers.AdventureWebView
-	var err error
-	switch body.Action {
-	case "start":
-		state, err = s.deps.Adventure.WebStart(user.ID, body.Movie)
-	case "choice":
-		state, err = s.deps.Adventure.WebChoice(user.ID, body.RunID, body.Turn, body.Choice)
-	case "hint":
-		state, err = s.deps.Adventure.WebHint(user.ID, body.RunID, body.Turn)
-	default:
-		http.Error(w, "未知操作", http.StatusBadRequest)
-		return
-	}
-	if err != nil {
-		status := http.StatusConflict
-		if errors.Is(err, handlers.ErrAdventureNotFound) {
-			status = http.StatusNotFound
-		} else if errors.Is(err, handlers.ErrAdventureBusy) {
-			status = http.StatusTooManyRequests
-		}
-		http.Error(w, adventureErrorText(err), status)
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "state": state})
-}
-
-func adventureErrorText(err error) string {
-	switch {
-	case errors.Is(err, handlers.ErrAdventureNotFound):
-		return "没有进行中的冒险"
-	case errors.Is(err, handlers.ErrAdventureExpired):
-		return "这一幕已经结束，请刷新当前进度"
-	case errors.Is(err, handlers.ErrAdventureBusy):
-		return "正在生成场景，请稍等"
-	default:
-		return "冒险场景暂时生成失败，请稍后再试"
-	}
 }

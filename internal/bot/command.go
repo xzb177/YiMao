@@ -34,10 +34,6 @@ func HandleCommand(
 	sessMgr *session.Manager,
 	wishHandler *handlers.WishHandler,
 	myRequestsHandler *handlers.MyRequestsHandler,
-	rankHandler *handlers.RankHandler,
-	statsHandler *handlers.StatsHandler,
-	dreamHandler *handlers.DreamHandler,
-	adventureHandler *handlers.AdventureHandler,
 ) {
 	logger.Info("[Command] Received command: %s from user %d", validation.RedactSensitiveText(msg.Text), msg.From.ID)
 
@@ -66,10 +62,6 @@ func HandleCommand(
 			}
 		}
 		SendStartMenu(telegram, msg.Chat.ID, isAdmin)
-	case "/adventure":
-		if adventureHandler != nil {
-			adventureHandler.HandleGoCommand(telegram, msg)
-		}
 	case "/status":
 		telegram.SendMessage(msg.Chat.ID, BuildStatusMessage(msg, cfg, adminService, userMapping), "HTML", nil)
 	case "/help":
@@ -149,23 +141,6 @@ func HandleCommand(
 		HandleNarrateCommand(telegram, msg, cfg, sessMgr)
 	case "/review":
 		HandleReviewCommand(telegram, msg, cfg, userMapping)
-		// New adventure commands
-	case "/go":
-		if adventureHandler != nil {
-			adventureHandler.HandleGoCommand(telegram, msg)
-		}
-	case "/rank", "/排行":
-		if rankHandler != nil {
-			rankHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		}
-	case "/mystats":
-		if statsHandler != nil {
-			statsHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		}
-	case "/dream":
-		if dreamHandler != nil {
-			dreamHandler.HandleCommand(msg.Chat.ID, msg.From.ID)
-		}
 		// Unknown commands are silently ignored
 	}
 }
@@ -761,7 +736,7 @@ var (
 
 // HandleGameCommand 处理 /game 命令 — 游戏中心入口
 func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
-	card := richmessage.BuildGameCenterCard(0, 0) // /game 命令无法获取 userID，默认无连胜
+	card := richmessage.BuildGameCenterCard()
 	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, services.BuildGameCenterKeyboard())
 }
 

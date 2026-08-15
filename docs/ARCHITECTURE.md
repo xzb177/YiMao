@@ -13,7 +13,7 @@ YiMao HTTP + callback registry + services
         ├── MoviePilot：搜索、订阅、下载状态、入库状态
         ├── Emby：媒体可见性与 Playback-ready 通知
         ├── TMDB：标题、年份、类型、海报和详情
-        ├── AI provider：可选的 Mini App assistant / 冒险文案
+        ├── AI provider：可选的 Mini App assistant / 媒体问答
         └── SQLite + JSON：绑定、历史、许愿、社交、审核和偏好
 ```
 
@@ -73,9 +73,11 @@ Telegram chat menu
 - 发现与查询：`search`、`assistant`、`detail`、`discover`
 - 首页状态：`dynamic`、`me`、`progress`
 - 用户动作：`watchlist`、`request`、`wash`、`request/cancel`
-- 阻塞项和玩法：`issues`、`wishes`、`adventure`
+- 阻塞项：`issues`、`wishes`；状态视图：`monitor`。
 
 HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能用静态页面访问绕过身份校验。Mini App 发布后通过 `./manage.sh telegram` 更新菜单中的 `?v=<OCI Git revision>`，避免 Telegram WebView 长期缓存旧 bundle。
+
+`GET /api/miniapp/v1/monitor` 使用 Telegram `initData` 鉴权，只投影安全聚合字段；上游非 2xx、非法 JSON、非法时间/数值或响应超限时统一 fail closed，不把私有 URL、路径、容器元数据或告警详情暴露给客户端。
 
 ## 5. 普通求片主链路
 

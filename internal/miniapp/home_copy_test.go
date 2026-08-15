@@ -93,11 +93,11 @@ func TestHomeIsACinematicActionDeskWithRealTaskState(t *testing.T) {
 		`class="task-entry-grid"`,
 		`data-action="request"`,
 		`data-action="wash"`,
-		`data-action="adventure"`,
 		"求片",
 		"洗版",
-		"闯关",
 		`class="status-beacon `,
+		"home-active",
+		"正在替你办",
 	)
 	requireOrder(t, html,
 		`class="home-context"`,
@@ -170,9 +170,10 @@ func TestRootNavigationHasExactlyThreeProductPaths(t *testing.T) {
 		`aria-current="page"`,
 		"找片",
 		"任务",
-		"闯关",
+		"监控",
+		`data-view="monitor"`,
 	)
-	rejectSource(t, chrome, "放映室", "我的", `class="brand"`)
+	rejectSource(t, chrome, "放映室", "我的", "闯关", `class="brand"`)
 }
 
 func TestSearchIsGroupedAndStatusDriven(t *testing.T) {
@@ -196,13 +197,13 @@ func TestSearchIsGroupedAndStatusDriven(t *testing.T) {
 		"已在库中",
 		`/api/miniapp/v1/detail?id=`,
 	)
-	rejectSource(t, html, "预计完成时间", "下载速度", "码率", "4K 优先")
+	rejectSource(t, html, "预计完成时间", "码率", "4K 优先")
 }
 
 func TestWashIsAFirstClassSearchMode(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		"searchMode:'request'",
+		"mode:'request'",
 		"function startSearchMode(mode)",
 		"['request','wash'].includes(mode)",
 		"已有内容换个更好的版本",
@@ -214,18 +215,25 @@ func TestWashIsAFirstClassSearchMode(t *testing.T) {
 	)
 }
 
-func TestAdventureKeepsItsStateMachineAndReturnsToMedia(t *testing.T) {
+func TestMonitorUsesSafeNativeOverviewPage(t *testing.T) {
 	html := miniAppSource(t)
 	requireSource(t, html,
-		`/api/miniapp/v1/adventure`,
-		"action:'start'",
-		"action:'choice'",
-		"action:'hint'",
-		"method:'DELETE'",
-		"function adventureResultAction(item)",
-		`data-adventure-media`,
-		"openAdventureMedia(this)",
+		`/api/miniapp/v1/monitor`,
+		"function monitorPage()",
+		"async function loadMonitor()",
+		"总体状态",
+		"剩余空间",
+		"下载队列",
+		"24h 入库活动",
+		"下载",
+		"整理",
+		"媒体库",
+		"刷新",
+		"monitorStateLabel",
+		"monitorError",
+		"textContent",
 	)
+	rejectSource(t, html, "quest-panel", "quest-choice")
 }
 
 func TestTasksAggregateRequestAndWashByNextAction(t *testing.T) {
@@ -437,7 +445,7 @@ func TestDemoIsReadOnlyAndCoversAllPrimaryPaths(t *testing.T) {
 		"business_type:'request'",
 		"business_type:'wash'",
 		"media_status",
-		"demoAdventure",
+		"monitorDemo",
 	)
 }
 

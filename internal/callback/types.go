@@ -207,21 +207,8 @@ var validActions = map[Action]bool{
 	"game_emotion":              true, // 情绪画像
 	"game_achievements":         true, // 成就系统
 	"game_compare":              true, // 品味对比
-
-	// Adventure game actions
-	"adventure_start":         true, // 电影冒险入口
-	"adventure_choice":        true, // 选择选项
-	"adventure_hint":          true, // 问导演（花HP换线索）
-	"adventure_retry":         true, // 重试冒险
-	"adventure_quit":          true, // 退出冒险
-	"adventure_share":         true, // 分享战绩到群
-	"adventure_revive":        true, // 🩸 每日免费复活
-	"adventure_gamble":        true, // 🎰 双倍或归零 - 赌
-	"adventure_gamble_safe":   true, // 📦 双倍或归零 - 安全领
-	"adventure_gamble_triple": true, // 尝试三倍奖励
-	"game_adventure_stats":    true, // 冒险统计
-	"game_adventure_rank":     true, // 冒险排行榜
-	"game_daily_challenge":    true, // 每日挑战
+	"game_roulette":             true, // 随机轮盘
+	"game_roulette_spin":        true, // 轮盘旋转
 
 	// Resource candidate actions
 	ActionResourceList: true,

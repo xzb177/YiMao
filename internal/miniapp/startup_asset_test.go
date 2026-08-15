@@ -50,56 +50,6 @@ func TestMiniAppWaitsForTelegramSDKBeforeAuthenticatedRequests(t *testing.T) {
 	}
 }
 
-func TestMiniAppAdventureEmptyStateDoesNotReloadContinuously(t *testing.T) {
-	handler := NewServer(Deps{}).Handler()
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/miniapp", nil))
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
-	}
-	body := response.Body.String()
-	for _, contract := range []string{
-		"adventureLoaded:false",
-		"adventureLoading:false",
-		"adventureBusy:false",
-		"adventureSeq:0",
-		"toolSeq:0",
-		"S.adventureLoading=false",
-		"S.adventureBusy=false",
-		"S.adventureLoaded=false",
-		"S.view==='adventure'&&!S.adventureLoaded&&!S.adventureLoading",
-		"if(!S.adventureLoaded)return`<section class=\"page adventure-page\"",
-		"const seq=++S.adventureSeq",
-		"S.adventureLoading=true",
-		"if(seq!==S.adventureSeq||S.view!=='adventure'||S.detailVisible)return",
-		"S.adventureLoaded=true",
-		"S.adventureLoading=false",
-		"if(S.adventureBusy)return",
-		"S.adventureBusy=true",
-		"if(a?.error)return`<section class=\"page adventure-page\"",
-		"onclick=\"navigate('adventure')\"",
-		"S.adventureLoading=true;S.adventureLoaded=false;render()",
-		"S.adventureLoading=false;S.adventureLoaded=true;render()",
-		"seq!==S.searchSeq||S.view!=='search'",
-		"seq!==S.detailSeq||!S.detailVisible",
-		"const seq=++S.toolSeq",
-		"seq!==S.toolSeq||S.view!=='tasks'||S.tool!==tool",
-		"function invalidatePageRequests()",
-		"searchController?.abort()",
-		"S.loading=false",
-		"S.searchSeq++",
-		"S.detailSeq++",
-		"S.meSeq++",
-		"S.adventureSeq++",
-		"S.toolSeq++",
-	} {
-		if !strings.Contains(body, contract) {
-			t.Fatalf("Mini App is missing adventure empty-state load guard %q", contract)
-		}
-	}
-}
-
 func TestMiniAppServesEmbeddedTelegramSDK(t *testing.T) {
 	handler := NewServer(Deps{}).Handler()
 

@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**Telegram media request assistant focused on search, subscription, progress tracking, and library notifications, with an optional five-stage movie adventure. Deep MoviePilot + Emby/Jellyfin integration.**
+**Telegram media request assistant focused on search, subscription, progress tracking, and library notifications, with a safe monitoring view and media-discovery tools. Deep MoviePilot + Emby/Jellyfin integration.**
 
 [中文](README.md) · [![Go Version](https://img.shields.io/badge/Go-1.24-00ADD8?logo=go)](https://golang.org) [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker)](https://www.docker.com) [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -20,11 +20,11 @@ YiMao (云海求片助手) is a Telegram Bot that integrates the complete media 
 Default path:
   🔍 Search & Request — Search → One-click Subscribe → Track → Notify
 
-Optional activity:
-  ⚔️ Movie Adventure — Five interactive stages → Auto-submit after completion
+Mini App:
+  📡 Monitoring — Free space → Queue summary → Download/organize/library health
 ```
 
-Search & Request is always available and never requires playing the adventure.
+Search & Request remains the default path; Game Center provides independent discovery and viewing tools.
 
 ---
 
@@ -36,20 +36,16 @@ Search & Request is always available and never requires playing the adventure.
 - One-click subscribe with quota checking and duplicate detection
 - Series support with season selection
 
-### ⚔️ Movie Adventure (Optional)
-- Five interactive stages: Discovery → Turning Point → Conflict → Choice → Finale
-- AI-generated scenes grounded in TMDB metadata (keywords, cast, director, taglines)
-- Four close options per stage, judged through plot and character clues
-- Keeps HP, combos, ratings, and progress records
-- Completion automatically submits the request; direct search remains available at any time
-- Leaderboard, daily challenges, and reward blind boxes
+### 📡 Mini App Monitoring
+- Shows free space, a download queue summary, and 24-hour import activity
+- Shows download → organize → library pipeline health
+- Returns only user-safe aggregate state; internal addresses, paths, container details, and operations are not exposed
+- Authenticates Telegram Mini App `initData` and uses generic unavailable responses for upstream failures
 
 ### 🎮 Game Center
-- Adventure Leaderboard (TOP10 rankings)
-- Daily Challenge (one shared movie prompt per day)
-- Reward Blind Box (free after adventure completion)
 - Intelligence Station (AI movie narration)
-- Personal stats, streak tracking, achievement system
+- Movie blind box and destiny roulette
+- Viewing profile
 
 ### 📊 Request Tracking
 - `/requests` — unified request view grouped by status
@@ -71,7 +67,7 @@ Search & Request is always available and never requires playing the adventure.
 
 ### 🛡️ Security
 - HMAC-SHA256 webhook signature verification
-- Anti-cheat: tried-choice tracking, choice locking, input sanitization
+- Telegram Mini App `initData` authentication and safe monitoring-field projection
 - Session management with configurable limits
 - API auth with configurable API keys
 - Logger credential sanitization (API keys, tokens, passwords)
@@ -85,7 +81,6 @@ Search & Request is always available and never requires playing the adventure.
 |---------|-------------|--------|
 | `/start` | Main menu | All |
 | `/search` | Search & Request | All |
-| `/adventure` | Movie Adventure (five stages) | All |
 | `/game` | Game center | All |
 | `/wish` | Wish pool | All |
 | `/requests` | Request progress | All |
@@ -120,9 +115,10 @@ The service listens on `:8080`; `/health` is the health endpoint. New deployment
 | `EMBY_URL` | — | Emby/Jellyfin URL |
 | `EMBY_API_KEY` | — | Emby API Key |
 | `TMDB_API_KEY` | — | TMDB API Key (v3 auth) |
-| `OPENAI_API_KEY` | — | AI provider key (for adventure scenes) |
+| `OPENAI_API_KEY` | — | AI provider key for recommendations and movie narration |
 | `OPENAI_BASE_URL` | — | AI provider base URL |
 | `OPENAI_MODEL` | — | AI model name |
+| `MONITOR_OVERVIEW_URL` | — | Overview source URL; production must use an address reachable from the container |
 | `WEBHOOK_SECRET` | — | HMAC-SHA256 secret for inbound webhooks |
 | `ENABLE_API_AUTH` | `true` | Enables HTTP API key authentication |
 | `API_KEYS` | — | JSON object of HTTP API keys; required when auth is enabled |

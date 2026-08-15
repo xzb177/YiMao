@@ -1308,8 +1308,8 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	// Only irreversible or state-destroying actions use danger red. Ordinary
 	// draft-flow cancellation is intentionally neutral.
 	for _, marker := range []string{
-		"删除", "清空", "解绑", "撤回", "拒绝", "关闭", "移除", "注销", "取消订阅", "退出冒险", "停止追问",
-		"delete", "clear", "unlink", "withdraw", "reject", "close", "remove", "abandon", "cancel_subscription", "adventure_quit", "stop_follow",
+		"删除", "清空", "解绑", "撤回", "拒绝", "关闭", "移除", "注销", "取消订阅", "停止追问",
+		"delete", "clear", "unlink", "withdraw", "reject", "close", "remove", "abandon", "cancel_subscription", "stop_follow",
 	} {
 		if strings.Contains(text, marker) || strings.Contains(actionName, marker) {
 			return telegramButtonStyleDanger
@@ -1342,8 +1342,7 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	case "start_search", "request", "force_subscribe", "wash", "wish_add",
 		"start_link", "link", "admin_todo", "admin_pending", "admin_feedback",
 		"admin_issue_processing", "admin_issue_reply", "admin_feedback_reply", "admin_add_start",
-		"adventure_start", "game_daily_challenge", "game_blindbox", "game_blindbox_open",
-		"game_blindbox_horror", "game_review":
+		"game_blindbox", "game_blindbox_open", "game_blindbox_horror", "game_review":
 		return telegramButtonStylePrimary
 	default:
 		return ""
@@ -1627,16 +1626,14 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 }
 
 // BuildGameCenterKeyboard builds the single canonical game-center menu.
-// Viewing portraits stay in the main menu and are intentionally not duplicated here.
 func BuildGameCenterKeyboard() *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
-	kb.AddButton("⚔️ 电影冒险", "adventure_start")
-	kb.AddButton("🎯 今日挑战", "game_daily_challenge")
-	kb.NewRow()
-	kb.AddButton("📊 冒险排行", "game_adventure_rank")
-	kb.AddButton("📈 我的战绩", "game_adventure_stats")
-	kb.NewRow()
 	kb.AddButton("📖 电影情报站", "game_narrator")
+	kb.AddButton("🎰 盲盒", "game_blindbox")
+	kb.NewRow()
+	kb.AddButton("🎡 命运轮盘", "game_roulette")
+	kb.AddButton("🧠 观影画像", "portrait")
+	kb.NewRow()
 	kb.AddButton("🏠 主菜单", "start")
 	return kb.Build()
 }

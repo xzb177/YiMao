@@ -15,7 +15,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
 )
@@ -24,21 +23,23 @@ import (
 var webFS embed.FS
 
 type Deps struct {
-	BotToken   string
-	MoviePilot *services.MoviePilotClient
-	TMDB       *services.TMDBClient
-	Reviews    *services.ReviewService
-	Quota      *services.QuotaService
-	Carpool    *services.CarpoolService
-	Submission requestSubmitter
-	Webhook    *services.WebhookService
-	Issues     *services.IssueService
-	Wishes     *services.WishService
-	Adventure  *handlers.AdventureHandler
-	Telegram   *services.TelegramClient
-	Admins     *services.AdminService
-	Assistant  *services.MiniAppAssistant
-	MaxAuthAge time.Duration
+	BotToken               string
+	MoviePilot             *services.MoviePilotClient
+	TMDB                   *services.TMDBClient
+	Reviews                *services.ReviewService
+	Quota                  *services.QuotaService
+	Carpool                *services.CarpoolService
+	Submission             requestSubmitter
+	Webhook                *services.WebhookService
+	Issues                 *services.IssueService
+	Wishes                 *services.WishService
+	Telegram               *services.TelegramClient
+	Admins                 *services.AdminService
+	Assistant              *services.MiniAppAssistant
+	MonitorOverviewURL     string
+	MonitorQBitMainDataURL string
+	HTTPClient             *http.Client
+	MaxAuthAge             time.Duration
 }
 
 type requestSubmitter interface {
@@ -188,6 +189,9 @@ func NewServer(deps Deps) *Server {
 	if deps.Assistant == nil {
 		deps.Assistant = services.NewMiniAppAssistant(nil, 8*time.Second)
 	}
+	if deps.HTTPClient == nil {
+		deps.HTTPClient = &http.Client{Timeout: 4 * time.Second}
+	}
 	return &Server{deps: deps, assistantLimits: make(map[int64]assistantRateWindow)}
 }
 
@@ -211,7 +215,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/miniapp/v1/request/cancel", s.handleCancelRequest)
 	mux.HandleFunc("/api/miniapp/v1/issues", s.handleIssues)
 	mux.HandleFunc("/api/miniapp/v1/wishes", s.handleWishes)
-	mux.HandleFunc("/api/miniapp/v1/adventure", s.handleAdventure)
+	mux.HandleFunc("/api/miniapp/v1/monitor", s.handleMonitor)
 	return browserSecurityHeaders(mux)
 }
 

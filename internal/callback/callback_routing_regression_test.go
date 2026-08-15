@@ -8,7 +8,6 @@ func TestGeneratedCallbacksParseAndReachRegistry(t *testing.T) {
 		action Action
 		params map[string]string
 	}{
-		{"adventure movie", "adventure_start", map[string]string{"movie": "Alien"}},
 		{"search trends", "search_trends", map[string]string{"days": "30"}},
 		{"popular period", "search_popular", map[string]string{"period": "all"}},
 		{"blindbox horror", "game_blindbox_horror", nil},

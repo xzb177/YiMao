@@ -40,8 +40,8 @@ func TestSetMyCommandsScopesSeparatePrivateAndEphemeralGroupMenus(t *testing.T) 
 	}
 	seenEphemeral := false
 	groupCommands := payloads[1]["commands"].([]any)
-	if len(groupCommands) != 9 {
-		t.Fatalf("group commands=%d, want privacy-safe whitelist of 9", len(groupCommands))
+	if len(groupCommands) != 7 {
+		t.Fatalf("group commands=%d, want privacy-safe whitelist of 7", len(groupCommands))
 	}
 	sensitive := map[string]bool{"link": true, "review": true, "narrate": true, "resetpw": true, "unlink": true}
 	for _, raw := range groupCommands {

@@ -6,74 +6,6 @@ import (
 )
 
 // ============================================================
-//  段位系统卡片
-// ============================================================
-
-// RankCardData 段位卡片数据
-type RankCardData struct {
-	UserName     string
-	TierName     string
-	TierIcon     string
-	Score        int
-	TotalMovies  int
-	TotalSeries  int
-	GenreCount   int
-	AvgRating    float64
-	Badges       []string
-	NextTier     string
-	NextTierDiff int
-	TopGenre     string
-}
-
-// BuildRankCard 构建段位卡片
-func BuildRankCard(data RankCardData) RichMessage {
-	builder := NewBuilder()
-
-	// 主标题 - 更有冲击力
-	builder.Heading(fmt.Sprintf("%s %s", data.TierIcon, data.TierName), 2)
-	builder.BoldParagraph(fmt.Sprintf("👤 %s 的影坛战绩", data.UserName))
-	builder.Divider()
-
-	// 核心数据 - 用更直观的方式展示
-	builder.Heading("📊 核心数据", 3)
-
-	// 分数和进度
-	scoreText := fmt.Sprintf("🏆 **%d** 分", data.Score)
-	if data.NextTier != "" {
-		progress := 100 - (data.NextTierDiff * 100 / (data.Score + data.NextTierDiff))
-		if progress < 0 {
-			progress = 0
-		}
-		if progress > 100 {
-			progress = 100
-		}
-		bar := buildProgressBar(progress)
-		scoreText += fmt.Sprintf("\n%s %d%% → %s", bar, progress, data.NextTier)
-	}
-	builder.Paragraph(scoreText)
-	builder.Divider()
-
-	// 观影统计 - 用图标和数字
-	builder.Heading("🎬 观影档案", 3)
-	stats := fmt.Sprintf("🎬 **%d** 部电影\n📺 **%d** 部剧集\n🎭 **%d** 种类型\n⭐ **%.1f** 平均评分\n❤️ 最爱：**%s**",
-		data.TotalMovies, data.TotalSeries, data.GenreCount, data.AvgRating, data.TopGenre)
-	builder.Paragraph(stats)
-	builder.Divider()
-
-	// 成就徽章 - 更有仪式感
-	if len(data.Badges) > 0 {
-		builder.Heading("🏅 荣誉勋章", 3)
-		for _, b := range data.Badges {
-			builder.Paragraph(fmt.Sprintf("• %s", b))
-		}
-	}
-
-	return builder.Build()
-}
-
-// ============================================================
-//  性格测试卡片
-// ============================================================
 
 // PersonalityCardData 性格卡片数据
 type PersonalityCardData struct {
@@ -397,110 +329,21 @@ func BuildRouletteCard(data RouletteCardData) RichMessage {
 }
 
 // ============================================================
-//  通关奖励盲盒卡片
-// ============================================================
-
-// BlindBoxRewardCardData 通关奖励盲盒数据
-type BlindBoxRewardCardData struct {
-	Grade string
-	Items []BlindBoxItemView
-}
-
-// BuildBlindBoxRewardCard 构建通关奖励盲盒卡片
-func BuildBlindBoxRewardCard(data BlindBoxRewardCardData) RichMessage {
-	b := NewBuilder()
-
-	gradeLabel := map[string]string{
-		"SSS": "👑 SSS · 传说宝箱",
-		"SS":  "💎 SS · 王者宝箱",
-		"S":   "⭐ S · 精英宝箱",
-		"A":   "🏆 A · 勇者宝箱",
-	}[data.Grade]
-	if gradeLabel == "" {
-		gradeLabel = "🎁 通关宝箱"
-	}
-
-	b.Heading("🎁 通关奖励", 2)
-	b.BoldParagraph(fmt.Sprintf("%s", gradeLabel))
-	b.Italic(fmt.Sprintf("你在《冒险》中获得了 %s 评级，这是你的奖励", data.Grade))
-	b.Divider()
-
-	for _, item := range data.Items {
-		rarityIcon := map[string]string{
-			"N": "⚪", "R": "🔵", "SR": "🟣", "SSR": "🟡",
-		}[item.Rarity]
-		if rarityIcon == "" {
-			rarityIcon = "⚪"
-		}
-
-		yearStr := ""
-		if item.Year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", item.Year)
-		}
-
-		ratingStr := ""
-		if item.Rating > 0 {
-			ratingStr = fmt.Sprintf(" ⭐ %.1f", item.Rating)
-		}
-
-		b.BoldParagraph(fmt.Sprintf("%s [%s] 《%s》%s%s", rarityIcon, item.Rarity, item.Title, yearStr, ratingStr))
-		if item.Genres != "" {
-			b.Paragraph(fmt.Sprintf("  📂 %s", item.Genres))
-		}
-		if item.Overview != "" {
-			overview := item.Overview
-			if len([]rune(overview)) > 80 {
-				overview = string([]rune(overview)[:80]) + "..."
-			}
-			b.Italic(fmt.Sprintf("  %s", overview))
-		}
-	}
-
-	b.Divider()
-	b.Italic("评级越高，宝箱越稀有。继续挑战解锁更好的奖励！")
-
-	return b.Build()
-}
-
-// ============================================================
 //  游戏中心入口卡片
 // ============================================================
 
 // BuildGameCenterCard 构建游戏中心入口卡片
-func BuildGameCenterCard(streakCurrent int, streakBest int) RichMessage {
+func BuildGameCenterCard() RichMessage {
 	builder := NewBuilder()
 
 	builder.Heading("🎮 游戏中心", 2)
 	builder.Italic("这里是求片之外的可选玩法，不影响搜索求片。")
-
-	// 🔥 连胜火焰
-	if streakCurrent > 0 {
-		fireEmoji := "🔥"
-		if streakCurrent >= 30 {
-			fireEmoji = "🌈🔥" // 彩虹焰
-		} else if streakCurrent >= 7 {
-			fireEmoji = "🔱🔥" // 金焰
-		} else if streakCurrent >= 3 {
-			fireEmoji = "⚡🔥" // 银焰
-		}
-		builder.BoldParagraph(fmt.Sprintf("%s 连续通关 %d 天 · 最佳 %d 天", fireEmoji, streakCurrent, streakBest))
-	} else {
-		builder.Italic("今天尚无通关记录，想玩时再来。")
-	}
 	builder.Divider()
 
-	builder.BoldParagraph("⚔️ 互动玩法")
-	builder.Paragraph("  电影冒险 — 选择一部影片，完成五关后自动提交求片")
-	builder.Paragraph("  🎯 今日挑战 — 每日一道共同题目，成绩计入战绩")
-	builder.Divider()
-
-	builder.BoldParagraph("📊 成绩记录")
-	builder.Paragraph("  冒险排行 — 查看真实通关成绩")
-	builder.Paragraph("  我的战绩 — 胜场、最高分、连胜与最近记录")
-	builder.Divider()
-
-	builder.BoldParagraph("📖 电影情报")
+	builder.BoldParagraph("🎬 互动工具")
 	builder.Paragraph("  电影情报站 — 输入片名，了解背景与剧情线索")
+	builder.Paragraph("  盲盒与轮盘 — 随机发现下一部想看的电影")
+	builder.Paragraph("  观影画像 — 查看你的观影偏好与历史")
 	builder.Divider()
 
 	builder.Italic("随时可以返回主菜单，直接使用搜索求片。")
