@@ -176,7 +176,7 @@ func duplicateSubscriptionFeedback(ctx *callback.Context, requesterID int64) (*c
 		Text:        "⚠️ 已有相同求片正在处理\n\n这条求片已经在处理，不用重复提交。",
 		CallbackMsg: "已有订阅",
 		Edit:        true,
-	}, ctx == nil || (ctx.UserID != requesterID && ctx.ChatID != requesterID)
+	}, ctx == nil || ctx.ChatID != requesterID
 }
 
 func (h *ReviewHandler) notifyDuplicateSubscriptionRequester(requesterID int64, markdown string) error {
@@ -201,6 +201,64 @@ func duplicateSubscriptionNotificationFailure() *callback.Response {
 	return &callback.Response{
 		Text:        "⚠️ 已有订阅，但没能通知原请求人，请手动告知。",
 		CallbackMsg: "通知失败",
+		Edit:        true,
+	}
+}
+
+func (h *ReviewHandler) notifyConfiguredApprovalGroup(ctx *callback.Context, review *services.ReviewRequest, season int) error {
+	if h.groupChatID == 0 {
+		return nil
+	}
+	if h.telegram == nil {
+		return fmt.Errorf("notify configured group: telegram client is not configured")
+	}
+
+	mediaIcon := "🎬"
+	mediaTypeText := "电影"
+	if review.MediaType == services.MediaTypeTV {
+		mediaIcon = "📺"
+		mediaTypeText = "剧集"
+	}
+	seasonText := ""
+	if review.MediaType == services.MediaTypeTV {
+		seasonText = fmt.Sprintf("第 %d 季", season)
+	}
+	groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
+		Title:      review.MediaTitle,
+		Year:       review.MediaYear,
+		MediaType:  mediaTypeText,
+		MediaIcon:  mediaIcon,
+		SeasonText: seasonText,
+		Requester:  review.TelegramName,
+		TMDBID:     review.TmdbID,
+	})
+	var options []*types.TelegramSendOptions
+	if ctx.ChatID == h.groupChatID && ctx.MessageThreadID != 0 {
+		options = append(options, &types.TelegramSendOptions{MessageThreadID: ctx.MessageThreadID})
+	}
+	if _, err := h.telegram.SendRichMessage(h.groupChatID, groupCard.Markdown, nil, options...); err != nil {
+		return fmt.Errorf("notify configured group: %w", err)
+	}
+	return nil
+}
+
+func committedApprovalNotificationFailure(titleText string, requesterNotifyErr, groupNotifyErr error) *callback.Response {
+	failureText := "申请人私聊通知失败"
+	callbackMsg := "私聊通知失败"
+	actionText := "请手动私聊申请人告知"
+	if requesterNotifyErr == nil {
+		failureText = "群通知失败"
+		callbackMsg = "群通知失败"
+		actionText = "请手动在群内告知"
+	} else if groupNotifyErr != nil {
+		failureText = "申请人私聊通知失败、群通知失败"
+		callbackMsg = "私聊和群通知失败"
+		actionText = "请手动联系申请人并在群内告知"
+	}
+	return &callback.Response{
+		Text:        fmt.Sprintf("⚠️ 审核与订阅已成功，但%s\n\n%s\n\n%s，不要重复审批。", failureText, titleText, actionText),
+		CallbackMsg: callbackMsg,
+		ShowAlert:   true,
 		Edit:        true,
 	}
 }
@@ -392,11 +450,24 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if err := h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State); err != nil {
 			return duplicateSubscriptionPersistenceFailure(), fmt.Errorf("persist existing subscription link: %w", err)
 		}
+		var requesterNotifyErr error
 		if sendSeparate {
-			if err := h.notifyDuplicateSubscriptionRequester(review.TelegramID, blockedCard.Markdown); err != nil {
-				logger.Info("[ReviewHandler] Duplicate subscription requester notification failed: %v", err)
+			requesterNotifyErr = h.notifyDuplicateSubscriptionRequester(review.TelegramID, blockedCard.Markdown)
+			if requesterNotifyErr != nil {
+				logger.Warn("[ReviewHandler] Duplicate subscription requester notification failed: %v", requesterNotifyErr)
+			}
+		}
+		groupNotifyErr := h.notifyConfiguredApprovalGroup(ctx, review, season)
+		if groupNotifyErr != nil {
+			logger.Warn("[ReviewHandler] 求片批准群通知发送失败 group=%d: %v", h.groupChatID, groupNotifyErr)
+		}
+		if requesterNotifyErr != nil || groupNotifyErr != nil {
+			// Preserve the established duplicate-DM failure response when no
+			// configured group notification is part of this approval.
+			if h.groupChatID == 0 && requesterNotifyErr != nil {
 				return duplicateSubscriptionNotificationFailure(), nil
 			}
+			return committedApprovalNotificationFailure(fmt.Sprintf("《%s》", review.MediaTitle), requesterNotifyErr, groupNotifyErr), nil
 		}
 		return resp, nil
 	}
@@ -492,46 +563,13 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
 
-	var groupNotifyErr error
-	if h.groupChatID != 0 {
-		groupCard := richmessage.BuildGroupApprovedCard(richmessage.GroupApprovedData{
-			Title:      review.MediaTitle,
-			Year:       review.MediaYear,
-			MediaType:  mediaTypeText,
-			MediaIcon:  mediaIcon,
-			SeasonText: seasonText,
-			Requester:  review.TelegramName,
-			TMDBID:     review.TmdbID,
-		})
-		var options []*types.TelegramSendOptions
-		if ctx.ChatID == h.groupChatID && ctx.MessageThreadID != 0 {
-			options = append(options, &types.TelegramSendOptions{MessageThreadID: ctx.MessageThreadID})
-		}
-		_, groupNotifyErr = h.telegram.SendRichMessage(h.groupChatID, groupCard.Markdown, nil, options...)
-		if groupNotifyErr != nil {
-			logger.Warn("[ReviewHandler] 求片批准群通知发送失败 group=%d: %v", h.groupChatID, groupNotifyErr)
-		}
+	groupNotifyErr := h.notifyConfiguredApprovalGroup(ctx, review, season)
+	if groupNotifyErr != nil {
+		logger.Warn("[ReviewHandler] 求片批准群通知发送失败 group=%d: %v", h.groupChatID, groupNotifyErr)
 	}
 
 	if requesterNotifyErr != nil || groupNotifyErr != nil {
-		failureText := "申请人私聊通知失败"
-		callbackMsg := "私聊通知失败"
-		actionText := "请手动私聊申请人告知"
-		if requesterNotifyErr == nil {
-			failureText = "群通知失败"
-			callbackMsg = "群通知失败"
-			actionText = "请手动在群内告知"
-		} else if groupNotifyErr != nil {
-			failureText = "申请人私聊通知失败、群通知失败"
-			callbackMsg = "私聊和群通知失败"
-			actionText = "请手动联系申请人并在群内告知"
-		}
-		return &callback.Response{
-			Text:        fmt.Sprintf("⚠️ 审核与订阅已成功，但%s\n\n%s\n\n%s，不要重复审批。", failureText, titleText, actionText),
-			CallbackMsg: callbackMsg,
-			ShowAlert:   true,
-			Edit:        true,
-		}, nil
+		return committedApprovalNotificationFailure(titleText, requesterNotifyErr, groupNotifyErr), nil
 	}
 
 	return &callback.Response{

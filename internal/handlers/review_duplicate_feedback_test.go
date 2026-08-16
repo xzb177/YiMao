@@ -33,10 +33,10 @@ func TestDuplicateSubscriptionFeedbackKeepsRequesterNotificationForOtherChat(t *
 	}
 }
 
-func TestDuplicateSubscriptionFeedbackUsesOneVisibleChannelWhenRequesterApprovesInGroup(t *testing.T) {
+func TestDuplicateSubscriptionFeedbackNotifiesRequesterWhenRequesterApprovesInGroup(t *testing.T) {
 	resp, sendSeparate := duplicateSubscriptionFeedback(&callback.Context{UserID: 42, ChatID: -1001, ChatType: "supergroup"}, 42)
-	if sendSeparate {
-		t.Fatal("requester acting in a group must not receive a second DM")
+	if !sendSeparate {
+		t.Fatal("requester acting in a group must receive a separate DM")
 	}
 	if resp.ShowAlert || !resp.Edit || resp.CallbackMsg != "已有订阅" {
 		t.Fatalf("response=%+v", resp)

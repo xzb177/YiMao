@@ -180,6 +180,168 @@ func TestOrdinaryReviewApprovalNotifiesRequesterAndConfiguredGroupOnce(t *testin
 	}
 }
 
+func TestOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAndConfiguredGroupOnce(t *testing.T) {
+	testOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAndConfiguredGroupOnce(t, 42)
+}
+
+func TestOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAdminAndConfiguredGroupOnce(t *testing.T) {
+	testOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAndConfiguredGroupOnce(t, 99)
+}
+
+func testOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAndConfiguredGroupOnce(t *testing.T, requesterID int64) {
+	t.Helper()
+	t.Setenv("ADMIN_USER_IDS", "99")
+	t.Setenv("ENABLE_RICH_MESSAGE", "true")
+
+	var moviePilotMu sync.Mutex
+	moviePilotPosts := 0
+	moviePilot := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/subscribe/":
+			_, _ = w.Write([]byte(`[{"id":884,"name":"Existing Review Movie","type":"movie","state":"R","media_id":552}]`))
+		case r.Method == http.MethodPost:
+			moviePilotMu.Lock()
+			moviePilotPosts++
+			moviePilotMu.Unlock()
+			_, _ = w.Write([]byte(`{"success":true,"data":{"id":999}}`))
+		default:
+			http.Error(w, `{"success":false,"message":"unexpected request"}`, http.StatusBadRequest)
+		}
+	}))
+	defer moviePilot.Close()
+
+	type richPayload struct {
+		ChatID          int64 `json:"chat_id"`
+		MessageThreadID int64 `json:"message_thread_id"`
+		RichMessage     struct {
+			Markdown string `json:"markdown"`
+		} `json:"rich_message"`
+	}
+	var telegramMu sync.Mutex
+	var telegramPayloads []richPayload
+	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/sendRichMessage" {
+			http.Error(w, `{"ok":false,"description":"unexpected method"}`, http.StatusBadRequest)
+			return
+		}
+		var payload richPayload
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			http.Error(w, `{"ok":false,"description":"invalid payload"}`, http.StatusBadRequest)
+			return
+		}
+		telegramMu.Lock()
+		telegramPayloads = append(telegramPayloads, payload)
+		telegramMu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
+	}))
+	defer telegram.Close()
+
+	dataDir := t.TempDir()
+	reviews := services.NewReviewService(dataDir, false)
+	review := &services.ReviewRequest{
+		RequestID:    "ordinary-existing-subscription-group-notification",
+		BusinessType: services.BusinessTypeRequest,
+		TelegramID:   requesterID,
+		TelegramName: "requester",
+		TmdbID:       552,
+		MediaTitle:   "Existing Review Movie",
+		MediaYear:    2026,
+		MediaType:    services.MediaTypeMovie,
+	}
+	if err := reviews.CreateRequest(review); err != nil {
+		t.Fatal(err)
+	}
+
+	tg := services.NewTelegramClient("test")
+	tg.SetBaseURLForTest(telegram.URL, telegram.Client())
+	h := NewReviewHandler(
+		nil,
+		tg,
+		services.NewMoviePilotClient(moviePilot.URL, "test", ""),
+		services.NewAdminService(dataDir),
+		reviews,
+		nil,
+		nil,
+		-100123,
+	)
+	ctx := &callback.Context{
+		UserID:          99,
+		ChatID:          -100123,
+		ChatType:        "supergroup",
+		MessageThreadID: 321,
+		Callback: &callback.Callback{
+			Action: "review_approve",
+			Params: map[string]string{"id": review.RequestID, "token": review.ApproveToken},
+		},
+	}
+
+	resp, err := h.Handle(ctx)
+	if err != nil || resp == nil || resp.CallbackMsg != "已有订阅" {
+		t.Fatalf("first approval: resp=%+v err=%v", resp, err)
+	}
+	stored, ok := reviews.GetRequest(review.RequestID)
+	if !ok || stored.Status != "approved" || stored.SubscriptionID != 884 || stored.SubscriptionState != "R" {
+		t.Fatalf("existing subscription was not persisted: stored=%+v ok=%v", stored, ok)
+	}
+
+	moviePilotMu.Lock()
+	firstMoviePilotPosts := moviePilotPosts
+	moviePilotMu.Unlock()
+	if firstMoviePilotPosts != 0 {
+		t.Fatalf("first approval issued %d MoviePilot POSTs, want 0", firstMoviePilotPosts)
+	}
+	telegramMu.Lock()
+	firstPayloads := append([]richPayload(nil), telegramPayloads...)
+	telegramMu.Unlock()
+
+	secondResp, secondErr := h.Handle(ctx)
+	if secondErr != nil || secondResp == nil || secondResp.CallbackMsg != "已被批准" {
+		t.Fatalf("repeated approval: resp=%+v err=%v", secondResp, secondErr)
+	}
+	moviePilotMu.Lock()
+	allMoviePilotPosts := moviePilotPosts
+	moviePilotMu.Unlock()
+	if allMoviePilotPosts != firstMoviePilotPosts {
+		t.Fatalf("repeated approval created a MoviePilot side effect: posts %d -> %d", firstMoviePilotPosts, allMoviePilotPosts)
+	}
+	telegramMu.Lock()
+	allPayloads := append([]richPayload(nil), telegramPayloads...)
+	telegramMu.Unlock()
+	if len(allPayloads) != len(firstPayloads) {
+		t.Fatalf("repeated approval sent additional notifications: payloads %d -> %d", len(firstPayloads), len(allPayloads))
+	}
+
+	requesterMessages := 0
+	groupMessages := 0
+	for _, payload := range firstPayloads {
+		if payload.RichMessage.Markdown == "" {
+			t.Fatalf("chat %d received an empty Rich Message", payload.ChatID)
+		}
+		switch payload.ChatID {
+		case requesterID:
+			requesterMessages++
+			if payload.MessageThreadID != 0 {
+				t.Fatalf("requester private Rich Message inherited message_thread_id=%d", payload.MessageThreadID)
+			}
+		case -100123:
+			groupMessages++
+			if payload.MessageThreadID != 321 {
+				t.Fatalf("configured-group Rich Message message_thread_id=%d, want 321", payload.MessageThreadID)
+			}
+		default:
+			t.Fatalf("unexpected Rich Message chat_id=%d", payload.ChatID)
+		}
+	}
+	if requesterMessages != 1 {
+		t.Fatalf("first approval requester private Rich Message count=%d, want exactly 1", requesterMessages)
+	}
+	if groupMessages != 1 {
+		t.Fatalf("first approval configured-group Rich Message count=%d, want exactly 1 (missing group notification)", groupMessages)
+	}
+}
+
 func TestOrdinaryReviewApprovalSurfacesGroupNotificationFailureWithoutRetryingSubscription(t *testing.T) {
 	t.Setenv("ADMIN_USER_IDS", "99")
 	t.Setenv("ENABLE_RICH_MESSAGE", "true")
