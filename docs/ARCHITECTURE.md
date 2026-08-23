@@ -73,13 +73,11 @@ Telegram chat menu
 - 发现与查询：`search`、`assistant`、`detail`、`discover`
 - 首页状态：`dynamic`、`me`、`progress`
 - 用户动作：`watchlist`、`request`、`wash`、`request/cancel`
-- 阻塞项：`issues`、`wishes`；状态视图：`monitor`。
+- 阻塞项：`issues`、`wishes`。
 
 HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能用静态页面访问绕过身份校验。Mini App 发布后通过 `./manage.sh telegram` 更新菜单中的 `?v=<OCI Git revision>`，避免 Telegram WebView 长期缓存旧 bundle。
 
-Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任务、监控四列。搜索在求片和洗版模式间显式切换；请求链使用 `mode: 'request'`，分页、取消和较早响应不能覆盖更新状态。
-
-`GET /api/miniapp/v1/monitor` 使用 Telegram `initData` 本地鉴权，只投影固定安全 DTO。服务端只向显式配置的 overview 发起短超时请求，缺少空闲空间时才查询 qB fallback；请求不继承浏览器的 `initData`、Cookie 或 Authorization。响应体有上限，JSON、RFC3339 时间、未来时钟偏差和所有聚合数值都严格校验。上游缺失、非 2xx、过大、过期或非法时统一返回通用 `503`，并设置 `no-store`，不向客户端暴露私有 URL、路径、容器元数据或告警详情。
+Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任务三列。搜索在求片和洗版模式间显式切换；请求链使用 `mode: 'request'`，分页、取消和较早响应不能覆盖更新状态。
 
 ## 5. 普通求片主链路
 
@@ -137,7 +135,7 @@ Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任�
 - 管理 API 在启用 auth 时要求 `API_KEYS`；关闭 auth 时仅允许 localhost。
 - 入站 webhook 支持 secret/signature 校验，公网代理只暴露必要路径。
 - Mini App API 校验 Telegram `initData`；不接受浏览器自造的 user ID。
-- Mini App 监控 URL 默认空且只能由部署注入；入站身份头和 Cookie 不会转发到监控上游。
+
 - Docker socket 仅用于 MoviePilot 密码重置等明确功能，应限制主机暴露面。
 - 日志和最终报告不输出 Token、密码、完整内网地址或 API Key。
 

@@ -175,8 +175,7 @@ func New(
 		Submission: deps.RequestSubmission, Webhook: deps.WebhookService,
 		Issues: deps.IssueService, Wishes: deps.WishService,
 		Telegram: deps.Telegram, Admins: deps.AdminService, Assistant: newMiniAppAssistant(cfg),
-		MonitorOverviewURL: cfg.MonitorOverviewURL, MonitorQBitMainDataURL: cfg.MonitorQBitMainDataURL,
-		HTTPClient: &http.Client{Timeout: 4 * time.Second}, MaxAuthAge: 24 * time.Hour,
+		MaxAuthAge: 24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
 	mux.Handle("/miniapp", miniAppHandler)

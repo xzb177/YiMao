@@ -45,7 +45,7 @@ jobs:
 
       - name: Deployment script syntax
         run: |
-          sh -n scripts/preflight.sh scripts/staging.sh manage.sh monitor.sh start.sh deploy.sh deploy-docker.sh
+          sh -n scripts/preflight.sh scripts/staging.sh manage.sh start.sh deploy.sh deploy-docker.sh
           bash -n scripts/ops.sh install.sh
           cp .env.staging.example .env.staging
           docker compose --env-file .env.staging -f docker-compose.staging.yml config --quiet

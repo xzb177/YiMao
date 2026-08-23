@@ -1,6 +1,6 @@
 # YiMao
 
-YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；AI、只读运行监控和许愿池是增强能力，不是部署主链路的前置条件。
+YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；AI 和许愿池是增强能力，不是部署主链路的前置条件。
 
 ## 工作方式
 
@@ -28,7 +28,7 @@ Telegram Bot / Mini App
 ## 当前产品入口
 
 - Bot 以搜索求片为默认路径，保留详情/季度、候选资源、求片进度、想看/拼车、许愿池、洗版、问题反馈和入库通知。
-- Mini App 是 App-first 任务中心：首页先展示“今晚要看 / 卡住的事 / 正在替你办”，再进入找片、求片/洗版提交、任务时间线、想看、许愿、反馈和只读监控。
+- Mini App 是 App-first 任务中心：首页先展示“今晚要看 / 卡住的事 / 正在替你办”，再进入找片、求片/洗版提交、任务时间线、想看、许愿和反馈。
 - 游戏中心只保留电影情报站、盲盒、命运轮盘和观影画像；Roulette 的进入和再转一次回调都可用。
 - 管理员负责求片/洗版审核、洗版认领与 MediaSource 安全核验、反馈处理和通知设置。洗版完成必须先进入明确确认，不会绕过旧版保留检查。
 
@@ -104,10 +104,10 @@ chmod 600 .env
 - `POST /webhook/moviepilot`、`POST /webhook/mp`：MoviePilot 事件
 - `POST /webhook/emby`：Emby 事件
 - `GET /miniapp`：App-first Mini App shell
-- `/api/miniapp/v1/*`：Telegram initData 鉴权后的搜索、详情、任务、求片/洗版、反馈与监控 API；`/monitor` 仅返回白名单聚合字段。
+- `/api/miniapp/v1/*`：Telegram initData 鉴权后的搜索、详情、任务、求片/洗版和反馈 API。
 - `/api/summary`、`/api/stats`、`/api/admins*`：受 API auth 或 localhost 限制的管理 API
 
-设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。监控上游必须由部署环境显式注入，上游异常时统一返回通用不可用结果，不转发 initData、Cookie 或 Authorization。
+设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。
 
 ## 存储
 

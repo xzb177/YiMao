@@ -172,11 +172,9 @@ func TestRootNavigationHasExactlyThreeProductPaths(t *testing.T) {
 		"首页",
 		"找片",
 		"任务",
-		"监控",
-		`data-view="monitor"`,
 	)
-	if count := strings.Count(chrome, `<button data-view=`); count != 4 {
-		t.Fatalf("移动端底栏按钮数=%d，需要首页加三条产品路径", count)
+	if count := strings.Count(chrome, `<button data-view=`); count != 3 {
+		t.Fatalf("移动端底栏按钮数=%d，需要首页、找片、任务三条产品路径", count)
 	}
 	rejectSource(t, chrome, "放映室", "我的", "闯关", `class="brand"`)
 }
@@ -222,27 +220,6 @@ func TestWashIsAFirstClassSearchMode(t *testing.T) {
 		"body:JSON.stringify(payload)",
 	)
 	rejectSource(t, html, "S.searchMode")
-}
-
-func TestMonitorUsesSafeNativeOverviewPage(t *testing.T) {
-	html := miniAppSource(t)
-	requireSource(t, html,
-		`/api/miniapp/v1/monitor`,
-		"function monitorPage()",
-		"async function loadMonitor()",
-		"总体状态",
-		"剩余空间",
-		"下载队列",
-		"24h 入库活动",
-		"下载",
-		"整理",
-		"媒体库",
-		"刷新",
-		"monitorStateLabel",
-		"monitorError",
-		"textContent",
-	)
-	rejectSource(t, html, "quest-panel", "quest-choice")
 }
 
 func TestTasksAggregateRequestAndWashByNextAction(t *testing.T) {
@@ -454,7 +431,6 @@ func TestDemoIsReadOnlyAndCoversAllPrimaryPaths(t *testing.T) {
 		"business_type:'request'",
 		"business_type:'wash'",
 		"media_status",
-		"monitorDemo",
 	)
 }
 

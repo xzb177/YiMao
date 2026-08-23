@@ -45,10 +45,6 @@ type Config struct {
 	ServerPort string
 	ServerHost string
 	WebhookURL string
-	// MonitorOverviewURL is the private monitor-panel overview endpoint used by
-	// the Mini App server. Its response is projected before it reaches clients.
-	MonitorOverviewURL     string
-	MonitorQBitMainDataURL string
 	// WebhookSecret, when set, requires inbound webhooks to carry a valid
 	// HMAC-SHA256 signature (X-Webhook-Signature: sha256=<hex>). Empty = off
 	// (backward compatible).
@@ -131,36 +127,34 @@ func Load() (*Config, error) {
 		EmbySkipTLSVerify:     getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
 		TMDBAPIKey:            getEnv("TMDB_API_KEY", ""),
 		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
-		AnthropicAPIKey:        getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
-		ZhipuAPIKey:            getEnv("ZHIPU_API_KEY", ""),
-		OpenAIAPIKey:           getEnv("OPENAI_API_KEY", ""),
-		OpenAIBaseURL:          getEnv("OPENAI_BASE_URL", ""),
-		OpenAIModel:            getEnv("OPENAI_MODEL", ""),
-		ServerPort:             getEnv("PORT", "8080"),
-		ServerHost:             getEnv("HOST", "0.0.0.0"),
-		WebhookURL:             getEnv("WEBHOOK_URL", ""),
-		MonitorOverviewURL:     getEnv("MONITOR_OVERVIEW_URL", ""),
-		MonitorQBitMainDataURL: getEnv("MONITOR_QBIT_MAINDATA_URL", ""),
-		WebhookSecret:          getEnv("WEBHOOK_SECRET", ""),
-		DataDir:                getEnv("DATA_DIR", "/app/data"),
-		MaxSessionAge:          getEnvInt("MAX_SESSION_AGE", 24),
-		MaxSessions:            getEnvInt("MAX_SESSIONS", 1000),
-		EnableAI:               getEnvBoolFirst(false, "AI_ENABLED", "ENABLE_AI"),
-		EnableTrending:         getEnvBool("ENABLE_TRENDING", true),
-		EnableHotTV:            getEnvBool("ENABLE_HOT_TV", true),
-		EnableNewMovies:        getEnvBool("ENABLE_NEW_MOVIES", true),
-		EnableRandom:           getEnvBool("ENABLE_RANDOM", true),
-		Admins:                 make(map[int64]string),
-		EnableAPIAuth:          getEnvBool("ENABLE_API_AUTH", true),
-		APIKeys:                make(map[string]string),
-		EnableRateLimit:        getEnvBool("ENABLE_RATE_LIMIT", true),
-		EnableIPBlocking:       getEnvBool("ENABLE_IP_BLOCKING", true),
-		RateLimitRequests:      getEnvInt("RATE_LIMIT_REQUESTS", 60),
-		RateLimitWindow:        getEnvInt("RATE_LIMIT_WINDOW", 60), // seconds
-		MaxFailedAttempts:      getEnvInt("MAX_FAILED_ATTEMPTS", 5),
-		BlockDuration:          getEnvInt("BLOCK_DURATION", 30),           // minutes
-		NotificationFormat:     getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
-		EnableAutoResubscribe:  getEnvBool("ENABLE_AUTO_RESUBSCRIBE", false),
+		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
+		ZhipuAPIKey:           getEnv("ZHIPU_API_KEY", ""),
+		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
+		OpenAIBaseURL:         getEnv("OPENAI_BASE_URL", ""),
+		OpenAIModel:           getEnv("OPENAI_MODEL", ""),
+		ServerPort:            getEnv("PORT", "8080"),
+		ServerHost:            getEnv("HOST", "0.0.0.0"),
+		WebhookURL:            getEnv("WEBHOOK_URL", ""),
+		WebhookSecret:         getEnv("WEBHOOK_SECRET", ""),
+		DataDir:               getEnv("DATA_DIR", "/app/data"),
+		MaxSessionAge:         getEnvInt("MAX_SESSION_AGE", 24),
+		MaxSessions:           getEnvInt("MAX_SESSIONS", 1000),
+		EnableAI:              getEnvBoolFirst(false, "AI_ENABLED", "ENABLE_AI"),
+		EnableTrending:        getEnvBool("ENABLE_TRENDING", true),
+		EnableHotTV:           getEnvBool("ENABLE_HOT_TV", true),
+		EnableNewMovies:       getEnvBool("ENABLE_NEW_MOVIES", true),
+		EnableRandom:          getEnvBool("ENABLE_RANDOM", true),
+		Admins:                make(map[int64]string),
+		EnableAPIAuth:         getEnvBool("ENABLE_API_AUTH", true),
+		APIKeys:               make(map[string]string),
+		EnableRateLimit:       getEnvBool("ENABLE_RATE_LIMIT", true),
+		EnableIPBlocking:      getEnvBool("ENABLE_IP_BLOCKING", true),
+		RateLimitRequests:     getEnvInt("RATE_LIMIT_REQUESTS", 60),
+		RateLimitWindow:       getEnvInt("RATE_LIMIT_WINDOW", 60), // seconds
+		MaxFailedAttempts:     getEnvInt("MAX_FAILED_ATTEMPTS", 5),
+		BlockDuration:         getEnvInt("BLOCK_DURATION", 30),           // minutes
+		NotificationFormat:    getEnv("NOTIFICATION_FORMAT", "detailed"), // "simple" or "detailed"
+		EnableAutoResubscribe: getEnvBool("ENABLE_AUTO_RESUBSCRIBE", false),
 		// Logging
 		LogLevel:  getEnv("LOG_LEVEL", "info"),
 		LogColor:  getEnvBool("LOG_COLOR", false),
