@@ -147,13 +147,23 @@ type MoviePilotClient struct {
 	embyUserID       string // Optional: Emby user ID for API calls
 	embyUserMu       sync.Mutex
 	httpClient       *http.Client
-	retryConfig      *RetryConfig
+	// snapshotClient issues the full-subscription snapshot request. MoviePilot
+	// needs tens of seconds to serialize a large library, so this client gets a
+	// much longer budget than ordinary API calls while sharing the transport.
+	snapshotClient *http.Client
+	retryConfig    *RetryConfig
 
 	// 订阅列表缓存（避免每次请求都拉全量）
 	subsCacheMu   sync.RWMutex
 	subsCacheData []SubscribeItem
 	subsCacheTime time.Time
 	subsCacheTTL  time.Duration
+
+	// 全量订阅状态快照缓存（GetAllSubscriptions 复用，避免同一轮巡检重复拉取数 MB）
+	statusCacheMu   sync.RWMutex
+	statusCacheData []SubscribeStatus
+	statusCacheTime time.Time
+	statusCacheTTL  time.Duration
 }
 
 type transferHistoryResponse struct {
@@ -179,31 +189,38 @@ func NewMoviePilotClient(baseURL, apiKey, downloadSavePath string) *MoviePilotCl
 		baseURL = baseURL[:len(baseURL)-1]
 	}
 
+	transport := &http.Transport{
+		// 连接池配置
+		MaxIdleConns:        100,              // 最大空闲连接数
+		MaxIdleConnsPerHost: 20,               // 每个主机的最大空闲连接数 (提升从10)
+		MaxConnsPerHost:     0,                // 0 表示不限制 (新增)
+		IdleConnTimeout:     90 * time.Second, // 空闲连接超时
+		// 连接超时配置
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		// HTTP/2 和 TLS 配置
+		ForceAttemptHTTP2:     true,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 30 * time.Second, // 新增：响应头超时
+		// 期望继续使用 100 Continue 状态
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
 	return &MoviePilotClient{
 		baseURL:          baseURL,
 		apiKey:           apiKey,
 		downloadSavePath: downloadSavePath,
 		subsCacheTTL:     5 * time.Minute, // 订阅列表缓存 5 分钟
+		statusCacheTTL:   subscriptionStatusCacheTTL,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				// 连接池配置
-				MaxIdleConns:        100,              // 最大空闲连接数
-				MaxIdleConnsPerHost: 20,               // 每个主机的最大空闲连接数 (提升从10)
-				MaxConnsPerHost:     0,                // 0 表示不限制 (新增)
-				IdleConnTimeout:     90 * time.Second, // 空闲连接超时
-				// 连接超时配置
-				DialContext: (&net.Dialer{
-					Timeout:   10 * time.Second,
-					KeepAlive: 30 * time.Second,
-				}).DialContext,
-				// HTTP/2 和 TLS 配置
-				ForceAttemptHTTP2:     true,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ResponseHeaderTimeout: 30 * time.Second, // 新增：响应头超时
-				// 期望继续使用 100 Continue 状态
-				ExpectContinueTimeout: 1 * time.Second,
-			},
+			Timeout:   30 * time.Second,
+			Transport: transport,
+		},
+		snapshotClient: &http.Client{
+			Timeout:   subscriptionSnapshotTimeout,
+			Transport: transport,
 		},
 		retryConfig: DefaultRetryConfig(),
 	}
@@ -231,6 +248,22 @@ const (
 	// Response limits prevent abnormal upstream payloads from causing OOM.
 	maxResponseBodySize             = 10 * 1024 * 1024 // 10MB
 	maxSubscriptionResponseBodySize = 32 * 1024 * 1024 // Large MP installations can exceed the generic limit.
+
+	// subscriptionsEndpoint returns the complete subscription list in one
+	// response. MoviePilot ignores page/count here, so a single successful
+	// response IS the complete snapshot; never treat it as page 1 of N and
+	// never request a second page to "confirm" completeness.
+	subscriptionsEndpoint = "/api/v1/subscribe/?page=1&count=1000"
+
+	// subscriptionSnapshotTimeout covers the whole snapshot request. A large
+	// library serializes several MB, which regularly exceeds the generic 30s
+	// client timeout and used to surface as "context deadline exceeded".
+	subscriptionSnapshotTimeout = 120 * time.Second
+
+	// subscriptionStatusCacheTTL keeps one snapshot warm for a short window so
+	// a single refresh cycle (status update, completion scan, stuck retry)
+	// reuses one download instead of pulling it once per step.
+	subscriptionStatusCacheTTL = 60 * time.Second
 )
 
 // MediaInfo represents media information from MoviePilot
@@ -749,21 +782,102 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 	return nil, fmt.Errorf("user created but not found in user list")
 }
 
-// GetAllSubscriptions retrieves all subscriptions from MoviePilot
+// GetAllSubscriptions retrieves all subscriptions from MoviePilot.
+//
+// MoviePilot's /api/v1/subscribe/ endpoint does NOT paginate: it always returns
+// the complete list and ignores page/count. One successful response is therefore
+// a complete snapshot by definition. Requesting a "page 2" only returns the same
+// payload again, so any completeness check based on pagination is guaranteed to
+// fail (the historical "incomplete subscription snapshot: page 2 repeated a full
+// page" error). The snapshot is fetched exactly once, with a long timeout, and
+// cached for statusCacheTTL so one refresh cycle downloads it a single time.
 func (c *MoviePilotClient) GetAllSubscriptions() ([]SubscribeStatus, error) {
-	endpoint := "/api/v1/subscribe/?page=1&count=1000"
+	if items, ok := c.cachedSubscriptionStatuses(); ok {
+		return items, nil
+	}
 
-	body, err := c.makeRequestWithLimit("GET", endpoint, nil, maxSubscriptionResponseBodySize)
+	items, err := c.fetchSubscriptionStatusSnapshot()
 	if err != nil {
 		return nil, err
 	}
 
+	c.storeSubscriptionStatuses(items)
+	return items, nil
+}
+
+// cachedSubscriptionStatuses returns a defensive copy of the fresh snapshot.
+func (c *MoviePilotClient) cachedSubscriptionStatuses() ([]SubscribeStatus, bool) {
+	c.statusCacheMu.RLock()
+	defer c.statusCacheMu.RUnlock()
+	if c.statusCacheData == nil || c.statusCacheTTL <= 0 || time.Since(c.statusCacheTime) >= c.statusCacheTTL {
+		return nil, false
+	}
+	out := make([]SubscribeStatus, len(c.statusCacheData))
+	copy(out, c.statusCacheData)
+	return out, true
+}
+
+func (c *MoviePilotClient) storeSubscriptionStatuses(items []SubscribeStatus) {
+	stored := make([]SubscribeStatus, len(items))
+	copy(stored, items)
+	c.statusCacheMu.Lock()
+	c.statusCacheData = stored
+	c.statusCacheTime = time.Now()
+	c.statusCacheMu.Unlock()
+}
+
+// fetchSubscriptionStatusSnapshot downloads the one-shot full subscription list.
+func (c *MoviePilotClient) fetchSubscriptionStatusSnapshot() ([]SubscribeStatus, error) {
+	body, err := c.requestSubscriptionSnapshot(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("subscription snapshot: %w", err)
+	}
+
 	var items []SubscribeStatus
 	if err := json.Unmarshal(body, &items); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+		return nil, fmt.Errorf("decode subscription snapshot: %w", err)
 	}
 
 	return items, nil
+}
+
+// requestSubscriptionSnapshot performs the single full-list request using the
+// long-timeout snapshot client. The request has no body, so retrying it is safe.
+func (c *MoviePilotClient) requestSubscriptionSnapshot(ctx context.Context) ([]byte, error) {
+	client := c.snapshotClient
+	if client == nil {
+		client = c.httpClient
+	}
+
+	url := c.baseURL + subscriptionsEndpoint
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", c.apiKey)
+
+	resp, err := RetryHTTP(ctx, client, req, c.retryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.ContentLength > maxSubscriptionResponseBodySize {
+		return nil, fmt.Errorf("response body exceeds %d bytes: content-length %d", int64(maxSubscriptionResponseBodySize), resp.ContentLength)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSubscriptionResponseBodySize+1))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if int64(len(body)) > maxSubscriptionResponseBodySize {
+		return nil, fmt.Errorf("response body exceeds %d bytes", int64(maxSubscriptionResponseBodySize))
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("API error: status %d", resp.StatusCode)
+	}
+
+	return body, nil
 }
 
 // WarmupSubscriptionCache pre-loads the subscription cache on startup
@@ -792,8 +906,7 @@ func (c *MoviePilotClient) preWarmSubscriptionCache() error {
 	}
 
 	logger.Info("[MoviePilot] preWarmSubscriptionCache: 开始拉取全量订阅...")
-	endpoint := "/api/v1/subscribe/?page=1&count=1000"
-	body, err := c.makeRequestWithLimit("GET", endpoint, nil, maxSubscriptionResponseBodySize)
+	body, err := c.requestSubscriptionSnapshot(context.Background())
 	if err != nil {
 		return fmt.Errorf("拉取订阅列表失败: %w", err)
 	}
@@ -884,11 +997,16 @@ func (c *MoviePilotClient) getCachedSubscriptions(pageSize int) ([]SubscribeItem
 	return nil, false
 }
 
-// InvalidateSubscriptionsCache 强制刷新订阅缓存（订阅变更时调用）
+// InvalidateSubscriptionsCache 强制刷新订阅缓存（订阅变更时调用）。
+// 同时失效全量状态快照缓存，避免刚创建的订阅在 TTL 内查不到。
 func (c *MoviePilotClient) InvalidateSubscriptionsCache() {
 	c.subsCacheMu.Lock()
 	c.subsCacheData = nil
 	c.subsCacheMu.Unlock()
+
+	c.statusCacheMu.Lock()
+	c.statusCacheData = nil
+	c.statusCacheMu.Unlock()
 }
 
 // GetUserRequests retrieves all subscription requests for a user

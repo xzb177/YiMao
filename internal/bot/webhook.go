@@ -138,7 +138,9 @@ func HandleWebhookCallback(
 
 	// Establish the private target before potentially slow business work. Later
 	// rendering edits this message by ephemeral_message_id.
+	answered := false
 	if isCommunityChat(ctx.ChatType) {
+		answered = true
 		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
 			logger.Info("[Webhook] Immediate callback answer failed: %v", err)
 		}
@@ -155,6 +157,11 @@ func HandleWebhookCallback(
 				return
 			}
 			ctx.EphemeralMessageID = placeholder.EphemeralMessageID
+		}
+	} else if callbackNeedsImmediateAck(parsed.Action) {
+		answered = true
+		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
+			logger.Info("[Webhook] Immediate callback answer failed: %v", err)
 		}
 	}
 
@@ -188,7 +195,7 @@ func HandleWebhookCallback(
 		callbackMsg = callbackMsg[:197] + "..."
 	}
 
-	if !isCommunityChat(ctx.ChatType) {
+	if !answered {
 		if err := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); err != nil {
 			logger.Info("[Callback] AnswerCallback error: %v", err)
 		}

@@ -666,7 +666,9 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 	// Establish a private response target before invoking potentially slow business
 	// handlers. This consumes the callback within Telegram's 15-second window;
 	// subsequent updates edit the ephemeral placeholder by ID.
+	answered := false
 	if isCommunityChat(ctx.ChatType) {
+		answered = true
 		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
 			logger.Info("[Callback] Immediate answer failed: %v", err)
 		}
@@ -681,6 +683,13 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 				return
 			}
 			ctx.EphemeralMessageID = placeholder.EphemeralMessageID
+		}
+	} else if callbackNeedsImmediateAck(parsed.Action) {
+		// Slow, authoritative actions are acknowledged up front so the client
+		// never spins while preflight checks run.
+		answered = true
+		if err := telegram.AnswerCallback(cb.ID, "", false); err != nil {
+			logger.Info("[Callback] Immediate answer failed: %v", err)
 		}
 	}
 
@@ -718,7 +727,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			if result.resp != nil && result.resp.CallbackMsg != "" {
 				callbackMsg = result.resp.CallbackMsg
 			}
-			if !isCommunityChat(ctx.ChatType) {
+			if !answered {
 				if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, true); ansErr != nil {
 					logger.Info("[Callback] Failed to answer callback (error): %v", ansErr)
 				}
@@ -750,7 +759,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			callbackMsg = callbackMsg[:197] + "..."
 		}
 
-		if !isCommunityChat(ctx.ChatType) {
+		if !answered {
 			if ansErr := telegram.AnswerCallback(cb.ID, callbackMsg, showAlert); ansErr != nil {
 				logger.Info("[Callback] AnswerCallback error (callback may have expired): %v", ansErr)
 			}

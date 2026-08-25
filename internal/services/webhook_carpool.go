@@ -245,9 +245,16 @@ func (s *WebhookService) completeWashOnLibraryAdd(tmdbIDStr, mediaType string, s
 
 	var matched []*ReviewRequest
 	for _, review := range s.review.GetApprovedWashRequests() {
-		if reviewMatchesLibraryAdd(review, tmdbID, mediaType, season) {
-			matched = append(matched, review)
+		if !reviewMatchesLibraryAdd(review, tmdbID, mediaType, season) {
+			continue
 		}
+		// A work order that already exhausted automatic verification must not
+		// trigger another Emby lookup on every library event.
+		if s.review.WashVerificationExhausted(review.RequestID) {
+			logger.Info("[洗版自动完成] 已达自动核验上限，交由人工处理 request=%s title=%s", review.RequestID, review.MediaTitle)
+			continue
+		}
+		matched = append(matched, review)
 	}
 	if len(matched) == 0 {
 		return

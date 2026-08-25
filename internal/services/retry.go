@@ -3,10 +3,11 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/xzb177/yimao/pkg/logger"
 	"math"
 	"net/http"
 	"time"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // RetryConfig holds retry configuration
@@ -58,11 +59,21 @@ func DefaultIsRetryable(err error) bool {
 	return true // Default to retrying on error
 }
 
-// RetryHTTP executes an HTTP request with retry logic
+// RetryHTTP executes an HTTP request with retry logic.
+//
+// A request that carries a body may only be replayed when net/http captured a
+// GetBody rewinder for it (every http.NewRequest with a *bytes.Buffer,
+// *bytes.Reader or *strings.Reader body does). Without GetBody the second
+// attempt would ship the original Content-Length with an already drained body,
+// which upstreams reject with "ContentLength=N with Body length 0". Such
+// requests are therefore executed exactly once and their error is returned
+// unchanged instead of being retried into a misleading "max retries exceeded".
 func RetryHTTP(ctx context.Context, client *http.Client, req *http.Request, cfg *RetryConfig) (*http.Response, error) {
 	if cfg == nil {
 		cfg = DefaultRetryConfig()
 	}
+
+	replayable := requestIsReplayable(req)
 
 	var lastErr error
 	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
@@ -80,14 +91,29 @@ func RetryHTTP(ctx context.Context, client *http.Client, req *http.Request, cfg 
 			}
 		}
 
-		// Clone request for retry (body can only be read once)
-		reqClone := cloneRequest(req)
+		// Clone the request for each attempt; the body is rebuilt from GetBody so
+		// every attempt sends the exact same payload. A request whose body cannot
+		// be rewound is sent once, as-is, and never replayed.
+		reqClone := req
+		if replayable {
+			clone, cloneErr := cloneRequest(req)
+			if cloneErr != nil {
+				if lastErr != nil {
+					return nil, fmt.Errorf("request body cannot be replayed, retry disabled: %w", lastErr)
+				}
+				return nil, fmt.Errorf("request body cannot be replayed: %w", cloneErr)
+			}
+			reqClone = clone
+		}
 
 		resp, err := client.Do(reqClone)
 		if err != nil {
 			lastErr = err
 			if !DefaultIsRetryable(err) {
 				return nil, fmt.Errorf("non-retryable error: %w", err)
+			}
+			if !replayable {
+				return nil, fmt.Errorf("request body cannot be replayed, retry disabled: %w", err)
 			}
 			continue
 		}
@@ -111,6 +137,9 @@ func RetryHTTP(ctx context.Context, client *http.Client, req *http.Request, cfg 
 		lastErr = &HTTPError{
 			StatusCode: resp.StatusCode,
 			Err:        fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status),
+		}
+		if !replayable {
+			return nil, fmt.Errorf("request body cannot be replayed, retry disabled: %w", lastErr)
 		}
 	}
 
@@ -162,14 +191,46 @@ func calculateBackoff(attempt int, cfg *RetryConfig) time.Duration {
 	return time.Duration(delay)
 }
 
-// cloneRequest creates a shallow copy of an HTTP request for retry
-func cloneRequest(req *http.Request) *http.Request {
+// requestIsReplayable reports whether the request can be sent more than once
+// without truncating its body. Bodyless requests are always replayable.
+func requestIsReplayable(req *http.Request) bool {
+	if req == nil {
+		return false
+	}
+	if req.Body == nil || req.Body == http.NoBody {
+		return true
+	}
+	if req.ContentLength == 0 {
+		return true
+	}
+	return req.GetBody != nil
+}
+
+// cloneRequest copies an HTTP request for a (re)try and rebuilds its body from
+// GetBody so Content-Length and the actual payload always agree.
+func cloneRequest(req *http.Request) (*http.Request, error) {
+	if req == nil {
+		return nil, fmt.Errorf("cannot clone nil request")
+	}
+
 	r := req.Clone(req.Context())
 
 	// Reset URL if needed (it may have been modified during redirects)
 	r.URL = req.URL
 
-	return r
+	if req.Body != nil && req.Body != http.NoBody && req.ContentLength != 0 {
+		if req.GetBody == nil {
+			return nil, fmt.Errorf("request body is not rewindable (no GetBody)")
+		}
+		body, err := req.GetBody()
+		if err != nil {
+			return nil, fmt.Errorf("rebuild request body: %w", err)
+		}
+		r.Body = body
+		r.ContentLength = req.ContentLength
+	}
+
+	return r, nil
 }
 
 // HTTPError represents an HTTP error with status code

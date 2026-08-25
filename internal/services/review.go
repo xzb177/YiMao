@@ -511,6 +511,9 @@ func (s *ReviewService) CompleteWash(requestID string, adminID int64, currentSou
 	if review.WashClaimedBy != adminID {
 		return nil, fmt.Errorf("洗版工单已由其他管理员认领")
 	}
+	if washVerificationExhausted(review) {
+		return nil, ErrWashVerificationExhausted
+	}
 	return s.completeWashVerifiedLocked(review, adminID, currentSources)
 }
 
@@ -532,6 +535,9 @@ func (s *ReviewService) CompleteWashAutomatically(requestID string, currentSourc
 	}
 	if review.Status != "approved" {
 		return nil, fmt.Errorf("当前状态为 %s，不能自动完成", review.Status)
+	}
+	if washVerificationExhausted(review) {
+		return nil, ErrWashVerificationExhausted
 	}
 	return s.completeWashVerifiedLocked(review, 0, currentSources)
 }
@@ -586,11 +592,20 @@ func (s *ReviewService) completeWashVerifiedLocked(review *ReviewRequest, comple
 }
 
 func (s *ReviewService) setWashVerificationErrorLocked(review *ReviewRequest, reason string) error {
-	previous := review.WashLastError
+	previous, previousCount := review.WashLastError, review.RetryCount
 	review.WashLastError = reason
+	if review.RetryCount < MaxWashVerifyRetry {
+		review.RetryCount++
+	}
+	if washVerificationExhausted(review) {
+		review.WashLastError = fmt.Sprintf("%s（已达自动核验上限 %d 次，停止自动重试）", reason, MaxWashVerifyRetry)
+	}
 	if err := s.saveLocked(); err != nil {
-		review.WashLastError = previous
+		review.WashLastError, review.RetryCount = previous, previousCount
 		return err
+	}
+	if washVerificationExhausted(review) {
+		return ErrWashVerificationExhausted
 	}
 	return fmt.Errorf("%s", reason)
 }
@@ -607,13 +622,25 @@ func (s *ReviewService) RecordWashVerificationFailure(requestID string, adminID 
 	if review.Status != "claimed" || review.WashClaimedBy != adminID {
 		return fmt.Errorf("只能记录自己认领的洗版工单")
 	}
-	previous := review.WashLastError
+	previous, previousCount := review.WashLastError, review.RetryCount
 	review.WashLastError = strings.TrimSpace(reason)
+	if review.RetryCount < MaxWashVerifyRetry {
+		review.RetryCount++
+	}
 	if err := s.saveLocked(); err != nil {
-		review.WashLastError = previous
+		review.WashLastError, review.RetryCount = previous, previousCount
 		return err
 	}
 	return nil
+}
+
+// WashVerificationExhausted reports whether a wash work order gave up on
+// automatic verification and needs manual handling.
+func (s *ReviewService) WashVerificationExhausted(requestID string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	review, ok := s.reviews[requestID]
+	return ok && review != nil && review.NormalizedBusinessType() == BusinessTypeWash && washVerificationExhausted(review)
 }
 
 // ClaimWash atomically assigns an approved wash work order to one administrator.
@@ -1053,6 +1080,23 @@ func (s *ReviewService) LinkSubscription(requestID string, subscriptionID int, s
 // 不改变 Status（仍为 approved），仅累加 RetryCount + 记录 LastError + 置 Stuck，
 // 这样请求不会凭空消失：管理员面板可见、可手动重试，用户在「求片进度」也能看到。
 const MaxApproveRetry = 3
+
+// MaxWashVerifyRetry bounds automatic wash verification. Every failed
+// verification is recorded on the work order; once the cap is reached the work
+// order stops being verified automatically so a permanently unverifiable order
+// (wrong subscription, deleted old version, renamed library path) can no longer
+// spin forever on each Emby library event. Administrators still see it in the
+// wash workbench and must resolve it manually.
+const MaxWashVerifyRetry = 10
+
+// washVerificationExhausted reports whether automatic verification gave up.
+func washVerificationExhausted(review *ReviewRequest) bool {
+	return review != nil && review.RetryCount >= MaxWashVerifyRetry
+}
+
+// ErrWashVerificationExhausted marks a wash work order that must be handled by
+// a human instead of being retried.
+var ErrWashVerificationExhausted = fmt.Errorf("洗版工单自动核验已达上限（%d 次），已停止自动重试，请人工处理", MaxWashVerifyRetry)
 
 func isNonRetryableApproveError(errMsg string) bool {
 	errMsg = strings.TrimSpace(errMsg)

@@ -124,6 +124,22 @@ func isCommunityChat(chatType string) bool {
 	return chatType == "group" || chatType == "supergroup"
 }
 
+// callbackNeedsImmediateAck reports whether a callback must be acknowledged
+// before its business handler runs. Review approval performs authoritative
+// preflight work (Emby availability, MoviePilot duplicate lookup, subscription
+// creation) that can take longer than Telegram's callback window, so the ack is
+// sent first and the outcome is delivered by the rendered message instead of a
+// toast. The preflight itself keeps running in the handler goroutine and is
+// idempotent, so a repeated click can never double-create a subscription.
+func callbackNeedsImmediateAck(action callback.Action) bool {
+	switch action {
+	case "review_approve", "rv_a", "review_complete_wash", "review_retry_wash":
+		return true
+	default:
+		return false
+	}
+}
+
 func renderCommunityCallbackResponse(logPrefix string, ctx *callback.Context, resp *callback.Response, telegram *services.TelegramClient, keyboard *types.TelegramInlineKeyboard) {
 	parseMode := defaultParseMode(resp.ParseMode)
 	plain := resp.Text
