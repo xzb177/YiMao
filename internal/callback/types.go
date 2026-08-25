@@ -277,6 +277,12 @@ type Response struct {
 	ParseMode             string                          // Parse mode for formatting (HTML, Markdown, or empty for none)
 	RichMessage           string                          // Rich Message markdown content (legacy-compatible)
 	StructuredRichMessage *types.TelegramInputRichMessage // Typed Bot API 10.2 rich content
+
+	// OnDelivered receives the Telegram message that actually carried this
+	// response in a private chat (send or edit). Handlers use it to remember a
+	// persistent message coordinate, e.g. the requester submission receipt card
+	// that later review outcomes must update in place.
+	OnDelivered func(*types.TelegramMessage)
 }
 
 // Keyboard represents an inline keyboard

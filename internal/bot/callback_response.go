@@ -94,22 +94,33 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 	}
 
 	if resp.Text != "" {
+		var delivered *types.TelegramMessage
 		if resp.DeleteMessage {
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
 				logger.Info("%s DeleteMessage error: %v", logPrefix, delErr)
 			}
-			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
+			sent, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
+			if sendErr != nil {
 				logger.Info("%s SendMessage error: %v", logPrefix, sendErr)
+			} else {
+				delivered = sent
 			}
 		} else if resp.Edit {
-			if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard); editErr != nil {
+			edited, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, parseMode, keyboard)
+			if editErr != nil {
 				logger.Info("%s EditMessage error: %v", logPrefix, editErr)
+			} else {
+				delivered = edited
 			}
 		} else {
-			if _, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard); sendErr != nil {
+			sent, sendErr := telegram.SendMessage(ctx.ChatID, resp.Text, parseMode, keyboard)
+			if sendErr != nil {
 				logger.Info("%s SendMessage error: %v", logPrefix, sendErr)
+			} else {
+				delivered = sent
 			}
 		}
+		notifyDelivered(resp, ctx, delivered)
 		return
 	}
 
@@ -118,6 +129,19 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 			logger.Info("%s EditMessageReplyMarkup error: %v", logPrefix, editErr)
 		}
 	}
+}
+
+// notifyDelivered reports the concrete Telegram message that carried a private
+// response back to the handler. Only real message coordinates are reported, so
+// handlers never persist an ephemeral or failed delivery as an editable card.
+func notifyDelivered(resp *callback.Response, ctx *callback.Context, delivered *types.TelegramMessage) {
+	if resp == nil || resp.OnDelivered == nil || ctx == nil {
+		return
+	}
+	if delivered == nil || delivered.MessageID == 0 || delivered.EphemeralMessageID != 0 {
+		return
+	}
+	resp.OnDelivered(delivered)
 }
 
 func isCommunityChat(chatType string) bool {

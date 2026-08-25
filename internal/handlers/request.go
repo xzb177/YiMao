@@ -378,7 +378,25 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		CallbackMsg: "请求已提交",
 		ShowAlert:   false,
 		Keyboard:    convertKeyboard(kb.Build()),
+		OnDelivered: h.rememberRequesterReceipt(review.RequestID),
 	}, nil
+}
+
+// rememberRequesterReceipt persists where the requester receipt card landed so
+// later review outcomes can edit that exact message instead of leaving the user
+// staring at「状态：等待管理员审核」forever.
+func (h *RequestHandler) rememberRequesterReceipt(requestID string) func(*types.TelegramMessage) {
+	if h == nil || h.reviewService == nil || requestID == "" {
+		return nil
+	}
+	return func(msg *types.TelegramMessage) {
+		if msg == nil || msg.Chat == nil {
+			return
+		}
+		if err := h.reviewService.SetRequesterReceipt(requestID, msg.Chat.ID, msg.MessageID); err != nil {
+			logger.Info("[求片] 记录申请人回执坐标失败 request=%s: %v", requestID, err)
+		}
+	}
 }
 
 // sendSeriesSuggestion 异步检查电影系列缺片，不阻塞求片回执。
@@ -726,6 +744,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		CallbackMsg: "请求已提交",
 		ShowAlert:   false,
 		Keyboard:    convertKeyboard(kb.Build()),
+		OnDelivered: h.rememberRequesterReceipt(review.RequestID),
 	}, nil
 }
 

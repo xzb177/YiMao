@@ -37,6 +37,12 @@ type ReviewRequest struct {
 	EmbyInfo        *EmbySearchResult `json:"emby_info,omitempty"`     // Emby media info if exists
 	ApproveToken    string            `json:"approve_token,omitempty"` // One-time token for approve action
 
+	// 申请人那条「求片已提交」确认卡的消息坐标（仅私聊中可长期编辑的消息）。
+	// 审核结果必须原地更新这张卡，否则用户端会一直停留在
+	// 「求片已提交 / 状态：等待管理员审核」，看不到已通过。
+	RequesterChatID       int64 `json:"requester_chat_id,omitempty"`
+	RequesterReceiptMsgID int64 `json:"requester_receipt_message_id,omitempty"`
+
 	// MoviePilot subscription info
 	SubscriptionID              int        `json:"subscription_id,omitempty"`                // MoviePilot subscription ID
 	SubscriptionState           string     `json:"subscription_state,omitempty"`             // N, R, S, D, C, F, X
