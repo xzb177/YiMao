@@ -449,3 +449,134 @@ func TestLayoutIsMobileFirstDenseAndMotionSafe(t *testing.T) {
 		"transition: none !important",
 	)
 }
+
+func TestHomeHeroIsPosterLedWithReadableScrim(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function heroMedia()",
+		"function heroArt()",
+		"function heroFeature()",
+		`class="hero-art"`,
+		`class="hero-art-fallback"`,
+		`class="hero-scrim"`,
+		`class="hero-kicker"`,
+		"刚刚入库",
+		"看看这部",
+		"求别的片",
+		".hero-scrim{position:absolute",
+		"--scrim-from:",
+	)
+	// The hero must reuse the real poster the dynamic endpoint already returns
+	// and only fall back to a gradient when no poster exists.
+	requireSource(t, html,
+		`const item=heroMedia(),art=item?poster(item):""`,
+		"art?`<img class=\"hero-art\"",
+	)
+	requireOrder(t, html,
+		"${heroArt()}",
+		`class="hero-scrim"`,
+		`class="context-line"`,
+		"${heroFeature()}",
+	)
+}
+
+func TestHomeUsesHorizontalPosterRailsForDiscovery(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function railCard(item,caption,wide)",
+		"function homeRequestRailSection()",
+		"function homeWashRailSection()",
+		"function washRailItems()",
+		`class="poster-rail"`,
+		`class="rail-art"`,
+		`class="rail-art-fallback"`,
+		`class="rail-empty"`,
+		"大家都在求片",
+		"洗版进行中",
+		"recent_requests",
+		".poster-rail{display:flex",
+		"scroll-snap-type:x mandatory",
+	)
+	// Rails come from real endpoint payloads, never fabricated media.
+	requireSource(t, html,
+		"(S.homeDynamic?.recent_requests||[]).filter(validDynamicMedia)",
+		`item?.business_type==="wash"`,
+	)
+	requireOrder(t, html,
+		"${homeTonightSection()}",
+		"${homeBlockerSection()}",
+		"${homeActiveSection()}",
+		"${homeRequestRailSection()}",
+		"${homeWashRailSection()}",
+		`class="home-section home-shortcuts"`,
+	)
+}
+
+func TestTasksUseNodeProgressStatusToneAndInlineTimeline(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"function taskTone(item)",
+		"function taskStageLabels(item)",
+		"function taskStageIndex(item)",
+		"function taskStageTone(item)",
+		"function taskTrack(item)",
+		"function taskPipeline(groups,total,selected)",
+		"function taskTimelineBlock(requestID)",
+		"function toggleTaskTimeline(element)",
+		"async function loadTaskTimeline(requestID)",
+		`class="task-pipeline"`,
+		`class="pipeline-stage`,
+		`class="task-track"`,
+		`class="track-nodes"`,
+		`class="track-labels"`,
+		`class="task-timeline"`,
+		`class="task-card tone-${tone}"`,
+		`class="task-state tone-${tone}"`,
+		"展开时间线",
+		"收起时间线",
+		".task-card.tone-pending{border-left-color:var(--warn)}",
+		".track-node.node-now{background:var(--accent)",
+	)
+	// Wash orders and requests get different, honest stage vocabularies.
+	requireSource(t, html,
+		`item?.business_type==="wash"?["创建","已批准","核验","完成"]:["提交","已批准","处理中","入库"]`,
+	)
+	// The inline timeline reuses the existing progress endpoint and its
+	// per-request race guards; it must not invent a second data source.
+	requireSource(t, html,
+		"const seq=++S.timelineSeq",
+		"seq!==S.timelineSeq||S.timelineOpen!==requestID",
+		`api('/api/miniapp/v1/progress?request_id='+encodeURIComponent(requestID))`,
+		"Array.isArray(data?.events)?data.events:[]",
+	)
+	// The dialog-based progress view stays available alongside the inline one.
+	requireSource(t, html, "查看进度", "function openProgressFromElement(element)")
+	rejectSource(t, html, `class="task-filters"`)
+}
+
+func TestMiniAppSkinFollowsTelegramThemeVariables(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"--tg-bg:var(--tg-theme-bg-color,",
+		"--tg-text:var(--tg-theme-text-color,",
+		"--tg-hint:var(--tg-theme-hint-color,",
+		"--tg-card:var(--tg-theme-secondary-bg-color,",
+		"--tg-btn:var(--tg-theme-button-color,",
+		"--tg-btn-ink:var(--tg-theme-button-text-color,",
+		"--ink:var(--tg-text)",
+		"--accent:var(--tg-btn)",
+		"background:var(--bg);color:var(--ink)",
+		"tg.themeParams?.bg_color",
+		"@supports not (color: color-mix(in srgb,#000 50%,transparent))",
+	)
+	// No hardcoded dark teal palette may remain.
+	rejectSource(t, html,
+		"#080e10",
+		"#111b1d",
+		"#172426",
+		"#8be0bd",
+		"#a4b4b1",
+		"radial-gradient(circle at 85% 0%,#163537",
+		`setHeaderColor?.('#0b0d10')`,
+	)
+}
