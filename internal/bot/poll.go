@@ -90,6 +90,12 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		MyRequests:      deps.MyRequests,
 		GameHandler:     deps.GameHandler,
 	}
+	// 去重 + 并发上限：Telegram 会在 offset 确认前重复投递同一条 update，
+	// 处理两次会造成重复回复/重复求片/重复扣配额；同时限制并发处理数，
+	// 避免一波更新打满下游 MoviePilot/TMDB/Emby 调用。
+	dedup := newUpdateDeduper(processedUpdateTTL)
+	updateSem := make(chan struct{}, maxUpdateWorkers)
+	go dedup.pruneProcessedUpdates(processedUpdatePruneInterval)
 
 	for {
 		time.Sleep(pollInterval)
@@ -107,45 +113,53 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 		logger.Info("[Poll] Received %d updates", len(updates))
 
-		for _, update := range updates {
-			// Update offset immediately to avoid reprocessing
-			if update.UpdateID > 0 {
-				offset = int(update.UpdateID + 1)
-			}
-
-			// Process update in goroutine to avoid blocking
-			update := update // Capture loop variable
-			go func() {
-				// Debug: log update type
-				if update.Message != nil {
-					if update.Message.Chat == nil {
-						logger.Info("[Poll] Update %d ignored: message has no chat", update.UpdateID)
-						return
-					}
-					if update.Message.CommunityChatAdded != nil {
-						community := update.Message.CommunityChatAdded.Community
-						logger.Info("[Community] Chat %d joined community id=%d name=%q", update.Message.Chat.ID, community.ID, community.Name)
-						return
-					}
-					if update.Message.CommunityChatRemoved != nil {
-						logger.Info("[Community] Chat %d left its community", update.Message.Chat.ID)
-						return
-					}
-					if update.Message.From == nil {
-						logger.Info("[Poll] Update %d ignored: message has no sender", update.UpdateID)
-						return
-					}
-					logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, validation.RedactSensitiveText(update.Message.Text))
-					HandlePollMessage(update.Message, pollDeps, cfg)
-				} else if update.CallbackQuery != nil {
-					logger.Info("[Poll] Update %d: Callback from %d", update.UpdateID, update.CallbackQuery.From.ID)
-					HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
-				} else {
-					logger.Info("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
-				}
-			}()
+		// offset 在整批 dispatch 完成后再推进：先推进会让处理中的 update 在
+		// 崩溃/重启后彻底丢失，而去重保证了重复投递不会被处理两次。
+		maxUpdateID := dispatchUpdates(updates, dedup, updateSem, nil, func(update types.TelegramUpdate) {
+			handlePollUpdate(update, pollDeps, registry, deps, cfg)
+		})
+		if maxUpdateID > 0 {
+			offset = int(maxUpdateID + 1)
 		}
 	}
+}
+
+// handlePollUpdate routes one Telegram update to the message or callback path.
+func handlePollUpdate(
+	update types.TelegramUpdate,
+	pollDeps *PollDeps,
+	registry *callback.Registry,
+	deps *Dependencies,
+	cfg *config.Config,
+) {
+	if update.Message != nil {
+		if update.Message.Chat == nil {
+			logger.Info("[Poll] Update %d ignored: message has no chat", update.UpdateID)
+			return
+		}
+		if update.Message.CommunityChatAdded != nil {
+			community := update.Message.CommunityChatAdded.Community
+			logger.Info("[Community] Chat %d joined community id=%d name=%q", update.Message.Chat.ID, community.ID, community.Name)
+			return
+		}
+		if update.Message.CommunityChatRemoved != nil {
+			logger.Info("[Community] Chat %d left its community", update.Message.Chat.ID)
+			return
+		}
+		if update.Message.From == nil {
+			logger.Info("[Poll] Update %d ignored: message has no sender", update.UpdateID)
+			return
+		}
+		logger.Info("[Poll] Update %d: Message from %d: %s", update.UpdateID, update.Message.From.ID, validation.RedactSensitiveText(update.Message.Text))
+		HandlePollMessage(update.Message, pollDeps, cfg)
+		return
+	}
+	if update.CallbackQuery != nil {
+		logger.Info("[Poll] Update %d: Callback from %d", update.UpdateID, update.CallbackQuery.From.ID)
+		HandleCallbackQuery(update.CallbackQuery, registry, deps.Telegram)
+		return
+	}
+	logger.Info("[Poll] Update %d: Empty update (no message or callback)", update.UpdateID)
 }
 
 // HandlePollMessage processes a message update (for polling)
