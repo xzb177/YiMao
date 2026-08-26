@@ -580,3 +580,40 @@ func TestMiniAppSkinFollowsTelegramThemeVariables(t *testing.T) {
 		`setHeaderColor?.('#0b0d10')`,
 	)
 }
+
+func TestHomeRailCaptionsStayInsideCards(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		`class="rail-card-body"`,
+		`class="rail-badge"`,
+		`.rail-card-body{display:grid`,
+		`.poster-rail::after{content:""`,
+		`text-overflow:ellipsis`,
+		`.app-dock button{width:auto`,
+		`justify-items:center`,
+		`--dock-clearance:calc(var(--dock-height) + var(--safe-bottom) + 28px)`,
+	)
+	// Captions belong inside each card cell so they scroll with the poster.
+	// A <figure> plus a sibling title track is what drifted apart on iOS.
+	requireSource(t, html,
+		`<span class="rail-card-body">`,
+		`<span class="rail-art">`,
+		`<strong>${esc(mediaTitle(item))}</strong>`,
+		`</span></button>`,
+	)
+	rejectSource(t, html,
+		`<figure class="rail-art">`,
+		`<figcaption>`,
+		`.rail-card{flex:0 0 118px;display:grid`,
+	)
+}
+
+func TestHomeTabBarDoesNotEatContent(t *testing.T) {
+	html := miniAppSource(t)
+	requireSource(t, html,
+		"padding-bottom: var(--dock-clearance)",
+		"--dock-clearance:calc(var(--dock-height) + var(--safe-bottom) + 28px)",
+		`.app-dock button[aria-current="page"]{background:var(--accent-soft)`,
+		"justify-items:center",
+	)
+}
