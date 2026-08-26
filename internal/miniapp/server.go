@@ -649,6 +649,10 @@ func publicReviewStatus(review *services.ReviewRequest) (string, string, string)
 	switch review.Status {
 	case "completed":
 		return "completed", "洗版完成", "done"
+	case services.WashStatusFailed:
+		// Terminal automatic failure. The user timeline must stop implying the
+		// work order is progressing; an administrator handles it manually.
+		return "wash_failed", "洗版待人工处理", "active"
 	case "approved", "claimed":
 		// claimed is internal admin-workbench state. Keep the user timeline
 		// stable and do not expose assignment implementation details.

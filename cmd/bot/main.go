@@ -446,6 +446,50 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			fmt.Sprintf("请求 %s，已重试 %d 次\n最后错误: %s\n请检查 MoviePilot 状态", requestID, retryCount, lastError),
 		)
 	}
+	// 超期待审核提醒：pending 超过阈值（默认 48h，REVIEW_OVERDUE_HOURS 可调）的求片
+	// 主动推给管理员。每条请求只提醒一次；投递失败返回 false，下一轮重试。
+	reviewService.OnOverdueReviews = func(overdue []*services.ReviewRequest, threshold time.Duration) bool {
+		if len(overdue) == 0 {
+			return true
+		}
+		adminIDs := adminService.GetAdminIDs()
+		if len(adminIDs) == 0 {
+			logger.Info("[ReviewService] 超期待审核提醒无管理员可通知，保持未提醒状态")
+			return false
+		}
+		msg := services.NewMessageBuilder()
+		msg.Bold(fmt.Sprintf("⏰ %d 条求片等待审核超过 %d 小时", len(overdue), int(threshold.Hours()))).Newline()
+		msg.Newline()
+		limit := len(overdue)
+		if limit > 10 {
+			limit = 10
+		}
+		now := time.Now()
+		for _, review := range overdue[:limit] {
+			icon := "🎬"
+			if review.MediaType == services.MediaTypeTV {
+				icon = "📺"
+			}
+			waited := int(now.Sub(review.CreatedAt).Hours() / 24)
+			msg.Textf("%s 《%s》· 已等 %d 天 · %s", icon, html.EscapeString(review.MediaTitle), waited, html.EscapeString(review.TelegramName)).Newline()
+		}
+		if len(overdue) > limit {
+			msg.Textf("… 另有 %d 条", len(overdue)-limit).Newline()
+		}
+		msg.Newline()
+		msg.Text("批准或拒绝仍由你决定，点下面按钮查看待审核列表。")
+		kb := services.NewKeyboardBuilder()
+		kb.AddButton("📋 待审核列表", "review_list")
+		delivered := false
+		for _, adminID := range adminIDs {
+			if _, err := telegramClient.SendMessage(adminID, msg.Build(), "HTML", kb.Build()); err != nil {
+				logger.Info("[ReviewService] 超期待审核提醒发送失败: admin=%d err=%v", adminID, err)
+				continue
+			}
+			delivered = true
+		}
+		return delivered
+	}
 	// 每日汇总回调
 	reviewService.OnDailySummary = func(telegramID int64, message string) {
 		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
@@ -975,7 +1019,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 func registerReviewCallbacks(registry *callback.Registry, reviewHandler *handlers.ReviewHandler) {
 	for _, action := range []callback.Action{
 		"review_approve", "review_reject", "review_cancel",
-		"review_complete_wash", "review_claim_wash", "review_release_wash", "review_retry_wash", "review_detail_wash",
+		"review_complete_wash", "review_claim_wash", "review_release_wash", "review_reopen_wash", "review_retry_wash", "review_detail_wash",
 		"my_reviews", "review_list", "rv_a", "rv_r",
 	} {
 		registry.RegisterFunc(action, reviewHandler.Handle)

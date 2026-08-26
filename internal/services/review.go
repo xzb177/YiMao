@@ -43,6 +43,10 @@ type ReviewRequest struct {
 	RequesterChatID       int64 `json:"requester_chat_id,omitempty"`
 	RequesterReceiptMsgID int64 `json:"requester_receipt_message_id,omitempty"`
 
+	// OverdueRemindedAt 超期待审核提醒已发送时间；一条请求只提醒一次，
+	// 避免管理员被同一条求片反复刷屏。
+	OverdueRemindedAt *time.Time `json:"overdue_reminded_at,omitempty"`
+
 	// MoviePilot subscription info
 	SubscriptionID              int        `json:"subscription_id,omitempty"`                // MoviePilot subscription ID
 	SubscriptionState           string     `json:"subscription_state,omitempty"`             // N, R, S, D, C, F, X
@@ -157,6 +161,12 @@ type ReviewService struct {
 	// OnDailySummary 每日汇总回调（由 main 注入）。
 	// 参数：用户 ID, 格式化后的汇总消息。
 	OnDailySummary func(telegramID int64, message string)
+
+	// OnOverdueReviews 超期待审核提醒回调（由 main 注入）。
+	// 参数：按创建时间升序的超期 pending 请求、判定阈值。
+	// 返回 true 表示已送达，服务据此持久化「已提醒」标记（每条只提醒一次）；
+	// 返回 false 表示投递失败，下一轮扫描会重试。
+	OnOverdueReviews func(overdue []*ReviewRequest, threshold time.Duration) bool
 }
 
 // DailyCompletion 记录一条完成的订阅。
@@ -182,6 +192,9 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 
 	service.load()
 	service.loadNotifiedSubs()
+	// 历史洗版工单在自动核验上限落地之前写入，可能永远停在 approved 并被每次
+	// 入库事件反复重试。启动时一次性转入终态 failed，仍保留记录供人工处理。
+	service.terminateExhaustedWashOrders()
 	service.dailySummaryHour = getDailySummaryHour() // 默认 21:00，可通过 DAILY_SUMMARY_HOUR 环境变量配置
 	service.dailySummaryMin = 0
 
@@ -202,6 +215,16 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 			}
 		}()
 		service.dailySummaryRoutine()
+	}()
+	// 超期待审核提醒：启动后延迟一轮再扫，等 main 注入回调完成。
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				logger.Error("[ReviewService] overdue review reminder panic: %v", r)
+			}
+		}()
+		time.Sleep(reviewOverdueStartupDelay)
+		service.remindOverduePendingReviews()
 	}()
 
 	return service
@@ -1383,6 +1406,7 @@ func (s *ReviewService) cleanupRoutine() {
 				}
 			}()
 			s.sendWatchFollowups()
+			s.remindOverduePendingReviews()
 			s.cleanup()
 		}()
 	}

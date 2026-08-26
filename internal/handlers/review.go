@@ -158,6 +158,8 @@ func (h *ReviewHandler) handlerFor(action callback.Action) callback.HandlerFunc 
 		return h.handleClaimWash
 	case "review_release_wash":
 		return h.handleReleaseWash
+	case "review_reopen_wash":
+		return h.handleReopenWash
 	case "review_retry_wash":
 		return h.handleRetryWash
 	case "review_detail_wash":
@@ -689,6 +691,23 @@ func (h *ReviewHandler) handleReleaseWash(ctx *callback.Context) (*callback.Resp
 	return h.renderWashDetail(review, true), nil
 }
 
+// handleReopenWash returns a terminal-failed wash work order to the queue after
+// an administrator confirmed the underlying problem is fixed.
+func (h *ReviewHandler) handleReopenWash(ctx *callback.Context) (*callback.Response, error) {
+	if !h.adminService.IsAdmin(ctx.UserID) {
+		return &callback.Response{CallbackMsg: "无权限", ShowAlert: true}, nil
+	}
+	_, requestID, err := h.washFromContext(ctx)
+	if err != nil {
+		return &callback.Response{Text: err.Error(), CallbackMsg: "无效工单", ShowAlert: true}, nil
+	}
+	review, err := h.reviewService.ReopenWash(requestID, ctx.UserID)
+	if err != nil {
+		return &callback.Response{Text: "重开失败：" + err.Error(), CallbackMsg: "重开失败", ShowAlert: true}, nil
+	}
+	return h.renderWashDetail(review, true), nil
+}
+
 func (h *ReviewHandler) handleRetryWash(ctx *callback.Context) (*callback.Response, error) {
 	return h.handleCompleteWash(ctx)
 }
@@ -752,6 +771,11 @@ func (h *ReviewHandler) renderWashDetail(review *services.ReviewRequest, edit bo
 	}
 	if review.Status == "claimed" && review.WashLastError != "" {
 		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🔁 重新核验", CallbackData: callback.BuildCallback("review_retry_wash", ref)}})
+	}
+	if review.Status == services.WashStatusFailed {
+		// Terminal failure stays visible in the workbench. Reopening is an
+		// explicit administrator decision, never an automatic retry.
+		keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{{Text: "🔄 重开工单（人工确认后）", CallbackData: callback.BuildCallback("review_reopen_wash", ref)}})
 	}
 	return &callback.Response{Text: text, Edit: edit, Keyboard: keyboard}
 }
