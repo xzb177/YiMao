@@ -1,7 +1,10 @@
 package richmessage
 
 import (
+	"bytes"
 	"encoding/json"
+	"image"
+	_ "image/png"
 	"strings"
 	"testing"
 )
@@ -71,4 +74,26 @@ func TestPlaybillProgressMatchesMockupB(t *testing.T) {
 	if strings.Contains(md, "求片进度") {
 		t.Fatalf("single title must not use 求片进度 as H1: %q", md)
 	}
+}
+
+func TestWelcomeHeroPNGDecodes(t *testing.T) {
+	data := WelcomeHeroPNG()
+	if len(data) < 24 {
+		t.Fatalf("hero too small: %d", len(data))
+	}
+	if data[0] != 0x89 || string(data[1:4]) != "PNG" {
+		t.Fatalf("not a PNG signature: %x", data[:8])
+	}
+	img, format, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("image.Decode: %v", err)
+	}
+	if format != "png" {
+		t.Fatalf("format=%s", format)
+	}
+	b := img.Bounds()
+	if b.Dx() < 640 || b.Dy() < 360 {
+		t.Fatalf("dims=%dx%d", b.Dx(), b.Dy())
+	}
+	t.Logf("image.Decode ok format=%s size=%dx%d bytes=%d", format, b.Dx(), b.Dy(), len(data))
 }

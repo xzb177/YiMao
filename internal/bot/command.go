@@ -516,6 +516,16 @@ func DeliverWelcome(telegram *services.TelegramClient, chatID int64, userName st
 	} else {
 		logger.Info("[Command] Welcome sendPhoto failed: %v", err)
 	}
+	stripped := richmessage.WithoutHero(input)
+	if _, err := telegram.SendStructuredRichMessage(chatID, stripped, nil); err == nil {
+		return
+	} else {
+		logger.Info("[Command] Welcome sendRichMessage without hero failed: %v", err)
+	}
+	keyboard := richmessage.WelcomeInlineKeyboard()
+	if _, err := telegram.SendMessage(chatID, richmessage.WelcomeCaption(), "", keyboard); err != nil {
+		logger.Info("[Command] Welcome text fallback failed: %v", err)
+	}
 }
 
 // SendHelpMessage sends the help message
