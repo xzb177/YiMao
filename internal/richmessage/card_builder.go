@@ -55,8 +55,19 @@ type SubscriptionStatus struct {
 	Progress int    `json:"progress"` // 0-100
 }
 
+// WelcomeOptions extra rows fused into the 10.3 welcome card.
+type WelcomeOptions struct {
+	IsAdmin    bool
+	MiniAppURL string
+}
+
 // BuildWelcomeMessage builds the Rich Message welcome page for /start.
 func BuildWelcomeMessage(userName string) RichMessage {
+	return BuildWelcomeCard(userName, WelcomeOptions{})
+}
+
+// BuildWelcomeCard fuses 10.3 RichTextButton + InputRichBlockButtons into the message.
+func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 	b := newBlockBuilder()
 	heading := "云海求片"
 	if strings.TrimSpace(userName) != "" {
@@ -64,13 +75,43 @@ func BuildWelcomeMessage(userName string) RichMessage {
 	}
 	b.heading(heading, 3)
 	b.bold("想看的，交给云海")
-	b.paragraph("搜索求片 · 直接发片名")
-	b.paragraph("求片进度 · 提交后可查")
-	b.paragraph("游戏中心 · 闲时玩玩")
+	search := richButton("搜索求片", "search:menu", "primary", false)
+	b.paragraphParts(richTextButton(search), " · 直接发片名")
 	b.buttonRow(
-		richButton("搜索求片", "search:menu", "primary", false),
+		search,
 		richButton("求片进度", "requests", "", false),
-		richButton("游戏中心", "game", "", false),
+		richButton("游戏中心", "game_menu", "", false),
+	)
+	b.buttonRow(
+		richButton("洗版", "wash", "primary", false),
+		richButton("遇到问题", "issue", "", false),
+		richButton("我的进度", "start_requests", "", false),
+	)
+	b.buttonRow(
+		richButton("许愿池", "start_wish", "", false),
+		richButton("大家最近在求", "request_heat", "", false),
+	)
+	b.buttonRow(
+		richButton("设置", "start_settings", "", false),
+		richButton("帮助", "help", "", false),
+	)
+	if opt.IsAdmin {
+		b.buttonRow(richButton("管理", "admin_menu", "", false))
+	}
+	if u := strings.TrimSpace(opt.MiniAppURL); u != "" {
+		b.buttonRow(richWebAppButton("打开云海小程序", u, ""))
+	}
+	return b.card().Rich()
+}
+
+// BuildSearchPromptCard is the 10.3 search prompt after tapping 搜索求片.
+func BuildSearchPromptCard() RichMessage {
+	b := newBlockBuilder()
+	b.heading("搜索求片", 3)
+	b.paragraph("把片名发给我就行。中英文、电影剧集都能搜。")
+	b.buttonRow(
+		richButton("历史记录", "search_history_menu", "", false),
+		richButton("主菜单", "start", "", false),
 	)
 	return b.card().Rich()
 }

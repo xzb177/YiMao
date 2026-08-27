@@ -131,10 +131,12 @@ func (h *GameHandler) handleRoulette(ctx *callback.Context) (*callback.Response,
 
 func (h *GameHandler) handleMenu(ctx *callback.Context) (*callback.Response, error) {
 	card := richmessage.BuildGameCenterCard()
-
+	in := card.Input()
+	richmessage.AppendKeyboardAsButtons(in, services.BuildGameCenterKeyboard())
 	return &callback.Response{
-		RichMessage: card.Markdown,
-		Keyboard:    convertKeyboard(services.BuildGameCenterKeyboard()),
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: in,
 	}, nil
 }
 

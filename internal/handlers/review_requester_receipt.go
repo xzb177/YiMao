@@ -11,9 +11,6 @@ import (
 	"github.com/xzb177/yimao/pkg/types"
 )
 
-// requesterReceiptTitle renders the media title line used on the requester's
-// submission receipt card.
-
 func reviewPosterURL(review *services.ReviewRequest) string {
 	if review == nil {
 		return ""
@@ -30,12 +27,8 @@ func reviewPosterURL(review *services.ReviewRequest) string {
 	}
 	return "https://image.tmdb.org/t/p/w500" + path
 }
-
 func requesterReceiptCard(review *services.ReviewRequest, status, footer string) richmessage.Card {
-	mediaType := ""
-	season := 0
-	year := 0
-	title := ""
+	mediaType, season, year, title := "", 0, 0, ""
 	if review != nil {
 		mediaType = string(review.MediaType)
 		season = review.Season
@@ -47,41 +40,26 @@ func requesterReceiptCard(review *services.ReviewRequest, status, footer string)
 
 func requesterReceiptResponse(review *services.ReviewRequest, status, footer string, delivered func(*types.TelegramMessage)) *callback.Response {
 	card := requesterReceiptCard(review, status, footer)
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("求片进度", "requests")
-	kb.AddButton("主菜单", "start")
 	return &callback.Response{
-		Text:                  card.Markdown,
-		RichMessage:           card.Markdown,
-		StructuredRichMessage: card.Input(),
-		Keyboard:              convertKeyboard(kb.Build()),
-		CallbackMsg:           status,
-		OnDelivered:           delivered,
+		Text: card.Markdown, RichMessage: card.Markdown, StructuredRichMessage: card.Input(), CallbackMsg: status, OnDelivered: delivered,
 	}
 }
 
 func requesterReceiptTitle(review *services.ReviewRequest) string {
-	icon := "🎬"
-	if review.MediaType == services.MediaTypeTV {
-		icon = "📺"
-	}
-	title := fmt.Sprintf("%s 《%s》", icon, review.MediaTitle)
+	title := review.MediaTitle
 	if review.MediaYear > 0 {
 		title += fmt.Sprintf(" (%d)", review.MediaYear)
 	}
 	if review.MediaType == services.MediaTypeTV && review.Season > 0 {
-		title += fmt.Sprintf(" · 第 %d 季", review.Season)
+		title += fmt.Sprintf(" S%d", review.Season)
 	}
 	return title
 }
 
-// buildRequesterReceiptText renders the requester receipt card for a concrete
-// review outcome. The status line replaces「等待管理员审核」so the requester's
-// original card can never keep claiming the request is still pending.
 func buildRequesterReceiptText(review *services.ReviewRequest, headline, statusLine, footer string) string {
 	text := fmt.Sprintf("%s\n\n%s", headline, requesterReceiptTitle(review))
 	if statusLine != "" {
-		text += "\n📋 状态：" + statusLine
+		text += "\n状态：" + statusLine
 	}
 	if footer != "" {
 		text += "\n\n" + footer
@@ -89,7 +67,6 @@ func buildRequesterReceiptText(review *services.ReviewRequest, headline, statusL
 	return text
 }
 
-// updateRequesterReceipt edits the requester original submission receipt in place.
 func (h *ReviewHandler) updateRequesterReceipt(review *services.ReviewRequest, headline, statusLine, footer string) {
 	if h == nil || h.telegram == nil || review == nil {
 		return
@@ -103,11 +80,8 @@ func (h *ReviewHandler) updateRequesterReceipt(review *services.ReviewRequest, h
 		status = strings.TrimSpace(headline)
 	}
 	card := requesterReceiptCard(review, status, footer)
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("求片进度", "requests")
-	kb.AddButton("主菜单", "start")
-	keyboard := kb.Build()
 	input := card.Input()
+	var keyboard *types.TelegramInlineKeyboard
 	if review.RequesterReceiptEphemeralID != 0 {
 		if err := h.telegram.EditEphemeralRichMessage(review.RequesterChatID, review.TelegramID, review.RequesterReceiptEphemeralID, input, keyboard); err != nil {
 			if err2 := h.telegram.EditEphemeralMessageText(review.RequesterChatID, review.TelegramID, review.RequesterReceiptEphemeralID, card.Markdown, "", keyboard); err2 != nil {

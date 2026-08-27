@@ -289,6 +289,7 @@ type Response struct {
 // Keyboard represents an inline keyboard
 type Keyboard struct {
 	InlineKeyboard [][]Button `json:"inline_keyboard"`
+	ForceReply     bool       `json:"force_reply,omitempty"`
 }
 
 // Button represents a keyboard button

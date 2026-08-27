@@ -149,6 +149,25 @@ func (b *blockBuilder) expandable(title, body string) *blockBuilder {
 	return b
 }
 
+func (b *blockBuilder) paragraphParts(parts ...interface{}) *blockBuilder {
+	if len(parts) == 0 {
+		return b
+	}
+	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "paragraph", Text: parts})
+	for _, part := range parts {
+		switch v := part.(type) {
+		case string:
+			b.md.WriteString(escapeMarkdownInline(v))
+		case map[string]interface{}:
+			if btn, ok := v["button"].(types.TelegramRichMessageButton); ok {
+				b.md.WriteString(escapeMarkdownInline(fmt.Sprint(btn.Text)))
+			}
+		}
+	}
+	b.md.WriteString("\n\n")
+	return b
+}
+
 func (b *blockBuilder) buttonRow(buttons ...types.TelegramRichMessageButton) *blockBuilder {
 	clean := make([]types.TelegramRichMessageButton, 0, len(buttons))
 	for _, btn := range buttons {
@@ -161,6 +180,13 @@ func (b *blockBuilder) buttonRow(buttons ...types.TelegramRichMessageButton) *bl
 		return b
 	}
 	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "buttons", Align: "left", Buttons: clean})
+	for i, btn := range clean {
+		if i > 0 {
+			b.md.WriteString(" · ")
+		}
+		b.md.WriteString(escapeMarkdownInline(fmt.Sprint(btn.Text)))
+	}
+	b.md.WriteString("\n\n")
 	return b
 }
 
@@ -175,6 +201,9 @@ func (b *blockBuilder) card() Card {
 }
 
 func richButton(text, callback, style string, disabled bool) types.TelegramRichMessageButton {
+	if style == "" && isPrimaryActionLabel(text) {
+		style = "primary"
+	}
 	btn := types.TelegramRichMessageButton{Text: text, Style: style}
 	if disabled {
 		btn.Disabled = types.DisabledButtonValue()
@@ -182,4 +211,46 @@ func richButton(text, callback, style string, disabled bool) types.TelegramRichM
 		btn.CallbackData = callback
 	}
 	return btn
+}
+
+func richTextButton(btn types.TelegramRichMessageButton) map[string]interface{} {
+	return map[string]interface{}{"type": "button", "button": btn}
+}
+
+func richWebAppButton(text, url, style string) types.TelegramRichMessageButton {
+	return types.TelegramRichMessageButton{Text: text, Style: style, WebApp: &types.TelegramWebAppInfo{URL: url}}
+}
+
+func isPrimaryActionLabel(text string) bool {
+	return strings.Contains(text, "搜索求片") || strings.Contains(text, "洗版") || text == "求片" || strings.Contains(text, "立即求片")
+}
+
+// AppendKeyboardAsButtons moves a leftover inline keyboard into InputRichBlockButtons.
+func AppendKeyboardAsButtons(rich *types.TelegramInputRichMessage, kb *types.TelegramInlineKeyboard) {
+	if rich == nil || kb == nil {
+		return
+	}
+	for _, row := range kb.InlineKeyboard {
+		btns := make([]types.TelegramRichMessageButton, 0, len(row))
+		for _, src := range row {
+			style := src.Style
+			if style == "" && isPrimaryActionLabel(src.Text) {
+				style = "primary"
+			}
+			btn := types.TelegramRichMessageButton{Text: src.Text, Style: style, CallbackData: src.CallbackData, URL: src.URL, WebApp: src.WebApp, Disabled: src.Disabled}
+			btns = append(btns, btn)
+		}
+		if len(btns) == 0 {
+			continue
+		}
+		rich.Blocks = append(rich.Blocks, types.TelegramInputRichBlock{Type: "buttons", Align: "left", Buttons: btns})
+	}
+	if len(rich.Blocks) == 0 {
+		return
+	}
+	if strings.TrimSpace(rich.Markdown) != "" {
+		rich.Blocks = append([]types.TelegramInputRichBlock{{Type: "paragraph", Text: rich.Markdown}}, rich.Blocks...)
+		rich.Markdown = ""
+	}
+	rich.HTML = ""
 }

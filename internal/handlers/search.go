@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	searchsvc "github.com/xzb177/yimao/internal/services/search"
 	"github.com/xzb177/yimao/internal/session"
@@ -247,25 +248,13 @@ func (h *SearchHandler) handleSearchQueryPage(userID int64, chatID int64, query 
 }
 
 func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜索求片").Newline()
-	msg.Newline()
-	msg.Text("把片名发给我就行").Newline()
-	msg.Newline()
-	msg.Text("中英文、电影剧集都能搜").Newline()
-	msg.Newline()
-	msg.Italic("💡 直接发片名，不用加命令")
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📊 历史记录", "search_history_menu")
-	kb.NewRow()
-	kb.AddButton("🏠 主菜单", "start")
-
+	card := richmessage.BuildSearchPromptCard()
 	return &callback.Response{
-		Text:      msg.Build(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  true,
+		Keyboard:              &callback.Keyboard{ForceReply: true},
 	}, nil
 }
 
@@ -361,12 +350,18 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 	if ctx.ChatType == "private" {
 		rich = buildVisualSearchMessage(query, page, results.Results, statuses)
 	}
-	return &callback.Response{
+	tkb := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
+	resp := &callback.Response{
 		Text:                  buildSearchResultsText(query, page, results.Results),
 		StructuredRichMessage: rich,
-		Keyboard:              convertKeyboard(buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)),
 		CallbackMsg:           fmt.Sprintf("第 %d 页", page),
-	}, nil
+	}
+	if rich != nil {
+		richmessage.AppendKeyboardAsButtons(rich, tkb)
+	} else {
+		resp.Keyboard = convertKeyboard(tkb)
+	}
+	return resp, nil
 }
 
 func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*callback.Response, error) {
@@ -599,7 +594,8 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 		intent, _ := h.sessMgr.GetOrCreate(userID).GetString("media_search_intent")
 		if intent != "wash" {
 			if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
-				if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, keyboard); err == nil {
+				richmessage.AppendKeyboardAsButtons(rich, keyboard)
+				if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, nil); err == nil {
 					return
 				} else {
 					logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)

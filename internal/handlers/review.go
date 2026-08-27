@@ -555,9 +555,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			MediaIcon:  mediaIcon,
 			SeasonText: seasonText,
 		})
-		approveKb := services.NewKeyboardBuilder()
-		approveKb.AddButton("📍 查看求片进度", "my_requests")
-		_, requesterNotifyErr = h.telegram.SendStructuredRichMessage(review.TelegramID, approveCard.Input(), approveKb.Build())
+		_, requesterNotifyErr = h.telegram.SendStructuredRichMessage(review.TelegramID, approveCard.Input(), nil)
 		if requesterNotifyErr != nil {
 			logger.Warn("[ReviewHandler] 求片批准私聊通知发送失败 user=%d: %v", review.TelegramID, requesterNotifyErr)
 		}
@@ -860,9 +858,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		rejectMediaIcon = "📺"
 	}
 	rejectCard := richmessage.BuildReviewRejectedCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
-	rejectKb := services.NewKeyboardBuilder()
-	rejectKb.AddButton("🏠 主菜单", "start")
-	_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, rejectCard.Input(), rejectKb.Build())
+	_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, rejectCard.Input(), nil)
 	h.updateRequesterReceipt(review, "", richmessage.StatusRejected, "配额已退还，可换片名再试。")
 
 	// 通知其他管理员：此请求已被处理

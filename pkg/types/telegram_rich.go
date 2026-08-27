@@ -49,13 +49,20 @@ type TelegramRichTableCell struct {
 }
 
 // TelegramRichMessageButton is Bot API 10.3 RichMessageButton.
+type TelegramCopyTextButton struct {
+	Text string `json:"text"`
+}
+
 type TelegramRichMessageButton struct {
-	Text         interface{}             `json:"text"`
-	Style        string                  `json:"style,omitempty"`
-	CallbackData string                  `json:"callback_data,omitempty"`
-	URL          string                  `json:"url,omitempty"`
-	WebApp       *TelegramWebAppInfo     `json:"web_app,omitempty"`
-	Disabled     *TelegramDisabledButton `json:"disabled,omitempty"`
+	Text                         interface{}             `json:"text"`
+	Style                        string                  `json:"style,omitempty"`
+	CallbackData                 string                  `json:"callback_data,omitempty"`
+	URL                          string                  `json:"url,omitempty"`
+	WebApp                       *TelegramWebAppInfo     `json:"web_app,omitempty"`
+	SwitchInlineQuery            string                  `json:"switch_inline_query,omitempty"`
+	SwitchInlineQueryCurrentChat string                  `json:"switch_inline_query_current_chat,omitempty"`
+	CopyText                     *TelegramCopyTextButton `json:"copy_text,omitempty"`
+	Disabled                     *TelegramDisabledButton `json:"disabled,omitempty"`
 }
 
 type TelegramInputMediaDocument struct {

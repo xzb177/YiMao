@@ -77,7 +77,8 @@ type TelegramPhotoSize struct {
 
 // TelegramInlineKeyboard represents an inline keyboard markup
 type TelegramInlineKeyboard struct {
-	InlineKeyboard [][]TelegramInlineKeyboardButton `json:"inline_keyboard"`
+	InlineKeyboard [][]TelegramInlineKeyboardButton `json:"inline_keyboard,omitempty"`
+	ForceReply     bool                             `json:"force_reply,omitempty"`
 }
 
 // TelegramInlineKeyboardButton represents a button

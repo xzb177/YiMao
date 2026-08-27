@@ -300,41 +300,28 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		}
 	}
 
-	richMsg := richmessage.BuildWelcomeMessage(userName)
-
-	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
-
-	// Check if user is admin to add admin menu button
 	isAdmin := false
 	if h.adminService != nil {
 		isAdmin = h.adminService.IsAdmin(ctx.UserID)
 	}
-
-	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
-
+	richMsg := richmessage.BuildWelcomeCard(userName, richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
+	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
 	return &callback.Response{
 		Text:                  baseMsg,
 		RichMessage:           richMsg.Markdown,
 		StructuredRichMessage: richMsg.Input(),
 		Edit:                  true,
-		Keyboard:              convertKeyboard(keyboard),
 	}, nil
 }
 
 func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("🔍 搜索求片").Newline()
-	msg.Newline()
-	msg.Text("把片名发给我就行").Newline()
-	msg.Newline()
-	msg.Text("中英文、电影剧集都能搜").Newline()
-	msg.Newline()
-	msg.Italic("💡 直接发片名，不用加命令")
-
+	card := richmessage.BuildSearchPromptCard()
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: &callback.Keyboard{},
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  true,
+		Keyboard:              &callback.Keyboard{ForceReply: true},
 	}, nil
 }
 
