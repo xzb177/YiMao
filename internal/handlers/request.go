@@ -393,7 +393,13 @@ func (h *RequestHandler) rememberRequesterReceipt(requestID string) func(*types.
 		if msg == nil || msg.Chat == nil {
 			return
 		}
-		if err := h.reviewService.SetRequesterReceipt(requestID, msg.Chat.ID, msg.MessageID); err != nil {
+		var err error
+		if msg.EphemeralMessageID != 0 {
+			err = h.reviewService.SetRequesterEphemeralReceipt(requestID, msg.Chat.ID, msg.EphemeralMessageID)
+		} else {
+			err = h.reviewService.SetRequesterReceipt(requestID, msg.Chat.ID, msg.MessageID)
+		}
+		if err != nil {
 			logger.Info("[求片] 记录申请人回执坐标失败 request=%s: %v", requestID, err)
 		}
 	}

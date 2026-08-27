@@ -45,7 +45,7 @@ func (h *ReviewHandler) updateRequesterReceipt(review *services.ReviewRequest, h
 	if h == nil || h.telegram == nil || review == nil {
 		return
 	}
-	if review.RequesterChatID == 0 || review.RequesterReceiptMsgID == 0 {
+	if review.RequesterChatID == 0 || (review.RequesterReceiptMsgID == 0 && review.RequesterReceiptEphemeralID == 0) {
 		logger.Info("[ReviewHandler] 无申请人回执坐标，跳过原消息更新: request=%s user=%d", review.RequestID, review.TelegramID)
 		return
 	}
@@ -53,7 +53,14 @@ func (h *ReviewHandler) updateRequesterReceipt(review *services.ReviewRequest, h
 	kb.AddButton("📊 求片进度", "requests")
 	kb.AddButton("🏠 主菜单", "start")
 	text := buildRequesterReceiptText(review, headline, statusLine, footer)
-	// Plain text keeps titles safe without escaping; the receipt has no markup.
+	if review.RequesterReceiptEphemeralID != 0 {
+		if err := h.telegram.EditEphemeralMessageText(review.RequesterChatID, review.TelegramID, review.RequesterReceiptEphemeralID, text, "", kb.Build()); err != nil {
+			logger.Warn("[ReviewHandler] 申请人回执更新失败 chat=%d ephemeral=%d: %v", review.RequesterChatID, review.RequesterReceiptEphemeralID, err)
+			return
+		}
+		logger.Info("[ReviewHandler] 已更新申请人回执: request=%s chat=%d ephemeral=%d", review.RequestID, review.RequesterChatID, review.RequesterReceiptEphemeralID)
+		return
+	}
 	if _, err := h.telegram.EditMessage(review.RequesterChatID, review.RequesterReceiptMsgID, text, "", kb.Build()); err != nil {
 		logger.Warn("[ReviewHandler] 申请人回执更新失败 chat=%d message=%d: %v", review.RequesterChatID, review.RequesterReceiptMsgID, err)
 		return

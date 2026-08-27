@@ -26,21 +26,29 @@ func newUserScopedSender(telegram *services.TelegramClient, chatID, userID int64
 	}
 }
 
-func (s *userScopedSender) SendMessage(text, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+func (s *userScopedSender) ephemeralOptions() []*types.TelegramSendOptions {
 	if !s.group {
-		return s.telegram.SendMessage(s.chatID, text, parseMode, keyboard)
+		return nil
 	}
-	return s.telegram.SendMessage(s.chatID, text, parseMode, keyboard, &types.TelegramSendOptions{ReceiverUserID: s.userID})
+	return []*types.TelegramSendOptions{{ReceiverUserID: s.userID}}
 }
 
-// SendRichMessage preserves Rich Message in private chats. Bot API 10.2 does
-// not document ephemeral sendRichMessage, so groups receive a Markdown
-// sendMessage fallback, then plain text if Telegram rejects the Markdown.
+func (s *userScopedSender) SendMessage(text, parseMode string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	return s.telegram.SendMessage(s.chatID, text, parseMode, keyboard, s.ephemeralOptions()...)
+}
+
+// SendRichMessage preserves Rich Message in private chats and, on Bot API 10.3,
+// in group-private ephemeral cards. Groups still fall back to Markdown text
+// if sendRichMessage is rejected.
 func (s *userScopedSender) SendRichMessage(markdown string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
-	if !s.group {
-		return s.telegram.SendRichMessage(s.chatID, markdown, keyboard)
+	msg, err := s.telegram.SendRichMessage(s.chatID, markdown, keyboard, s.ephemeralOptions()...)
+	if err == nil {
+		return msg, nil
 	}
-	msg, err := s.SendMessage(markdown, "Markdown", keyboard)
+	if !s.group {
+		return nil, err
+	}
+	msg, err = s.SendMessage(markdown, "Markdown", keyboard)
 	if err == nil {
 		return msg, nil
 	}
@@ -48,8 +56,12 @@ func (s *userScopedSender) SendRichMessage(markdown string, keyboard *types.Tele
 }
 
 func (s *userScopedSender) SendStructuredRichMessage(rich *types.TelegramInputRichMessage, fallbackText string, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	msg, err := s.telegram.SendStructuredRichMessage(s.chatID, rich, keyboard, s.ephemeralOptions()...)
+	if err == nil {
+		return msg, nil
+	}
 	if !s.group {
-		return s.telegram.SendStructuredRichMessage(s.chatID, rich, keyboard)
+		return nil, err
 	}
 	if strings.TrimSpace(fallbackText) == "" {
 		fallbackText = "当前内容请在私聊中查看"

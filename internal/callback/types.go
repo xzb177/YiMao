@@ -299,6 +299,8 @@ type Button struct {
 	WebApp       *types.TelegramWebAppInfo `json:"web_app,omitempty"`
 	// Style is an optional Telegram button style: primary, success or danger.
 	Style string `json:"style,omitempty"`
+	// Disabled is Bot API 10.3: the button is shown but does nothing.
+	Disabled bool `json:"disabled,omitempty"`
 }
 
 // Parser parses and formats callback data

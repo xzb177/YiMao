@@ -132,13 +132,16 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 }
 
 // notifyDelivered reports the concrete Telegram message that carried a private
-// response back to the handler. Only real message coordinates are reported, so
-// handlers never persist an ephemeral or failed delivery as an editable card.
+// response back to the handler. Ordinary and ephemeral coordinates are both
+// reported so Bot API 10.3 editEphemeralMessage* can update group receipts.
 func notifyDelivered(resp *callback.Response, ctx *callback.Context, delivered *types.TelegramMessage) {
 	if resp == nil || resp.OnDelivered == nil || ctx == nil {
 		return
 	}
-	if delivered == nil || delivered.MessageID == 0 || delivered.EphemeralMessageID != 0 {
+	if delivered == nil || delivered.Chat == nil {
+		return
+	}
+	if delivered.MessageID == 0 && delivered.EphemeralMessageID == 0 {
 		return
 	}
 	resp.OnDelivered(delivered)
@@ -198,7 +201,7 @@ func renderCommunityCallbackResponse(logPrefix string, ctx *callback.Context, re
 				logger.Info("%s Ephemeral media edit failed; trying private photo send: %v", logPrefix, err)
 			}
 		}
-		options := &types.TelegramSendOptions{ReceiverUserID: ctx.UserID, CallbackQueryID: ctx.CallbackID, MessageThreadID: ctx.MessageThreadID}
+		options := communitySendOptions(ctx, ctx.EphemeralMessageID == 0)
 		if _, err := telegram.SendPhotoWithParseMode(ctx.ChatID, resp.Photo, caption, parseMode, keyboard, options); err == nil {
 			if ctx.EphemeralMessageID != 0 {
 				_ = telegram.DeleteEphemeralMessage(ctx.ChatID, ctx.UserID, ctx.EphemeralMessageID)
@@ -218,18 +221,75 @@ func renderCommunityCallbackResponse(logPrefix string, ctx *callback.Context, re
 		return
 	}
 	if ctx.EphemeralMessageID != 0 {
+		if resp.StructuredRichMessage != nil {
+			if err := telegram.EditEphemeralRichMessage(ctx.ChatID, ctx.UserID, ctx.EphemeralMessageID, resp.StructuredRichMessage, keyboard); err == nil {
+				notifyDelivered(resp, ctx, communityReceipt(ctx, nil))
+				return
+			} else {
+				logger.Info("%s Ephemeral structured rich edit failed; using text: %v", logPrefix, err)
+			}
+		} else if resp.RichMessage != "" {
+			rich := &types.TelegramInputRichMessage{Markdown: resp.RichMessage}
+			if err := telegram.EditEphemeralRichMessage(ctx.ChatID, ctx.UserID, ctx.EphemeralMessageID, rich, keyboard); err == nil {
+				notifyDelivered(resp, ctx, communityReceipt(ctx, nil))
+				return
+			} else {
+				logger.Info("%s Ephemeral rich edit failed; using text: %v", logPrefix, err)
+			}
+		}
 		if err := telegram.EditEphemeralMessageText(ctx.ChatID, ctx.UserID, ctx.EphemeralMessageID, plain, parseMode, keyboard); err != nil {
 			logger.Info("%s Ephemeral edit failed; no public fallback: %v", logPrefix, err)
+			return
 		}
+		notifyDelivered(resp, ctx, communityReceipt(ctx, nil))
 		return
 	}
-	options := &types.TelegramSendOptions{
-		ReceiverUserID:  ctx.UserID,
-		CallbackQueryID: ctx.CallbackID,
-		MessageThreadID: ctx.MessageThreadID,
+	options := communitySendOptions(ctx, true)
+	if resp.StructuredRichMessage != nil {
+		if sent, err := telegram.SendStructuredRichMessage(ctx.ChatID, resp.StructuredRichMessage, keyboard, options); err == nil {
+			notifyDelivered(resp, ctx, communityReceipt(ctx, sent))
+			return
+		} else {
+			logger.Info("%s Ephemeral structured rich send failed; using text: %v", logPrefix, err)
+		}
+	} else if resp.RichMessage != "" {
+		if sent, err := telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard, options); err == nil {
+			notifyDelivered(resp, ctx, communityReceipt(ctx, sent))
+			return
+		} else {
+			logger.Info("%s Ephemeral rich send failed; using text: %v", logPrefix, err)
+		}
 	}
-	if _, err := telegram.SendMessage(ctx.ChatID, plain, parseMode, keyboard, options); err != nil {
+	sent, err := telegram.SendMessage(ctx.ChatID, plain, parseMode, keyboard, options)
+	if err != nil {
 		logger.Info("%s Ephemeral send failed; no public fallback: %v", logPrefix, err)
+		return
+	}
+	notifyDelivered(resp, ctx, communityReceipt(ctx, sent))
+}
+
+func communityReceipt(ctx *callback.Context, sent *types.TelegramMessage) *types.TelegramMessage {
+	if sent != nil && sent.Chat != nil && (sent.MessageID != 0 || sent.EphemeralMessageID != 0) {
+		return sent
+	}
+	if ctx == nil || ctx.EphemeralMessageID == 0 {
+		return sent
+	}
+	return &types.TelegramMessage{
+		EphemeralMessageID: ctx.EphemeralMessageID,
+		Chat:               &types.TelegramChat{ID: ctx.ChatID, Type: ctx.ChatType},
+	}
+}
+
+func communitySendOptions(ctx *callback.Context, replaceOriginal bool) *types.TelegramSendOptions {
+	if ctx == nil {
+		return nil
+	}
+	return &types.TelegramSendOptions{
+		ReceiverUserID:              ctx.UserID,
+		CallbackQueryID:             ctx.CallbackID,
+		ReplaceCallbackQueryMessage: replaceOriginal && ctx.EphemeralMessageID == 0,
+		MessageThreadID:             ctx.MessageThreadID,
 	}
 }
 

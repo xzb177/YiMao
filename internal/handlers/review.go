@@ -584,6 +584,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		CallbackMsg: "已批准",
 		ShowAlert:   true,
 		Edit:        true,
+		Keyboard:    disabledReviewResultKeyboard(true),
 	}, nil
 }
 
@@ -880,6 +881,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		CallbackMsg: "已拒绝",
 		ShowAlert:   true,
 		Edit:        true,
+		Keyboard:    disabledReviewResultKeyboard(false),
 	}, nil
 }
 
@@ -1044,4 +1046,12 @@ func (h *ReviewHandler) notifyOtherAdmins(currentAdminID int64, message string) 
 		}
 		go h.telegram.SendMessage(adminID, message, "", nil)
 	}
+}
+
+func disabledReviewResultKeyboard(approved bool) *callback.Keyboard {
+	label := "✅ 已批准"
+	if !approved {
+		label = "❌ 已拒绝"
+	}
+	return &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: label, Disabled: true}}}}
 }

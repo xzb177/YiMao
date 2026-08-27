@@ -18,8 +18,12 @@ func TestSendPhotoURLCarriesEphemeralOptions(t *testing.T) {
 			t.Fatalf("path=%s", r.URL.Path)
 		}
 		payload := decodePayload(t, r)
-		if payload["receiver_user_id"] != float64(42) || payload["callback_query_id"] != "cb" || payload["message_thread_id"] != float64(88) {
+		params := payload["ephemeral_message_parameters"].(map[string]any)
+		if params["receiver_user_id"] != float64(42) || params["callback_query_id"] != "cb" || payload["message_thread_id"] != float64(88) {
 			t.Fatalf("missing ephemeral options: %#v", payload)
+		}
+		if _, ok := payload["receiver_user_id"]; ok {
+			t.Fatal("top-level receiver_user_id must be omitted")
 		}
 		writeMessageOK(t, w)
 	})
@@ -36,9 +40,8 @@ func TestMultipartEphemeralOptions(t *testing.T) {
 			t.Fatal(err)
 		}
 		got = map[string]string{}
-		for _, k := range []string{"receiver_user_id", "callback_query_id", "message_thread_id"} {
-			got[k] = r.FormValue(k)
-		}
+		got["message_thread_id"] = r.FormValue("message_thread_id")
+		got["ephemeral_message_parameters"] = r.FormValue("ephemeral_message_parameters")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":0,"ephemeral_message_id":73,"receiver_user":{"id":42,"first_name":"Miao"},"chat":{"id":-1001,"type":"supergroup"},"date":1}}`)
 	}))
@@ -53,8 +56,12 @@ func TestMultipartEphemeralOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["receiver_user_id"] != "42" || got["callback_query_id"] != "cb" || got["message_thread_id"] != "88" {
-		t.Fatalf("fields=%v", got)
+	params := map[string]any{}
+	if err := json.Unmarshal([]byte(got["ephemeral_message_parameters"]), &params); err != nil {
+		t.Fatalf("ephemeral json: %v raw=%q", err, got["ephemeral_message_parameters"])
+	}
+	if got["message_thread_id"] != "88" || params["receiver_user_id"] != float64(42) || params["callback_query_id"] != "cb" {
+		t.Fatalf("fields=%v params=%v", got, params)
 	}
 }
 

@@ -1243,9 +1243,18 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 	msg.Newline()
 
 	kb := services.NewKeyboardBuilder()
+	imported := map[int]bool{}
+	if h.moviepilot != nil {
+		if tmdbID, err := strconv.Atoi(targetItem.ID); err == nil && tmdbID > 0 {
+			if seasons, err := h.moviepilot.EmbyAvailableSeasonsByTMDB(tmdbID); err == nil {
+				imported = seasons
+			}
+		}
+	}
 
 	// List regular seasons only. TMDB specials use season=0, which is also the
 	// existing whole-show request contract, so exposing both would be ambiguous.
+	// Seasons already in the library are Bot API 10.3 disabled controls.
 	for i, season := range regularSeasons {
 		seasonName := fmt.Sprintf("第%d季", season.SeasonNumber)
 		if season.Name != "" && season.Name != seasonName {
@@ -1253,7 +1262,11 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		}
 
 		msg.Text(fmt.Sprintf("%d. %s (%d集)", i+1, seasonName, season.EpisodeCount)).Newline()
-		kb.AddButton(fmt.Sprintf("📺 求第%d季", season.SeasonNumber), fmt.Sprintf("request:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
+		if imported[season.SeasonNumber] {
+			kb.AddDisabledButton(fmt.Sprintf("📀 第%d季已入库", season.SeasonNumber))
+		} else {
+			kb.AddButton(fmt.Sprintf("📺 求第%d季", season.SeasonNumber), fmt.Sprintf("request:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
+		}
 
 		if (i+1)%2 == 0 {
 			kb.NewRow()
@@ -1608,6 +1621,7 @@ func convertKeyboard(tk *types.TelegramInlineKeyboard) *callback.Keyboard {
 				URL:          btn.URL,
 				WebApp:       btn.WebApp,
 				Style:        btn.Style,
+				Disabled:     btn.Disabled != nil,
 			}
 		}
 	}

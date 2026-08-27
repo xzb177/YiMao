@@ -63,11 +63,18 @@ func TestSendMessageEphemeralPayloadAndResponseCompatibility(t *testing.T) {
 			t.Fatalf("path = %q, want /sendMessage", r.URL.Path)
 		}
 		payload := decodePayload(t, r)
-		if payload["receiver_user_id"] != float64(42) {
-			t.Fatalf("receiver_user_id = %#v", payload["receiver_user_id"])
+		params := payload["ephemeral_message_parameters"].(map[string]any)
+		if params["receiver_user_id"] != float64(42) {
+			t.Fatalf("receiver_user_id = %#v", params["receiver_user_id"])
 		}
-		if payload["callback_query_id"] != "callback-1" {
-			t.Fatalf("callback_query_id = %#v", payload["callback_query_id"])
+		if params["callback_query_id"] != "callback-1" {
+			t.Fatalf("callback_query_id = %#v", params["callback_query_id"])
+		}
+		if _, ok := payload["receiver_user_id"]; ok {
+			t.Fatalf("top-level receiver_user_id must be omitted: %#v", payload)
+		}
+		if _, ok := payload["callback_query_id"]; ok {
+			t.Fatalf("top-level callback_query_id must be omitted: %#v", payload)
 		}
 		if _, ok := payload["reply_parameters"]; ok {
 			t.Fatal("reply_parameters should be omitted when unset")
@@ -93,8 +100,12 @@ func TestSendMessageEphemeralReplyPayload(t *testing.T) {
 			t.Fatalf("path = %q, want /sendMessage", r.URL.Path)
 		}
 		payload := decodePayload(t, r)
-		if payload["receiver_user_id"] != float64(42) || payload["callback_query_id"] != "callback-2" {
+		params := payload["ephemeral_message_parameters"].(map[string]any)
+		if params["receiver_user_id"] != float64(42) || params["callback_query_id"] != "callback-2" {
 			t.Fatalf("missing ephemeral targeting fields: %#v", payload)
+		}
+		if _, ok := payload["receiver_user_id"]; ok {
+			t.Fatal("top-level receiver_user_id must be omitted")
 		}
 		reply := payload["reply_parameters"].(map[string]any)
 		if reply["ephemeral_message_id"] != float64(19) {

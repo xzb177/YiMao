@@ -40,8 +40,9 @@ type ReviewRequest struct {
 	// 申请人那条「求片已提交」确认卡的消息坐标（仅私聊中可长期编辑的消息）。
 	// 审核结果必须原地更新这张卡，否则用户端会一直停留在
 	// 「求片已提交 / 状态：等待管理员审核」，看不到已通过。
-	RequesterChatID       int64 `json:"requester_chat_id,omitempty"`
-	RequesterReceiptMsgID int64 `json:"requester_receipt_message_id,omitempty"`
+	RequesterChatID             int64 `json:"requester_chat_id,omitempty"`
+	RequesterReceiptMsgID       int64 `json:"requester_receipt_message_id,omitempty"`
+	RequesterReceiptEphemeralID int64 `json:"requester_receipt_ephemeral_id,omitempty"`
 
 	// OverdueRemindedAt 超期待审核提醒已发送时间；一条请求只提醒一次，
 	// 避免管理员被同一条求片反复刷屏。

@@ -30,7 +30,7 @@ func TestRenderCallbackResponseGroupUsesEphemeralPlainMessage(t *testing.T) {
 		_, _ = r.Body.Read(body)
 		payload := string(body)
 		if r.URL.Path == "/sendMessage" {
-			if !strings.Contains(payload, `"receiver_user_id":42`) || !strings.Contains(payload, `"callback_query_id":"cb-1"`) {
+			if !strings.Contains(payload, `"ephemeral_message_parameters"`) || !strings.Contains(payload, `"receiver_user_id":42`) || !strings.Contains(payload, `"callback_query_id":"cb-1"`) || strings.Contains(payload, `"receiver_user_id":42,"text"`) {
 				t.Fatalf("missing ephemeral target: %s", payload)
 			}
 		}
@@ -59,9 +59,9 @@ func TestRenderCallbackResponseSupergroupRichUsesPrivacySafePlain(t *testing.T) 
 	})
 
 	RenderCallbackResponse("test", &callback.Context{UserID: 42, ChatID: -1001, ChatType: "supergroup", MessageID: 9, CallbackID: "cb-2"}, &callback.Response{Text: "safe plain", RichMessage: "**private rich**", Edit: true}, client)
-	want := []string{"/sendMessage"}
+	want := []string{"/sendRichMessage"}
 	if fmt.Sprint(methods) != fmt.Sprint(want) {
-		t.Fatalf("methods = %#v, want %#v (sendRichMessage has no documented ephemeral parameters)", methods, want)
+		t.Fatalf("methods = %#v, want %#v (Bot API 10.3 sendRichMessage is ephemeral)", methods, want)
 	}
 }
 
@@ -79,8 +79,8 @@ func TestRenderCallbackResponseGroupStructuredRichNeverUsesRichOrPublicFallback(
 	})
 	rich := &types.TelegramInputRichMessage{Blocks: []types.TelegramInputRichBlock{{Type: "slideshow"}}}
 	RenderCallbackResponse("test", &callback.Context{UserID: 42, ChatID: -1001, ChatType: "group", CallbackID: "cb-rich"}, &callback.Response{Text: "私密搜索结果", StructuredRichMessage: rich}, client)
-	if fmt.Sprint(methods) != fmt.Sprint([]string{"/sendMessage"}) {
-		t.Fatalf("methods=%v; group must never call sendRichMessage or fall back publicly", methods)
+	if fmt.Sprint(methods) != fmt.Sprint([]string{"/sendRichMessage"}) {
+		t.Fatalf("methods=%v; group structured rich should use ephemeral sendRichMessage", methods)
 	}
 }
 

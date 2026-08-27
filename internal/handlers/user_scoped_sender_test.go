@@ -31,8 +31,9 @@ func TestUserScopedSenderGroupAsyncOutputTargetsReceiver(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	payload := <-requests
-	if payload["chat_id"] != float64(-1001) || payload["receiver_user_id"] != float64(42) {
-		t.Fatalf("group async output missing receiver_user_id: %#v", payload)
+	params, _ := payload["ephemeral_message_parameters"].(map[string]any)
+	if payload["chat_id"] != float64(-1001) || params["receiver_user_id"] != float64(42) {
+		t.Fatalf("group async output missing ephemeral parameters: %#v", payload)
 	}
 }
 
@@ -55,7 +56,7 @@ func TestUserScopedSenderPrivateOutputRemainsOrdinary(t *testing.T) {
 		t.Fatalf("SendMessage: %v", err)
 	}
 	payload := <-requests
-	if _, exists := payload["receiver_user_id"]; exists {
+	if _, exists := payload["ephemeral_message_parameters"]; exists {
 		t.Fatalf("private output unexpectedly ephemeral: %#v", payload)
 	}
 }

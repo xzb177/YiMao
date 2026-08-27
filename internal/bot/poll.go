@@ -688,9 +688,10 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 		}
 		if ctx.EphemeralMessageID == 0 {
 			placeholder, sendErr := telegram.SendMessage(ctx.ChatID, "⏳ 正在处理…", "", nil, &types.TelegramSendOptions{
-				ReceiverUserID:  ctx.UserID,
-				CallbackQueryID: ctx.CallbackID,
-				MessageThreadID: ctx.MessageThreadID,
+				ReceiverUserID:              ctx.UserID,
+				CallbackQueryID:             ctx.CallbackID,
+				ReplaceCallbackQueryMessage: true,
+				MessageThreadID:             ctx.MessageThreadID,
 			})
 			if sendErr != nil || placeholder == nil || placeholder.EphemeralMessageID == 0 {
 				logger.Info("[Callback] Cannot establish ephemeral response target: %v", sendErr)
@@ -808,13 +809,20 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	for i, row := range kb.InlineKeyboard {
 		result.InlineKeyboard[i] = make([]types.TelegramInlineKeyboardButton, len(row))
 		for j, btn := range row {
-			result.InlineKeyboard[i][j] = types.TelegramInlineKeyboardButton{
+			converted := types.TelegramInlineKeyboardButton{
 				Text:         btn.Text,
 				CallbackData: btn.CallbackData,
 				URL:          btn.URL,
 				WebApp:       btn.WebApp,
 				Style:        btn.Style,
 			}
+			if btn.Disabled {
+				converted.Disabled = types.DisabledButtonValue()
+				converted.CallbackData = ""
+				converted.URL = ""
+				converted.WebApp = nil
+			}
+			result.InlineKeyboard[i][j] = converted
 		}
 	}
 

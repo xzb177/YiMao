@@ -85,6 +85,14 @@ type TelegramWebAppInfo struct {
 	URL string `json:"url"`
 }
 
+// TelegramDisabledButton is Bot API 10.3 DisabledButton. Presence of the
+// object disables the control; it currently holds no fields.
+type TelegramDisabledButton struct{}
+
+func DisabledButtonValue() *TelegramDisabledButton {
+	return &TelegramDisabledButton{}
+}
+
 type TelegramInlineKeyboardButton struct {
 	Text         string              `json:"text"`
 	CallbackData string              `json:"callback_data,omitempty"`
@@ -92,17 +100,19 @@ type TelegramInlineKeyboardButton struct {
 	WebApp       *TelegramWebAppInfo `json:"web_app,omitempty"`
 	// Style is an optional Bot API button style: primary, success or danger.
 	Style string `json:"style,omitempty"`
+	// Disabled, when set, makes the button untappable. Exclusive with
+	// callback_data, url and web_app.
+	Disabled *TelegramDisabledButton `json:"disabled,omitempty"`
 }
 
 // SendMessageRequest represents a send message request
 type SendMessageRequest struct {
-	ChatID          int64                    `json:"chat_id"`
-	Text            string                   `json:"text"`
-	ParseMode       string                   `json:"parse_mode,omitempty"`
-	ReplyMarkup     *TelegramInlineKeyboard  `json:"reply_markup,omitempty"`
-	ReceiverUserID  int64                    `json:"receiver_user_id,omitempty"`
-	CallbackQueryID string                   `json:"callback_query_id,omitempty"`
-	ReplyParameters *TelegramReplyParameters `json:"reply_parameters,omitempty"`
+	ChatID                     int64                               `json:"chat_id"`
+	Text                       string                              `json:"text"`
+	ParseMode                  string                              `json:"parse_mode,omitempty"`
+	ReplyMarkup                *TelegramInlineKeyboard             `json:"reply_markup,omitempty"`
+	EphemeralMessageParameters *TelegramEphemeralMessageParameters `json:"ephemeral_message_parameters,omitempty"`
+	ReplyParameters            *TelegramReplyParameters            `json:"reply_parameters,omitempty"`
 }
 
 // TelegramReplyParameters describes the message being replied to. MessageID is
@@ -112,14 +122,23 @@ type TelegramReplyParameters struct {
 	EphemeralMessageID int64 `json:"ephemeral_message_id,omitempty"`
 }
 
+// TelegramEphemeralMessageParameters is Bot API 10.3 targeting for a message
+// visible only to one user. It replaced top-level receiver_user_id and
+// callback_query_id send parameters.
+type TelegramEphemeralMessageParameters struct {
+	ReceiverUserID              int64  `json:"receiver_user_id"`
+	CallbackQueryID             string `json:"callback_query_id,omitempty"`
+	ReplaceCallbackQueryMessage bool   `json:"replace_callback_query_message,omitempty"`
+}
+
 // TelegramSendOptions contains optional fields shared by plain and rich sends.
-// ReceiverUserID targets an ephemeral message; CallbackQueryID or an ephemeral
-// reply target is required for non-administrator bots.
+// ReceiverUserID is serialized inside ephemeral_message_parameters.
 type TelegramSendOptions struct {
-	ReceiverUserID  int64                    `json:"receiver_user_id,omitempty"`
-	CallbackQueryID string                   `json:"callback_query_id,omitempty"`
-	MessageThreadID int64                    `json:"message_thread_id,omitempty"`
-	ReplyParameters *TelegramReplyParameters `json:"reply_parameters,omitempty"`
+	ReceiverUserID              int64                    `json:"-"`
+	CallbackQueryID             string                   `json:"-"`
+	ReplaceCallbackQueryMessage bool                     `json:"-"`
+	MessageThreadID             int64                    `json:"message_thread_id,omitempty"`
+	ReplyParameters             *TelegramReplyParameters `json:"reply_parameters,omitempty"`
 }
 
 // EditMessageRequest represents an edit message request

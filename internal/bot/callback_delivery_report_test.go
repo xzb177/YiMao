@@ -27,9 +27,9 @@ func TestRenderCallbackResponseReportsPrivateDeliveryCoordinates(t *testing.T) {
 	}
 }
 
-// TestRenderCallbackResponseDoesNotReportEphemeralDelivery keeps ephemeral group
-// responses out of persisted receipt coordinates; they cannot be edited later.
-func TestRenderCallbackResponseDoesNotReportEphemeralDelivery(t *testing.T) {
+// TestRenderCallbackResponseReportsEphemeralDelivery lets group receipts persist
+// ephemeral coordinates so editEphemeralMessageText can update them.
+func TestRenderCallbackResponseReportsEphemeralDelivery(t *testing.T) {
 	client := callbackTestClient(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = fmt.Fprint(w, `{"ok":true,"result":{"message_id":0,"ephemeral_message_id":7,"chat":{"id":-1001,"type":"group"},"date":1}}`)
@@ -39,7 +39,7 @@ func TestRenderCallbackResponseDoesNotReportEphemeralDelivery(t *testing.T) {
 		&callback.Context{UserID: 42, ChatID: -1001, ChatType: "group", MessageID: 9, CallbackID: "cb-2"},
 		&callback.Response{Text: "receipt", OnDelivered: func(*types.TelegramMessage) { called = true }},
 		client)
-	if called {
-		t.Fatal("ephemeral delivery must not be persisted as an editable receipt")
+	if !called {
+		t.Fatal("ephemeral delivery must be persisted so the receipt can be edited")
 	}
 }

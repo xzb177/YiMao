@@ -130,3 +130,67 @@ func TestApprovalUpdatesRequesterReceiptCardInPlace(t *testing.T) {
 		t.Fatalf("repeat click issued extra edits: %d -> %d", len(first), after)
 	}
 }
+
+func TestUpdateRequesterReceiptEditsEphemeralCard(t *testing.T) {
+
+	var path string
+
+	var payload map[string]any
+
+	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		path = r.URL.Path
+
+		_ = json.NewDecoder(r.Body).Decode(&payload)
+
+		w.Header().Set("Content-Type", "application/json")
+
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+
+	}))
+
+	defer telegram.Close()
+
+	tg := services.NewTelegramClient("test")
+
+	tg.SetBaseURLForTest(telegram.URL, telegram.Client())
+
+	h := NewReviewHandler(nil, tg, nil, nil, nil, nil, nil, 0)
+
+	review := &services.ReviewRequest{RequestID: "eph", TelegramID: 42, MediaTitle: "Test", RequesterChatID: -1001, RequesterReceiptEphemeralID: 77}
+
+	h.updateRequesterReceipt(review, "approved headline", "status", "footer")
+
+	if path != "/editEphemeralMessageText" {
+
+		t.Fatalf("path=%s payload=%v", path, payload)
+
+	}
+
+	if payload["chat_id"] != float64(-1001) || payload["receiver_user_id"] != float64(42) || payload["ephemeral_message_id"] != float64(77) {
+
+		t.Fatalf("payload=%v", payload)
+
+	}
+
+	text, _ := payload["text"].(string)
+
+	if !strings.Contains(text, "approved headline") || strings.Contains(text, "waiting") {
+
+		t.Fatalf("text=%q", text)
+
+	}
+
+}
+
+func TestDisabledReviewResultKeyboard(t *testing.T) {
+
+	kb := disabledReviewResultKeyboard(true)
+
+	if kb == nil || !kb.InlineKeyboard[0][0].Disabled || kb.InlineKeyboard[0][0].CallbackData != "" {
+
+		t.Fatalf("keyboard=%#v", kb)
+
+	}
+
+}

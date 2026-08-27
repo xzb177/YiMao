@@ -146,9 +146,10 @@ func HandleWebhookCallback(
 		}
 		if ctx.EphemeralMessageID == 0 {
 			placeholder, sendErr := telegram.SendMessage(ctx.ChatID, "⏳ 正在处理…", "", nil, &types.TelegramSendOptions{
-				ReceiverUserID:  ctx.UserID,
-				CallbackQueryID: ctx.CallbackID,
-				MessageThreadID: ctx.MessageThreadID,
+				ReceiverUserID:              ctx.UserID,
+				CallbackQueryID:             ctx.CallbackID,
+				ReplaceCallbackQueryMessage: true,
+				MessageThreadID:             ctx.MessageThreadID,
 			})
 			if sendErr != nil || placeholder == nil || placeholder.EphemeralMessageID == 0 {
 				logger.Info("[Webhook] Cannot establish ephemeral response target: %v", sendErr)

@@ -109,8 +109,9 @@ func TestUserScopedSenderGroupStructuredRichMessageFailsClosedToEphemeralText(t 
 		t.Fatal(err)
 	}
 	got := <-requests
-	if got["_path"] != "/sendMessage" || got["receiver_user_id"] != float64(42) {
-		t.Fatalf("group structured fallback leaked publicly: %+v", got)
+	params, _ := got["ephemeral_message_parameters"].(map[string]any)
+	if got["_path"] != "/sendRichMessage" || params["receiver_user_id"] != float64(42) {
+		t.Fatalf("group structured rich missing ephemeral targeting: %+v", got)
 	}
 }
 

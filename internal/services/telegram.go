@@ -149,8 +149,8 @@ func richMessageEnabled() bool {
 }
 
 // SendRichMessage sends markdown through the typed Bot API 10.2 transport.
-// Bot API 10.2 does not document ephemeral targeting for sendRichMessage;
-// callers needing private group output must use SendMessage with send options.
+// Bot API 10.3 accepts ephemeral_message_parameters on sendRichMessage, so
+// group-private rich cards use the same send options as sendMessage.
 func (c *TelegramClient) SendRichMessage(chatID int64, markdown string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	return c.SendStructuredRichMessage(chatID, &types.TelegramInputRichMessage{Markdown: markdown}, keyboard, options...)
 }
@@ -170,8 +170,8 @@ func (c *TelegramClient) SendRichMessageWithPhoto(chatID int64, markdown, photo 
 }
 
 // SendStructuredRichMessage sends typed InputRichMessage content. The keyboard
-// stays at sendRichMessage top level. Forum topic context is preserved without
-// adding the unsupported ephemeral targeting parameters used by sendMessage.
+// stays at sendRichMessage top level. Forum topic and Bot API 10.3 ephemeral
+// targeting are applied through the shared send options.
 func (c *TelegramClient) SendStructuredRichMessage(chatID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
 	if !richMessageEnabled() {
 		return nil, fmt.Errorf("rich message disabled by ENABLE_RICH_MESSAGE")
@@ -230,11 +230,7 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 			return nil, err
 		}
 	}
-	if len(options) > 0 && options[0] != nil && options[0].MessageThreadID != 0 {
-		if err := writer.WriteField("message_thread_id", strconv.FormatInt(options[0].MessageThreadID, 10)); err != nil {
-			return nil, err
-		}
-	}
+	applyTelegramSendOptionsToMultipart(writer, options)
 	for _, media := range richMessage.Media {
 		if len(media.Upload) == 0 {
 			continue
@@ -286,16 +282,29 @@ func decodeTelegramMessageResponse(resp *http.Response) (*types.TelegramMessage,
 	return result.Result, nil
 }
 
+func ephemeralMessageParameters(option *types.TelegramSendOptions) map[string]interface{} {
+	if option == nil || option.ReceiverUserID == 0 {
+		return nil
+	}
+	params := map[string]interface{}{
+		"receiver_user_id": option.ReceiverUserID,
+	}
+	if option.CallbackQueryID != "" {
+		params["callback_query_id"] = option.CallbackQueryID
+	}
+	if option.ReplaceCallbackQueryMessage {
+		params["replace_callback_query_message"] = true
+	}
+	return params
+}
+
 func applyTelegramSendOptions(payload map[string]interface{}, options []*types.TelegramSendOptions) {
 	if len(options) == 0 || options[0] == nil {
 		return
 	}
 	option := options[0]
-	if option.ReceiverUserID != 0 {
-		payload["receiver_user_id"] = option.ReceiverUserID
-	}
-	if option.CallbackQueryID != "" {
-		payload["callback_query_id"] = option.CallbackQueryID
+	if params := ephemeralMessageParameters(option); params != nil {
+		payload["ephemeral_message_parameters"] = params
 	}
 	if option.MessageThreadID != 0 {
 		payload["message_thread_id"] = option.MessageThreadID
@@ -306,10 +315,7 @@ func applyTelegramSendOptions(payload map[string]interface{}, options []*types.T
 }
 
 func applyRichMessageThreadOption(payload map[string]interface{}, options []*types.TelegramSendOptions) {
-	if len(options) == 0 || options[0] == nil || options[0].MessageThreadID == 0 {
-		return
-	}
-	payload["message_thread_id"] = options[0].MessageThreadID
+	applyTelegramSendOptions(payload, options)
 }
 
 func applyTelegramSendOptionsToMultipart(writer *multipart.Writer, options []*types.TelegramSendOptions) {
@@ -317,11 +323,10 @@ func applyTelegramSendOptionsToMultipart(writer *multipart.Writer, options []*ty
 		return
 	}
 	option := options[0]
-	if option.ReceiverUserID != 0 {
-		_ = writer.WriteField("receiver_user_id", fmt.Sprintf("%d", option.ReceiverUserID))
-	}
-	if option.CallbackQueryID != "" {
-		_ = writer.WriteField("callback_query_id", option.CallbackQueryID)
+	if params := ephemeralMessageParameters(option); params != nil {
+		if raw, err := json.Marshal(params); err == nil {
+			_ = writer.WriteField("ephemeral_message_parameters", string(raw))
+		}
 	}
 	if option.MessageThreadID != 0 {
 		_ = writer.WriteField("message_thread_id", fmt.Sprintf("%d", option.MessageThreadID))
@@ -392,6 +397,22 @@ func (c *TelegramClient) EditEphemeralMessageText(chatID, receiverUserID, epheme
 	return c.makeSimpleRequest(apiURL, payload)
 }
 
+// EditEphemeralRichMessage edits an established ephemeral message using the
+// Bot API 10.3 rich_message parameter on editEphemeralMessageText.
+func (c *TelegramClient) EditEphemeralRichMessage(chatID, receiverUserID, ephemeralMessageID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) error {
+	apiURL := fmt.Sprintf("%s/editEphemeralMessageText", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":              chatID,
+		"receiver_user_id":     receiverUserID,
+		"ephemeral_message_id": ephemeralMessageID,
+		"rich_message":         richMessage,
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+	return c.makeSimpleRequest(apiURL, payload)
+}
+
 // EditEphemeralMessageReplyMarkup updates only the buttons of an established
 // ephemeral message.
 func (c *TelegramClient) EditEphemeralMessageReplyMarkup(chatID, receiverUserID, ephemeralMessageID int64, keyboard *types.TelegramInlineKeyboard) error {
@@ -427,7 +448,8 @@ func (c *TelegramClient) EditEphemeralMessageCaption(chatID, receiverUserID, eph
 }
 
 // EditEphemeralMessageMedia replaces an ephemeral message with URL/file_id
-// media. Telegram doesn't allow uploading a new file through this edit method.
+// media. Bot API 10.3 also allows uploading a new file; callers that still
+// pass a URL or file_id keep using this JSON path.
 func (c *TelegramClient) EditEphemeralMessageMedia(chatID, receiverUserID, ephemeralMessageID int64, media map[string]interface{}, keyboard *types.TelegramInlineKeyboard) error {
 	apiURL := fmt.Sprintf("%s/editEphemeralMessageMedia", c.baseURL)
 	payload := map[string]interface{}{
@@ -1289,6 +1311,11 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 			button.Text = sanitizeUTF8(button.Text)
 			button.CallbackData = sanitizeUTF8(button.CallbackData)
 			button.Style = telegramButtonStyle(button)
+			if button.Disabled != nil {
+				button.CallbackData = ""
+				button.URL = ""
+				button.WebApp = nil
+			}
 			if button.Text == "" {
 				continue
 			}
@@ -1304,6 +1331,9 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 				actionCount++
 			}
 			if button.WebApp != nil {
+				actionCount++
+			}
+			if button.Disabled != nil {
 				actionCount++
 			}
 			// Telegram inline buttons must carry exactly one action. Rejecting
@@ -1413,6 +1443,15 @@ func (kb *KeyboardBuilder) AddButton(text string, callbackData string) *Keyboard
 	kb.currentRow = append(kb.currentRow, types.TelegramInlineKeyboardButton{
 		Text:         text,
 		CallbackData: callbackData,
+	})
+	return kb
+}
+
+// AddDisabledButton adds a Bot API 10.3 disabled button that cannot be tapped.
+func (kb *KeyboardBuilder) AddDisabledButton(text string) *KeyboardBuilder {
+	kb.currentRow = append(kb.currentRow, types.TelegramInlineKeyboardButton{
+		Text:     text,
+		Disabled: types.DisabledButtonValue(),
 	})
 	return kb
 }
