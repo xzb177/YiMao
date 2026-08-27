@@ -33,7 +33,7 @@ const (
 	welcomeHeroTimeout   = 8 * time.Second
 	welcomeHeroMaxBytes  = 4 << 20
 	welcomeKicker        = "YUNHAI · CINEMA"
-	welcomeHeroPool      = "youth-v1"
+	welcomeHeroPool      = "youth-v3"
 	welcomeMinLuma       = 90.0
 )
 
