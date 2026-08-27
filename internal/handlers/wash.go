@@ -105,8 +105,8 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		h.sessMgr.GetOrCreate(ctx.UserID).Delete("media_search_intent")
 	}
 	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 洗版工单已提交\n\n♻️ 《%s》%s\n📋 状态：等待管理员审核\n\n当前版本会继续保留；审核和处理进展会在「我的进度」里更新。", review.MediaTitle, seasonText),
-		CallbackMsg: "工单已提交", Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "📋 我的进度", CallbackData: "start_requests"}}, {{Text: "🏠 主菜单", CallbackData: "start"}}}},
+		Text:        fmt.Sprintf("✅ 已提交\n\n♻️ 《%s》%s\n📋 状态：等待管理员审核\n\n当前版本会保留，进度可在求片进度查看。", review.MediaTitle, seasonText),
+		CallbackMsg: "已提交", Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "📋 我的进度", CallbackData: "start_requests"}}, {{Text: "🏠 主菜单", CallbackData: "start"}}}},
 	}, nil
 }
 

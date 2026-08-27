@@ -33,7 +33,7 @@ func TestRequestHandlerSubmissionResultMapping(t *testing.T) {
 		wantAlert    bool
 		wantKeyboard bool
 	}{
-		{"duplicate own", services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: review}, "请勿重复提交", "已通过审核", true, true},
+		{"duplicate own", services.SubmissionResult{Status: services.SubmissionDuplicateOwn, Review: review}, "请勿重复提交", "已批准", true, true},
 		{"duplicate other", services.SubmissionResult{Status: services.SubmissionDuplicateOther, Review: review}, "已加入拼车", "不重复扣配额", true, true},
 		// not-bound 是引导消息（带绑定按钮），不再是转瞬即逝的 alert。
 		{"not bound", services.SubmissionResult{Status: services.SubmissionNotBound}, "需要绑定账号", "需要绑定账号", false, true},

@@ -299,7 +299,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}
 		logger.Info("[求片] 媒体库已存在请求目标: %s season=%d", displayTitle, season)
 
-		message := "⚠️ 媒体库中已存在\n\n"
+		message := "⚠️ 已在库\n\n"
 		if mediaType == "tv" && season > 0 {
 			message += fmt.Sprintf("📺 %s · 第 %d 季", displayTitle, season)
 		} else {
@@ -351,35 +351,15 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		return operationFailedResponse(), nil
 	}
 
-	// 发送求片回执消息
-	receiptMsg := fmt.Sprintf(
-		"✅ 求片已提交\n\n🎬 《%s》", review.MediaTitle)
-	if review.MediaYear > 0 {
-		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
-	}
-	receiptMsg += fmt.Sprintf(
-		"\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你")
-	if h.fulfillmentStats != nil {
-		if eta := h.fulfillmentStats.EstimateText(string(review.MediaType), review.MediaYear); eta != "" {
-			receiptMsg += "\n" + eta
-		}
-	}
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📊 求片进度", "requests")
-	kb.AddButton("🏠 主菜单", "start")
-	// 回执先返回；系列检查走后台，不让 TMDB/Emby 查询拖慢按钮响应。
+	// Receipt first; series checks run in the background.
 	if review.MediaType == services.MediaTypeMovie {
 		go h.sendSeriesSuggestion(ctx.UserID, tmdbID)
 	} else if h.seasonRadar != nil {
 		go h.seasonRadar.TrackTV(ctx.UserID, tmdbID, review.MediaTitle)
 	}
-	return &callback.Response{
-		Text:        receiptMsg,
-		CallbackMsg: "请求已提交",
-		ShowAlert:   false,
-		Keyboard:    convertKeyboard(kb.Build()),
-		OnDelivered: h.rememberRequesterReceipt(review.RequestID),
-	}, nil
+	resp := requesterReceiptResponse(review, richmessage.StatusPending, "审核通过后自动下载，完成后可播放。", h.rememberRequesterReceipt(review.RequestID))
+	resp.CallbackMsg = "已提交"
+	return resp, nil
 }
 
 // rememberRequesterReceipt persists where the requester receipt card landed so
@@ -724,34 +704,12 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 		return operationFailedResponse(), nil
 	}
 
-	// 发送求片回执消息
-	receiptMsg := fmt.Sprintf(
-		"✅ 求片已提交\n\n🎬 《%s》", review.MediaTitle)
-	if review.MediaYear > 0 {
-		receiptMsg += fmt.Sprintf(" (%d)", review.MediaYear)
-	}
-	if review.MediaType == services.MediaTypeTV {
-		receiptMsg += "\n📺 剧集"
-	}
-	receiptMsg += "\n📋 状态：⏳ 等待管理员审核\n\n审核通过后会自动下载，完成时会通知你"
-	if h.fulfillmentStats != nil {
-		if eta := h.fulfillmentStats.EstimateText(string(review.MediaType), review.MediaYear); eta != "" {
-			receiptMsg += "\n" + eta
-		}
-	}
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("📊 求片进度", "requests")
-	kb.AddButton("🏠 主菜单", "start")
 	if review.MediaType == services.MediaTypeTV && h.seasonRadar != nil {
 		go h.seasonRadar.TrackTV(ctx.UserID, tmdbID, review.MediaTitle)
 	}
-	return &callback.Response{
-		Text:        receiptMsg,
-		CallbackMsg: "请求已提交",
-		ShowAlert:   false,
-		Keyboard:    convertKeyboard(kb.Build()),
-		OnDelivered: h.rememberRequesterReceipt(review.RequestID),
-	}, nil
+	resp := requesterReceiptResponse(review, richmessage.StatusPending, "审核通过后自动下载，完成后可播放。", h.rememberRequesterReceipt(review.RequestID))
+	resp.CallbackMsg = "已提交"
+	return resp, nil
 }
 
 func serviceConfigurationError() *callback.Response {
@@ -767,7 +725,7 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 	if result.Review != nil {
 		title = result.Review.MediaTitle
 		if result.Review.Status == "approved" {
-			statusText = "已通过审核"
+			statusText = "已批准"
 		}
 	}
 	// 终态反馈统一带行动按钮：alert 弹窗几秒就消失，

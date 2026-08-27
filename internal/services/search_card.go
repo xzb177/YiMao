@@ -318,10 +318,10 @@ func paletteTextColor(accent, background color.RGBA, whiteMix, minimum float64) 
 
 func ResolveSearchCardStatus(embyExists bool, embyErr error, subscribed, cacheFresh bool) string {
 	if embyErr == nil && embyExists {
-		return "云海可看"
+		return "已在库"
 	}
 	if cacheFresh && subscribed {
-		return "站内追更"
+		return "下载中"
 	}
 	if embyErr != nil || !cacheFresh {
 		return "状态暂未确认"
@@ -332,10 +332,10 @@ func ResolveSearchCardStatus(embyExists bool, embyErr error, subscribed, cacheFr
 func formatSearchCardStatus(status string) string {
 	status = strings.TrimSpace(status)
 	switch status {
-	case "站内追更":
-		return "状态 · 站内追更"
-	case "云海可看":
-		return "状态 · 云海可看"
+	case "下载中":
+		return "状态 · 下载中"
+	case "已在库":
+		return "状态 · 已在库"
 	case "可求片":
 		return "状态 · 可求片"
 	case "点详情查看状态", "点详情查看", "状态暂未确认", "":

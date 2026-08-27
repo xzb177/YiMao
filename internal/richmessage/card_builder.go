@@ -3,6 +3,8 @@ package richmessage
 import (
 	"fmt"
 	"strings"
+
+	"github.com/xzb177/yimao/pkg/types"
 )
 
 // MediaInfo represents media information
@@ -23,75 +25,27 @@ type MediaInfo struct {
 	Status        string   `json:"status,omitempty"`
 }
 
-// BuildMediaInfoCard builds a rich media info card
+// BuildMediaInfoCard builds a poster-led 10.3 media card.
 func BuildMediaInfoCard(info MediaInfo) RichMessage {
-	builder := NewBuilder()
-
-	// Heading
-	title := info.Title
-	if title == "" {
-		title = "未知影视"
-	}
-	typeIcon := "🎬"
-	if info.MediaType == "tv" {
-		typeIcon = "📺"
-	}
-	heading := fmt.Sprintf("%s 《%s》", typeIcon, title)
-	if info.Year > 0 {
-		heading += fmt.Sprintf(" (%d)", info.Year)
-	}
-	builder.Heading(heading, 2)
-
-	// Original title if different
-	if info.OriginalTitle != "" && info.OriginalTitle != title {
-		builder.Italic(info.OriginalTitle)
-	}
-
-	// Info table
-	rows := [][]string{}
-	if info.Rating > 0 {
-		ratingText := fmt.Sprintf("⭐ %.1f", info.Rating)
-		if info.VoteCount > 0 {
-			ratingText += fmt.Sprintf(" (%d票)", info.VoteCount)
-		}
-		rows = append(rows, []string{"评分", ratingText})
-	}
+	kind := mediaKind(info.MediaType)
+	status := strings.TrimSpace(info.Status)
+	pairs := [][]string{}
 	if len(info.Genres) > 0 {
-		rows = append(rows, []string{"类型", strings.Join(info.Genres, "/")})
+		pairs = append(pairs, []string{"题材", strings.Join(info.Genres, "/")})
 	}
-	if info.Runtime > 0 {
-		hours := info.Runtime / 60
-		mins := info.Runtime % 60
-		if hours > 0 {
-			rows = append(rows, []string{"时长", fmt.Sprintf("%d小时%d分", hours, mins)})
-		} else {
-			rows = append(rows, []string{"时长", fmt.Sprintf("%d分钟", mins)})
-		}
-	}
-	if info.MediaType == "tv" && info.SeasonCount > 0 {
-		epText := fmt.Sprintf("共 %d 季", info.SeasonCount)
-		if info.EpisodeCount > 0 {
-			epText += fmt.Sprintf(" · %d 集", info.EpisodeCount)
-		}
-		rows = append(rows, []string{"季集", epText})
-	}
-	if info.Status != "" {
-		rows = append(rows, []string{"状态", info.Status})
-	}
-	if len(rows) > 0 {
-		builder.Table([]string{"项目", "详情"}, rows)
-	}
-
-	// Overview
-	if info.Overview != "" {
-		overview := info.Overview
-		if len([]rune(overview)) > 300 {
-			overview = string([]rune(overview)[:300]) + "..."
-		}
-		builder.Details("📖 剧情简介（点击展开）", overview, false)
-	}
-
-	return builder.Build()
+	return buildPosterCard(posterCardData{
+		PosterURL: info.PosterURL,
+		Title:     info.Title,
+		Year:      info.Year,
+		Kind:      kind,
+		Status:    status,
+		Rating:    info.Rating,
+		Runtime:   info.Runtime,
+		Seasons:   info.SeasonCount,
+		Episodes:  info.EpisodeCount,
+		Overview:  info.Overview,
+		Pairs:     pairs,
+	}).Rich()
 }
 
 // SubscriptionStatus represents subscription status
@@ -101,30 +55,24 @@ type SubscriptionStatus struct {
 	Progress int    `json:"progress"` // 0-100
 }
 
-// BuildWelcomeMessage builds the Rich Message welcome page for /start
+// BuildWelcomeMessage builds the Rich Message welcome page for /start.
 func BuildWelcomeMessage(userName string) RichMessage {
-	builder := NewBuilder()
-
-	// Heading with optional user name
-	if userName != "" {
-		builder.Heading(fmt.Sprintf("🎬 云海求片助手 · %s", userName), 2)
-	} else {
-		builder.Heading("🎬 云海求片助手", 2)
+	b := newBlockBuilder()
+	heading := "云海求片"
+	if strings.TrimSpace(userName) != "" {
+		heading = "云海求片 · " + userName
 	}
-
-	builder.BoldParagraph("想看的，交给云海")
-	builder.Divider()
-
-	// Quick guide keeps the request workflow first and concise.
-	guide := "🔍 搜索求片 — 发送片名，搜索并提交求片\n📊 求片进度 — 随时查看处理与入库状态\n🎮 游戏中心 — 盲盒、轮盘、解说与观影画像"
-	builder.Paragraph(guide)
-	builder.Divider()
-
-	// Tips (collapsible)。仅保留引导区没有覆盖的信息，避免同卡重复。
-	tips := "• 支持电影、剧集、综艺与纪录片\n• 游戏中心提供随机发现与观影工具\n• 下载完成并入库后，将收到私聊通知"
-	builder.Details("💡 使用技巧", tips, false)
-
-	return builder.Build()
+	b.heading(heading, 3)
+	b.bold("想看的，交给云海")
+	b.paragraph("搜索求片 · 直接发片名")
+	b.paragraph("求片进度 · 提交后可查")
+	b.paragraph("游戏中心 · 闲时玩玩")
+	b.buttonRow(
+		richButton("搜索求片", "search:menu", "primary", false),
+		richButton("求片进度", "requests", "", false),
+		richButton("游戏中心", "game", "", false),
+	)
+	return b.card().Rich()
 }
 
 // DailySummaryMovie represents a movie for the daily summary card
@@ -571,12 +519,18 @@ type RequestCardData struct {
 
 // BuildRequestProgressCard builds a compact Rich Message request progress card.
 func BuildRequestProgressCard(data RequestCardData) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("📋 求片进度", 3)
-	builder.BoldParagraph(fmt.Sprintf("共 %d 条 · 第 %d/%d 页", data.Total, data.Page, data.TotalPages))
-	builder.Table([]string{"状态", "片名"}, buildRequestCardRows(data.Items))
-	builder.Italic(fmt.Sprintf("进行中 %d · 已完成 %d · 异常 %d", data.Running, data.Done, data.Problem))
-	return builder.Build()
+	b := newBlockBuilder()
+	b.heading("求片进度", 3)
+	b.bold(fmt.Sprintf("共 %d 条 · 第 %d/%d 页", data.Total, data.Page, data.TotalPages))
+	pairs := make([][]string, 0, len(data.Items)+1)
+	for _, row := range buildRequestCardRows(data.Items) {
+		if len(row) >= 2 {
+			pairs = append(pairs, []string{row[0], row[1]})
+		}
+	}
+	b.compactTable(pairs)
+	b.paragraph(fmt.Sprintf("进行中 %d · 已完成 %d · 异常 %d", data.Running, data.Done, data.Problem))
+	return b.card().Rich()
 }
 
 func buildRequestCardRows(items []RequestCardItem) [][]string {
@@ -603,31 +557,29 @@ func buildRequestCardRows(items []RequestCardItem) [][]string {
 func requestStateText(state string) string {
 	switch state {
 	case "WISH":
-		return "✨ 许愿"
+		return StatusSubmitted
 	case "REVIEWING":
-		return "📝 审核"
+		return StatusPending
 	case "STUCK":
-		return "⚠️ 同步"
+		return StatusSyncing
 	case "WORK_ORDER":
-		return "🔧 处理中"
+		return "处理中"
 	case "ISSUE_OPEN":
-		return "📝 待处理"
+		return "待处理"
 	case "P":
-		return "⏳ 排队"
-	case "R":
-		return "🔄 重搜"
-	case "S":
-		return "🔍 搜索"
+		return StatusSubmitted
+	case "R", "S":
+		return StatusSearching
 	case "D":
-		return "📥 下载"
+		return StatusDownload
 	case "C":
-		return "✅ 完成"
+		return StatusPlayable
 	case "F":
-		return "❌ 失败"
+		return "失败"
 	case "X":
-		return "🚫 取消"
+		return "已取消"
 	default:
-		return "❓ 未知"
+		return state
 	}
 }
 
@@ -717,44 +669,23 @@ type ReviewNotifyData struct {
 
 // BuildReviewNotifyCard builds admin notification card for new review request.
 func BuildReviewNotifyCard(data ReviewNotifyData) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("🆕 新求片", 3)
-
-	rows := [][]string{
-		{data.MediaIcon + " 标题", data.Title},
-		{"🏷️ 类型", data.MediaType},
+	season := data.SeasonText
+	if season == "" && data.Season > 0 {
+		season = fmt.Sprintf("第 %d 季", data.Season)
 	}
-	if data.Year > 0 {
-		rows = append(rows, []string{"📅 年份", fmt.Sprintf("%d", data.Year)})
-	}
-	if data.SeasonText != "" {
-		rows = append(rows, []string{"📺 季", data.SeasonText})
-	}
-	rows = append(rows, []string{"👤 用户", fmt.Sprintf("%s (%d)", data.UserName, data.UserID)})
-	builder.Table([]string{"信息", "详情"}, rows)
-
-	if data.Overview != "" {
-		overview := data.Overview
-		if len([]rune(overview)) > 100 {
-			overview = string([]rune(overview)[:97]) + "..."
-		}
-		builder.Divider()
-		builder.BoldParagraph("📝 简介")
-		builder.Paragraph(overview)
-	}
-
+	pairs := [][]string{{"申请人", fmt.Sprintf("%s (%d)", data.UserName, data.UserID)}}
 	if data.EmbyExists {
-		builder.Divider()
-		warn := "⚠️ 媒体库中已存在"
-		if data.EmbyHours > 0 {
-			warn += fmt.Sprintf("（%d小时%d分）", data.EmbyHours, data.EmbyMins)
-		} else if data.EmbyMins > 0 {
-			warn += fmt.Sprintf("（%d分钟）", data.EmbyMins)
-		}
-		builder.Italic(warn)
+		pairs = append(pairs, []string{"媒体库", StatusInLibrary})
 	}
-
-	return builder.Build()
+	return buildPosterCard(posterCardData{
+		Title:      data.Title,
+		Year:       data.Year,
+		Kind:       data.MediaType,
+		Status:     StatusPending,
+		SeasonText: season,
+		Overview:   data.Overview,
+		Pairs:      pairs,
+	}).Rich()
 }
 
 // ReviewResultData holds data for user approval/rejection notification.
@@ -801,18 +732,22 @@ func approvedMediaTitle(title string, year int, mediaIcon string, seasonText str
 
 // BuildGroupApprovedCard builds a compact public highlight when a request is approved.
 func BuildGroupApprovedCard(data GroupApprovedData) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("🎉 新片上车 · 审核通过", 3)
-	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, data.MediaIcon, data.SeasonText))
-
-	if data.Requester != "" {
-		builder.Paragraph(fmt.Sprintf("👤 %s 的求片已经安排上了", data.Requester))
+	b := newBlockBuilder()
+	b.heading(data.Title, 3)
+	b.bold(StatusApproved)
+	pairs := [][]string{{"类型", data.MediaType}, {"进度", StatusSearching}}
+	if data.Year > 0 {
+		pairs = append([][]string{{"年份", fmt.Sprintf("%d", data.Year)}}, pairs...)
 	}
-
-	rows := [][]string{{"类型", data.MediaType}, {"当前进度", "正在寻找资源"}}
-	builder.Table([]string{"项目", "状态"}, rows)
-	builder.Italic("找到合适版本后自动下载，入库后通知求片人")
-	return builder.Build()
+	if data.SeasonText != "" {
+		pairs = append(pairs, []string{"季度", data.SeasonText})
+	}
+	if data.Requester != "" {
+		pairs = append(pairs, []string{"求片人", data.Requester})
+	}
+	b.compactTable(pairs)
+	b.paragraph("入库后通知求片人")
+	return b.card().Rich()
 }
 
 // WashStatusData describes a dedicated wash workflow card. Public cards omit
@@ -874,62 +809,69 @@ func BuildWashApprovedCard(title string, year int, mediaIcon string) RichMessage
 	return BuildWashStatusCard(WashStatusData{Title: title, Year: year, MediaIcon: mediaIcon, Status: "approved"})
 }
 
-// BuildReviewApprovedCard builds the requester's approval notification.
+// BuildReviewApprovedCard builds the requester approval notification.
 func BuildReviewApprovedCard(data ReviewApprovedData) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("✅ 审核通过，已经安排上了", 3)
-	builder.BoldParagraph(approvedMediaTitle(data.Title, data.Year, data.MediaIcon, data.SeasonText))
-	builder.Divider()
-	builder.BoldParagraph("🚦 当前进度：正在寻找资源")
-	builder.Paragraph("接下来会自动完成「匹配资源 → 下载 → 入库」，不用重复提交。")
-	builder.Italic("入库后第一时间通知你")
-	return builder.Build()
+	return buildPosterCard(posterCardData{
+		Title:      data.Title,
+		Year:       data.Year,
+		Kind:       data.MediaType,
+		Status:     StatusApproved,
+		SeasonText: data.SeasonText,
+		Footer:     "匹配资源后自动下载，完成后可播放。",
+		Buttons: []types.TelegramRichMessageButton{
+			richButton("求片进度", "requests", "primary", false),
+			richButton("主菜单", "start", "", false),
+		},
+	}).Rich()
 }
 
 // BuildReviewRejectedCard builds user notification for rejected request.
 func BuildReviewRejectedCard(title string, year int, mediaIcon string) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("❌ 求片未通过", 3)
-
-	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, title)
-	if year > 0 {
-		titleText += fmt.Sprintf(" (%d)", year)
-	}
-	builder.BoldParagraph(titleText)
-	builder.Divider()
-	builder.Paragraph("💡 已自动退还配额")
-	builder.Italic("换个片名再试试？")
-	return builder.Build()
+	_ = mediaIcon
+	return buildPosterCard(posterCardData{
+		Title:  title,
+		Year:   year,
+		Status: StatusRejected,
+		Footer: "配额已退还，可换片名再试。",
+		Buttons: []types.TelegramRichMessageButton{
+			richButton("搜索求片", "search:menu", "primary", false),
+			richButton("主菜单", "start", "", false),
+		},
+	}).Rich()
 }
 
 // BuildReviewStuckCard builds user notification for stuck (sync failed) request.
 func BuildReviewStuckCard(title string, year int, mediaIcon string) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("⚠️ 同步待重试", 3)
-
-	titleText := fmt.Sprintf("%s 《%s》", mediaIcon, title)
-	if year > 0 {
-		titleText += fmt.Sprintf(" (%d)", year)
-	}
-	builder.BoldParagraph(titleText)
-	builder.Divider()
-	builder.Paragraph("审核已通过，正在同步到下载器")
-	builder.Italic("稍等一下就好，去「求片进度」查看状态")
-	return builder.Build()
+	_ = mediaIcon
+	return buildPosterCard(posterCardData{
+		Title:  title,
+		Year:   year,
+		Status: StatusApproved,
+		Pairs:  [][]string{{"进度", StatusSyncing}},
+		Footer: "系统会自动重试，可在求片进度查看。",
+		Buttons: []types.TelegramRichMessageButton{
+			richButton("求片进度", "requests", "primary", false),
+		},
+	}).Rich()
 }
 
-// BuildReviewBlockedCard builds user notification for blocked request (Emby exists / MP duplicate).
+// BuildReviewBlockedCard builds user notification when the title is already in library.
 func BuildReviewBlockedCard(title string, reason string, detail string) RichMessage {
-	builder := NewBuilder()
-	builder.Heading("⚠️ 已拦截", 3)
-
-	builder.BoldParagraph(fmt.Sprintf("《%s》", title))
-	builder.Divider()
-	builder.Paragraph(reason)
+	footer := strings.TrimSpace(reason)
 	if detail != "" {
-		builder.Italic(detail)
+		if footer != "" {
+			footer += " "
+		}
+		footer += detail
 	}
-	return builder.Build()
+	return buildPosterCard(posterCardData{
+		Title:  title,
+		Status: StatusInLibrary,
+		Footer: footer,
+		Buttons: []types.TelegramRichMessageButton{
+			richButton("主菜单", "start", "", false),
+		},
+	}).Rich()
 }
 
 // PendingReviewItem is a single row in the pending reviews list.

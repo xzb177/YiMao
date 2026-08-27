@@ -425,8 +425,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 				alert = fmt.Sprintf("⚠️ 已拦截：Emby 已存在《%s》第 %d 季", review.MediaTitle, season)
 			}
 			blockedCard := richmessage.BuildReviewBlockedCard(title, reason, "")
-			h.telegram.SendRichMessage(review.TelegramID, blockedCard.Markdown, nil)
-			h.updateRequesterReceipt(review, "📀 媒体库已存在，无需下载", "已在媒体库，可直接观看", "配额已自动退还。")
+			_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, blockedCard.Input(), nil)
+			h.updateRequesterReceipt(review, "", richmessage.StatusInLibrary, "配额已退还，可直接观看。")
 			return &callback.Response{
 				Text:        alert,
 				CallbackMsg: "媒体已存在",
@@ -450,7 +450,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		if err := h.reviewService.UpdateSubscriptionInfo(requestID, sub.ID, sub.State); err != nil {
 			return duplicateSubscriptionPersistenceFailure(), fmt.Errorf("persist existing subscription link: %w", err)
 		}
-		h.updateRequesterReceipt(review, "✅ 审核已通过，已在处理中", fmt.Sprintf("🚦 %s", stateText), "已有相同求片正在处理，不用重复提交；入库后会通知你。")
+		h.updateRequesterReceipt(review, "", richmessage.StatusApproved, "相同求片处理中，完成后可播放。")
 		var requesterNotifyErr error
 		if sendSeparate {
 			requesterNotifyErr = h.notifyDuplicateSubscriptionRequester(review.TelegramID, blockedCard.Markdown)
@@ -499,8 +499,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			mediaIcon = "📺"
 		}
 		stuckCard := richmessage.BuildReviewStuckCard(review.MediaTitle, review.MediaYear, mediaIcon)
-		h.telegram.SendRichMessage(review.TelegramID, stuckCard.Markdown, nil)
-		h.updateRequesterReceipt(review, "✅ 审核已通过，正在同步下载器", "🔄 已通过审核，正在同步", "系统会继续自动重试，可点「求片进度」查看状态。")
+		_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, stuckCard.Input(), nil)
+		h.updateRequesterReceipt(review, "", richmessage.StatusApproved, "正在同步，可在求片进度查看。")
 		return &callback.Response{
 			Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n📺 %s\n\n系统会继续自动处理，请稍后查看求片进度。", review.MediaTitle),
 			CallbackMsg: "审核已通过",
@@ -515,7 +515,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	// failure leaves the review recoverable and must not be presented as linked.
 	if err := h.reviewService.LinkSubscription(requestID, req.ID, "N"); err != nil {
 		logger.Info("[ReviewHandler] Failed to link created subscription %d: %v", req.ID, err)
-		h.updateRequesterReceipt(review, "✅ 审核已通过，已创建订阅", "🔄 已提交下载，进度关联恢复中", "系统会自动恢复进度关联，可点「求片进度」查看状态。")
+		h.updateRequesterReceipt(review, "", richmessage.StatusApproved, "已提交下载，进度稍后可查。")
 		_ = h.reviewService.MarkStuck(requestID, fmt.Sprintf("MoviePilot 订阅 %d 已创建，但本地关联失败: %v", req.ID, err))
 		return &callback.Response{
 			Text:        "⚠️ 订阅已创建，但进度关联暂时失败\n\n系统会继续恢复关联，请稍后查看求片进度。",
@@ -557,7 +557,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 		})
 		approveKb := services.NewKeyboardBuilder()
 		approveKb.AddButton("📍 查看求片进度", "my_requests")
-		_, requesterNotifyErr = h.telegram.SendRichMessage(review.TelegramID, approveCard.Markdown, approveKb.Build())
+		_, requesterNotifyErr = h.telegram.SendStructuredRichMessage(review.TelegramID, approveCard.Input(), approveKb.Build())
 		if requesterNotifyErr != nil {
 			logger.Warn("[ReviewHandler] 求片批准私聊通知发送失败 user=%d: %v", review.TelegramID, requesterNotifyErr)
 		}
@@ -565,7 +565,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 
 	// 申请人那条「求片已提交」确认卡必须原地更新：批准的可见结果不能只落在
 	// 管理员审核消息上，否则用户端会一直显示「状态：等待管理员审核」。
-	h.updateRequesterReceipt(review, "✅ 审核已通过，正在找资源", "🚦 正在寻找资源", "接下来会自动完成「匹配资源 → 下载 → 入库」，入库后会通知你。")
+	h.updateRequesterReceipt(review, "", richmessage.StatusApproved, "匹配资源后自动下载，完成后可播放。")
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("✅ 《%s》已被管理员批准", review.MediaTitle))
@@ -580,11 +580,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("✅ 审核已通过，正在找资源\n\n%s\n\n入库后会自动提醒，也可点「求片进度」查看状态。", titleText),
-		CallbackMsg: "已批准",
-		ShowAlert:   true,
-		Edit:        true,
-		Keyboard:    disabledReviewResultKeyboard(true),
+		CallbackMsg: richmessage.StatusApproved,
+		ShowAlert:   false,
 	}, nil
 }
 
@@ -865,8 +862,8 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	rejectCard := richmessage.BuildReviewRejectedCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
 	rejectKb := services.NewKeyboardBuilder()
 	rejectKb.AddButton("🏠 主菜单", "start")
-	h.telegram.SendRichMessage(review.TelegramID, rejectCard.Markdown, rejectKb.Build())
-	h.updateRequesterReceipt(review, "❌ 求片未通过", "管理员未通过本次求片", "配额已自动退还，换个片名再试试。")
+	_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, rejectCard.Input(), rejectKb.Build())
+	h.updateRequesterReceipt(review, "", richmessage.StatusRejected, "配额已退还，可换片名再试。")
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))
@@ -877,11 +874,8 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	}
 
 	return &callback.Response{
-		Text:        fmt.Sprintf("❌ 已拒绝\n\n📺 %s", review.MediaTitle),
-		CallbackMsg: "已拒绝",
-		ShowAlert:   true,
-		Edit:        true,
-		Keyboard:    disabledReviewResultKeyboard(false),
+		CallbackMsg: richmessage.StatusRejected,
+		ShowAlert:   false,
 	}, nil
 }
 
@@ -946,7 +940,8 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 
 	if len(reviews) == 0 {
 		return &callback.Response{
-			RichMessage: "📊 求片进度\n\n暂无求片记录\n\n选择「🔍 搜索求片」即可添加",
+			Text:        "求片进度\n\n暂无记录。发片名即可求片。",
+			RichMessage: "求片进度\n\n暂无记录。发片名即可求片。",
 			Edit:        true,
 		}, nil
 	}
@@ -967,8 +962,10 @@ func (h *ReviewHandler) handleMyReviews(ctx *callback.Context) (*callback.Respon
 	}
 	card := richmessage.BuildMyReviewsCard(items)
 	return &callback.Response{
-		RichMessage: card.Markdown,
-		Edit:        true,
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  true,
 	}, nil
 }
 
@@ -987,7 +984,8 @@ func (h *ReviewHandler) handleReviewList(ctx *callback.Context) (*callback.Respo
 
 	if len(pending) == 0 && len(washQueue) == 0 {
 		return &callback.Response{
-			RichMessage: "📋 待审核求片\n\n暂无待审核请求 ✨",
+			Text:        "待审核\n\n暂无待审核请求。",
+			RichMessage: "待审核\n\n暂无待审核请求。",
 			Edit:        true,
 		}, nil
 	}

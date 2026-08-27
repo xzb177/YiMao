@@ -31,6 +31,25 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 
 	if resp.StructuredRichMessage != nil || resp.RichMessage != "" {
 		logger.Info("%s Sending Rich Message to chat %d", logPrefix, ctx.ChatID)
+		rich := resp.StructuredRichMessage
+		if rich == nil && resp.RichMessage != "" {
+			if resp.Photo != "" {
+				_, sendErr := telegram.SendRichMessageWithPhoto(ctx.ChatID, resp.RichMessage, resp.Photo, keyboard)
+				if sendErr != nil {
+					logger.Info("%s Rich Message with photo failed: %v", logPrefix, sendErr)
+				}
+				return
+			}
+			rich = &types.TelegramInputRichMessage{Markdown: resp.RichMessage}
+		}
+		if resp.Edit && !resp.DeleteMessage && ctx.MessageID != 0 && rich != nil {
+			edited, editErr := telegram.EditMessageRich(ctx.ChatID, ctx.MessageID, rich, keyboard)
+			if editErr == nil {
+				notifyDelivered(resp, ctx, edited)
+				return
+			}
+			logger.Info("%s EditMessageRich failed, resending: %v", logPrefix, editErr)
+		}
 		deletedOriginal := false
 		if resp.Edit || resp.DeleteMessage {
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
@@ -39,15 +58,10 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 				deletedOriginal = true
 			}
 		}
-		// Photo + Rich Message is one native rich card. Never send a standalone
-		// photo first; that duplicates metadata and leaves buttons on a second card.
+		var delivered *types.TelegramMessage
 		var sendErr error
-		if resp.StructuredRichMessage != nil {
-			_, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, resp.StructuredRichMessage, keyboard)
-		} else if resp.Photo != "" {
-			_, sendErr = telegram.SendRichMessageWithPhoto(ctx.ChatID, resp.RichMessage, resp.Photo, keyboard)
-		} else {
-			_, sendErr = telegram.SendRichMessage(ctx.ChatID, resp.RichMessage, keyboard)
+		if rich != nil {
+			delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, rich, keyboard)
 		}
 		if sendErr != nil {
 			logger.Info("%s Rich Message failed: %v, falling back to one media/text card", logPrefix, sendErr)
@@ -61,14 +75,20 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 				}
 			} else if resp.Text != "" {
 				if resp.Edit && !deletedOriginal {
-					if _, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, defaultParseMode(resp.ParseMode), keyboard); editErr != nil {
+					if edited, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, defaultParseMode(resp.ParseMode), keyboard); editErr != nil {
 						logger.Info("%s Rich fallback EditMessage error: %v", logPrefix, editErr)
+					} else {
+						notifyDelivered(resp, ctx, edited)
 					}
-				} else if _, msgErr := telegram.SendMessage(ctx.ChatID, resp.Text, defaultParseMode(resp.ParseMode), keyboard); msgErr != nil {
+				} else if sent, msgErr := telegram.SendMessage(ctx.ChatID, resp.Text, defaultParseMode(resp.ParseMode), keyboard); msgErr != nil {
 					logger.Info("%s Rich fallback SendMessage error: %v", logPrefix, msgErr)
+				} else {
+					notifyDelivered(resp, ctx, sent)
 				}
 			}
+			return
 		}
+		notifyDelivered(resp, ctx, delivered)
 		return
 	}
 

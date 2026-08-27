@@ -13,9 +13,14 @@ import (
 )
 
 type receiptEditPayload struct {
-	ChatID    int64  `json:"chat_id"`
-	MessageID int64  `json:"message_id"`
-	Text      string `json:"text"`
+	ChatID      int64           `json:"chat_id"`
+	MessageID   int64           `json:"message_id"`
+	Text        string          `json:"text"`
+	RichMessage json.RawMessage `json:"rich_message"`
+}
+
+func (p receiptEditPayload) blob() string {
+	return p.Text + string(p.RichMessage)
 }
 
 // TestApprovalUpdatesRequesterReceiptCardInPlace pins the user-visible outcome
@@ -106,11 +111,12 @@ func TestApprovalUpdatesRequesterReceiptCardInPlace(t *testing.T) {
 	if receiptEdit == nil {
 		t.Fatalf("requester receipt card was never edited: edits=%+v", first)
 	}
-	if strings.Contains(receiptEdit.Text, "等待管理员审核") || strings.Contains(receiptEdit.Text, "求片已提交") {
-		t.Fatalf("requester receipt still shows the pending card: %q", receiptEdit.Text)
+	blob := receiptEdit.blob()
+	if strings.Contains(blob, "等待管理员审核") || strings.Contains(blob, "求片已提交") {
+		t.Fatalf("requester receipt still shows the pending card: %q", blob)
 	}
-	if !strings.Contains(receiptEdit.Text, "审核已通过") || !strings.Contains(receiptEdit.Text, review.MediaTitle) {
-		t.Fatalf("requester receipt lacks the approved outcome: %q", receiptEdit.Text)
+	if !strings.Contains(blob, "已批准") || !strings.Contains(blob, review.MediaTitle) {
+		t.Fatalf("requester receipt lacks the approved outcome: %q", blob)
 	}
 
 	secondResp, secondErr := h.Handle(ctx)
@@ -173,14 +179,13 @@ func TestUpdateRequesterReceiptEditsEphemeralCard(t *testing.T) {
 
 	}
 
-	text, _ := payload["text"].(string)
-
-	if !strings.Contains(text, "approved headline") || strings.Contains(text, "waiting") {
-
-		t.Fatalf("text=%q", text)
-
+	blob, _ := json.Marshal(payload)
+	if !strings.Contains(string(blob), "status") || strings.Contains(string(blob), "waiting") {
+		t.Fatalf("payload=%v", payload)
 	}
-
+	if payload["rich_message"] == nil {
+		t.Fatalf("missing rich_message: %v", payload)
+	}
 }
 
 func TestDisabledReviewResultKeyboard(t *testing.T) {

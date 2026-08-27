@@ -356,6 +356,20 @@ func (c *TelegramClient) EditMessage(chatID int64, messageID int64, text string,
 	return c.makeRequest(apiURL, payload)
 }
 
+// EditMessageRich edits an existing message using Bot API 10.1+ rich_message.
+func (c *TelegramClient) EditMessageRich(chatID int64, messageID int64, richMessage *types.TelegramInputRichMessage, keyboard *types.TelegramInlineKeyboard) (*types.TelegramMessage, error) {
+	apiURL := fmt.Sprintf("%s/editMessageText", c.baseURL)
+	payload := map[string]interface{}{
+		"chat_id":      chatID,
+		"message_id":   messageID,
+		"rich_message": richMessage,
+	}
+	if keyboard != nil {
+		payload["reply_markup"] = keyboard
+	}
+	return c.makeRequest(apiURL, payload)
+}
+
 // DeleteMessage deletes a message
 func (c *TelegramClient) DeleteMessage(chatID int64, messageID int64) error {
 	apiURL := fmt.Sprintf("%s/deleteMessage", c.baseURL)

@@ -12,7 +12,7 @@ func TestRestoredSearchResultsPreserveOverviewAndReliableStatus(t *testing.T) {
 		ID: "276567", Title: "夫妻的博弈", Year: 2026, Type: "tv",
 		Poster: "/poster.jpg", Rating: 8.7,
 		Overview: "这是一段返回搜索结果后仍应显示的完整简介。",
-		Status:   "云海可看",
+		Status:   "已在库",
 	}}
 
 	results, statuses := restoreSearchCardSnapshot(items)
@@ -23,7 +23,7 @@ func TestRestoredSearchResultsPreserveOverviewAndReliableStatus(t *testing.T) {
 		t.Fatalf("overview lost: %q", results[0].Overview)
 	}
 	key := services.MediaStatusKey(results[0].ID, results[0].Type)
-	if statuses[key] != "云海可看" {
+	if statuses[key] != "已在库" {
 		t.Fatalf("status lost: key=%q statuses=%+v", key, statuses)
 	}
 }

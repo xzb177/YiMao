@@ -8,11 +8,25 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/xzb177/yimao/pkg/types"
 )
 
-// RichMessage represents the InputRichMessage structure for Telegram Bot API 10.1
+// RichMessage is markdown plus optional Bot API 10.3 blocks.
 type RichMessage struct {
-	Markdown string `json:"markdown"`
+	Markdown string                                `json:"markdown,omitempty"`
+	Blocks   []types.TelegramInputRichBlock        `json:"blocks,omitempty"`
+	Media    []types.TelegramInputRichMessageMedia `json:"-"`
+}
+
+func (m RichMessage) Input() *types.TelegramInputRichMessage {
+	if len(m.Blocks) > 0 {
+		return &types.TelegramInputRichMessage{Blocks: m.Blocks, Media: m.Media}
+	}
+	if strings.TrimSpace(m.Markdown) != "" {
+		return &types.TelegramInputRichMessage{Markdown: m.Markdown, Media: m.Media}
+	}
+	return nil
 }
 
 // Builder helps build rich messages

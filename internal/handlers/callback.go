@@ -313,10 +313,11 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 
 	return &callback.Response{
-		Text:        baseMsg,
-		RichMessage: richMsg.Markdown,
-		Edit:        true,
-		Keyboard:    convertKeyboard(keyboard),
+		Text:                  baseMsg,
+		RichMessage:           richMsg.Markdown,
+		StructuredRichMessage: richMsg.Input(),
+		Edit:                  true,
+		Keyboard:              convertKeyboard(keyboard),
 	}, nil
 }
 
@@ -712,18 +713,21 @@ func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyb
 	if msg.Markdown != "" {
 		if posterURL != "" {
 			return &callback.Response{
-				Photo:        posterURL,
-				PhotoCaption: buildEphemeralMediaCaption(info),
-				ParseMode:    "HTML",
-				RichMessage:  msg.Markdown,
-				Edit:         false,
-				Keyboard:     convertKeyboard(keyboard),
+				Text:                  buildEphemeralMediaCaption(info),
+				ParseMode:             "HTML",
+				RichMessage:           msg.Markdown,
+				StructuredRichMessage: msg.Input(),
+				Photo:                 posterURL,
+				Edit:                  false,
+				Keyboard:              convertKeyboard(keyboard),
 			}
 		}
 		return &callback.Response{
-			RichMessage: msg.Markdown,
-			Edit:        edit,
-			Keyboard:    convertKeyboard(keyboard),
+			Text:                  msg.Markdown,
+			RichMessage:           msg.Markdown,
+			StructuredRichMessage: msg.Input(),
+			Edit:                  edit,
+			Keyboard:              convertKeyboard(keyboard),
 		}
 	}
 	return nil
@@ -822,7 +826,7 @@ func normalizeDetailMediaType(mediaType string) string {
 
 func normalizeDetailStatus(status string) string {
 	switch strings.TrimSpace(status) {
-	case "云海可看", "站内追更", "可求片":
+	case "已在库", "下载中", "可求片", "云海可看", "站内追更":
 		return strings.TrimSpace(status)
 	default:
 		return "状态暂未确认"

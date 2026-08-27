@@ -36,12 +36,11 @@ func TestOrdinaryReviewApprovalNotifiesRequesterAndConfiguredGroupOnce(t *testin
 	defer moviePilot.Close()
 
 	type richPayload struct {
-		ChatID          int64 `json:"chat_id"`
-		MessageThreadID int64 `json:"message_thread_id"`
-		RichMessage     struct {
-			Markdown string `json:"markdown"`
-		} `json:"rich_message"`
+		ChatID          int64           `json:"chat_id"`
+		MessageThreadID int64           `json:"message_thread_id"`
+		RichMessage     json.RawMessage `json:"rich_message"`
 	}
+	richBody := func(p richPayload) string { return string(p.RichMessage) }
 	var telegramMu sync.Mutex
 	var telegramPayloads []richPayload
 	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +157,7 @@ func TestOrdinaryReviewApprovalNotifiesRequesterAndConfiguredGroupOnce(t *testin
 	}
 	byChat := make(map[int64]string, len(firstPayloads))
 	for _, payload := range firstPayloads {
-		byChat[payload.ChatID] = payload.RichMessage.Markdown
+		byChat[payload.ChatID] = richBody(payload)
 	}
 	if byChat[42] == "" || byChat[-100123] == "" {
 		t.Fatalf("sendRichMessage chats=%v, want requester 42 and group -100123", byChat)
@@ -212,12 +211,11 @@ func testOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAnd
 	defer moviePilot.Close()
 
 	type richPayload struct {
-		ChatID          int64 `json:"chat_id"`
-		MessageThreadID int64 `json:"message_thread_id"`
-		RichMessage     struct {
-			Markdown string `json:"markdown"`
-		} `json:"rich_message"`
+		ChatID          int64           `json:"chat_id"`
+		MessageThreadID int64           `json:"message_thread_id"`
+		RichMessage     json.RawMessage `json:"rich_message"`
 	}
+	richBody := func(p richPayload) string { return string(p.RichMessage) }
 	var telegramMu sync.Mutex
 	var telegramPayloads []richPayload
 	telegram := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -316,7 +314,7 @@ func testOrdinaryReviewFirstApprovalWithExistingSubscriptionNotifiesRequesterAnd
 	requesterMessages := 0
 	groupMessages := 0
 	for _, payload := range firstPayloads {
-		if payload.RichMessage.Markdown == "" {
+		if richBody(payload) == "" {
 			t.Fatalf("chat %d received an empty Rich Message", payload.ChatID)
 		}
 		switch payload.ChatID {

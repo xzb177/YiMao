@@ -31,7 +31,7 @@ func testPosterJPEG(t *testing.T) []byte {
 func TestRenderSearchVisualCardJPEGContract(t *testing.T) {
 	t.Setenv("YIMAO_CJK_FONT", "/usr/share/fonts/noto/NotoSansCJK-Regular.ttc")
 	item := SearchResult{ID: 4048, Title: "凡人修仙传", Year: 2020, Type: "tv", Rating: 8.2, Overview: strings.Repeat("韩立为了修仙踏上漫漫长路。", 10)}
-	data, err := RenderSearchVisualCard(testPosterJPEG(t), 0, item, "站内追更")
+	data, err := RenderSearchVisualCard(testPosterJPEG(t), 0, item, "下载中")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestRenderSearchVisualCardAdaptivePosterPalettes(t *testing.T) {
 				t.Fatalf("pill contrast %.2f below WCAG AA; palette=%+v", got, palette)
 			}
 			item := SearchResult{Title: "自适应影视卡", Year: 2020, Type: "tv", Rating: 8.4, Overview: strings.Repeat("这是一段测试简介。", 20)}
-			got, err := RenderSearchVisualCard(poster, 7, item, "站内追更")
+			got, err := RenderSearchVisualCard(poster, 7, item, "下载中")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -114,8 +114,8 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 
 func TestSearchCardStatusLabelAndPillContrast(t *testing.T) {
 	cases := map[string]string{
-		"站内追更":   "状态 · 站内追更",
-		"云海可看":   "状态 · 云海可看",
+		"下载中":   "状态 · 下载中",
+		"已在库":   "状态 · 已在库",
 		"可求片":    "状态 · 可求片",
 		"状态暂未确认": "状态 · 暂未确认",
 		"":       "状态 · 暂未确认",
@@ -273,8 +273,8 @@ func TestResolveSearchCardStatusPriorityAndFailureSemantics(t *testing.T) {
 		cacheFresh bool
 		want       string
 	}{
-		{name: "emby wins over active subscription", embyExists: true, subscribed: true, cacheFresh: true, want: "云海可看"},
-		{name: "active subscription survives emby failure", embyErr: errors.New("timeout"), subscribed: true, cacheFresh: true, want: "站内追更"},
+		{name: "emby wins over active subscription", embyExists: true, subscribed: true, cacheFresh: true, want: "已在库"},
+		{name: "active subscription survives emby failure", embyErr: errors.New("timeout"), subscribed: true, cacheFresh: true, want: "下载中"},
 		{name: "confirmed miss", cacheFresh: true, want: "可求片"},
 		{name: "emby failure", embyErr: errors.New("timeout"), cacheFresh: true, want: "状态暂未确认"},
 		{name: "stale subscription cache", want: "状态暂未确认"},

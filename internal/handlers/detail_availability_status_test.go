@@ -27,12 +27,12 @@ func TestBuildDetailFromSearchPreservesAuthoritativeAvailabilityStatus(t *testin
 		status string
 		want   string
 	}{
-		{name: "confirmed available", status: "云海可看", want: "云海可看"},
-		{name: "active subscription", status: "站内追更", want: "站内追更"},
+		{name: "confirmed available", status: "已在库", want: "已在库"},
+		{name: "active subscription", status: "下载中", want: "下载中"},
 		{name: "confirmed requestable", status: "可求片", want: "可求片"},
 		{name: "lookup failure stays unknown", status: "状态暂未确认", want: "状态暂未确认"},
 		{name: "empty stays unknown", status: "", want: "状态暂未确认"},
-		{name: "untrusted status stays unknown", status: "<b>云海可看</b>", want: "状态暂未确认"},
+		{name: "untrusted status stays unknown", status: "<b>已在库</b>", want: "状态暂未确认"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			sess := manager.GetOrCreate(1001)
@@ -50,7 +50,7 @@ func TestBuildDetailFromSearchPreservesAuthoritativeAvailabilityStatus(t *testin
 			if !strings.Contains(resp.RichMessage, tc.want) {
 				t.Fatalf("detail lost status %q: %s", tc.status, resp.RichMessage)
 			}
-			if tc.status == "状态暂未确认" && strings.Contains(resp.RichMessage, "云海可看") {
+			if tc.status == "状态暂未确认" && strings.Contains(resp.RichMessage, "已在库") {
 				t.Fatalf("unknown status was overstated as available: %s", resp.RichMessage)
 			}
 		})

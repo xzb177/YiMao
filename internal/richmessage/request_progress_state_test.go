@@ -17,7 +17,7 @@ func TestBuildRequestProgressCardMapsLocalWorkOrderStates(t *testing.T) {
 		},
 	})
 
-	for _, want := range []string{"🔧 处理中", "📝 待处理"} {
+	for _, want := range []string{"处理中", "待处理"} {
 		if !strings.Contains(card.Markdown, want) {
 			t.Fatalf("progress card missing %q: %s", want, card.Markdown)
 		}

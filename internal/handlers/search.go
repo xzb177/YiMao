@@ -765,7 +765,7 @@ func buildVisualSearchMessageFromCards(query string, page int, results []service
 			Filename: id + ".jpg",
 		})
 	}
-	caption := fmt.Sprintf("🔍 搜索结果「%s」 · 第 %d 页\n左右滑动看视觉卡，点下方片名看详情。", query, page)
+	caption := fmt.Sprintf("🔍 搜索结果「%s」 · 第 %d 页\n", query, page)
 	if len(blocks) == 1 {
 		blocks[0].Caption = &types.TelegramRichText{Text: caption}
 		return &types.TelegramInputRichMessage{Blocks: blocks, Media: media}
