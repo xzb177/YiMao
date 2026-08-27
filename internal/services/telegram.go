@@ -116,6 +116,29 @@ func (c *TelegramClient) SetBaseURLForTest(baseURL string, httpClient *http.Clie
 	c.httpClient = httpClient
 }
 
+type TelegramMenuButtonWebApp struct {
+	Type   string                   `json:"type"`
+	Text   string                   `json:"text"`
+	WebApp types.TelegramWebAppInfo `json:"web_app"`
+}
+
+// SetChatMenuButton configures the private-chat menu button as a Mini App.
+func (c *TelegramClient) SetChatMenuButton(text, miniAppURL string) error {
+	miniAppURL = validateMiniAppURL(miniAppURL)
+	if miniAppURL == "" {
+		return fmt.Errorf("invalid Mini App URL")
+	}
+	if strings.TrimSpace(text) == "" {
+		text = "打开云海"
+	}
+	payload := map[string]interface{}{"menu_button": struct {
+		Type   string                   `json:"type"`
+		Text   string                   `json:"text"`
+		WebApp types.TelegramWebAppInfo `json:"web_app"`
+	}{Type: "web_app", Text: types.CleanButtonText(text), WebApp: types.TelegramWebAppInfo{URL: miniAppURL}}}
+	return c.makeSimpleRequest(fmt.Sprintf("%s/setChatMenuButton", c.baseURL), payload)
+}
+
 // SetImageCache 设置图片缓存服务
 func (c *TelegramClient) SetImageCache(cache *ImageCache) {
 	c.imageCache = cache

@@ -99,6 +99,13 @@ func main() {
 
 	// Setup bot command menu
 	setupBotCommands(depsWithHandlers.Telegram)
+	if menuURL := services.ValidatedMiniAppURL(); menuURL != "" {
+		if err := depsWithHandlers.Telegram.SetChatMenuButton("打开云海", menuURL); err != nil {
+			logger.Info("[Telegram] setChatMenuButton 未设置: %v", err)
+		} else {
+			logger.Info("[Telegram] setChatMenuButton 已配置 Mini App")
+		}
+	}
 
 	// Setup webhook (if configured)
 	setupWebhook(depsWithHandlers.Telegram, cfg)
