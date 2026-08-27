@@ -114,8 +114,8 @@ func TestSearchCardLayoutSafetyAndContrastHelpers(t *testing.T) {
 
 func TestSearchCardStatusLabelAndPillContrast(t *testing.T) {
 	cases := map[string]string{
-		"下载中":   "状态 · 下载中",
-		"已在库":   "状态 · 已在库",
+		"下载中":    "状态 · 下载中",
+		"已在库":    "状态 · 已在库",
 		"可求片":    "状态 · 可求片",
 		"状态暂未确认": "状态 · 暂未确认",
 		"":       "状态 · 暂未确认",
