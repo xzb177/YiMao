@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 )
 
@@ -45,5 +46,31 @@ func TestDeliverWelcomeFallbackOmitsLegacyHTML(t *testing.T) {
 	}
 	if !strings.Contains(joined, "sendMessage") {
 		t.Fatalf("photo failure must still send welcome text, paths=%s", joined)
+	}
+}
+
+func TestDeliverWelcomeSendsCopyWhenHeroCacheFails(t *testing.T) {
+	richmessage.SetLiveWelcomeHero(func() ([]byte, string) {
+		return nil, ""
+	})
+	t.Cleanup(func() { richmessage.SetLiveWelcomeHero(nil) })
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "deleteMessage") {
+			w.WriteHeader(400)
+			_, _ = w.Write([]byte(`{"ok":false,"description":"skip"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
+	}))
+	defer server.Close()
+	telegram := services.NewTelegramClient("test")
+	telegram.SetBaseURLForTest(server.URL, server.Client())
+	DeliverWelcome(telegram, 101, "", false)
+	joined := strings.Join(paths, " ")
+	if !strings.Contains(joined, "sendRichMessage") && !strings.Contains(joined, "sendPhoto") && !strings.Contains(joined, "sendMessage") {
+		t.Fatalf("welcome silent: %s", joined)
 	}
 }

@@ -511,7 +511,8 @@ func DeliverWelcome(telegram *services.TelegramClient, chatID int64, userName st
 	} else {
 		logger.Info("[Command] Welcome sendRichMessage with hero failed: %v", err)
 	}
-	if _, err := telegram.SendPhotoBytes(chatID, "welcome_hero.png", richmessage.WelcomeHeroPNG(), richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard()); err == nil {
+	heroBytes, heroName := richmessage.WelcomeHeroFile()
+	if _, err := telegram.SendPhotoBytes(chatID, heroName, heroBytes, richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard()); err == nil {
 		return
 	} else {
 		logger.Info("[Command] Welcome sendPhoto failed: %v", err)

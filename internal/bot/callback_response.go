@@ -75,7 +75,8 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 			delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, rich, keyboard)
 			if sendErr != nil && richmessage.IsWelcomeHero(rich) {
 				logger.Info("%s Welcome rich hero failed: %v, retrying sendPhoto", logPrefix, sendErr)
-				delivered, sendErr = telegram.SendPhotoBytes(ctx.ChatID, "welcome_hero.png", richmessage.WelcomeHeroPNG(), richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard())
+				heroBytes, heroName := richmessage.WelcomeHeroFile()
+				delivered, sendErr = telegram.SendPhotoBytes(ctx.ChatID, heroName, heroBytes, richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard())
 			}
 		}
 		if sendErr != nil {

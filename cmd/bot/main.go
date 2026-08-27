@@ -547,6 +547,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
 	seasonRadar.SetTMDB(tmdbClient)
+	heroCache := services.NewWelcomeHeroCache(cfg.DataDir, tmdbClient, richmessage.WelcomeHeroPNG())
+	richmessage.SetLiveWelcomeHero(func() ([]byte, string) {
+		h := heroCache.Get()
+		return h.Bytes, h.Filename
+	})
 	logger.Info("  [7/11] TMDB client created")
 
 	// Initialize Notification Service
