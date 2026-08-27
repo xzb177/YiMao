@@ -2,6 +2,7 @@ package bot
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -74,11 +75,10 @@ func TestSendMiniAppDeepLinkUsesDocumentedEnvironmentVariable(t *testing.T) {
 
 func TestSendMiniAppDeepLinkFallsBackForInvalidConfiguration(t *testing.T) {
 	t.Setenv("MINI_APP_URL", "https://")
-	var payload map[string]any
+	var bodies [][]byte
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatal(err)
-		}
+		chunk, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, chunk)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
 	}))
@@ -88,11 +88,11 @@ func TestSendMiniAppDeepLinkFallsBackForInvalidConfiguration(t *testing.T) {
 	telegram.SetBaseURLForTest(server.URL, server.Client())
 	SendMiniAppDeepLink(telegram, 101, miniAppDeepLink{TMDBID: 550, Type: "movie"})
 
-	raw, err := json.Marshal(payload)
-	if err != nil {
-		t.Fatal(err)
+	joined := ""
+	for _, chunk := range bodies {
+		joined += string(chunk)
 	}
-	if strings.Contains(string(raw), `"web_app"`) || strings.Contains(string(raw), "tmdb_id=550") {
-		t.Fatalf("invalid Mini App URL leaked into fallback payload: %s", raw)
+	if strings.Contains(joined, `"web_app"`) || strings.Contains(joined, "tmdb_id=550") {
+		t.Fatalf("invalid Mini App URL leaked into fallback payload: %s", joined)
 	}
 }

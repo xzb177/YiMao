@@ -297,21 +297,22 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 
 	// Fetch user requests — if subscription cache is not ready, return loading message
 	if !h.moviepilot.IsSubscriptionCacheReady() {
-		// Trigger background warmup (first call after startup)
 		go h.moviepilot.WarmupSubscriptionCache()
-		msg := services.NewMessageBuilder()
-		msg.Bold("📊 求片进度").Newline()
-		msg.Newline()
-		msg.Text("⏳ 数据加载中，请稍候再试（首次加载约需 2-3 分钟）").Newline()
-		msg.Newline()
-		msg.Italic("💡 后续访问会很快")
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("🔄 刷新", "requests")
-		kb.AddButton("🏠 主菜单", "start")
+		local := h.mergePendingReviews(ctx.UserID, nil)
+		if len(local) > 0 {
+			totalPages := (len(local) + requestsPerPage - 1) / requestsPerPage
+			if page > totalPages {
+				page = totalPages
+			}
+			msg, rich, kb := h.buildRequestsMessage(local, page, totalPages, len(local))
+			return &callback.Response{Text: msg + "\n\n正在同步云端进度。", RichMessage: rich, Edit: true, Keyboard: kb}, nil
+		}
+		card := richmessage.BuildStatusNoticeCard("求片进度", "正在同步", "云端进度稍后刷新即可看到。", richmessage.StatusActionButtons("requests")...)
 		return &callback.Response{
-			Text:     msg.Build(),
-			Edit:     true,
-			Keyboard: convertKeyboard(kb.Build()),
+			Text:                  card.Markdown,
+			RichMessage:           card.Markdown,
+			StructuredRichMessage: card.Input(),
+			Edit:                  true,
 		}, nil
 	}
 	requests, err := h.moviepilot.GetUserRequests(moviepilotID)

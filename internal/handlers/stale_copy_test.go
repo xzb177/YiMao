@@ -8,7 +8,7 @@ import (
 )
 
 func TestOutboundCopyHasNoStalePhrases(t *testing.T) {
-	stale := []string{"已被已批准", "求片已提交", "媒体库中已存在"}
+	stale := []string{"已被已批准", "求片已提交", "媒体库中已存在", "首次加载约需"}
 	_ = filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err

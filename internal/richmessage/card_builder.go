@@ -67,18 +67,19 @@ func BuildWelcomeMessage(userName string) RichMessage {
 }
 
 func welcomeTitle(userName string) string {
-	if strings.TrimSpace(userName) != "" {
-		return "云海求片 · " + userName
-	}
+	_ = userName
 	return "云海求片"
 }
 
 // BuildWelcomeCard is the first-screen /start card: two equal columns, one primary.
 func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
+	_ = opt
 	b := newBlockBuilder()
+	b.photo("attach://welcome_hero")
 	b.heading(welcomeTitle(userName), 3)
 	b.bold("想看的，交给云海")
 	b.paragraph("直接发片名就能搜。")
+	b.paragraph("在线 · 可求片")
 	b.buttonRow(
 		richButton("搜索求片", "search:menu", "primary", false),
 		richButton("求片进度", "requests", "", false),
@@ -87,7 +88,32 @@ func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 		richButton("帮助", "help", "", false),
 		richButton("更多", "start_more", "", false),
 	)
-	return b.card().Rich()
+	card := b.card()
+	card.Media = welcomeHeroMedia()
+	return card.Rich()
+}
+
+// BuildStatusNoticeCard is the short 醉玲珑-style status card.
+func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
+	b := newBlockBuilder()
+	b.heading(strings.TrimSpace(title), 3)
+	if strings.TrimSpace(status) != "" {
+		b.bold(status)
+	}
+	if strings.TrimSpace(sentence) != "" {
+		b.paragraph(sentence)
+	}
+	if len(buttons) > 0 {
+		b.buttonRow(buttons...)
+	}
+	return b.card()
+}
+
+func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButton {
+	return []types.TelegramRichMessageButton{
+		richButton("刷新", refreshCallback, "", false),
+		richButton("主菜单", "start", "", false),
+	}
 }
 
 // BuildWelcomeMoreCard holds secondary actions behind 更多.

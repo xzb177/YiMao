@@ -313,6 +313,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		RichMessage:           richMsg.Markdown,
 		StructuredRichMessage: richMsg.Input(),
 		Edit:                  true,
+		DeleteMessage:         true,
 		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
 	}, nil
 }

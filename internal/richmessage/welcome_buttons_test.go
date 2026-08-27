@@ -11,7 +11,7 @@ func TestWelcomeSearchButtonIsAPI103RichButtonNotWebApp(t *testing.T) {
 	if strings.Contains(body, "web_app") {
 		t.Fatalf("welcome 搜索求片 must not be web_app: %s", body)
 	}
-	for _, want := range []string{`"type":"buttons"`, `"style":"primary"`, `"callback_data":"search:menu"`, "搜索求片", "求片进度", "帮助", "更多"} {
+	for _, want := range []string{`"type":"photo"`, `attach://welcome_hero`, `"type":"buttons"`, `"style":"primary"`, `"callback_data":"search:menu"`, "搜索求片", "求片进度", "帮助", "更多", "在线 · 可求片"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("welcome missing %q in %s", want, body)
 		}

@@ -17,6 +17,7 @@ import (
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/middleware"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/server"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
@@ -335,26 +336,18 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			return
 		}
 
-		mediaEmoji := "🎬"
-		if mediaType == "tv" {
-			mediaEmoji = "📺"
+		_ = mediaType
+		heading := title
+		if year > 0 {
+			heading = fmt.Sprintf("%s (%d)", title, year)
+		}
+		card := richmessage.BuildStatusNoticeCard(heading, "资源已齐，等待入库", "片库确认后会再通知你。", richmessage.StatusActionButtons("my_requests")...)
+		if _, err := telegramClient.SendStructuredRichMessage(telegramID, card.Input(), nil); err != nil {
+			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
 		}
 		yearStr := ""
 		if year > 0 {
 			yearStr = fmt.Sprintf(" (%d)", year)
-		}
-
-		msg := services.NewMessageBuilder()
-		msg.Bold("✅ 资源已齐，等待入库").Newline()
-		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
-		msg.Newline()
-		msg.Text("正在等待 Emby 确认入库；真正可看后会再通知你。")
-
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📊 求片进度", "my_requests")
-		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
-			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
 		}
 		logger.Info("[ReviewService] 已通知用户 %d: %s%s 资源已齐，等待 Emby 入库", telegramID, title, yearStr)
 	}
