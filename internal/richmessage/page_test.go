@@ -41,7 +41,7 @@ func TestCinemaWelcomeMatchesMockupA(t *testing.T) {
 
 func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 	search := BuildSearchPromptCard().Markdown
-	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "发片名", "返回"} {
+	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "搜索求片", "返回"} {
 		if !strings.Contains(search, want) {
 			t.Fatalf("search missing %q in %q", want, search)
 		}
@@ -58,8 +58,10 @@ func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 			t.Fatalf("more missing %q in %q", want, more)
 		}
 	}
-	if strings.Contains(more, "游戏中心") {
-		t.Fatalf("more extra: %q", more)
+	for _, want := range []string{"遇到问题", "我的进度", "游戏中心"} {
+		if !strings.Contains(more, want) {
+			t.Fatalf("more missing %q in %q", want, more)
+		}
 	}
 }
 
@@ -96,4 +98,24 @@ func TestWelcomeHeroPNGDecodes(t *testing.T) {
 		t.Fatalf("dims=%dx%d", b.Dx(), b.Dy())
 	}
 	t.Logf("image.Decode ok format=%s size=%dx%d bytes=%d", format, b.Dx(), b.Dy(), len(data))
+}
+
+func TestWelcomeTypeScaleAndLexicon(t *testing.T) {
+	card := BuildWelcomeCard("", WelcomeOptions{})
+	raw, _ := json.Marshal(card.Input())
+	body := string(raw)
+	if !strings.Contains(body, `"size":1`) || !strings.Contains(body, `"size":4`) {
+		t.Fatalf("heading/kicker sizes missing: %s", body)
+	}
+	if !strings.Contains(body, `"type":"italic"`) {
+		t.Fatalf("status must be italic, not a 状态 table: %s", body)
+	}
+	if strings.Count(body, `"style":"success"`) != 1 {
+		t.Fatalf("only 搜索求片 is success: %s", body)
+	}
+	for _, leak := range []string{"立即求片", "云海求片助手", "🔍", "🎬", "🏠"} {
+		if strings.Contains(body, leak) {
+			t.Fatalf("lexicon leak %q", leak)
+		}
+	}
 }

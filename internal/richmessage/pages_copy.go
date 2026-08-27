@@ -60,8 +60,10 @@ func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
 		Tagline: copyMoreTag,
 		Body:    copyMoreBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("洗版", "wash", types.ButtonStyleSuccess, "许愿池", "start_wish", types.ButtonStylePrimary),
-			pair("设置", "start_settings", types.ButtonStylePrimary, "返回", "start", types.ButtonStylePrimary),
+			pair("洗版", "wash", types.ButtonStylePrimary, "许愿池", "start_wish", types.ButtonStylePrimary),
+			pair("设置", "start_settings", types.ButtonStylePrimary, "遇到问题", "issue", types.ButtonStylePrimary),
+			pair("我的进度", "requests", types.ButtonStylePrimary, "游戏中心", "game_menu", types.ButtonStylePrimary),
+			full("返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -72,7 +74,7 @@ func BuildSearchPromptCard() RichMessage {
 		Tagline: copySearchTag,
 		Body:    copySearchBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("发片名", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
+			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -127,7 +129,7 @@ func BuildWashPromptCard() RichMessage {
 		Tagline: "只换库里已经有的片",
 		Body:    "把片名发给我。新版本确认可用前，当前版本会继续留着。",
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("我的进度", "start_requests", types.ButtonStylePrimary, "取消", "cancel", types.ButtonStyleDanger),
+			pair("求片进度", "requests", types.ButtonStylePrimary, "取消", "cancel", types.ButtonStyleDanger),
 			full("返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()

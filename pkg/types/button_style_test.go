@@ -9,7 +9,7 @@ func TestButtonStyleForWelcomeGrid(t *testing.T) {
 		{"帮助", "help", ButtonStylePrimary},
 		{"更多", "start_more", ButtonStylePrimary},
 		{"返回", "start", ButtonStylePrimary},
-		{"洗版", "wash", ButtonStyleSuccess},
+		{"洗版", "wash", ButtonStylePrimary},
 		{"立即求片", "request:id:1", ButtonStyleSuccess},
 	}
 	for _, c := range cases {

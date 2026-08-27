@@ -86,6 +86,17 @@ func (b *blockBuilder) bold(text string) *blockBuilder {
 	return b
 }
 
+func (b *blockBuilder) muted(text string) *blockBuilder {
+	if strings.TrimSpace(text) == "" {
+		return b
+	}
+	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "paragraph", Text: []interface{}{map[string]interface{}{"type": "italic", "text": text}}})
+	b.md.WriteString("_")
+	b.md.WriteString(escapeMarkdownInline(text))
+	b.md.WriteString("_\n\n")
+	return b
+}
+
 func (b *blockBuilder) photo(url string) *blockBuilder {
 	return b.photoCredit(url, "")
 }
@@ -109,7 +120,7 @@ func (b *blockBuilder) kicker(text string) *blockBuilder {
 	if strings.TrimSpace(text) == "" {
 		return b
 	}
-	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "heading", Text: text, Size: 1})
+	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "heading", Text: text, Size: 4})
 	b.md.WriteString(text)
 	b.md.WriteString("\n\n")
 	return b

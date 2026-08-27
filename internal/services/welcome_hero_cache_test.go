@@ -19,7 +19,7 @@ func testLandscapeJPEG(width, height int) []byte {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
-			img.Set(x, y, color.RGBA{R: 20, G: 12, B: 8, A: 255})
+			img.Set(x, y, color.RGBA{R: 210, G: 186, B: 164, A: 255})
 		}
 	}
 	var buf bytes.Buffer
@@ -34,7 +34,7 @@ func TestWelcomeHeroShanghaiDateCacheAndRefetch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/trending/movie/") {
 			trending.Add(1)
-			_ = json.NewEncoder(w).Encode(TMDBTrendingResult{Results: []TMDBTrendingMediaInfo{{ID: 550, Title: "Fight Club", BackdropPath: "/back.jpg"}}})
+			_ = json.NewEncoder(w).Encode(TMDBTrendingResult{Results: []TMDBTrendingMediaInfo{{ID: 372058, Title: "你的名字", BackdropPath: "/back.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "ja"}}})
 			return
 		}
 		if strings.Contains(r.URL.Path, "/trending/tv/") || strings.Contains(r.URL.Path, "/movie/popular") {
@@ -61,7 +61,7 @@ func TestWelcomeHeroShanghaiDateCacheAndRefetch(t *testing.T) {
 	cache.now = func() time.Time { return clock }
 	cache.pick = func(n int) int { return 0 }
 	first := cache.Get()
-	if first.Date != "2026-08-27" || first.TMDBID != 550 || first.Size != "w1280" {
+	if first.Date != "2026-08-27" || first.TMDBID != 372058 || first.Size != "w1280" || first.Pool != welcomeHeroPool {
 		t.Fatalf("first=%+v", first)
 	}
 	if _, format, err := image.Decode(bytes.NewReader(first.Bytes)); err != nil || (format != "jpeg" && format != "jpg") {
@@ -71,7 +71,7 @@ func TestWelcomeHeroShanghaiDateCacheAndRefetch(t *testing.T) {
 		t.Fatalf("first-day calls trending=%d images=%d", trending.Load(), images.Load())
 	}
 	second := cache.Get()
-	if second.TMDBID != 550 || trending.Load() != 1 || images.Load() != 1 {
+	if second.TMDBID != 372058 || trending.Load() != 1 || images.Load() != 1 {
 		t.Fatalf("same-day reused? trending=%d images=%d id=%d", trending.Load(), images.Load(), second.TMDBID)
 	}
 	clock = clock.Add(24 * time.Hour)
@@ -100,5 +100,26 @@ func TestWelcomeHeroTMDBFailUsesFallback(t *testing.T) {
 	hero := cache.Get()
 	if string(hero.Bytes) != "PNGFALLBACK" || hero.Filename != "welcome_hero.png" {
 		t.Fatalf("want fallback, got filename=%s bytes=%q", hero.Filename, hero.Bytes)
+	}
+}
+
+func TestWelcomeHeroRejectsBannedGenre(t *testing.T) {
+	horror := TMDBTrendingMediaInfo{ID: 11, Title: "X", BackdropPath: "/h.jpg", GenreIds: []int{27, 53}}
+	crime := TMDBTrendingMediaInfo{ID: 12, Title: "Y", BackdropPath: "/c.jpg", GenreIds: []int{80}}
+	youth := TMDBTrendingMediaInfo{ID: 13, Title: "Z", BackdropPath: "/z.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "zh"}
+	if youthStillOK(horror) || youthStillOK(crime) {
+		t.Fatal("banned genres must be excluded")
+	}
+	if !youthStillOK(youth) {
+		t.Fatal("romance/drama should pass")
+	}
+	dark := image.NewRGBA(image.Rect(0, 0, 64, 36))
+	for y := 0; y < 36; y++ {
+		for x := 0; x < 64; x++ {
+			dark.Set(x, y, color.RGBA{R: 12, G: 8, B: 6, A: 255})
+		}
+	}
+	if stillBrightEnough(dark) {
+		t.Fatal("dark still must be skipped")
 	}
 }

@@ -11,6 +11,7 @@ import (
 	_ "image/png"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,8 @@ const (
 	welcomeHeroTimeout   = 8 * time.Second
 	welcomeHeroMaxBytes  = 4 << 20
 	welcomeKicker        = "YUNHAI · CINEMA"
+	welcomeHeroPool      = "youth-v1"
+	welcomeMinLuma       = 90.0
 )
 
 type WelcomeHero struct {
@@ -40,6 +43,7 @@ type WelcomeHero struct {
 	TMDBID   int
 	Date     string
 	Size     string
+	Pool     string
 }
 
 type welcomeHeroMeta struct {
@@ -49,6 +53,7 @@ type welcomeHeroMeta struct {
 	Path      string `json:"backdrop_path"`
 	Size      string `json:"size"`
 	Filename  string `json:"filename"`
+	Pool      string `json:"pool"`
 }
 
 type WelcomeHeroCache struct {
@@ -123,7 +128,7 @@ func (c *WelcomeHeroCache) Get() WelcomeHero {
 
 func (c *WelcomeHeroCache) loadIfDate(date string) (WelcomeHero, bool) {
 	hero, ok := c.loadAny()
-	if !ok || hero.Date != date {
+	if !ok || hero.Date != date || hero.Pool != welcomeHeroPool {
 		return WelcomeHero{}, false
 	}
 	return hero, true
@@ -149,13 +154,14 @@ func (c *WelcomeHeroCache) loadAny() (WelcomeHero, bool) {
 	if name == "" {
 		name = welcomeHeroStillName
 	}
-	return WelcomeHero{Bytes: data, Filename: name, TMDBID: meta.TMDBID, Date: meta.Date, Size: meta.Size}, true
+	return WelcomeHero{Bytes: data, Filename: name, TMDBID: meta.TMDBID, Date: meta.Date, Size: meta.Size, Pool: meta.Pool}, true
 }
 
 type backdropCandidate struct {
 	ID        int
 	MediaType string
 	Path      string
+	Lang      string
 }
 
 func (c *WelcomeHeroCache) fetchAndStore(today string) (WelcomeHero, error) {
@@ -166,17 +172,27 @@ func (c *WelcomeHeroCache) fetchAndStore(today string) (WelcomeHero, error) {
 	if len(candidates) == 0 {
 		return WelcomeHero{}, fmt.Errorf("no backdrop candidates")
 	}
-	idx := 0
+	start := 0
 	if c.pick != nil {
-		idx = c.pick(len(candidates))
+		start = c.pick(len(candidates))
 	}
-	if idx < 0 || idx >= len(candidates) {
-		idx = 0
+	if start < 0 || start >= len(candidates) {
+		start = 0
 	}
-	chosen := candidates[idx]
-	data, size, err := c.downloadBackdrop(chosen.Path)
-	if err != nil {
-		return WelcomeHero{}, err
+	var chosen backdropCandidate
+	var data []byte
+	var size string
+	var err error
+	for i := 0; i < len(candidates); i++ {
+		chosen = candidates[(start+i)%len(candidates)]
+		data, size, err = c.downloadBackdrop(chosen.Path)
+		if err == nil {
+			break
+		}
+		logger.Info("[WelcomeHero] skip tmdb=%d: %v", chosen.ID, err)
+	}
+	if err != nil || len(data) == 0 {
+		return WelcomeHero{}, fmt.Errorf("no usable youth still")
 	}
 	if stamped := stampCinemaKicker(data); len(stamped) > 0 {
 		data = stamped
@@ -190,33 +206,33 @@ func (c *WelcomeHeroCache) fetchAndStore(today string) (WelcomeHero, error) {
 	if err := atomicWriteFile(c.stillPath(), data, 0644); err != nil {
 		return WelcomeHero{}, err
 	}
-	meta := welcomeHeroMeta{Date: today, TMDBID: chosen.ID, MediaType: chosen.MediaType, Path: chosen.Path, Size: size, Filename: welcomeHeroStillName}
+	meta := welcomeHeroMeta{Date: today, TMDBID: chosen.ID, MediaType: chosen.MediaType, Path: chosen.Path, Size: size, Filename: welcomeHeroStillName, Pool: welcomeHeroPool}
 	raw, _ := json.Marshal(meta)
 	if err := atomicWriteFile(c.metaPath(), raw, 0644); err != nil {
 		return WelcomeHero{}, err
 	}
 	logger.Info("[WelcomeHero] cached date=%s tmdb=%d size=%s bytes=%d", today, chosen.ID, size, len(data))
-	return WelcomeHero{Bytes: data, Filename: welcomeHeroStillName, TMDBID: chosen.ID, Date: today, Size: size}, nil
+	return WelcomeHero{Bytes: data, Filename: welcomeHeroStillName, TMDBID: chosen.ID, Date: today, Size: size, Pool: welcomeHeroPool}, nil
 }
 
 func (c *WelcomeHeroCache) listBackdrops() []backdropCandidate {
 	out := make([]backdropCandidate, 0, 40)
 	seen := map[string]bool{}
-	add := func(id int, mediaType, path string) {
-		path = strings.TrimSpace(path)
-		if id == 0 || path == "" || !strings.HasPrefix(path, "/") {
+	add := func(m TMDBTrendingMediaInfo, mediaType string) {
+		if !youthStillOK(m) {
 			return
 		}
-		key := fmt.Sprintf("%s:%d", mediaType, id)
+		path := strings.TrimSpace(m.BackdropPath)
+		key := fmt.Sprintf("%s:%d", mediaType, m.ID)
 		if seen[key] {
 			return
 		}
 		seen[key] = true
-		out = append(out, backdropCandidate{ID: id, MediaType: mediaType, Path: path})
+		out = append(out, backdropCandidate{ID: m.ID, MediaType: mediaType, Path: path, Lang: m.OriginalLanguage})
 	}
 	if trending, err := c.tmdb.GetTrendingMovies("day"); err == nil && trending != nil {
 		for _, m := range trending.Results {
-			add(m.ID, "movie", m.BackdropPath)
+			add(m, "movie")
 		}
 	}
 	if trending, err := c.tmdb.GetTrendingTV("day"); err == nil && trending != nil {
@@ -225,14 +241,18 @@ func (c *WelcomeHeroCache) listBackdrops() []backdropCandidate {
 			if mt == "" {
 				mt = "tv"
 			}
-			add(m.ID, mt, m.BackdropPath)
+			add(m, mt)
 		}
 	}
 	if popular, err := c.tmdb.GetPopularMovies(1); err == nil && popular != nil {
 		for _, m := range popular.Results {
-			add(m.ID, "movie", m.BackdropPath)
+			add(m, "movie")
 		}
 	}
+	if len(out) == 0 {
+		c.appendDiscoverYouth(&out, seen)
+	}
+	preferYouthLanguage(out)
 	return out
 }
 
@@ -256,6 +276,9 @@ func (c *WelcomeHeroCache) downloadBackdrop(path string) ([]byte, string, error)
 			continue
 		}
 		if b.Dx() < 640 || b.Dy() < 360 {
+			continue
+		}
+		if !stillBrightEnough(img) {
 			continue
 		}
 		return data, size, nil
@@ -309,4 +332,111 @@ func stampCinemaKicker(src []byte) []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+var youthGenreIDs = map[int]bool{35: true, 18: true, 10749: true}
+var bannedGenreIDs = map[int]bool{27: true, 53: true, 80: true, 99: true, 10752: true, 10768: true, 10770: true}
+
+func youthStillOK(m TMDBTrendingMediaInfo) bool {
+	if m.Adult || m.ID == 0 || !strings.HasPrefix(strings.TrimSpace(m.BackdropPath), "/") {
+		return false
+	}
+	ids := append([]int(nil), m.GenreIds...)
+	for _, g := range m.Genres {
+		ids = append(ids, g.ID)
+		name := strings.ToLower(g.Name)
+		if strings.Contains(name, "horror") || strings.Contains(name, "thriller") || strings.Contains(name, "war") || strings.Contains(name, "crime") || strings.Contains(name, "documentary") || strings.Contains(name, "恐怖") || strings.Contains(name, "惊悚") || strings.Contains(name, "战争") || strings.Contains(name, "犯罪") || strings.Contains(name, "纪录") {
+			return false
+		}
+	}
+	hasYouth := false
+	for _, id := range ids {
+		if bannedGenreIDs[id] {
+			return false
+		}
+		if youthGenreIDs[id] {
+			hasYouth = true
+		}
+	}
+	return hasYouth
+}
+
+func preferYouthLanguage(items []backdropCandidate) {
+	if len(items) < 2 {
+		return
+	}
+	n := 0
+	for i, it := range items {
+		if youthLangPreferred(it.Lang) {
+			items[n], items[i] = items[i], items[n]
+			n++
+		}
+	}
+}
+
+func youthLangPreferred(lang string) bool {
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "zh", "zh-cn", "zh-tw", "cn", "ja", "ko":
+		return true
+	default:
+		return false
+	}
+}
+
+func stillBrightEnough(img image.Image) bool {
+	b := img.Bounds()
+	var sum, n float64
+	for y := b.Min.Y; y < b.Max.Y; y += 8 {
+		for x := b.Min.X; x < b.Max.X; x += 8 {
+			r, g, bl, _ := img.At(x, y).RGBA()
+			sum += 0.299*float64(r>>8) + 0.587*float64(g>>8) + 0.114*float64(bl>>8)
+			n++
+		}
+	}
+	return n > 0 && sum/n >= welcomeMinLuma
+}
+
+func (c *WelcomeHeroCache) appendDiscoverYouth(out *[]backdropCandidate, seen map[string]bool) {
+	if c.tmdb == nil {
+		return
+	}
+	u, err := url.Parse(strings.TrimRight(c.tmdb.baseURL, "/") + "/discover/movie")
+	if err != nil {
+		return
+	}
+	q := u.Query()
+	q.Set("api_key", c.tmdb.apiKey)
+	q.Set("language", "zh-CN")
+	q.Set("include_adult", "false")
+	q.Set("sort_by", "popularity.desc")
+	q.Set("with_genres", "35|18|10749")
+	q.Set("without_genres", "27,53,80,99,10752")
+	u.RawQuery = q.Encode()
+	req, err := http.NewRequest(http.MethodGet, u.String(), nil)
+	if err != nil {
+		return
+	}
+	resp, err := c.tmdb.httpClient.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return
+	}
+	var result TMDBPopularResult
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return
+	}
+	for _, m := range result.Results {
+		if !youthStillOK(m) {
+			continue
+		}
+		key := fmt.Sprintf("movie:%d", m.ID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		*out = append(*out, backdropCandidate{ID: m.ID, MediaType: "movie", Path: m.BackdropPath, Lang: m.OriginalLanguage})
+	}
 }

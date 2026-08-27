@@ -428,21 +428,24 @@ type TMDBTrendingResult struct {
 
 // TMDBTrendingMediaInfo represents a media item in trending results
 type TMDBTrendingMediaInfo struct {
-	ID            int         `json:"id"`
-	Title         string      `json:"title"`
-	Name          string      `json:"name"`
-	OriginalTitle string      `json:"original_title"`
-	OriginalName  string      `json:"original_name"`
-	PosterPath    string      `json:"poster_path"`
-	BackdropPath  string      `json:"backdrop_path"`
-	VoteAverage   float64     `json:"vote_average"`
-	VoteCount     int         `json:"vote_count"`
-	ReleaseDate   string      `json:"release_date"`
-	FirstAirDate  string      `json:"first_air_date"`
-	Genres        []TMDBGenre `json:"genres"`
-	Overview      string      `json:"overview"`
-	MediaType     string      `json:"media_type"`
-	Popularity    float64     `json:"popularity"`
+	ID               int         `json:"id"`
+	Title            string      `json:"title"`
+	Name             string      `json:"name"`
+	OriginalTitle    string      `json:"original_title"`
+	OriginalName     string      `json:"original_name"`
+	PosterPath       string      `json:"poster_path"`
+	BackdropPath     string      `json:"backdrop_path"`
+	VoteAverage      float64     `json:"vote_average"`
+	VoteCount        int         `json:"vote_count"`
+	ReleaseDate      string      `json:"release_date"`
+	FirstAirDate     string      `json:"first_air_date"`
+	Genres           []TMDBGenre `json:"genres"`
+	Overview         string      `json:"overview"`
+	MediaType        string      `json:"media_type"`
+	Popularity       float64     `json:"popularity"`
+	GenreIds         []int       `json:"genre_ids"`
+	OriginalLanguage string      `json:"original_language"`
+	Adult            bool        `json:"adult"`
 }
 
 // TMDBPopularResult represents popular movies/TV shows

@@ -32,13 +32,13 @@ func ButtonStyleFor(text, callback string) string {
 	if strings.Contains(raw, "求片进度") || strings.Contains(raw, "我的进度") {
 		return ButtonStylePrimary
 	}
-	if strings.Contains(raw, "搜索求片") || strings.Contains(raw, "立即求片") || strings.Contains(raw, "洗版") {
+	if raw == "搜索求片" {
 		return ButtonStyleSuccess
 	}
 	if raw == "求片" || strings.HasSuffix(raw, " 求片") {
 		return ButtonStyleSuccess
 	}
-	for _, marker := range []string{"帮助", "更多", "返回", "主菜单", "刷新"} {
+	for _, marker := range []string{"帮助", "更多", "返回", "主菜单", "刷新", "洗版", "许愿池", "设置", "遇到问题", "我的进度", "游戏中心"} {
 		if strings.Contains(raw, marker) {
 			return ButtonStylePrimary
 		}

@@ -23,16 +23,16 @@ func applyPage(b *blockBuilder, p Page) {
 		b.kicker(k)
 	}
 	if h := strings.TrimSpace(p.Heading); h != "" {
-		b.heading(types.CleanButtonText(h), 3)
+		b.heading(types.CleanButtonText(h), 1)
 	}
 	if t := strings.TrimSpace(p.Tagline); t != "" {
-		b.bold(t)
+		b.paragraph(t)
 	}
 	if body := strings.TrimSpace(p.Body); body != "" {
 		b.paragraph(body)
 	}
 	if s := strings.TrimSpace(p.Status); s != "" {
-		b.paragraph(s)
+		b.muted(s)
 	}
 	if len(p.Facts) > 0 {
 		b.compactTable(p.Facts)
