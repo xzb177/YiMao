@@ -278,6 +278,18 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 	}
 }
 
+func welcomeCallbackResponse(userName string, isAdmin bool) *callback.Response {
+	card := richmessage.BuildWelcomeCard(userName, richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
+	return &callback.Response{
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  true,
+		DeleteMessage:         true,
+		ParseMode:             "none",
+		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
+	}
+}
 func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, error) {
 	// /start must be side-effect free. Account creation/binding is handled by the
 	// explicit /link flow so users know their credentials and ownership is clear.
@@ -306,16 +318,7 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 	if h.adminService != nil {
 		isAdmin = h.adminService.IsAdmin(ctx.UserID)
 	}
-	richMsg := richmessage.BuildWelcomeCard(userName, richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
-	baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
-	return &callback.Response{
-		Text:                  baseMsg,
-		RichMessage:           richMsg.Markdown,
-		StructuredRichMessage: richMsg.Input(),
-		Edit:                  true,
-		DeleteMessage:         true,
-		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
-	}, nil
+	return welcomeCallbackResponse(userName, isAdmin), nil
 }
 
 func (h *StartHandler) HandleMore(ctx *callback.Context) (*callback.Response, error) {
@@ -1322,15 +1325,9 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	entry, hasHistory := sess.PopNavEntry()
 	if !hasHistory {
 		// No history, show start menu using UI package
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
-
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-
-		return &callback.Response{
-			Text:     baseMsg,
-			Edit:     true,
-			Keyboard: convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
-		}, nil
+		resp := welcomeCallbackResponse("", isAdmin)
+		return resp, nil
 	}
 
 	// Restore previous view
@@ -1431,17 +1428,8 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			}, nil
 		}
 
-		// Show start menu using UI package for any other source
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
-
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-
-		return &callback.Response{
-			Text:      baseMsg,
-			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
-			ParseMode: "HTML",
-		}, nil
+		return welcomeCallbackResponse("", isAdmin), nil
 	}
 }
 
@@ -1479,16 +1467,8 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	if !hasSearch || len(items) == 0 {
 		// Search results expired, show start menu using UI package
 		logger.Info("[BackHandler] Search results expired or empty, showing start menu")
-		baseMsg := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海") + "\n\n⏰ 搜索结果已过期，请重新搜索"
-
 		isAdmin := h.adminService != nil && h.adminService.IsAdmin(ctx.UserID)
-
-		return &callback.Response{
-			Text:      baseMsg,
-			Edit:      true,
-			Keyboard:  convertKeyboard(services.BuildStartKeyboardWithOptions(isAdmin, true)),
-			ParseMode: "HTML",
-		}, nil
+		return welcomeCallbackResponse("", isAdmin), nil
 	}
 
 	// Rebuild the same self-contained visual cards from the complete search

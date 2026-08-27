@@ -2,6 +2,7 @@ package bot
 
 import (
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
@@ -62,9 +63,20 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		var sendErr error
 		if rich != nil {
 			delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, rich, keyboard)
+			if sendErr != nil && len(rich.Media) > 0 {
+				logger.Info("%s Rich Message with media failed: %v, retrying without hero", logPrefix, sendErr)
+				stripped := richmessage.WithoutHero(rich)
+				delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, stripped, keyboard)
+				if sendErr == nil {
+					rich = stripped
+				}
+			}
 		}
 		if sendErr != nil {
 			logger.Info("%s Rich Message failed: %v, falling back to one media/text card", logPrefix, sendErr)
+			if fallback := richmessage.InlineKeyboardFromBlocks(rich); fallback != nil {
+				keyboard = fallback
+			}
 			if resp.Photo != "" {
 				caption := resp.PhotoCaption
 				if caption == "" {
@@ -314,6 +326,9 @@ func communitySendOptions(ctx *callback.Context, replaceOriginal bool) *types.Te
 }
 
 func defaultParseMode(parseMode string) string {
+	if parseMode == "none" {
+		return ""
+	}
 	if parseMode == "" {
 		return "HTML"
 	}

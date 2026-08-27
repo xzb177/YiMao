@@ -205,12 +205,13 @@ func (b *blockBuilder) card() Card {
 }
 
 func richButton(text, callback, style string, disabled bool) types.TelegramRichMessageButton {
-	if style == "" && isPrimaryActionLabel(text) {
-		style = "primary"
+	if style == "" {
+		style = types.ButtonStyleFor(text, callback)
 	}
 	btn := types.TelegramRichMessageButton{Text: text, Style: style}
 	if disabled {
 		btn.Disabled = types.DisabledButtonValue()
+		btn.Style = style
 	} else {
 		btn.CallbackData = callback
 	}
@@ -225,10 +226,6 @@ func richWebAppButton(text, url, style string) types.TelegramRichMessageButton {
 	return types.TelegramRichMessageButton{Text: text, Style: style, WebApp: &types.TelegramWebAppInfo{URL: url}}
 }
 
-func isPrimaryActionLabel(text string) bool {
-	return strings.Contains(text, "搜索求片") || text == "求片" || strings.Contains(text, "立即求片")
-}
-
 // AppendKeyboardAsButtons moves a leftover inline keyboard into InputRichBlockButtons.
 func AppendKeyboardAsButtons(rich *types.TelegramInputRichMessage, kb *types.TelegramInlineKeyboard) {
 	if rich == nil || kb == nil {
@@ -238,8 +235,8 @@ func AppendKeyboardAsButtons(rich *types.TelegramInputRichMessage, kb *types.Tel
 		btns := make([]types.TelegramRichMessageButton, 0, len(row))
 		for _, src := range row {
 			style := src.Style
-			if style == "" && isPrimaryActionLabel(src.Text) {
-				style = "primary"
+			if style == "" {
+				style = types.ButtonStyleFor(src.Text, src.CallbackData)
 			}
 			btn := types.TelegramRichMessageButton{Text: src.Text, Style: style, CallbackData: src.CallbackData, URL: src.URL, WebApp: src.WebApp, Disabled: src.Disabled}
 			btns = append(btns, btn)
@@ -257,4 +254,50 @@ func AppendKeyboardAsButtons(rich *types.TelegramInputRichMessage, kb *types.Tel
 		rich.Markdown = ""
 	}
 	rich.HTML = ""
+}
+
+func WithoutHero(in *types.TelegramInputRichMessage) *types.TelegramInputRichMessage {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Media = nil
+	blocks := make([]types.TelegramInputRichBlock, 0, len(in.Blocks))
+	for _, block := range in.Blocks {
+		if block.Type == "photo" {
+			continue
+		}
+		blocks = append(blocks, block)
+	}
+	out.Blocks = blocks
+	return &out
+}
+
+func InlineKeyboardFromBlocks(rich *types.TelegramInputRichMessage) *types.TelegramInlineKeyboard {
+	if rich == nil {
+		return nil
+	}
+	rows := make([][]types.TelegramInlineKeyboardButton, 0)
+	for _, block := range rich.Blocks {
+		if block.Type != "buttons" {
+			continue
+		}
+		row := make([]types.TelegramInlineKeyboardButton, 0, len(block.Buttons))
+		for _, btn := range block.Buttons {
+			label := fmt.Sprint(btn.Text)
+			style := btn.Style
+			if style == "" {
+				style = types.ButtonStyleFor(label, btn.CallbackData)
+			}
+			converted := types.TelegramInlineKeyboardButton{Text: label, CallbackData: btn.CallbackData, URL: btn.URL, WebApp: btn.WebApp, Style: style, Disabled: btn.Disabled}
+			row = append(row, converted)
+		}
+		if len(row) > 0 {
+			rows = append(rows, row)
+		}
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
 }

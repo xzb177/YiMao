@@ -99,7 +99,7 @@ func TestSanitizeInlineKeyboardAppliesSemanticStyles(t *testing.T) {
 
 	got := sanitizeInlineKeyboard(keyboard)
 	row := got.InlineKeyboard[0]
-	want := []string{telegramButtonStylePrimary, telegramButtonStyleSuccess, "", ""}
+	want := []string{telegramButtonStyleSuccess, telegramButtonStyleSuccess, "", telegramButtonStylePrimary}
 	for i, button := range row {
 		if button.Style != want[i] {
 			t.Fatalf("button %q style = %q, want %q", button.Text, button.Style, want[i])
@@ -111,17 +111,17 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 	tests := []struct {
 		text, action, want string
 	}{
-		{"🎬 求片", "start_search", telegramButtonStylePrimary},
-		{"♻️ 洗版", "wash", ""},
+		{"🎬 求片", "start_search", telegramButtonStyleSuccess},
+		{"♻️ 洗版", "wash", telegramButtonStyleSuccess},
 		{"📝 遇到问题", "issue", ""},
-		{"📋 我的进度", "start_requests", ""},
+		{"📋 我的进度", "start_requests", telegramButtonStylePrimary},
 		{"🎮 游戏中心", "game_menu", ""},
 		{"⚙️ 设置", "start_settings", ""},
 		{"✅ 待办中心", "admin_todo", telegramButtonStylePrimary},
 		{"📊 求片统计", "admin_request_stats", ""},
 		{"📊 统计面板", "admin_feedback", ""},
 		{"🔔 通知设置", "admin_notif_settings", ""},
-		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", ""},
+		{"⬅️ 返回详情", "detail:id:1:type:tv:source:confirm", telegramButtonStylePrimary},
 		{"❌ 取消", "cancel", ""},
 		{"❌ 取消反馈", "cancel", ""},
 		{"⏹️ 停止追问", "feedback:stop_follow:1", telegramButtonStyleDanger},

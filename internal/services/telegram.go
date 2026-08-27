@@ -1392,6 +1392,9 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	case telegramButtonStylePrimary, telegramButtonStyleSuccess, telegramButtonStyleDanger:
 		return explicit
 	}
+	if mapped := types.ButtonStyleFor(button.Text, button.CallbackData); mapped != "" {
+		return mapped
+	}
 
 	text := strings.ToLower(strings.TrimSpace(button.Text))
 	action := strings.ToLower(strings.TrimSpace(button.CallbackData))

@@ -15,7 +15,6 @@ import (
 	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
-	"github.com/xzb177/yimao/internal/ui"
 	"github.com/xzb177/yimao/internal/version"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
@@ -500,13 +499,33 @@ func SendMiniAppDeepLink(telegram *services.TelegramClient, chatID int64, link m
 
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
-	card := richmessage.BuildWelcomeCard("", richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
-	if _, err := telegram.SendStructuredRichMessage(chatID, card.Input(), &types.TelegramInlineKeyboard{RemoveKeyboard: true}); err != nil {
-		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)
-		keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
-		menuText := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")
-		telegram.SendMessage(chatID, menuText, "", keyboard)
+	DeliverWelcome(telegram, chatID, "", isAdmin)
+}
+
+func DeliverWelcome(telegram *services.TelegramClient, chatID int64, userName string, isAdmin bool) {
+	card := richmessage.BuildWelcomeCard(userName, richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
+	input := card.Input()
+	remove := &types.TelegramInlineKeyboard{RemoveKeyboard: true}
+	if _, err := telegram.SendStructuredRichMessage(chatID, input, remove); err == nil {
+		return
+	} else {
+		logger.Info("[Command] Welcome with hero failed: %v", err)
 	}
+	stripped := richmessage.WithoutHero(input)
+	if _, err := telegram.SendStructuredRichMessage(chatID, stripped, remove); err == nil {
+		return
+	} else {
+		logger.Info("[Command] Welcome without hero failed: %v", err)
+	}
+	keyboard := richmessage.InlineKeyboardFromBlocks(stripped)
+	if keyboard == nil {
+		keyboard = services.BuildStartKeyboardWithOptions(isAdmin, true)
+	}
+	text := strings.TrimSpace(card.Markdown)
+	if text == "" {
+		text = "云海求片\n\n想看的，交给云海"
+	}
+	telegram.SendMessage(chatID, text, "", keyboard)
 }
 
 // SendHelpMessage sends the help message

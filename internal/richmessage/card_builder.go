@@ -81,12 +81,12 @@ func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 	b.paragraph("直接发片名就能搜。")
 	b.paragraph("在线 · 可求片")
 	b.buttonRow(
-		richButton("搜索求片", "search:menu", "primary", false),
-		richButton("求片进度", "requests", "", false),
+		richButton("搜索求片", "search:menu", types.ButtonStyleSuccess, false),
+		richButton("求片进度", "requests", types.ButtonStylePrimary, false),
 	)
 	b.buttonRow(
-		richButton("帮助", "help", "", false),
-		richButton("更多", "start_more", "", false),
+		richButton("帮助", "help", types.ButtonStylePrimary, false),
+		richButton("更多", "start_more", types.ButtonStylePrimary, false),
 	)
 	card := b.card()
 	card.Media = welcomeHeroMedia()
@@ -111,8 +111,8 @@ func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.Tele
 
 func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButton {
 	return []types.TelegramRichMessageButton{
-		richButton("刷新", refreshCallback, "", false),
-		richButton("主菜单", "start", "", false),
+		richButton("刷新", refreshCallback, types.ButtonStylePrimary, false),
+		richButton("主菜单", "start", types.ButtonStylePrimary, false),
 	}
 }
 
@@ -122,7 +122,7 @@ func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
 	b.heading("更多", 3)
 	b.paragraph("不常用的入口都在这里。")
 	b.buttonRow(
-		richButton("洗版", "wash", "", false),
+		richButton("洗版", "wash", types.ButtonStyleSuccess, false),
 		richButton("游戏中心", "game_menu", "", false),
 	)
 	b.buttonRow(
