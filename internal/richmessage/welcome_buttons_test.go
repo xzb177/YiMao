@@ -24,6 +24,11 @@ func TestWelcomeSearchButtonIsAPI103RichButtonNotWebApp(t *testing.T) {
 	if strings.Count(body, `"style":"primary"`) != 3 {
 		t.Fatalf("want three primary nav buttons, got %s", body)
 	}
+	for _, legacy := range []string{"今天", "Today", "立即求片", "云海求片助手", "🔍", "🎬", "🏠"} {
+		if strings.Contains(body, legacy) {
+			t.Fatalf("welcome legacy label %q: %s", legacy, body)
+		}
+	}
 	for _, leak := range []string{"洗版", "管理", "游戏中心", "许愿池", "打开云海小程序", "云海求片助手"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("first screen leaked %q: %s", leak, body)

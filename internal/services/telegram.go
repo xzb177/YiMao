@@ -287,13 +287,9 @@ func marshalRichMessage(rich *types.TelegramInputRichMessage) ([]byte, error) {
 	return json.Marshal(out)
 }
 
-// ClearReplyKeyboard removes a persistent reply keyboard, then deletes the placeholder.
+// ClearReplyKeyboard removes a persistent reply keyboard. Keep the remove request in chat so clients do not retain the old keyboard.
 func (c *TelegramClient) ClearReplyKeyboard(chatID int64) {
-	msg, err := c.SendMessage(chatID, "\u2060", "", &types.TelegramInlineKeyboard{RemoveKeyboard: true})
-	if err != nil || msg == nil || msg.MessageID == 0 {
-		return
-	}
-	_ = c.DeleteMessage(chatID, msg.MessageID)
+	_, _ = c.SendMessage(chatID, "\u2060", "", &types.TelegramInlineKeyboard{RemoveKeyboard: true})
 }
 
 // SendPhotoBytes uploads a local image as sendPhoto.

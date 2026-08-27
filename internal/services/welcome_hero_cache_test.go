@@ -34,7 +34,7 @@ func TestWelcomeHeroShanghaiDateCacheAndRefetch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/trending/movie/") {
 			trending.Add(1)
-			_ = json.NewEncoder(w).Encode(TMDBTrendingResult{Results: []TMDBTrendingMediaInfo{{ID: 372058, Title: "你的名字", BackdropPath: "/back.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "ja"}}})
+			_ = json.NewEncoder(w).Encode(TMDBTrendingResult{Results: []TMDBTrendingMediaInfo{{ID: 372058, Title: "你的名字", BackdropPath: "/back.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "ja", ReleaseDate: "2016-08-26"}}})
 			return
 		}
 		if strings.Contains(r.URL.Path, "/trending/tv/") || strings.Contains(r.URL.Path, "/movie/popular") {
@@ -106,7 +106,7 @@ func TestWelcomeHeroTMDBFailUsesFallback(t *testing.T) {
 func TestWelcomeHeroRejectsBannedGenre(t *testing.T) {
 	horror := TMDBTrendingMediaInfo{ID: 11, Title: "X", BackdropPath: "/h.jpg", GenreIds: []int{27, 53}}
 	crime := TMDBTrendingMediaInfo{ID: 12, Title: "Y", BackdropPath: "/c.jpg", GenreIds: []int{80}}
-	youth := TMDBTrendingMediaInfo{ID: 13, Title: "Z", BackdropPath: "/z.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "zh"}
+	youth := TMDBTrendingMediaInfo{ID: 13, Title: "Z", BackdropPath: "/z.jpg", GenreIds: []int{18, 10749}, OriginalLanguage: "zh", ReleaseDate: "2020-01-01"}
 	if youthStillOK(horror) || youthStillOK(crime) {
 		t.Fatal("banned genres must be excluded")
 	}

@@ -254,7 +254,7 @@ func (h *SearchHandler) showSearchHistoryOrPrompt(ctx *callback.Context) (*callb
 		RichMessage:           card.Markdown,
 		StructuredRichMessage: card.Input(),
 		Edit:                  true,
-		Keyboard:              &callback.Keyboard{ForceReply: true},
+		Keyboard:              &callback.Keyboard{RemoveKeyboard: true, ForceReply: true},
 	}, nil
 }
 

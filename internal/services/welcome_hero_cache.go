@@ -358,7 +358,27 @@ func youthStillOK(m TMDBTrendingMediaInfo) bool {
 			hasYouth = true
 		}
 	}
-	return hasYouth
+	if !hasYouth {
+		return false
+	}
+	date := m.ReleaseDate
+	if date == "" {
+		date = m.FirstAirDate
+	}
+	if len(date) < 4 {
+		return false
+	}
+	var year int
+	if _, err := fmt.Sscanf(date[:4], "%d", &year); err != nil || year < 2000 {
+		return false
+	}
+	title := strings.ToLower(m.Title + " " + m.Name + " " + m.OriginalTitle + " " + m.OriginalName)
+	for _, marker := range []string{"noir", "hard-boiled", "hard boiled", "黑色电影", "黑帮", "复古", "老派", "旧时代"} {
+		if strings.Contains(title, marker) {
+			return false
+		}
+	}
+	return true
 }
 
 func preferYouthLanguage(items []backdropCandidate) {
