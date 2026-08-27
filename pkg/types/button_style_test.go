@@ -18,3 +18,11 @@ func TestButtonStyleForWelcomeGrid(t *testing.T) {
 		}
 	}
 }
+func TestCleanButtonTextStripsEmojiPrefix(t *testing.T) {
+	if got := CleanButtonText("\U0001F3E0 主菜单"); got != "主菜单" {
+		t.Fatalf("home %q", got)
+	}
+	if got := CleanButtonText("搜索求片"); got != "搜索求片" {
+		t.Fatalf("plain %q", got)
+	}
+}

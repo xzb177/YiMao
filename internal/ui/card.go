@@ -8,7 +8,7 @@ import (
 )
 
 // ─────────────────────────────────────
-// 云海求片助手 · 文本卡片 UI
+// 云海求片 · 文本卡片 UI
 // 设计理念：管家迎门、信息有层次、文案有人味
 //
 // 排版约定（全局唯一一套，勿再引入新的画线风格）：
@@ -37,21 +37,21 @@ func (b *DashBuilder) BuildMenu(title, subtitle string) string {
 		sb.WriteString(fmt.Sprintf("%s\n", escapeText(subtitle)))
 	}
 	sb.WriteString("\n")
-	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
+	sb.WriteString("想看的，交给云海\n")
 	return sb.String()
 }
 
 // BuildMenuWithName 带用户名的首页。
 func (b *DashBuilder) BuildMenuWithName(name string) string {
 	var sb strings.Builder
-	sb.WriteString("🌊 <b>云海求片助手</b>\n")
+	sb.WriteString("<b>云海求片</b>\n")
 	if name != "" {
 		sb.WriteString(fmt.Sprintf("你好，%s 👋\n", escapeText(name)))
 	} else {
 		sb.WriteString("你的私人选片师\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString("把片名发给我就行，中英文都可以 🎬\n")
+	sb.WriteString("想看的，交给云海\n")
 	return sb.String()
 }
 

@@ -1,6 +1,10 @@
 package types
 
-import "strings"
+import (
+	"strings"
+	"unicode"
+	"unicode/utf8"
+)
 
 const (
 	ButtonStylePrimary = "primary"
@@ -51,4 +55,35 @@ func ButtonStyleFor(text, callback string) string {
 		return ButtonStylePrimary
 	}
 	return ""
+}
+
+func CleanButtonText(text string) string {
+	s := strings.TrimSpace(text)
+	for s != "" {
+		r, size := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError {
+			break
+		}
+		if unicode.Is(unicode.So, r) || unicode.Is(unicode.Sk, r) || r == 0xfe0f || r == 0x200d {
+			s = strings.TrimSpace(s[size:])
+			continue
+		}
+		break
+	}
+	return s
+}
+
+func PolishInlineKeyboard(kb *TelegramInlineKeyboard) {
+	if kb == nil {
+		return
+	}
+	for i := range kb.InlineKeyboard {
+		for j := range kb.InlineKeyboard[i] {
+			btn := &kb.InlineKeyboard[i][j]
+			btn.Text = CleanButtonText(btn.Text)
+			if strings.TrimSpace(btn.Style) == "" {
+				btn.Style = ButtonStyleFor(btn.Text, btn.CallbackData)
+			}
+		}
+	}
 }

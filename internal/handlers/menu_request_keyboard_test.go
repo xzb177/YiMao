@@ -29,17 +29,17 @@ func TestMovieDetailKeyboardHasOneClearPrimaryAction(t *testing.T) {
 		t.Fatalf("rows=%d want=4: %#v", len(keyboard.InlineKeyboard), keyboard)
 	}
 	primary := keyboard.InlineKeyboard[0]
-	if len(primary) != 2 || primary[0].Text != "🎬 立即求片" || primary[0].CallbackData != "request:id:101:type:movie" || primary[1].CallbackData != "wash:id:101:type:movie" {
+	if len(primary) != 2 || primary[0].Text != "立即求片" || primary[0].CallbackData != "request:id:101:type:movie" || primary[1].CallbackData != "wash:id:101:type:movie" {
 		t.Fatalf("primary row=%#v", primary)
 	}
 	if len(keyboard.InlineKeyboard[1]) != 1 || !strings.Contains(keyboard.InlineKeyboard[1][0].Text, "加入想看") {
 		t.Fatalf("social row=%#v", keyboard.InlineKeyboard[1])
 	}
 	tools := keyboard.InlineKeyboard[2]
-	if len(tools) != 2 || tools[0].Text != "🔍 候选资源" || tools[1].Text != "🐛 反馈问题" {
+	if len(tools) != 2 || tools[0].Text != "候选资源" || tools[1].Text != "反馈问题" {
 		t.Fatalf("tool row=%#v", tools)
 	}
-	if keyboard.InlineKeyboard[3][0].Text != "⬅️ 返回结果" {
+	if keyboard.InlineKeyboard[3][0].Text != "返回结果" {
 		t.Fatalf("navigation row=%#v", keyboard.InlineKeyboard[3])
 	}
 }
@@ -50,7 +50,7 @@ func TestTVDetailKeyboardDefersSeasonGridToPicker(t *testing.T) {
 	if len(keyboard.InlineKeyboard) != 4 {
 		t.Fatalf("rows=%d want=4: %#v", len(keyboard.InlineKeyboard), keyboard)
 	}
-	if row := keyboard.InlineKeyboard[0]; len(row) != 2 || row[0].CallbackData != "detail_seasons:id:202" || row[0].Text != "🗂️ 选择季度" || row[1].CallbackData != "wash:id:202:type:tv" {
+	if row := keyboard.InlineKeyboard[0]; len(row) != 2 || row[0].CallbackData != "detail_seasons:id:202" || row[0].Text != "选择季度" || row[1].CallbackData != "wash:id:202:type:tv" {
 		t.Fatalf("safe primary row=%#v", row)
 	}
 	callbacks := keyboardCallbacks(keyboard)
@@ -59,7 +59,7 @@ func TestTVDetailKeyboardDefersSeasonGridToPicker(t *testing.T) {
 			t.Fatalf("misleading whole-show action exposed: %q %q", data, label)
 		}
 	}
-	if callbacks["detail_seasons:id:202"] != "🗂️ 选择季度" || callbacks["back"] != "⬅️ 返回结果" {
+	if callbacks["detail_seasons:id:202"] != "选择季度" || callbacks["back"] != "返回结果" {
 		t.Fatalf("callbacks=%#v", callbacks)
 	}
 }
@@ -91,7 +91,7 @@ func TestSeasonPickerStaysFocused(t *testing.T) {
 	if _, exists := callbacks["request:id:303:type:tv:season:0"]; exists {
 		t.Fatalf("whole-show season=0 action must be hidden: %#v", callbacks)
 	}
-	if callbacks["detail:id:303:type:tv:source:seasons"] != "⬅️ 返回详情" {
+	if callbacks["detail:id:303:type:tv:source:seasons"] != "返回详情" {
 		t.Fatalf("detail return missing: %#v", callbacks)
 	}
 }
@@ -139,10 +139,10 @@ func TestRequestHeatDetailBypassesWrongTypeSearchCacheAndReturnsToHeat(t *testin
 		t.Fatalf("wrong-type search cache reused: %#v", resp)
 	}
 	callbacks := keyboardCallbacks(resp.Keyboard)
-	if callbacks["request_heat"] != "⬅️ 返回热榜" {
+	if heat := callbacks["request_heat"]; heat != "返回热榜" && !strings.HasSuffix(heat, "返回热榜") {
 		t.Fatalf("heat return missing: %#v", callbacks)
 	}
-	if callbacks["detail_seasons:id:550:source:request_heat"] != "🗂️ 选择季度" {
+	if season := callbacks["detail_seasons:id:550:source:request_heat"]; season != "选择季度" && !strings.HasSuffix(season, "选择季度") {
 		t.Fatalf("season source missing: %#v", callbacks)
 	}
 }

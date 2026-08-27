@@ -815,11 +815,14 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 		result.InlineKeyboard[i] = make([]types.TelegramInlineKeyboardButton, len(row))
 		for j, btn := range row {
 			converted := types.TelegramInlineKeyboardButton{
-				Text:         btn.Text,
+				Text:         types.CleanButtonText(btn.Text),
 				CallbackData: btn.CallbackData,
 				URL:          btn.URL,
 				WebApp:       btn.WebApp,
 				Style:        btn.Style,
+			}
+			if converted.Style == "" {
+				converted.Style = types.ButtonStyleFor(converted.Text, converted.CallbackData)
 			}
 			if btn.Disabled {
 				converted.Disabled = types.DisabledButtonValue()

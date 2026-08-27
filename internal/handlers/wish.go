@@ -266,7 +266,7 @@ func (h *WishHandler) tryOpenDMChannel(userID int64) {
 	if h.telegram == nil || userID == 0 {
 		return
 	}
-	greeting := "👋 你好，我是云海求片助手。\n你的许愿已经记录；找到片源后，我会在这里通知你。"
+	greeting := "你好，这里是云海求片。\n你的许愿已经记录；找到片源后会通知你。"
 	if _, err := h.telegram.SendMessage(userID, greeting, "", nil); err != nil {
 		// 发不出说明用户还没和 bot 建立私聊（或封禁了），不阻断入池，仅记日志。
 		logger.Info("[wish] 打招呼私信发送失败（用户可能未私聊过 bot，不影响入池）user=%d: %v", userID, err)

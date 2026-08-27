@@ -27,11 +27,11 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 func TestGameCenterUsesCanonicalCopyAndCallbacks(t *testing.T) {
 	keyboard := BuildGameCenterKeyboard()
 	want := map[string]string{
-		"game_narrator": "📖 电影情报站",
-		"game_blindbox": "🎰 盲盒",
-		"game_roulette": "🎡 命运轮盘",
-		"portrait":      "🧠 观影画像",
-		"start":         "🏠 主菜单",
+		"game_narrator": "电影情报站",
+		"game_blindbox": "盲盒",
+		"game_roulette": "命运轮盘",
+		"portrait":      "观影画像",
+		"start":         "主菜单",
 	}
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {

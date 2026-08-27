@@ -585,7 +585,7 @@ func HandleQuotaCommand(telegram *services.TelegramClient, msg *types.TelegramMe
 func BuildStatusMessage(msg *types.TelegramMessage, cfg *config.Config, adminService *services.AdminService, userMapping services.UserMappingStore) string {
 	isAdmin := adminService != nil && msg != nil && adminService.IsAdmin(msg.From.ID)
 	var sb strings.Builder
-	sb.WriteString("🎬 <b>云海求片助手</b>\n\n")
+	sb.WriteString("<b>云海求片</b>\n\n")
 	sb.WriteString(fmt.Sprintf("📊 版本: <code>v%s</code>\n", version.Version))
 	sb.WriteString(fmt.Sprintf("⏰ 服务端时间: <code>%s</code>\n", time.Now().Format("2006-01-02 15:04:05")))
 	if msg != nil {

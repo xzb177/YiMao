@@ -6,6 +6,7 @@ import (
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
+	"strings"
 )
 
 // RenderCallbackResponse renders callback responses for both Poll and Webhook modes.
@@ -15,6 +16,7 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		return
 	}
 
+	fuseInlineKeyboardIntoRich(resp)
 	keyboard := ConvertKeyboard(resp.Keyboard)
 	logPrefix := "[Callback]"
 	if source != "" {
@@ -333,4 +335,55 @@ func defaultParseMode(parseMode string) string {
 		return "HTML"
 	}
 	return parseMode
+}
+
+func fuseInlineKeyboardIntoRich(resp *callback.Response) {
+	if resp == nil || resp.Photo != "" {
+		return
+	}
+	if resp.StructuredRichMessage != nil && resp.Keyboard != nil && len(resp.Keyboard.InlineKeyboard) > 0 {
+		kb := ConvertKeyboard(resp.Keyboard)
+		types.PolishInlineKeyboard(kb)
+		richmessage.AppendKeyboardAsButtons(resp.StructuredRichMessage, kb)
+		resp.Keyboard = &callback.Keyboard{RemoveKeyboard: true, ForceReply: resp.Keyboard.ForceReply}
+		return
+	}
+	if resp.StructuredRichMessage != nil {
+		return
+	}
+	if resp.Keyboard == nil || len(resp.Keyboard.InlineKeyboard) == 0 {
+		return
+	}
+	kb := ConvertKeyboard(resp.Keyboard)
+	types.PolishInlineKeyboard(kb)
+	body := stripTelegramHTML(resp.Text)
+	if strings.TrimSpace(body) == "" {
+		body = strings.TrimSpace(resp.RichMessage)
+	}
+	card := richmessage.BuildStatusNoticeCard("", "", body)
+	in := card.Input()
+	if in == nil {
+		in = &types.TelegramInputRichMessage{}
+	}
+	richmessage.AppendKeyboardAsButtons(in, kb)
+	resp.StructuredRichMessage = in
+	resp.RichMessage = card.Markdown
+	resp.Text = body
+	resp.ParseMode = "none"
+	resp.Keyboard = &callback.Keyboard{RemoveKeyboard: true, ForceReply: resp.Keyboard.ForceReply}
+}
+
+func stripTelegramHTML(s string) string {
+	s = strings.ReplaceAll(s, "<b>", "")
+	s = strings.ReplaceAll(s, "</b>", "")
+	s = strings.ReplaceAll(s, "<i>", "")
+	s = strings.ReplaceAll(s, "</i>", "")
+	s = strings.ReplaceAll(s, "<code>", "")
+	s = strings.ReplaceAll(s, "</code>", "")
+	s = strings.ReplaceAll(s, "<pre>", "")
+	s = strings.ReplaceAll(s, "</pre>", "")
+	s = strings.ReplaceAll(s, "&amp;", "&")
+	s = strings.ReplaceAll(s, "&lt;", "<")
+	s = strings.ReplaceAll(s, "&gt;", ">")
+	return strings.TrimSpace(s)
 }

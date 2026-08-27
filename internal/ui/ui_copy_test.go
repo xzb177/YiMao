@@ -45,7 +45,7 @@ func TestStartButtonsUseMainMenuCopy(t *testing.T) {
 	keyboard := NewKeyboardBuilder().BuildNoResultsKeyboard()
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
-			if button.CallbackData == "start" && button.Text != "🏠 主菜单" {
+			if button.CallbackData == "start" && button.Text != "主菜单" && button.Text != "🏠 主菜单" {
 				t.Fatalf("start callback text = %q", button.Text)
 			}
 		}

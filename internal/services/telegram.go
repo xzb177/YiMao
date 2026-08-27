@@ -1322,7 +1322,7 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 	for _, row := range keyboard.InlineKeyboard {
 		cleanRow := make([]types.TelegramInlineKeyboardButton, 0, len(row))
 		for _, button := range row {
-			button.Text = sanitizeUTF8(button.Text)
+			button.Text = types.CleanButtonText(sanitizeUTF8(button.Text))
 			button.CallbackData = sanitizeUTF8(button.CallbackData)
 			button.Style = telegramButtonStyle(button)
 			if button.Disabled != nil {
@@ -1513,9 +1513,9 @@ func (kb *KeyboardBuilder) Build() *types.TelegramInlineKeyboard {
 		kb.currentRow = nil
 	}
 
-	return &types.TelegramInlineKeyboard{
-		InlineKeyboard: kb.buttons,
-	}
+	kbOut := &types.TelegramInlineKeyboard{InlineKeyboard: kb.buttons}
+	types.PolishInlineKeyboard(kbOut)
+	return kbOut
 }
 
 // FormatMarkdown formats text for MarkdownV2

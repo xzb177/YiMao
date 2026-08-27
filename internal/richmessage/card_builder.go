@@ -96,7 +96,9 @@ func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 // BuildStatusNoticeCard is the short 醉玲珑-style status card.
 func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
 	b := newBlockBuilder()
-	b.heading(strings.TrimSpace(title), 3)
+	if strings.TrimSpace(title) != "" {
+		b.heading(strings.TrimSpace(title), 3)
+	}
 	if strings.TrimSpace(status) != "" {
 		b.bold(status)
 	}

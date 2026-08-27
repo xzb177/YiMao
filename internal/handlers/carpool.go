@@ -97,7 +97,7 @@ func (h *CarpoolHandler) tryOpenDMChannel(userID int64) {
 	h.greeted[userID] = true
 	h.greetedMu.Unlock()
 
-	greeting := "👋 你好，我是云海求片助手。\n你已加入这部影片的求片记录；到货时会在群里提醒，也会在这里通知你。"
+	greeting := "你好，这里是云海求片。\n你已加入这部影片的求片记录；到货时会通知你。"
 	if _, err := h.telegram.SendMessage(userID, greeting, "", nil); err != nil {
 		// 发失败说明还没建立私聊（或被封禁）：撤销 greeted 标记，下次 +1 可再试一次。
 		h.greetedMu.Lock()
