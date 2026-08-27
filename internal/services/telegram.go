@@ -214,7 +214,7 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 	if err := writer.WriteField("chat_id", strconv.FormatInt(chatID, 10)); err != nil {
 		return nil, err
 	}
-	richJSON, err := json.Marshal(richMessage)
+	richJSON, err := marshalRichMessage(richMessage)
 	if err != nil {
 		return nil, fmt.Errorf("marshal rich_message: %w", err)
 	}
@@ -258,6 +258,93 @@ func (c *TelegramClient) sendStructuredRichMessageMultipart(chatID int64, richMe
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("telegram multipart request failed: %w", telegramNetworkError(err))
+	}
+	defer resp.Body.Close()
+	return decodeTelegramMessageResponse(resp)
+}
+
+func marshalRichMessage(rich *types.TelegramInputRichMessage) ([]byte, error) {
+	if rich == nil {
+		return json.Marshal(rich)
+	}
+	type wire struct {
+		Markdown string                                `json:"markdown,omitempty"`
+		HTML     string                                `json:"html,omitempty"`
+		Blocks   []types.TelegramInputRichBlock        `json:"blocks,omitempty"`
+		Media    []types.TelegramInputRichMessageMedia `json:"media,omitempty"`
+	}
+	out := wire{Markdown: rich.Markdown, HTML: rich.HTML, Blocks: rich.Blocks}
+	uploads := false
+	for _, media := range rich.Media {
+		if len(media.Upload) > 0 {
+			uploads = true
+			break
+		}
+	}
+	if !uploads {
+		out.Media = rich.Media
+	}
+	return json.Marshal(out)
+}
+
+// ClearReplyKeyboard removes a persistent reply keyboard, then deletes the placeholder.
+func (c *TelegramClient) ClearReplyKeyboard(chatID int64) {
+	msg, err := c.SendMessage(chatID, "\u2060", "", &types.TelegramInlineKeyboard{RemoveKeyboard: true})
+	if err != nil || msg == nil || msg.MessageID == 0 {
+		return
+	}
+	_ = c.DeleteMessage(chatID, msg.MessageID)
+}
+
+// SendPhotoBytes uploads a local image as sendPhoto.
+func (c *TelegramClient) SendPhotoBytes(chatID int64, filename string, data []byte, caption string, keyboard *types.TelegramInlineKeyboard, options ...*types.TelegramSendOptions) (*types.TelegramMessage, error) {
+	if len(data) == 0 {
+		return nil, fmt.Errorf("empty photo")
+	}
+	if filename == "" {
+		filename = "photo.jpg"
+	}
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("chat_id", strconv.FormatInt(chatID, 10)); err != nil {
+		return nil, err
+	}
+	applyTelegramSendOptionsToMultipart(writer, options)
+	caption, _ = truncateTelegramText(caption, 1024, "")
+	if caption != "" {
+		if err := writer.WriteField("caption", caption); err != nil {
+			return nil, err
+		}
+	}
+	part, err := writer.CreateFormFile("photo", filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(data); err != nil {
+		return nil, err
+	}
+	if keyboard != nil {
+		if kb := sanitizeInlineKeyboard(keyboard); kb != nil {
+			raw, err := json.Marshal(kb)
+			if err != nil {
+				return nil, err
+			}
+			if err := writer.WriteField("reply_markup", string(raw)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("%s/sendPhoto", c.baseURL), &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("telegram sendPhoto failed: %w", telegramNetworkError(err))
 	}
 	defer resp.Body.Close()
 	return decodeTelegramMessageResponse(resp)

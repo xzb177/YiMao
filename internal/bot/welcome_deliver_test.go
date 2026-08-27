@@ -16,7 +16,7 @@ func TestDeliverWelcomeFallbackOmitsLegacyHTML(t *testing.T) {
 		chunk, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, chunk)
 		w.Header().Set("Content-Type", "application/json")
-		if strings.Contains(r.URL.Path, "sendRichMessage") {
+		if strings.Contains(r.URL.Path, "sendRichMessage") || strings.Contains(r.URL.Path, "deleteMessage") {
 			w.WriteHeader(400)
 			_, _ = w.Write([]byte(`{"ok":false,"description":"no hero"}`))
 			return
@@ -36,5 +36,8 @@ func TestDeliverWelcomeFallbackOmitsLegacyHTML(t *testing.T) {
 	}
 	if !strings.Contains(joined, "搜索求片") {
 		t.Fatalf("fallback missing 搜索求片: %s", joined)
+	}
+	if !strings.Contains(joined, "welcome_hero.png") && !strings.Contains(joined, "attach://welcome_hero") {
+		t.Fatalf("hero not sent: %s", joined[:500])
 	}
 }

@@ -19,6 +19,15 @@ func TestCinemaWelcomeMatchesMockupA(t *testing.T) {
 	if strings.Contains(md, "云海求片助手") || strings.Contains(md, "首次加载") || strings.Contains(body, "web_app") {
 		t.Fatalf("legacy welcome: %q %s", md, body)
 	}
+	if strings.Contains(body, "状态") {
+		t.Fatalf("welcome must not wrap status in 状态 table: %s", body)
+	}
+	if !strings.Contains(body, `"type":"photo"`) || !strings.Contains(body, "attach://welcome_hero") {
+		t.Fatalf("welcome missing photo: %s", body)
+	}
+	if len(WelcomeHeroPNG()) == 0 {
+		t.Fatal("welcome hero png empty")
+	}
 	if strings.Count(body, `"style":"success"`) != 1 {
 		t.Fatalf("success count %s", body)
 	}

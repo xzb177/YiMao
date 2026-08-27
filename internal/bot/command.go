@@ -503,29 +503,19 @@ func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool
 }
 
 func DeliverWelcome(telegram *services.TelegramClient, chatID int64, userName string, isAdmin bool) {
+	telegram.ClearReplyKeyboard(chatID)
 	card := richmessage.BuildWelcomeCard(userName, richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
 	input := card.Input()
-	remove := &types.TelegramInlineKeyboard{RemoveKeyboard: true}
-	if _, err := telegram.SendStructuredRichMessage(chatID, input, remove); err == nil {
+	if _, err := telegram.SendStructuredRichMessage(chatID, input, nil); err == nil {
 		return
 	} else {
-		logger.Info("[Command] Welcome with hero failed: %v", err)
+		logger.Info("[Command] Welcome sendRichMessage with hero failed: %v", err)
 	}
-	stripped := richmessage.WithoutHero(input)
-	if _, err := telegram.SendStructuredRichMessage(chatID, stripped, remove); err == nil {
+	if _, err := telegram.SendPhotoBytes(chatID, "welcome_hero.png", richmessage.WelcomeHeroPNG(), richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard()); err == nil {
 		return
 	} else {
-		logger.Info("[Command] Welcome without hero failed: %v", err)
+		logger.Info("[Command] Welcome sendPhoto failed: %v", err)
 	}
-	keyboard := richmessage.InlineKeyboardFromBlocks(stripped)
-	if keyboard == nil {
-		keyboard = services.BuildStartKeyboardWithOptions(isAdmin, true)
-	}
-	text := strings.TrimSpace(card.Markdown)
-	if text == "" {
-		text = "云海求片\n\n想看的，交给云海"
-	}
-	telegram.SendMessage(chatID, text, "", keyboard)
 }
 
 // SendHelpMessage sends the help message

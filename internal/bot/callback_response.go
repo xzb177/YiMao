@@ -17,6 +17,14 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 	}
 
 	fuseInlineKeyboardIntoRich(resp)
+	if resp.Keyboard != nil && resp.Keyboard.RemoveKeyboard {
+		telegram.ClearReplyKeyboard(ctx.ChatID)
+		if len(resp.Keyboard.InlineKeyboard) == 0 && !resp.Keyboard.ForceReply {
+			resp.Keyboard = nil
+		} else {
+			resp.Keyboard.RemoveKeyboard = false
+		}
+	}
 	keyboard := ConvertKeyboard(resp.Keyboard)
 	logPrefix := "[Callback]"
 	if source != "" {
@@ -65,13 +73,9 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		var sendErr error
 		if rich != nil {
 			delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, rich, keyboard)
-			if sendErr != nil && len(rich.Media) > 0 {
-				logger.Info("%s Rich Message with media failed: %v, retrying without hero", logPrefix, sendErr)
-				stripped := richmessage.WithoutHero(rich)
-				delivered, sendErr = telegram.SendStructuredRichMessage(ctx.ChatID, stripped, keyboard)
-				if sendErr == nil {
-					rich = stripped
-				}
+			if sendErr != nil && richmessage.IsWelcomeHero(rich) {
+				logger.Info("%s Welcome rich hero failed: %v, retrying sendPhoto", logPrefix, sendErr)
+				delivered, sendErr = telegram.SendPhotoBytes(ctx.ChatID, "welcome_hero.png", richmessage.WelcomeHeroPNG(), richmessage.WelcomeCaption(), richmessage.WelcomeInlineKeyboard())
 			}
 		}
 		if sendErr != nil {

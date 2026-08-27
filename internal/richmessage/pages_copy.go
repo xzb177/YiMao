@@ -32,7 +32,7 @@ func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 	_ = userName
 	_ = opt
 	b := newBlockBuilder()
-	b.photoCredit("attach://welcome_hero", copyKickerCinema)
+	b.photo("attach://welcome_hero")
 	applyPage(b, welcomePage())
 	card := b.card()
 	card.Media = welcomeHeroMedia()

@@ -79,9 +79,8 @@ func TestSendStructuredRichMessageMultipartAttachments(t *testing.T) {
 		if err := json.Unmarshal([]byte(r.FormValue("rich_message")), &rich); err != nil {
 			t.Fatal(err)
 		}
-		media := rich["media"].([]any)[0].(map[string]any)
-		if _, leaked := media["upload"]; leaked {
-			t.Fatalf("upload bytes leaked into JSON: %v", media)
+		if _, ok := rich["media"]; ok {
+			t.Fatalf("upload media must stay out of rich_message JSON: %v", rich["media"])
 		}
 		file, header, err := r.FormFile("card_1")
 		if err != nil {
