@@ -87,13 +87,31 @@ func (b *blockBuilder) bold(text string) *blockBuilder {
 }
 
 func (b *blockBuilder) photo(url string) *blockBuilder {
+	return b.photoCredit(url, "")
+}
+
+func (b *blockBuilder) photoCredit(url, credit string) *blockBuilder {
 	if strings.TrimSpace(url) == "" {
 		return b
 	}
-	b.blocks = append(b.blocks, types.TelegramInputRichBlock{
+	block := types.TelegramInputRichBlock{
 		Type:  "photo",
 		Photo: &types.TelegramRichPhoto{Type: "photo", Media: url},
-	})
+	}
+	if c := strings.TrimSpace(credit); c != "" {
+		block.Credit = c
+	}
+	b.blocks = append(b.blocks, block)
+	return b
+}
+
+func (b *blockBuilder) kicker(text string) *blockBuilder {
+	if strings.TrimSpace(text) == "" {
+		return b
+	}
+	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "heading", Text: text, Size: 1})
+	b.md.WriteString(text)
+	b.md.WriteString("\n\n")
 	return b
 }
 

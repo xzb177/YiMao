@@ -9,14 +9,19 @@ import (
 // Page is the one user-visible card template: heading, tagline, 1-2 sentences,
 // optional compact facts, then a 2-column 10.3 button grid.
 type Page struct {
+	Kicker  string
 	Heading string
 	Tagline string
 	Body    string
+	Status  string
 	Facts   [][]string
 	Buttons [][]types.TelegramRichMessageButton
 }
 
 func applyPage(b *blockBuilder, p Page) {
+	if k := strings.TrimSpace(p.Kicker); k != "" {
+		b.kicker(k)
+	}
 	if h := strings.TrimSpace(p.Heading); h != "" {
 		b.heading(types.CleanButtonText(h), 3)
 	}
@@ -25,6 +30,9 @@ func applyPage(b *blockBuilder, p Page) {
 	}
 	if body := strings.TrimSpace(p.Body); body != "" {
 		b.paragraph(body)
+	}
+	if s := strings.TrimSpace(p.Status); s != "" {
+		b.paragraph(s)
 	}
 	if len(p.Facts) > 0 {
 		b.compactTable(p.Facts)

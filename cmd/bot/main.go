@@ -336,20 +336,31 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			return
 		}
 
-		_ = mediaType
-		heading := title
-		if year > 0 {
-			heading = fmt.Sprintf("%s (%d)", title, year)
-		}
-		card := richmessage.BuildStatusNoticeCard(heading, "资源已齐，等待入库", "片库确认后会再通知你。", richmessage.StatusActionButtons("my_requests")...)
-		if _, err := telegramClient.SendStructuredRichMessage(telegramID, card.Input(), nil); err != nil {
-			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
+		kind := "电影"
+		if mediaType == "tv" {
+			kind = "剧集"
 		}
 		yearStr := ""
 		if year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", year)
+			yearStr = fmt.Sprintf("%d", year)
 		}
-		logger.Info("[ReviewService] 已通知用户 %d: %s%s 资源已齐，等待 Emby 入库", telegramID, title, yearStr)
+		card := richmessage.BuildPlaybillCard(richmessage.PlaybillCard{
+			Title:   title,
+			Tagline: "资源已齐，等待入库",
+			Body:    "Emby 确认可看后会再通知你。",
+			Year:    yearStr,
+			Kind:    kind,
+			Next:    "入库确认",
+			Refresh: "my_requests",
+		})
+		if _, err := telegramClient.SendStructuredRichMessage(telegramID, card.Input(), nil); err != nil {
+			logger.Info("[ReviewService] 完成通知发送失败: user=%d err=%v", telegramID, err)
+		}
+		yearLog := ""
+		if year > 0 {
+			yearLog = fmt.Sprintf(" (%d)", year)
+		}
+		logger.Info("[ReviewService] 已通知用户 %d: %s%s 资源已齐，等待 Emby 入库", telegramID, title, yearLog)
 	}
 	// P1 中间态：开始下载（用户可关，走同一 NotifyDownload 偏好）
 	reviewService.OnDownloadStart = func(telegramID int64, title string, year int, mediaType string) {

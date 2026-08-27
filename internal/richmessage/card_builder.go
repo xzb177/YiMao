@@ -71,34 +71,10 @@ func welcomeTitle(userName string) string {
 	return "云海求片"
 }
 
-// BuildStatusNoticeCard is the short status card.
-func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
-	return BuildPage(Page{Heading: title, Tagline: status, Body: sentence, Buttons: packButtons(buttons)})
-}
-
-func packButtons(buttons []types.TelegramRichMessageButton) [][]types.TelegramRichMessageButton {
-	if len(buttons) == 0 {
-		return nil
-	}
-	var rows [][]types.TelegramRichMessageButton
-	row := []types.TelegramRichMessageButton{}
-	for _, btn := range buttons {
-		row = append(row, btn)
-		if len(row) == 2 {
-			rows = append(rows, row)
-			row = nil
-		}
-	}
-	if len(row) == 1 {
-		rows = append(rows, row)
-	}
-	return rows
-}
-
 func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButton {
 	return []types.TelegramRichMessageButton{
-		richButton("刷新", refreshCallback, types.ButtonStylePrimary, false),
 		richButton("主菜单", "start", types.ButtonStylePrimary, false),
+		richButton("刷新", refreshCallback, types.ButtonStylePrimary, false),
 	}
 }
 
@@ -546,21 +522,31 @@ type RequestCardData struct {
 
 // BuildRequestProgressCard builds a compact Rich Message request progress card.
 func BuildRequestProgressCard(data RequestCardData) RichMessage {
+	if len(data.Items) == 1 {
+		item := data.Items[0]
+		return BuildPlaybillCard(PlaybillCard{
+			Title:   item.Title,
+			Tagline: requestStateText(item.State),
+			Body:    copyPlaybillBody,
+			Year:    item.Year,
+			Kind:    playbillKind(item.Type),
+			Next:    playbillNext(item.State),
+			Refresh: "requests",
+		}).Rich()
+	}
 	pairs := make([][]string, 0, len(data.Items)+1)
 	for _, row := range buildRequestCardRows(data.Items) {
 		if len(row) >= 2 {
 			pairs = append(pairs, []string{row[0], row[1]})
 		}
 	}
-	body := "提交过的片在这里。点编号看详情，没有的话去搜索。"
-	if data.Total == 0 {
-		body = "还没有的话，去搜索求一片。"
-	}
 	return BuildPage(Page{
-		Heading: "求片进度",
-		Tagline: fmt.Sprintf("共 %d 条 · 第 %d/%d 页", data.Total, data.Page, data.TotalPages),
-		Body:    body,
+		Heading: copyProgressH1,
+		Tagline: copyProgressTag,
 		Facts:   pairs,
+		Buttons: [][]types.TelegramRichMessageButton{
+			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", "requests", types.ButtonStylePrimary),
+		},
 	}).Rich()
 }
 

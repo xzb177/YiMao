@@ -6,27 +6,46 @@ import (
 	"github.com/xzb177/yimao/pkg/types"
 )
 
+const (
+	copyKickerCinema = "YUNHAI · CINEMA"
+	copyKickerNow    = "NOW PLAYING"
+	copyWelcomeH1    = "云海求片"
+	copyWelcomeTag   = "想看的，交给云海"
+	copyWelcomeBody  = "直接发片名，或点搜索。提交后可在进度里查到。"
+	copyWelcomeStat  = "在线 · 可求片"
+	copySearchH1     = "搜索求片"
+	copySearchTag    = "发中文或英文片名"
+	copySearchBody   = "点结果看详情，确认后再提交。已在库的会直接告诉你。"
+	copyHelpH1       = "帮助"
+	copyHelpTag      = "三步就能求到"
+	copyHelpBody     = "发片名 → 选结果 → 等审核。通过后会开始下载，可看时再通知你。"
+	copyMoreH1       = "更多"
+	copyMoreTag      = "不常用的入口"
+	copyMoreBody     = "洗版、许愿、设置都在这，不影响正常求片。"
+	copyProgressH1   = "求片进度"
+	copyProgressTag  = "提交过的片在这里"
+	copyPlaybillTag  = "资源已齐，等待入库"
+	copyPlaybillBody = "Emby 确认可看后会再通知你。"
+)
+
 func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
+	_ = userName
 	_ = opt
 	b := newBlockBuilder()
-	b.photo("attach://welcome_hero")
-	applyPage(b, welcomePage(userName))
+	b.photoCredit("attach://welcome_hero", copyKickerCinema)
+	applyPage(b, welcomePage())
 	card := b.card()
 	card.Media = welcomeHeroMedia()
 	return card.Rich()
 }
 
-func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
-	return BuildPage(morePage(opt)).Rich()
-}
-
-func welcomePage(userName string) Page {
-	_ = userName
+func welcomePage() Page {
 	return Page{
-		Heading: "云海求片",
-		Tagline: "想看的，交给云海",
-		Body:    "直接发片名，或点搜索。提交后可在进度里查到。",
-		Facts:   [][]string{{"状态", "在线 · 可求片"}},
+		Kicker:  copyKickerCinema,
+		Heading: copyWelcomeH1,
+		Tagline: copyWelcomeTag,
+		Body:    copyWelcomeBody,
+		Status:  copyWelcomeStat,
 		Buttons: [][]types.TelegramRichMessageButton{
 			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "求片进度", "requests", types.ButtonStylePrimary),
 			pair("帮助", "help", types.ButtonStylePrimary, "更多", "start_more", types.ButtonStylePrimary),
@@ -34,29 +53,37 @@ func welcomePage(userName string) Page {
 	}
 }
 
-func morePage(opt WelcomeOptions) Page {
-	rows := [][]types.TelegramRichMessageButton{
-		pair("洗版", "wash", types.ButtonStyleSuccess, "游戏中心", "game_menu", types.ButtonStylePrimary),
-		pair("许愿池", "start_wish", types.ButtonStylePrimary, "大家最近在求", "request_heat", types.ButtonStylePrimary),
-		pair("设置", "start_settings", types.ButtonStylePrimary, "遇到问题", "issue", types.ButtonStylePrimary),
-		pair("我的进度", "start_requests", types.ButtonStylePrimary, "返回", "start", types.ButtonStylePrimary),
-	}
-	if opt.IsAdmin {
-		rows = append(rows, full("管理", "admin_menu", types.ButtonStylePrimary))
-	}
-	if u := strings.TrimSpace(opt.MiniAppURL); u != "" {
-		rows = append(rows, []types.TelegramRichMessageButton{richWebAppButton("打开云海小程序", u, "")})
-	}
-	return Page{Heading: "更多", Tagline: "洗版、许愿、设置都在这", Body: "不影响正常求片。点返回回到主页。", Buttons: rows}
+func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
+	_ = opt
+	return BuildPage(Page{
+		Heading: copyMoreH1,
+		Tagline: copyMoreTag,
+		Body:    copyMoreBody,
+		Buttons: [][]types.TelegramRichMessageButton{
+			pair("洗版", "wash", types.ButtonStyleSuccess, "许愿池", "start_wish", types.ButtonStylePrimary),
+			pair("设置", "start_settings", types.ButtonStylePrimary, "返回", "start", types.ButtonStylePrimary),
+		},
+	}).Rich()
 }
 
 func BuildSearchPromptCard() RichMessage {
 	return BuildPage(Page{
-		Heading: "搜索求片",
-		Tagline: "发中文或英文片名",
-		Body:    "点结果再提交。提交后可在进度里查到。",
+		Heading: copySearchH1,
+		Tagline: copySearchTag,
+		Body:    copySearchBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("历史记录", "search_history_menu", types.ButtonStylePrimary, "主菜单", "start", types.ButtonStylePrimary),
+			pair("发片名", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
+		},
+	}).Rich()
+}
+
+func BuildHelpCard() RichMessage {
+	return BuildPage(Page{
+		Heading: copyHelpH1,
+		Tagline: copyHelpTag,
+		Body:    copyHelpBody,
+		Buttons: [][]types.TelegramRichMessageButton{
+			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -73,64 +100,24 @@ func BuildSettingsCard(bound bool) RichMessage {
 		Buttons: [][]types.TelegramRichMessageButton{
 			pair("通知设置", "notify_settings", types.ButtonStylePrimary, "绑定账号", "start_link", types.ButtonStylePrimary),
 			pair("重置密码", "resetpw", types.ButtonStylePrimary, "我的反馈", "my_feedback", types.ButtonStylePrimary),
-			pair("观影周报", "weekly_report", types.ButtonStylePrimary, "帮助", "help", types.ButtonStylePrimary),
-			full("主菜单", "start", types.ButtonStylePrimary),
-		},
-	}).Rich()
-}
-
-func BuildHelpCard() RichMessage {
-	return BuildPage(Page{
-		Heading: "帮助",
-		Tagline: "求片、绑定、通知都能在这里看懂",
-		Body:    "选一个问题。看完后点返回，或直接去搜索。",
-		Buttons: [][]types.TelegramRichMessageButton{
-			pair("怎么求片", "help_topic:topic:search", types.ButtonStylePrimary, "怎么绑定", "help_topic:topic:link", types.ButtonStylePrimary),
-			pair("请求失败", "help_topic:topic:failed", types.ButtonStylePrimary, "没收到通知", "help_topic:topic:notify", types.ButtonStylePrimary),
-			pair("其他问题", "help_topic:topic:other", types.ButtonStylePrimary, "主菜单", "start", types.ButtonStylePrimary),
+			pair("观影周报", "weekly_report", types.ButtonStylePrimary, "返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
 
 func BuildHelpTopicCard(topic string) RichMessage {
-	heading, tagline, body := "其他问题", "管理员会看你的反馈", "点遇到问题写下片名和情况。处理完会在这里回你。"
-	switch topic {
-	case "search":
-		heading, tagline, body = "怎么求片", "点搜索或直接发片名", "选中结果后点立即求片。提交后可在进度里看到审核和下载。"
-	case "link":
-		heading, tagline, body = "怎么绑定", "把云海账号和这个 Telegram 对上", "点绑定账号，按提示输入用户名和密码。没有账号会自动创建。也可以发 /link 用户名 密码。"
-	case "failed":
-		heading, tagline, body = "请求失败", "多半是暂时没源", "到进度里点刷新再等一轮。还没有的话可以许愿，出源后会通知你。"
-	case "notify":
-		heading, tagline, body = "没收到通知", "先和我私聊一句", "群里点过按钮但没私聊过的话，我发不出信。绑定也要用同一个 Telegram 号。"
-	}
-	return BuildPage(Page{
-		Heading: heading,
-		Tagline: tagline,
-		Body:    body,
-		Buttons: [][]types.TelegramRichMessageButton{
-			pair("返回帮助", "help", types.ButtonStylePrimary, "搜索求片", "search:menu", types.ButtonStyleSuccess),
-		},
-	}).Rich()
+	_ = topic
+	return BuildHelpCard()
 }
 
 func BuildProgressEmptyCard(needBind bool) RichMessage {
-	body := "还没有的话，去搜索求一片。"
-	rows := [][]types.TelegramRichMessageButton{
-		pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "主菜单", "start", types.ButtonStylePrimary),
-	}
-	if needBind {
-		body = "求片进度要绑定账号后才能和下载对上。问题和洗版工单不用绑定也能看。"
-		rows = [][]types.TelegramRichMessageButton{
-			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "绑定账号", "link", types.ButtonStylePrimary),
-			full("主菜单", "start", types.ButtonStylePrimary),
-		}
-	}
+	_ = needBind
 	return BuildPage(Page{
-		Heading: "求片进度",
-		Tagline: "提交过的片在这里",
-		Body:    body,
-		Buttons: rows,
+		Heading: copyProgressH1,
+		Tagline: copyProgressTag,
+		Buttons: [][]types.TelegramRichMessageButton{
+			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", "requests", types.ButtonStylePrimary),
+		},
 	}).Rich()
 }
 
@@ -141,7 +128,94 @@ func BuildWashPromptCard() RichMessage {
 		Body:    "把片名发给我。新版本确认可用前，当前版本会继续留着。",
 		Buttons: [][]types.TelegramRichMessageButton{
 			pair("我的进度", "start_requests", types.ButtonStylePrimary, "取消", "cancel", types.ButtonStyleDanger),
-			full("主菜单", "start", types.ButtonStylePrimary),
+			full("返回", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
+}
+
+// PlaybillCard is B 节目单 bubble#progress.
+type PlaybillCard struct {
+	Title   string
+	Tagline string
+	Body    string
+	Year    string
+	Kind    string
+	Next    string
+	Refresh string
+}
+
+func BuildPlaybillCard(p PlaybillCard) Card {
+	title := strings.TrimSpace(p.Title)
+	tag := strings.TrimSpace(p.Tagline)
+	if tag == "" {
+		tag = copyPlaybillTag
+	}
+	body := strings.TrimSpace(p.Body)
+	if body == "" {
+		body = copyPlaybillBody
+	}
+	refresh := strings.TrimSpace(p.Refresh)
+	if refresh == "" {
+		refresh = "requests"
+	}
+	facts := [][]string{}
+	if y := strings.TrimSpace(p.Year); y != "" && y != "0" {
+		facts = append(facts, []string{"年份", y})
+	}
+	if k := strings.TrimSpace(p.Kind); k != "" {
+		facts = append(facts, []string{"类型", k})
+	}
+	if n := strings.TrimSpace(p.Next); n != "" {
+		facts = append(facts, []string{"下一步", n})
+	}
+	return BuildPage(Page{
+		Kicker:  copyKickerNow,
+		Heading: title,
+		Tagline: tag,
+		Body:    body,
+		Facts:   facts,
+		Buttons: [][]types.TelegramRichMessageButton{
+			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", refresh, types.ButtonStylePrimary),
+		},
+	})
+}
+
+func playbillKind(mediaType string) string {
+	switch strings.ToLower(strings.TrimSpace(mediaType)) {
+	case "tv", "电视剧", "剧集":
+		return "剧集"
+	case "movie", "电影":
+		return "电影"
+	default:
+		if strings.TrimSpace(mediaType) == "" {
+			return "影片"
+		}
+		return mediaType
+	}
+}
+
+func playbillNext(state string) string {
+	switch state {
+	case "C":
+		return "可播放"
+	case "D":
+		return "下载"
+	case "REVIEWING", "P":
+		return "审核"
+	case "R", "S":
+		return "找源"
+	default:
+		return "入库确认"
+	}
+}
+
+func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
+	_ = buttons
+	return BuildPlaybillCard(PlaybillCard{
+		Title:   title,
+		Tagline: status,
+		Body:    sentence,
+		Next:    "入库确认",
+		Refresh: "requests",
+	})
 }

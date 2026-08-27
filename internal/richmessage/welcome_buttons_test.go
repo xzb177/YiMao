@@ -50,9 +50,14 @@ func TestWelcomeWithoutHeroKeepsFourButtons(t *testing.T) {
 func TestWelcomeMoreHidesSecondaryUntilTapped(t *testing.T) {
 	card := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://example.com/miniapp"})
 	body := string(mustJSON(t, card.Input()))
-	for _, want := range []string{"洗版", "游戏中心", "许愿池", "管理", "打开云海小程序", "web_app"} {
+	for _, want := range []string{"洗版", "许愿池", "设置", "返回", copyMoreTag, copyMoreBody} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("more missing %q in %s", want, body)
+		}
+	}
+	for _, leak := range []string{"游戏中心", "打开云海小程序", "云海求片助手"} {
+		if strings.Contains(body, leak) {
+			t.Fatalf("more leaked %q", leak)
 		}
 	}
 }
