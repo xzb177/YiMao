@@ -66,26 +66,38 @@ func BuildWelcomeMessage(userName string) RichMessage {
 	return BuildWelcomeCard(userName, WelcomeOptions{})
 }
 
-// BuildWelcomeCard fuses 10.3 RichTextButton + InputRichBlockButtons into the message.
+func welcomeTitle(userName string) string {
+	if strings.TrimSpace(userName) != "" {
+		return "云海求片 · " + userName
+	}
+	return "云海求片"
+}
+
+// BuildWelcomeCard is the first-screen /start card: two equal columns, one primary.
 func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 	b := newBlockBuilder()
-	heading := "云海求片"
-	if strings.TrimSpace(userName) != "" {
-		heading = "云海求片 · " + userName
-	}
-	b.heading(heading, 3)
+	b.heading(welcomeTitle(userName), 3)
 	b.bold("想看的，交给云海")
-	search := richButton("搜索求片", "search:menu", "primary", false)
-	b.paragraphParts(richTextButton(search), " · 直接发片名")
+	b.paragraph("直接发片名就能搜。")
 	b.buttonRow(
-		search,
+		richButton("搜索求片", "search:menu", "primary", false),
 		richButton("求片进度", "requests", "", false),
-		richButton("游戏中心", "game_menu", "", false),
 	)
 	b.buttonRow(
-		richButton("洗版", "wash", "primary", false),
-		richButton("遇到问题", "issue", "", false),
-		richButton("我的进度", "start_requests", "", false),
+		richButton("帮助", "help", "", false),
+		richButton("更多", "start_more", "", false),
+	)
+	return b.card().Rich()
+}
+
+// BuildWelcomeMoreCard holds secondary actions behind 更多.
+func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
+	b := newBlockBuilder()
+	b.heading("更多", 3)
+	b.paragraph("不常用的入口都在这里。")
+	b.buttonRow(
+		richButton("洗版", "wash", "", false),
+		richButton("游戏中心", "game_menu", "", false),
 	)
 	b.buttonRow(
 		richButton("许愿池", "start_wish", "", false),
@@ -93,7 +105,11 @@ func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
 	)
 	b.buttonRow(
 		richButton("设置", "start_settings", "", false),
-		richButton("帮助", "help", "", false),
+		richButton("遇到问题", "issue", "", false),
+	)
+	b.buttonRow(
+		richButton("我的进度", "start_requests", "", false),
+		richButton("返回", "start", "", false),
 	)
 	if opt.IsAdmin {
 		b.buttonRow(richButton("管理", "admin_menu", "", false))

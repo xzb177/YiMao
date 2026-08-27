@@ -8,7 +8,7 @@ import (
 
 func TestBuildStartKeyboardAddsMiniAppOnlyForHTTPSURL(t *testing.T) {
 	t.Setenv("MINI_APP_URL", "https://example.com/miniapp")
-	keyboard := BuildStartKeyboardWithOptions(false, false)
+	keyboard := BuildWelcomeMoreKeyboard(false, false)
 	var found bool
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
@@ -58,7 +58,7 @@ func TestBuildStartKeyboardRejectsMalformedOrCredentialedMiniAppURL(t *testing.T
 
 func TestSanitizeInlineKeyboardPreservesWebAppButton(t *testing.T) {
 	t.Setenv("MINI_APP_URL", "https://example.com/miniapp")
-	keyboard := sanitizeInlineKeyboard(BuildStartKeyboardWithOptions(false, false))
+	keyboard := sanitizeInlineKeyboard(BuildWelcomeMoreKeyboard(false, false))
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
 			if button.WebApp != nil {

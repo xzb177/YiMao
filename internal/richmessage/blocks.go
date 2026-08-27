@@ -179,7 +179,11 @@ func (b *blockBuilder) buttonRow(buttons ...types.TelegramRichMessageButton) *bl
 	if len(clean) == 0 {
 		return b
 	}
-	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "buttons", Align: "left", Buttons: clean})
+	align := "left"
+	if len(clean) == 1 {
+		align = "center"
+	}
+	b.blocks = append(b.blocks, types.TelegramInputRichBlock{Type: "buttons", Align: align, Buttons: clean})
 	for i, btn := range clean {
 		if i > 0 {
 			b.md.WriteString(" · ")
@@ -222,7 +226,7 @@ func richWebAppButton(text, url, style string) types.TelegramRichMessageButton {
 }
 
 func isPrimaryActionLabel(text string) bool {
-	return strings.Contains(text, "搜索求片") || strings.Contains(text, "洗版") || text == "求片" || strings.Contains(text, "立即求片")
+	return strings.Contains(text, "搜索求片") || text == "求片" || strings.Contains(text, "立即求片")
 }
 
 // AppendKeyboardAsButtons moves a leftover inline keyboard into InputRichBlockButtons.

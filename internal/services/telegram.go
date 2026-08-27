@@ -1371,7 +1371,13 @@ func sanitizeInlineKeyboard(keyboard *types.TelegramInlineKeyboard) *types.Teleg
 			rows = append(rows, cleanRow)
 		}
 	}
-	return &types.TelegramInlineKeyboard{InlineKeyboard: rows}
+	if len(rows) == 0 {
+		if keyboard.ForceReply || keyboard.RemoveKeyboard {
+			return &types.TelegramInlineKeyboard{ForceReply: keyboard.ForceReply, RemoveKeyboard: keyboard.RemoveKeyboard}
+		}
+		return nil
+	}
+	return &types.TelegramInlineKeyboard{InlineKeyboard: rows, ForceReply: keyboard.ForceReply}
 }
 
 // telegramButtonStyle returns an explicit valid style unchanged and otherwise
@@ -1428,7 +1434,7 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 
 	// Only core business entries and decisive workflow actions are primary.
 	switch actionName {
-	case "start_search", "request", "force_subscribe", "wash", "wish_add",
+	case "start_search", "search", "request", "force_subscribe", "wish_add",
 		"start_link", "link", "admin_todo", "admin_pending", "admin_feedback",
 		"admin_issue_processing", "admin_issue_reply", "admin_feedback_reply", "admin_add_start",
 		"game_blindbox", "game_blindbox_open", "game_blindbox_horror", "game_review":
@@ -1689,37 +1695,39 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 // showWish: show wish pool button
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
-
-	// Independent P0 business entries stay above secondary features.
-	kb.AddButton("🎬 求片", "start_search")
-	kb.AddButton("♻️ 洗版", "wash")
+	kb.AddButton("搜索求片", "start_search")
+	kb.AddButton("求片进度", "requests")
 	kb.NewRow()
-	kb.AddButton("📝 遇到问题", "issue")
-	kb.AddButton("📋 我的进度", "start_requests")
-	kb.NewRow()
+	kb.AddButton("帮助", "help")
+	kb.AddButton("更多", "start_more")
+	_ = showWish
+	_ = isAdmin
+	return kb.Build()
+}
 
-	// Secondary discovery and entertainment entries remain available.
+func BuildWelcomeMoreKeyboard(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
+	kb := NewKeyboardBuilder()
+	kb.AddButton("洗版", "wash")
+	kb.AddButton("游戏中心", "game_menu")
+	kb.NewRow()
 	if showWish {
-		kb.AddButton("✨ 许愿池", "start_wish")
+		kb.AddButton("许愿池", "start_wish")
 	}
-	kb.AddButton("🔥 大家最近在求", "request_heat")
+	kb.AddButton("大家最近在求", "request_heat")
 	kb.NewRow()
-	kb.AddButton("🎮 游戏中心", "game_menu")
+	kb.AddButton("设置", "start_settings")
+	kb.AddButton("遇到问题", "issue")
 	kb.NewRow()
-
-	// Low-frequency utilities use compact, familiar labels.
-	kb.AddButton("⚙️ 设置", "start_settings")
-	kb.AddButton("❓ 帮助", "help")
-
+	kb.AddButton("我的进度", "start_requests")
+	kb.AddButton("返回", "start")
 	if isAdmin {
 		kb.NewRow()
-		kb.AddButton("🛠️ 管理", "admin_menu")
+		kb.AddButton("管理", "admin_menu")
 	}
 	if url := ValidatedMiniAppURL(); url != "" {
 		kb.NewRow()
-		kb.AddWebAppButton("🎞️ 打开云海小程序", url)
+		kb.AddWebAppButton("打开云海小程序", url)
 	}
-
 	return kb.Build()
 }
 

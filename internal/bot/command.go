@@ -501,7 +501,7 @@ func SendMiniAppDeepLink(telegram *services.TelegramClient, chatID int64, link m
 // SendStartMenu sends the start menu
 func SendStartMenu(telegram *services.TelegramClient, chatID int64, isAdmin bool) {
 	card := richmessage.BuildWelcomeCard("", richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
-	if _, err := telegram.SendStructuredRichMessage(chatID, card.Input(), nil); err != nil {
+	if _, err := telegram.SendStructuredRichMessage(chatID, card.Input(), &types.TelegramInlineKeyboard{RemoveKeyboard: true}); err != nil {
 		logger.Info("[Command] Rich Message failed: %v, falling back to plain text", err)
 		keyboard := services.BuildStartKeyboardWithOptions(isAdmin, true)
 		menuText := ui.BuildMenuWith(ui.StyleCard, "云海求片助手", "想看的，交给云海")

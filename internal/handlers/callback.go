@@ -259,6 +259,8 @@ func (h *StartHandler) Handle(ctx *callback.Context) (*callback.Response, error)
 	switch action {
 	case callback.ActionStart:
 		return h.HandleStart(ctx)
+	case "more":
+		return h.HandleMore(ctx)
 	case callback.ActionSearch:
 		return h.HandleSearch(ctx)
 	case callback.ActionSettings:
@@ -310,6 +312,21 @@ func (h *StartHandler) HandleStart(ctx *callback.Context) (*callback.Response, e
 		Text:                  baseMsg,
 		RichMessage:           richMsg.Markdown,
 		StructuredRichMessage: richMsg.Input(),
+		Edit:                  true,
+		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
+	}, nil
+}
+
+func (h *StartHandler) HandleMore(ctx *callback.Context) (*callback.Response, error) {
+	isAdmin := false
+	if h.adminService != nil {
+		isAdmin = h.adminService.IsAdmin(ctx.UserID)
+	}
+	card := richmessage.BuildWelcomeMoreCard(richmessage.WelcomeOptions{IsAdmin: isAdmin, MiniAppURL: services.ValidatedMiniAppURL()})
+	return &callback.Response{
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
 		Edit:                  true,
 	}, nil
 }

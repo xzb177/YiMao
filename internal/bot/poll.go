@@ -803,9 +803,13 @@ func ConvertKeyboard(kb *callback.Keyboard) *types.TelegramInlineKeyboard {
 	}
 
 	result := &types.TelegramInlineKeyboard{
-		InlineKeyboard: make([][]types.TelegramInlineKeyboardButton, len(kb.InlineKeyboard)),
 		ForceReply:     kb.ForceReply,
+		RemoveKeyboard: kb.RemoveKeyboard,
 	}
+	if len(kb.InlineKeyboard) == 0 {
+		return result
+	}
+	result.InlineKeyboard = make([][]types.TelegramInlineKeyboardButton, len(kb.InlineKeyboard))
 
 	for i, row := range kb.InlineKeyboard {
 		result.InlineKeyboard[i] = make([]types.TelegramInlineKeyboardButton, len(row))

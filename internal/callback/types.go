@@ -30,6 +30,7 @@ const (
 	ActionRequest       Action = "request"
 	ActionFeedback      Action = "feedback"
 	ActionStart         Action = "start"
+	ActionMore          Action = "more"
 	ActionRandom        Action = "random"
 	ActionRequests      Action = "requests"
 	ActionLink          Action = "link"
@@ -60,6 +61,7 @@ const (
 var validActions = map[Action]bool{
 	// Standard actions
 	ActionStart:  true,
+	ActionMore:   true,
 	ActionSearch: true,
 
 	ActionDetail:        true,
@@ -290,6 +292,7 @@ type Response struct {
 type Keyboard struct {
 	InlineKeyboard [][]Button `json:"inline_keyboard"`
 	ForceReply     bool       `json:"force_reply,omitempty"`
+	RemoveKeyboard bool       `json:"remove_keyboard,omitempty"`
 }
 
 // Button represents a keyboard button

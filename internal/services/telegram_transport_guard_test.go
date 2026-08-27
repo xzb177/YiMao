@@ -112,7 +112,7 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		text, action, want string
 	}{
 		{"🎬 求片", "start_search", telegramButtonStylePrimary},
-		{"♻️ 洗版", "wash", telegramButtonStylePrimary},
+		{"♻️ 洗版", "wash", ""},
 		{"📝 遇到问题", "issue", ""},
 		{"📋 我的进度", "start_requests", ""},
 		{"🎮 游戏中心", "game_menu", ""},

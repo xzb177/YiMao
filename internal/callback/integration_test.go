@@ -52,17 +52,19 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		button   string
 		callback string
 	}{
-		{"🎬 求片", "start_search"},
-		{"♻️ 洗版", "wash"},
-		{"📝 遇到问题", "issue"},
-		{"📋 我的进度", "start_requests"},
-		{"✨ 许愿池", "start_wish"},
-		{"🔥 大家最近在求", "request_heat"},
-		{"🎮 游戏中心", "game_menu"},
-		{"⚙️ 设置", "start_settings"},
-		{"❓ 帮助", "help"},
+		{"搜索求片", "start_search"},
+		{"求片进度", "requests"},
+		{"帮助", "help"},
+		{"更多", "start_more"},
+		{"洗版", "wash"},
+		{"遇到问题", "issue"},
+		{"我的进度", "start_requests"},
+		{"许愿池", "start_wish"},
+		{"大家最近在求", "request_heat"},
+		{"游戏中心", "game_menu"},
+		{"设置", "start_settings"},
+		{"管理", "admin_menu"},
 	}
-
 	parser := NewParser()
 
 	for _, item := range menuCallbacks {

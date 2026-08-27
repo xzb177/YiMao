@@ -815,6 +815,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 
 	// Register callbacks
 	registry.RegisterFunc(callback.ActionStart, startHandler.Handle)
+	registry.RegisterFunc(callback.ActionMore, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequestHeat, requestHeatHandler.Handle)
 	// Legacy start_ai buttons now land on the request-focused search entry.
