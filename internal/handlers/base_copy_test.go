@@ -24,7 +24,7 @@ func TestBaseUserCopyRegression(t *testing.T) {
 		},
 		{
 			file:   "callback.go",
-			want:   []string{"求第%d季", "🏠 主菜单", "/link 用户名 密码"},
+			want:   []string{"求第%d季", "🏠 主菜单"},
 			forbid: []string{"📺 求全部季度", "📺 求整季", "✅ 订阅全季", "⬅️ 返回主菜单", "🆔 TMDB ID:", `Text:        "❌ 画像生成失败：" + err.Error()`},
 		},
 		{

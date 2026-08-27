@@ -234,12 +234,8 @@ func (h *MyRequestsHandler) BuildForCommand(telegramID int64) (string, *callback
 			msg, _, kb := h.buildRequestsMessage(requests, 1, totalPages, len(requests))
 			return msg + "\n\n💡 以上为本地工单；绑定账号后还可合并 MoviePilot 下载进度。", kb
 		}
-		return "📋 我的进度\n\n暂无本地工单。求片需要绑定账号，问题和洗版工单无需绑定即可查看。", &callback.Keyboard{
-			InlineKeyboard: [][]callback.Button{
-				{{Text: "🔗 立即绑定", CallbackData: "link"}},
-				{{Text: "🏠 主菜单", CallbackData: "start"}},
-			},
-		}
+		card := richmessage.BuildProgressEmptyCard(true)
+		return card.Markdown, &callback.Keyboard{RemoveKeyboard: true}
 	}
 
 	requests, err := h.moviepilot.GetUserRequests(moviepilotID)
@@ -283,16 +279,8 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 			msg, rich, kb := h.buildRequestsMessage(requests, page, totalPages, len(requests))
 			return &callback.Response{Text: msg + "\n\n💡 以上为本地工单；绑定后还可合并下载进度。", RichMessage: rich, Edit: true, Keyboard: kb}, nil
 		}
-		return &callback.Response{
-			Text: "📋 我的进度\n\n暂无本地工单。求片需要绑定账号，问题和洗版工单无需绑定即可查看。",
-			Edit: true,
-			Keyboard: &callback.Keyboard{
-				InlineKeyboard: [][]callback.Button{
-					{{Text: "🔗 立即绑定", CallbackData: "link"}},
-					{{Text: "🏠 主菜单", CallbackData: "start"}},
-				},
-			},
-		}, nil
+		card := richmessage.BuildProgressEmptyCard(true)
+		return &callback.Response{Text: card.Markdown, RichMessage: card.Markdown, StructuredRichMessage: card.Input(), Edit: true, ParseMode: "none", Keyboard: &callback.Keyboard{RemoveKeyboard: true}}, nil
 	}
 
 	// Fetch user requests — if subscription cache is not ready, return loading message
@@ -962,27 +950,14 @@ func NewHelpHandler() *HelpHandler {
 }
 
 func (h *HelpHandler) Handle(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("❓ 帮助").Newline()
-	msg.Newline()
-	msg.Text("遇到问题了？").Newline()
-	msg.Newline()
-	msg.Italic("👇 选一个问题看看")
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔍 怎么求片", "help_topic:topic:search")
-	kb.AddButton("🔗 怎么绑定", "help_topic:topic:link")
-	kb.NewRow()
-	kb.AddButton("❌ 请求失败", "help_topic:topic:failed")
-	kb.AddButton("🔔 没收到通知", "help_topic:topic:notify")
-	kb.NewRow()
-	kb.AddButton("📮 其他问题", "help_topic:topic:other")
-	kb.NewRow()
-	kb.AddButton("🏠 主菜单", "start")
-
+	_ = ctx
+	card := richmessage.BuildHelpCard()
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  true,
+		ParseMode:             "none",
+		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
 	}, nil
 }

@@ -348,106 +348,32 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 
 // HandleSettings shows the settings page
 func (h *StartHandler) HandleSettings(ctx *callback.Context) (*callback.Response, error) {
-	msg := services.NewMessageBuilder()
-	msg.Bold("⚙️ 设置").Newline()
-	msg.Newline()
-
-	// 显示绑定状态
+	bound := false
 	if h.userMapping != nil {
-		if _, exists := h.userMapping.GetMoviePilotUserID(ctx.UserID); exists {
-			msg.Text("🔗 账号状态：已绑定 ✅").Newline()
-		} else {
-			msg.Text("🔗 账号状态：未绑定").Newline()
-		}
+		_, bound = h.userMapping.GetMoviePilotUserID(ctx.UserID)
 	}
+	card := richmessage.BuildSettingsCard(bound)
+	return pageCallback(card, true), nil
+}
 
-	msg.Newline()
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("🔔 通知设置", "notify_settings")
-	kb.AddButton("🔗 绑定账号", "start_link")
-	kb.NewRow()
-	kb.AddButton("🔑 重置密码", "resetpw")
-	kb.AddButton("🐞 我的反馈", "my_feedback")
-	kb.AddButton("📊 观影周报", "weekly_report")
-	kb.NewRow()
-	kb.AddButton("❓ 帮助", "help")
-	kb.AddButton("🏠 主菜单", "start")
-
+func pageCallback(card richmessage.RichMessage, edit bool) *callback.Response {
 	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
+		Text:                  card.Markdown,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: card.Input(),
+		Edit:                  edit,
+		ParseMode:             "none",
+		Keyboard:              &callback.Keyboard{RemoveKeyboard: true},
+	}
 }
 
 // HandleHelpTopic shows help topic details
 func (h *StartHandler) HandleHelpTopic(ctx *callback.Context) (*callback.Response, error) {
-	topic := ctx.Callback.Params["topic"]
-
-	msg := services.NewMessageBuilder()
-
-	switch topic {
-	case "search":
-		msg.Bold("🔍 怎么求片").Newline()
-		msg.Newline()
-		msg.Bold("搜索求片（推荐）：").Newline()
-		msg.Text("1. 点「搜索求片」").Newline()
-		msg.Text("2. 直接发送片名").Newline()
-		msg.Text("3. 选择搜索结果查看详情").Newline()
-		msg.Text("4. 点「求片」或「订阅」").Newline()
-		msg.Newline()
-		msg.Italic("想随机发现影片，可以从游戏中心进入盲盒或命运轮盘。")
-
-	case "link":
-		msg.Bold("🔗 怎么绑定").Newline()
-		msg.Newline()
-		msg.Text("1. 点「绑定账号」").Newline()
-		msg.Text("2. 按提示输入用户名和密码").Newline()
-		msg.Text("3. 没有账号会自动创建").Newline()
-		msg.Newline()
-		msg.Italic("绑定命令是 /link 用户名 密码")
-
-	case "failed":
-		msg.Bold("❌ 请求失败").Newline()
-		msg.Newline()
-		msg.Text("可能的原因：").Newline()
-		msg.Text("• 资源确实没有种子").Newline()
-		msg.Text("• 站点没有这个资源").Newline()
-		msg.Text("• 搜索规则需要调整").Newline()
-		msg.Newline()
-		msg.Text("建议：").Newline()
-		msg.Text("• 点「🔄 重新搜索」再试").Newline()
-		msg.Text("• 或者联系管理员调整规则").Newline()
-
-	case "notify":
-		msg.Bold("🔔 没收到通知").Newline()
-		msg.Newline()
-		msg.Text("可能的原因：").Newline()
-		msg.Text("• Telegram 没有给机器人发消息权限").Newline()
-		msg.Text("• 绑定的账号和通知接收账号不一致").Newline()
-		msg.Newline()
-		msg.Text("解决方法：").Newline()
-		msg.Text("• 私聊我发条消息，开启通知权限").Newline()
-		msg.Text("• 确保在正确的 Telegram 账号下绑定").Newline()
-
-	default:
-		msg.Bold("📮 其他问题").Newline()
-		msg.Newline()
-		msg.Text("遇到其他问题了？").Newline()
-		msg.Newline()
-		msg.Text("请通过「我的反馈」功能提交问题，").Newline()
-		msg.Text("管理员会尽快处理。")
+	topic := ""
+	if ctx != nil && ctx.Callback != nil {
+		topic = ctx.Callback.Params["topic"]
 	}
-
-	kb := services.NewKeyboardBuilder()
-	kb.AddButton("⬅️ 返回", "help")
-
-	return &callback.Response{
-		Text:     msg.Build(),
-		Edit:     true,
-		Keyboard: convertKeyboard(kb.Build()),
-	}, nil
+	return pageCallback(richmessage.BuildHelpTopicCard(topic), true), nil
 }
 
 // HandleWeeklyReport shows the weekly report

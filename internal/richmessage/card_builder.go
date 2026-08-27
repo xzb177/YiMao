@@ -71,44 +71,28 @@ func welcomeTitle(userName string) string {
 	return "云海求片"
 }
 
-// BuildWelcomeCard is the first-screen /start card: two equal columns, one primary.
-func BuildWelcomeCard(userName string, opt WelcomeOptions) RichMessage {
-	_ = opt
-	b := newBlockBuilder()
-	b.photo("attach://welcome_hero")
-	b.heading(welcomeTitle(userName), 3)
-	b.bold("想看的，交给云海")
-	b.paragraph("直接发片名就能搜。")
-	b.paragraph("在线 · 可求片")
-	b.buttonRow(
-		richButton("搜索求片", "search:menu", types.ButtonStyleSuccess, false),
-		richButton("求片进度", "requests", types.ButtonStylePrimary, false),
-	)
-	b.buttonRow(
-		richButton("帮助", "help", types.ButtonStylePrimary, false),
-		richButton("更多", "start_more", types.ButtonStylePrimary, false),
-	)
-	card := b.card()
-	card.Media = welcomeHeroMedia()
-	return card.Rich()
+// BuildStatusNoticeCard is the short status card.
+func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
+	return BuildPage(Page{Heading: title, Tagline: status, Body: sentence, Buttons: packButtons(buttons)})
 }
 
-// BuildStatusNoticeCard is the short 醉玲珑-style status card.
-func BuildStatusNoticeCard(title, status, sentence string, buttons ...types.TelegramRichMessageButton) Card {
-	b := newBlockBuilder()
-	if strings.TrimSpace(title) != "" {
-		b.heading(strings.TrimSpace(title), 3)
+func packButtons(buttons []types.TelegramRichMessageButton) [][]types.TelegramRichMessageButton {
+	if len(buttons) == 0 {
+		return nil
 	}
-	if strings.TrimSpace(status) != "" {
-		b.bold(status)
+	var rows [][]types.TelegramRichMessageButton
+	row := []types.TelegramRichMessageButton{}
+	for _, btn := range buttons {
+		row = append(row, btn)
+		if len(row) == 2 {
+			rows = append(rows, row)
+			row = nil
+		}
 	}
-	if strings.TrimSpace(sentence) != "" {
-		b.paragraph(sentence)
+	if len(row) == 1 {
+		rows = append(rows, row)
 	}
-	if len(buttons) > 0 {
-		b.buttonRow(buttons...)
-	}
-	return b.card()
+	return rows
 }
 
 func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButton {
@@ -116,48 +100,6 @@ func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButt
 		richButton("刷新", refreshCallback, types.ButtonStylePrimary, false),
 		richButton("主菜单", "start", types.ButtonStylePrimary, false),
 	}
-}
-
-// BuildWelcomeMoreCard holds secondary actions behind 更多.
-func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
-	b := newBlockBuilder()
-	b.heading("更多", 3)
-	b.paragraph("不常用的入口都在这里。")
-	b.buttonRow(
-		richButton("洗版", "wash", types.ButtonStyleSuccess, false),
-		richButton("游戏中心", "game_menu", "", false),
-	)
-	b.buttonRow(
-		richButton("许愿池", "start_wish", "", false),
-		richButton("大家最近在求", "request_heat", "", false),
-	)
-	b.buttonRow(
-		richButton("设置", "start_settings", "", false),
-		richButton("遇到问题", "issue", "", false),
-	)
-	b.buttonRow(
-		richButton("我的进度", "start_requests", "", false),
-		richButton("返回", "start", "", false),
-	)
-	if opt.IsAdmin {
-		b.buttonRow(richButton("管理", "admin_menu", "", false))
-	}
-	if u := strings.TrimSpace(opt.MiniAppURL); u != "" {
-		b.buttonRow(richWebAppButton("打开云海小程序", u, ""))
-	}
-	return b.card().Rich()
-}
-
-// BuildSearchPromptCard is the 10.3 search prompt after tapping 搜索求片.
-func BuildSearchPromptCard() RichMessage {
-	b := newBlockBuilder()
-	b.heading("搜索求片", 3)
-	b.paragraph("把片名发给我就行。中英文、电影剧集都能搜。")
-	b.buttonRow(
-		richButton("历史记录", "search_history_menu", "", false),
-		richButton("主菜单", "start", "", false),
-	)
-	return b.card().Rich()
 }
 
 // DailySummaryMovie represents a movie for the daily summary card
@@ -604,18 +546,22 @@ type RequestCardData struct {
 
 // BuildRequestProgressCard builds a compact Rich Message request progress card.
 func BuildRequestProgressCard(data RequestCardData) RichMessage {
-	b := newBlockBuilder()
-	b.heading("求片进度", 3)
-	b.bold(fmt.Sprintf("共 %d 条 · 第 %d/%d 页", data.Total, data.Page, data.TotalPages))
 	pairs := make([][]string, 0, len(data.Items)+1)
 	for _, row := range buildRequestCardRows(data.Items) {
 		if len(row) >= 2 {
 			pairs = append(pairs, []string{row[0], row[1]})
 		}
 	}
-	b.compactTable(pairs)
-	b.paragraph(fmt.Sprintf("进行中 %d · 已完成 %d · 异常 %d", data.Running, data.Done, data.Problem))
-	return b.card().Rich()
+	body := "提交过的片在这里。点编号看详情，没有的话去搜索。"
+	if data.Total == 0 {
+		body = "还没有的话，去搜索求一片。"
+	}
+	return BuildPage(Page{
+		Heading: "求片进度",
+		Tagline: fmt.Sprintf("共 %d 条 · 第 %d/%d 页", data.Total, data.Page, data.TotalPages),
+		Body:    body,
+		Facts:   pairs,
+	}).Rich()
 }
 
 func buildRequestCardRows(items []RequestCardItem) [][]string {

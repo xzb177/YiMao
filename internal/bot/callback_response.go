@@ -360,7 +360,7 @@ func fuseInlineKeyboardIntoRich(resp *callback.Response) {
 	if strings.TrimSpace(body) == "" {
 		body = strings.TrimSpace(resp.RichMessage)
 	}
-	card := richmessage.BuildStatusNoticeCard("", "", body)
+	card := richmessage.BuildPageFromPlainText(body)
 	in := card.Input()
 	if in == nil {
 		in = &types.TelegramInputRichMessage{}

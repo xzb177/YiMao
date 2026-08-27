@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
+	"github.com/xzb177/yimao/internal/richmessage"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
 )
@@ -31,11 +32,8 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		if h.sessMgr != nil {
 			h.sessMgr.GetOrCreate(ctx.UserID).Set("media_search_intent", "wash")
 		}
-		return &callback.Response{
-			Text:     "♻️ 想洗版哪部影片？\n\n直接把片名发给我就行，例如：\n• 流浪地球\n• 纸牌屋\n\n洗版只处理媒体库里已有的影片或季度。新版本确认可用前，当前版本会继续保留。",
-			Edit:     true,
-			Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "📋 我的洗版工单", CallbackData: "start_requests"}}, {{Text: "❌ 取消", CallbackData: "cancel"}, {Text: "🏠 主菜单", CallbackData: "start"}}}},
-		}, nil
+		card := richmessage.BuildWashPromptCard()
+		return &callback.Response{Text: card.Markdown, RichMessage: card.Markdown, StructuredRichMessage: card.Input(), Edit: true, ParseMode: "none", Keyboard: &callback.Keyboard{RemoveKeyboard: true}}, nil
 	}
 	id, err := strconv.Atoi(idText)
 	if err != nil || id <= 0 || (mediaType != "movie" && mediaType != "tv") {

@@ -16,7 +16,7 @@ func TestWashEntryUsesNaturalLanguageAndStartsIntent(t *testing.T) {
 	if err != nil || resp == nil {
 		t.Fatalf("resp=%#v err=%v", resp, err)
 	}
-	if !strings.Contains(resp.Text, "直接把片名发给我") || strings.Contains(resp.Text, "严格的 TMDB") {
+	if !strings.Contains(resp.Text, "把片名发给我") || strings.Contains(resp.Text, "严格的 TMDB") {
 		t.Fatalf("unexpected wash copy: %q", resp.Text)
 	}
 	intent, _ := manager.GetOrCreate(42).GetString("media_search_intent")

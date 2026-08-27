@@ -334,21 +334,11 @@ func BuildRouletteCard(data RouletteCardData) RichMessage {
 
 // BuildGameCenterCard 构建游戏中心入口卡片
 func BuildGameCenterCard() RichMessage {
-	builder := NewBuilder()
-
-	builder.Heading("🎮 游戏中心", 2)
-	builder.Italic("这里是求片之外的可选玩法，不影响搜索求片。")
-	builder.Divider()
-
-	builder.BoldParagraph("🎬 互动工具")
-	builder.Paragraph("  电影情报站 — 输入片名，了解背景与剧情线索")
-	builder.Paragraph("  盲盒与轮盘 — 随机发现下一部想看的电影")
-	builder.Paragraph("  观影画像 — 查看你的观影偏好与历史")
-	builder.Divider()
-
-	builder.Italic("随时可以返回主菜单，直接使用搜索求片。")
-
-	return builder.Build()
+	return BuildPage(Page{
+		Heading: "游戏中心",
+		Tagline: "求片之外的可选玩法",
+		Body:    "情报站看背景，盲盒和轮盘随便发现一部。随时可以返回去搜索。",
+	}).Rich()
 }
 
 // TasteCardData 品味分析卡片数据
