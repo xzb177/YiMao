@@ -21,7 +21,7 @@ func TestBuildWashReviewNotifyCardIsAdministratorSpecific(t *testing.T) {
 
 func TestBuildWashApprovedCardExplainsPrivateWorkOrderProgress(t *testing.T) {
 	card := BuildWashApprovedCard("银翼杀手", 1982, "🎬")
-	for _, want := range []string{"洗版工单已批准", "银翼杀手", "管理员处理并验证", "我的进度", "完成后通知你"} {
+	for _, want := range []string{"洗版工单已批准", "银翼杀手", "管理员处理并验证", "查看进度", "完成后通知你"} {
 		if !strings.Contains(card.Markdown, want) {
 			t.Fatalf("wash approved card missing %q:\n%s", want, card.Markdown)
 		}

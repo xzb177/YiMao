@@ -295,7 +295,7 @@ func (h *MyRequestsHandler) handleRequestsWithPage(ctx *callback.Context, page i
 			msg, rich, kb := h.buildRequestsMessage(local, page, totalPages, len(local))
 			return &callback.Response{Text: msg + "\n\n正在同步云端进度。", RichMessage: rich, Edit: true, Keyboard: kb}, nil
 		}
-		card := richmessage.BuildStatusNoticeCard("求片进度", "正在同步", "云端进度稍后刷新即可看到。", richmessage.StatusActionButtons("requests")...)
+		card := richmessage.BuildStatusNoticeCard("查看进度", "正在同步", "云端进度稍后刷新即可看到。", richmessage.StatusActionButtons("requests")...)
 		return &callback.Response{
 			Text:                  card.Markdown,
 			RichMessage:           card.Markdown,

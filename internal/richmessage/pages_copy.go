@@ -16,10 +16,10 @@ const (
 	copySearchH1     = "搜索求片"
 	copySearchTag    = "发中文或英文片名"
 	copySearchBody   = "点结果看详情，确认后再提交。已在库的会直接告诉你。"
-	copyHelpH1       = "帮助"
+	copyHelpH1       = "帮助说明"
 	copyHelpTag      = "三步就能求到"
 	copyHelpBody     = "发片名 → 选结果 → 等审核。通过后会开始下载，可看时再通知你。"
-	copyMoreH1       = "更多"
+	copyMoreH1       = "更多功能"
 	copyMoreTag      = "不常用的入口"
 	copyMoreBody     = "洗版、许愿、设置都在这，不影响正常求片。"
 	copyProgressH1   = "求片进度"
@@ -47,8 +47,8 @@ func welcomePage() Page {
 		Body:    copyWelcomeBody,
 		Status:  copyWelcomeStat,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "求片进度", "requests", types.ButtonStylePrimary),
-			pair("帮助", "help", types.ButtonStylePrimary, "更多", "start_more", types.ButtonStylePrimary),
+			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "查看进度", "requests", types.ButtonStylePrimary),
+			pair("帮助说明", "help", types.ButtonStylePrimary, "更多功能", "start_more", types.ButtonStylePrimary),
 		},
 	}
 }
@@ -60,10 +60,10 @@ func BuildWelcomeMoreCard(opt WelcomeOptions) RichMessage {
 		Tagline: copyMoreTag,
 		Body:    copyMoreBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("洗版", "wash", types.ButtonStylePrimary, "许愿池", "start_wish", types.ButtonStylePrimary),
-			pair("设置", "start_settings", types.ButtonStylePrimary, "遇到问题", "issue", types.ButtonStylePrimary),
-			pair("我的进度", "requests", types.ButtonStylePrimary, "游戏中心", "game_menu", types.ButtonStylePrimary),
-			full("返回", "start", types.ButtonStylePrimary),
+			pair("申请洗版", "wash", types.ButtonStylePrimary, "进入许愿", "start_wish", types.ButtonStylePrimary),
+			pair("系统设置", "start_settings", types.ButtonStylePrimary, "问题反馈", "issue", types.ButtonStylePrimary),
+			pair("查看进度", "requests", types.ButtonStylePrimary, "游戏中心", "game_menu", types.ButtonStylePrimary),
+			full("返回首页", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -74,7 +74,7 @@ func BuildSearchPromptCard() RichMessage {
 		Tagline: copySearchTag,
 		Body:    copySearchBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
+			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回首页", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -85,7 +85,7 @@ func BuildHelpCard() RichMessage {
 		Tagline: copyHelpTag,
 		Body:    copyHelpBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回", "start", types.ButtonStylePrimary),
+			pair("搜索求片", "search:menu", types.ButtonStyleSuccess, "返回首页", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -96,13 +96,13 @@ func BuildSettingsCard(bound bool) RichMessage {
 		status = "账号已绑定。通知、周报和进度都跟这个号走。"
 	}
 	return BuildPage(Page{
-		Heading: "设置",
+		Heading: "系统设置",
 		Tagline: "绑定、通知、周报",
 		Body:    status,
 		Buttons: [][]types.TelegramRichMessageButton{
 			pair("通知设置", "notify_settings", types.ButtonStylePrimary, "绑定账号", "start_link", types.ButtonStylePrimary),
 			pair("重置密码", "resetpw", types.ButtonStylePrimary, "我的反馈", "my_feedback", types.ButtonStylePrimary),
-			pair("观影周报", "weekly_report", types.ButtonStylePrimary, "返回", "start", types.ButtonStylePrimary),
+			pair("观影周报", "weekly_report", types.ButtonStylePrimary, "返回首页", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -118,19 +118,19 @@ func BuildProgressEmptyCard(needBind bool) RichMessage {
 		Heading: copyProgressH1,
 		Tagline: copyProgressTag,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", "requests", types.ButtonStylePrimary),
+			pair("返回首页", "start", types.ButtonStylePrimary, "刷新状态", "requests", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
 
 func BuildWashPromptCard() RichMessage {
 	return BuildPage(Page{
-		Heading: "洗版",
+		Heading: "申请洗版",
 		Tagline: "只换库里已经有的片",
 		Body:    "把片名发给我。新版本确认可用前，当前版本会继续留着。",
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("求片进度", "requests", types.ButtonStylePrimary, "取消", "cancel", types.ButtonStyleDanger),
-			full("返回", "start", types.ButtonStylePrimary),
+			pair("查看进度", "requests", types.ButtonStylePrimary, "取消操作", "cancel", types.ButtonStyleDanger),
+			full("返回首页", "start", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -177,7 +177,7 @@ func BuildPlaybillCard(p PlaybillCard) Card {
 		Body:    body,
 		Facts:   facts,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", refresh, types.ButtonStylePrimary),
+			pair("返回首页", "start", types.ButtonStylePrimary, "刷新状态", refresh, types.ButtonStylePrimary),
 		},
 	})
 }

@@ -1805,10 +1805,10 @@ func BuildStartKeyboard(isAdmin bool) *types.TelegramInlineKeyboard {
 func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
 	kb.AddButton("搜索求片", "start_search")
-	kb.AddButton("求片进度", "requests")
+	kb.AddButton("查看进度", "requests")
 	kb.NewRow()
-	kb.AddButton("帮助", "help")
-	kb.AddButton("更多", "start_more")
+	kb.AddButton("帮助说明", "help")
+	kb.AddButton("更多功能", "start_more")
 	_ = showWish
 	_ = isAdmin
 	return kb.Build()
@@ -1816,26 +1816,26 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 
 func BuildWelcomeMoreKeyboard(isAdmin, showWish bool) *types.TelegramInlineKeyboard {
 	kb := NewKeyboardBuilder()
-	kb.AddButton("洗版", "wash")
+	kb.AddButton("申请洗版", "wash")
 	kb.AddButton("游戏中心", "game_menu")
 	kb.NewRow()
 	if showWish {
-		kb.AddButton("许愿池", "start_wish")
+		kb.AddButton("进入许愿", "start_wish")
 	}
-	kb.AddButton("大家最近在求", "request_heat")
+	kb.AddButton("求片热度", "request_heat")
 	kb.NewRow()
-	kb.AddButton("设置", "start_settings")
-	kb.AddButton("遇到问题", "issue")
+	kb.AddButton("系统设置", "start_settings")
+	kb.AddButton("问题反馈", "issue")
 	kb.NewRow()
-	kb.AddButton("我的进度", "start_requests")
-	kb.AddButton("返回", "start")
+	kb.AddButton("查看进度", "start_requests")
+	kb.AddButton("返回首页", "start")
 	if isAdmin {
 		kb.NewRow()
-		kb.AddButton("管理", "admin_menu")
+		kb.AddButton("管理后台", "admin_menu")
 	}
 	if url := ValidatedMiniAppURL(); url != "" {
 		kb.NewRow()
-		kb.AddWebAppButton("打开云海小程序", url)
+		kb.AddWebAppButton("打开云海", url)
 	}
 	return kb.Build()
 }

@@ -53,17 +53,17 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		callback string
 	}{
 		{"搜索求片", "start_search"},
-		{"求片进度", "requests"},
-		{"帮助", "help"},
-		{"更多", "start_more"},
-		{"洗版", "wash"},
-		{"遇到问题", "issue"},
-		{"我的进度", "start_requests"},
-		{"许愿池", "start_wish"},
-		{"大家最近在求", "request_heat"},
+		{"查看进度", "requests"},
+		{"帮助说明", "help"},
+		{"更多功能", "start_more"},
+		{"申请洗版", "wash"},
+		{"问题反馈", "issue"},
+		{"查看进度", "start_requests"},
+		{"进入许愿", "start_wish"},
+		{"求片热度", "request_heat"},
 		{"游戏中心", "game_menu"},
-		{"设置", "start_settings"},
-		{"管理", "admin_menu"},
+		{"系统设置", "start_settings"},
+		{"管理后台", "admin_menu"},
 	}
 	parser := NewParser()
 

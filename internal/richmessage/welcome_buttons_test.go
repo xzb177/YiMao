@@ -13,7 +13,7 @@ func TestWelcomeSearchButtonIsAPI103RichButtonNotWebApp(t *testing.T) {
 	if strings.Contains(body, "web_app") {
 		t.Fatalf("welcome 搜索求片 must not be web_app: %s", body)
 	}
-	for _, want := range []string{`"type":"buttons"`, `"callback_data":"search:menu"`, "搜索求片", "求片进度", "帮助", "更多"} {
+	for _, want := range []string{`"type":"buttons"`, `"callback_data":"search:menu"`, "搜索求片", "查看进度", "帮助说明", "更多功能"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("welcome missing %q in %s", want, body)
 		}
@@ -29,7 +29,7 @@ func TestWelcomeSearchButtonIsAPI103RichButtonNotWebApp(t *testing.T) {
 			t.Fatalf("welcome legacy label %q: %s", legacy, body)
 		}
 	}
-	for _, leak := range []string{"洗版", "管理", "游戏中心", "许愿池", "打开云海小程序", "云海求片助手"} {
+	for _, leak := range []string{"申请洗版", "管理后台", "游戏中心", "进入许愿", "打开云海小程序", "云海求片助手"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("first screen leaked %q: %s", leak, body)
 		}
@@ -55,7 +55,7 @@ func TestWelcomeWithoutHeroKeepsFourButtons(t *testing.T) {
 func TestWelcomeMoreHidesSecondaryUntilTapped(t *testing.T) {
 	card := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://example.com/miniapp"})
 	body := string(mustJSON(t, card.Input()))
-	for _, want := range []string{"洗版", "许愿池", "设置", "遇到问题", "我的进度", "游戏中心", "返回", copyMoreTag, copyMoreBody} {
+	for _, want := range []string{"申请洗版", "进入许愿", "系统设置", "问题反馈", "查看进度", "游戏中心", "返回首页", copyMoreTag, copyMoreBody} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("more missing %q in %s", want, body)
 		}

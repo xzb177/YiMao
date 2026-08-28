@@ -35,13 +35,13 @@ func rejectSource(t *testing.T, html string, stale ...string) {
 
 func TestMiniAppHomeMatchesCinemaA(t *testing.T) {
 	html := miniAppSource(t)
-	requireSource(t, html, `class="cinema-card" id="welcome"`, `class="cinema-hero"`, `class="cinema-credit">YUNHAI · CINEMA`, `<h1>云海求片</h1>`, `class="cinema-tag">想看的，交给云海`, `直接发片名，或点搜索。提交后可在进度里查到。`, `class="cinema-status">在线 · 可求片`, `--cinema-success:#34c759`, `--cinema-primary:#1c3d73`, `{text:"搜索求片",style:"success"`, `{text:"求片进度"`, `{text:"帮助"`, `{text:"更多"`)
+	requireSource(t, html, `class="cinema-card" id="welcome"`, `class="cinema-hero"`, `class="cinema-credit">YUNHAI · CINEMA`, `<h1>云海求片</h1>`, `class="cinema-tag">想看的，交给云海`, `直接发片名，或点搜索。提交后可在进度里查到。`, `class="cinema-status">在线 · 可求片`, `--cinema-success:#34c759`, `--cinema-primary:#1c3d73`, `{text:"搜索求片",style:"success"`, `{text:"查看进度"`, `{text:"帮助说明"`, `{text:"更多功能"`)
 	rejectSource(t, html, "云海求片助手", "首次加载约需 2-3 分钟", "Today badge", "今天 badge")
 }
 
 func TestMiniAppProgressMatchesPlaybillB(t *testing.T) {
 	html := miniAppSource(t)
-	requireSource(t, html, `class="cinema-kicker">NOW PLAYING`, `function taskPlaybill(item)`, `class="cinema-tag">${esc(status)}`, `Emby 确认可看后会再通知你。`, `function taskFacts(item)`, `<tr><td>年份</td>`, `<tr><td>类型</td>`, `<tr><td>下一步</td>`, `{text:"主菜单"`, `{text:"刷新"`, `/api/miniapp/v1/me`, `/api/miniapp/v1/progress?request_id=`)
+	requireSource(t, html, `class="cinema-kicker">NOW PLAYING`, `function taskPlaybill(item)`, `class="cinema-tag">${esc(status)}`, `Emby 确认可看后会再通知你。`, `function taskFacts(item)`, `<tr><td>年份</td>`, `<tr><td>类型</td>`, `<tr><td>下一步</td>`, `{text:"返回首页"`, `{text:"刷新状态"`, `/api/miniapp/v1/me`, `/api/miniapp/v1/progress?request_id=`)
 }
 
 func TestMiniAppStartAppRoutes(t *testing.T) {

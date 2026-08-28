@@ -19,7 +19,7 @@ func TestWelcomeAndBackKeepFourButtons(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := string(raw)
-	for _, want := range []string{"搜索求片", "求片进度", "帮助", "更多", "search:menu"} {
+	for _, want := range []string{"搜索求片", "查看进度", "帮助说明", "更多功能", "search:menu"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("missing %q in %s", want, body)
 		}

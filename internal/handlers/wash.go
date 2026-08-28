@@ -104,7 +104,7 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 	return &callback.Response{
 		Text:        fmt.Sprintf("✅ 已提交\n\n♻️ 《%s》%s\n📋 状态：等待管理员审核\n\n当前版本会保留，进度可在求片进度查看。", review.MediaTitle, seasonText),
-		CallbackMsg: "已提交", Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "📋 我的进度", CallbackData: "start_requests"}}, {{Text: "🏠 主菜单", CallbackData: "start"}}}},
+		CallbackMsg: "已提交", Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "查看进度", CallbackData: "start_requests"}}, {{Text: "返回首页", CallbackData: "start"}}}},
 	}, nil
 }
 

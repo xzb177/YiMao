@@ -14,7 +14,7 @@ func TestCinemaWelcomeMatchesMockupA(t *testing.T) {
 	raw, _ := json.Marshal(card.Input())
 	body := string(raw)
 	md := card.Markdown
-	for _, want := range []string{copyKickerCinema, copyWelcomeH1, copyWelcomeTag, copyWelcomeBody, copyWelcomeStat, "搜索求片", "求片进度", "帮助", "更多"} {
+	for _, want := range []string{copyKickerCinema, copyWelcomeH1, copyWelcomeTag, copyWelcomeBody, copyWelcomeStat, "搜索求片", "查看进度", "帮助说明", "更多功能"} {
 		if !strings.Contains(md, want) && !strings.Contains(body, want) {
 			t.Fatalf("welcome missing %q md=%q body=%s", want, md, body)
 		}
@@ -41,7 +41,7 @@ func TestCinemaWelcomeMatchesMockupA(t *testing.T) {
 
 func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 	search := BuildSearchPromptCard().Markdown
-	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "搜索求片", "返回"} {
+	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "搜索求片", "返回首页"} {
 		if !strings.Contains(search, want) {
 			t.Fatalf("search missing %q in %q", want, search)
 		}
@@ -53,12 +53,12 @@ func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 		}
 	}
 	more := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://x"}).Markdown
-	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "洗版", "许愿池", "设置", "返回"} {
+	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "申请洗版", "进入许愿", "系统设置", "返回首页"} {
 		if !strings.Contains(more, want) {
 			t.Fatalf("more missing %q in %q", want, more)
 		}
 	}
-	for _, want := range []string{"遇到问题", "我的进度", "游戏中心"} {
+	for _, want := range []string{"问题反馈", "查看进度", "游戏中心"} {
 		if !strings.Contains(more, want) {
 			t.Fatalf("more missing %q in %q", want, more)
 		}
@@ -68,12 +68,12 @@ func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 func TestPlaybillProgressMatchesMockupB(t *testing.T) {
 	card := BuildPlaybillCard(PlaybillCard{Title: "醉玲珑", Tagline: copyPlaybillTag, Body: copyPlaybillBody, Year: "2017", Kind: "剧集", Next: "入库确认", Refresh: "requests"})
 	md := card.Markdown
-	for _, want := range []string{copyKickerNow, "醉玲珑", copyPlaybillTag, copyPlaybillBody, "年份", "2017", "类型", "剧集", "下一步", "入库确认", "主菜单", "刷新"} {
+	for _, want := range []string{copyKickerNow, "醉玲珑", copyPlaybillTag, copyPlaybillBody, "年份", "2017", "类型", "剧集", "下一步", "入库确认", "返回首页", "刷新状态"} {
 		if !strings.Contains(md, want) {
 			t.Fatalf("playbill missing %q in %q", want, md)
 		}
 	}
-	if strings.Contains(md, "求片进度") {
+	if strings.Contains(md, "查看进度") {
 		t.Fatalf("single title must not use 求片进度 as H1: %q", md)
 	}
 }

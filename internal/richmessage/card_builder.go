@@ -73,8 +73,8 @@ func welcomeTitle(userName string) string {
 
 func StatusActionButtons(refreshCallback string) []types.TelegramRichMessageButton {
 	return []types.TelegramRichMessageButton{
-		richButton("主菜单", "start", types.ButtonStylePrimary, false),
-		richButton("刷新", refreshCallback, types.ButtonStylePrimary, false),
+		richButton("返回首页", "start", types.ButtonStylePrimary, false),
+		richButton("刷新状态", refreshCallback, types.ButtonStylePrimary, false),
 	}
 }
 
@@ -545,7 +545,7 @@ func BuildRequestProgressCard(data RequestCardData) RichMessage {
 		Tagline: copyProgressTag,
 		Facts:   pairs,
 		Buttons: [][]types.TelegramRichMessageButton{
-			pair("主菜单", "start", types.ButtonStylePrimary, "刷新", "requests", types.ButtonStylePrimary),
+			pair("返回首页", "start", types.ButtonStylePrimary, "刷新状态", "requests", types.ButtonStylePrimary),
 		},
 	}).Rich()
 }
@@ -806,7 +806,7 @@ func BuildWashStatusCard(data WashStatusData) RichMessage {
 		builder.Italic(fmt.Sprintf("申请人：%s", data.Requester))
 	}
 	if !data.Public && data.Status != "completed" {
-		builder.Italic("可在「我的进度」查看，完成后通知你")
+		builder.Italic("可在「查看进度」跟进，完成后通知你")
 	}
 	return builder.Build()
 }
@@ -836,8 +836,8 @@ func BuildReviewApprovedCard(data ReviewApprovedData) RichMessage {
 		SeasonText: data.SeasonText,
 		Footer:     "匹配资源后自动下载，完成后可播放。",
 		Buttons: []types.TelegramRichMessageButton{
-			richButton("求片进度", "requests", "primary", false),
-			richButton("主菜单", "start", "", false),
+			richButton("查看进度", "requests", "primary", false),
+			richButton("返回首页", "start", "", false),
 		},
 	}).Rich()
 }
@@ -852,7 +852,7 @@ func BuildReviewRejectedCard(title string, year int, mediaIcon string) RichMessa
 		Footer: "配额已退还，可换片名再试。",
 		Buttons: []types.TelegramRichMessageButton{
 			richButton("搜索求片", "search:menu", "primary", false),
-			richButton("主菜单", "start", "", false),
+			richButton("返回首页", "start", "", false),
 		},
 	}).Rich()
 }
@@ -867,7 +867,7 @@ func BuildReviewStuckCard(title string, year int, mediaIcon string) RichMessage 
 		Pairs:  [][]string{{"进度", StatusSyncing}},
 		Footer: "系统会自动重试，可在求片进度查看。",
 		Buttons: []types.TelegramRichMessageButton{
-			richButton("求片进度", "requests", "primary", false),
+			richButton("查看进度", "requests", "primary", false),
 		},
 	}).Rich()
 }
@@ -886,7 +886,7 @@ func BuildReviewBlockedCard(title string, reason string, detail string) RichMess
 		Status: StatusInLibrary,
 		Footer: footer,
 		Buttons: []types.TelegramRichMessageButton{
-			richButton("主菜单", "start", "", false),
+			richButton("返回首页", "start", "", false),
 		},
 	}).Rich()
 }
