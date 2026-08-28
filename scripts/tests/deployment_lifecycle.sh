@@ -133,7 +133,7 @@ mkdir -p "$BIND_DATA"
 printf bind-original > "$BIND_DATA/probe.txt"
 docker run -d --name "$NAME" --network host --restart unless-stopped --env-file "$ENV_FILE" \
     -e DATA_DIR=/app/data --mount "type=bind,src=$BIND_SOURCE,dst=/app/data" \
-    -v /var/run/docker.sock:/var/run/docker.sock "$IMAGE" >/dev/null
+    "$IMAGE" >/dev/null
 BIND_BACKUP=$(PATH="$FAKEBIN:$PATH" YIMAO_CONTAINER_NAME="$NAME" YIMAO_VOLUME_NAME="$VOLUME" \
     YIMAO_ENV_FILE="$ENV_FILE" YIMAO_BACKUP_DIR="$BIND_BACKUPS" YIMAO_HEALTH_ATTEMPTS=8 \
     "$ROOT/scripts/ops.sh" backup | tail -n 1)
@@ -154,7 +154,7 @@ fi
 docker rm -f "$NAME" >/dev/null
 
 docker run -d --name "$NAME" --network host --restart unless-stopped --env-file "$ENV_FILE" \
-    -e DATA_DIR=/app/data -v "$VOLUME:/app/data" -v /var/run/docker.sock:/var/run/docker.sock "$IMAGE" >/dev/null
+    -e DATA_DIR=/app/data -v "$VOLUME:/app/data" "$IMAGE" >/dev/null
 
 # The test image overrides only Docker HEALTHCHECK. HTTP probing is replaced below.
 for _ in 1 2 3 4 5 6; do
@@ -376,7 +376,7 @@ fi
 # Recreate the fixture for rollback and uninstall checks below.
 docker run --rm -v "$VOLUME:/data" --entrypoint /bin/sh "$IMAGE" -c 'printf before-failed-deploy > /data/probe.txt'
 docker run -d --name "$NAME" --restart unless-stopped --network host \
-    -v "$VOLUME:/app/data" -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$VOLUME:/app/data" \
     --env-file "$ENV_FILE" "$IMAGE" >/dev/null
 for _ in 1 2 3 4 5 6 7 8; do
     [ "$(docker inspect -f '{{.State.Health.Status}}' "$NAME")" = healthy ] && break

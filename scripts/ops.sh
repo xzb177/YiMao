@@ -100,7 +100,6 @@ run_container() {
         --env-file "$ENV_FILE" \
         -e DATA_DIR=/app/data \
         -v "$VOLUME_NAME:/app/data" \
-        -v /var/run/docker.sock:/var/run/docker.sock \
         "$image" >/dev/null
 }
 
@@ -440,7 +439,9 @@ doctor() {
     [ "$network" = host ] || die "container network is $network, expected host"
     [ "$restart" = unless-stopped ] || die "restart policy is $restart, expected unless-stopped"
     printf '%s\n' "$mounts" | grep -qx /app/data || die "data volume is not mounted"
-    printf '%s\n' "$mounts" | grep -qx /var/run/docker.sock || die "Docker socket is not mounted"
+    if printf '%s\n' "$mounts" | grep -qx /var/run/docker.sock; then
+        die "Docker socket must not be mounted in the production request bot"
+    fi
     wait_healthy || die "health check failed"
     info "Doctor passed: config, build, topology and dependencies are healthy"
 }

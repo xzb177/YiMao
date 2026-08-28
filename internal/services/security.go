@@ -281,11 +281,11 @@ func (s *SecurityContext) cleanup() {
 }
 
 // validateAPIKey validates an API key using constant-time comparison
-func (s *SecurityService) validateAPIKey(key string) bool {
+func (s *SecurityService) validateAPIKey(key string, force bool) bool {
 	s.ctx.apiKeys.mu.RLock()
 	defer s.ctx.apiKeys.mu.RUnlock()
 
-	if !s.ctx.apiKeys.Enabled {
+	if !force && !s.ctx.apiKeys.Enabled {
 		return true // Authentication explicitly disabled
 	}
 	if len(s.ctx.apiKeys.Keys) == 0 {
@@ -304,6 +304,17 @@ func (s *SecurityService) validateAPIKey(key string) bool {
 
 // Middleware returns an HTTP middleware with security checks
 func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
+	return s.authMiddleware(next, false)
+}
+
+// ManagementMiddleware always requires an API key, regardless of the optional
+// global API auth flag. This prevents reverse proxies from turning loopback
+// checks into an authentication bypass.
+func (s *SecurityService) ManagementMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return s.authMiddleware(next, true)
+}
+
+func (s *SecurityService) authMiddleware(next http.HandlerFunc, force bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ip := s.getClientIP(r)
 
@@ -319,7 +330,7 @@ func (s *SecurityService) Middleware(next http.HandlerFunc) http.HandlerFunc {
 		// Check API key authentication (only from header, not query string for security)
 		apiKey := r.Header.Get("X-API-Key")
 
-		if !s.validateAPIKey(apiKey) {
+		if !s.validateAPIKey(apiKey, force) {
 			logger.Info("[Security] Invalid API key from %s", ip)
 			s.RecordFailedAttempt(ip)
 			w.Header().Set("Content-Type", "application/json")

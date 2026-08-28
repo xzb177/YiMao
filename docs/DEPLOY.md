@@ -29,7 +29,7 @@ YiMao 固定使用：
 - `network=host`
 - `restart=unless-stopped`
 - named volume `yimao-data:/app/data`
-- `/var/run/docker.sock:/var/run/docker.sock`
+- no Docker socket mount in the production `yimao` container
 - Docker `HEALTHCHECK` 与 `GET /health`
 
 因此 `MOVIEPILOT_URL`、`EMBY_URL` 必须是**宿主机可访问地址**。不要照搬 Compose service name，除非宿主机本身能解析该名称。

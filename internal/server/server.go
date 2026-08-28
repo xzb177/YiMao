@@ -112,12 +112,7 @@ func New(
 		fmt.Fprintf(w, `{"sessions": %d, "total_size": %d}`,
 			stats["total_sessions"], stats["total_size"])
 	}
-	if cfg.EnableAPIAuth {
-		mux.HandleFunc("/debug", securityService.Middleware(debugHandler))
-	} else {
-		// When API auth is disabled, restrict to localhost only.
-		mux.HandleFunc("/debug", securityService.PublicMiddleware(localOnlyHandler(debugHandler)))
-	}
+	mux.HandleFunc("/debug", securityService.ManagementMiddleware(debugHandler))
 
 	// Webhook endpoints (for Telegram bot updates) - public with rate limiting
 	webhookHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -141,12 +136,8 @@ func New(
 		deps.WebhookService,
 	)
 
-	// Summary requires API authentication when configured; otherwise it is localhost-only.
-	if cfg.EnableAPIAuth {
-		mux.HandleFunc("/api/summary", securityService.Middleware(apiRouter.HandleSummary))
-	} else {
-		mux.HandleFunc("/api/summary", securityService.PublicMiddleware(localOnlyHandler(apiRouter.HandleSummary)))
-	}
+	// Management endpoints always require API authentication. They may sit behind a reverse proxy, so RemoteAddr and forwarded headers are never auth signals.
+	mux.HandleFunc("/api/summary", securityService.ManagementMiddleware(apiRouter.HandleSummary))
 	mux.HandleFunc("/webhook/emby", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/jellyseerr", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
@@ -156,15 +147,9 @@ func New(
 	// webhooks: without API auth they must stay localhost-only (the previous
 	// fallback exposed them publicly with only IP rate limiting).
 	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook
-	if cfg.EnableAPIAuth {
-		mux.HandleFunc("/api/stats", securityService.Middleware(apiHandler))
-		mux.HandleFunc("/api/admins", securityService.Middleware(apiHandler))
-		mux.HandleFunc("/api/admins/", securityService.Middleware(apiHandler))
-	} else {
-		mux.HandleFunc("/api/stats", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
-		mux.HandleFunc("/api/admins", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
-		mux.HandleFunc("/api/admins/", securityService.PublicMiddleware(localOnlyHandler(apiHandler)))
-	}
+	mux.HandleFunc("/api/stats", securityService.ManagementMiddleware(apiHandler))
+	mux.HandleFunc("/api/admins", securityService.ManagementMiddleware(apiHandler))
+	mux.HandleFunc("/api/admins/", securityService.ManagementMiddleware(apiHandler))
 
 	// Telegram Mini App routes. Authentication for API calls is handled by the
 	// Mini App package using Telegram initData; the HTML shell is public so

@@ -70,7 +70,7 @@ chmod 600 .env
 - host network
 - `restart=unless-stopped`
 - named volume `yimao-data:/app/data`
-- Docker socket `/var/run/docker.sock`
+- no Docker socket mount in the request-bot container
 - `/health` 与 Docker `HEALTHCHECK`
 - OCI label `org.opencontainers.image.revision=<git commit>`
 

@@ -56,7 +56,10 @@ func (c *MoviePilotClient) ResetUserPassword(dbPath, username string) (string, e
 		return "", fmt.Errorf("MoviePilot 用户数据库路径未配置，请设置 MOVIEPILOT_DB_PATH（容器内路径，如 /config/user.db）")
 	}
 	if _, err := exec.LookPath("docker"); err != nil {
-		return "", fmt.Errorf("docker CLI 不可用，无法执行密码重置；Docker 部署请安装 docker-cli 并挂载 /var/run/docker.sock")
+		return "", fmt.Errorf("密码重置不可用：Docker CLI 未安装；请使用隔离的 resetpw 覆盖配置")
+	}
+	if _, err := os.Stat("/var/run/docker.sock"); err != nil {
+		return "", fmt.Errorf("密码重置不可用：生产请求机器人未授予 Docker socket；请使用隔离的 resetpw 覆盖配置")
 	}
 
 	script := fmt.Sprintf(`

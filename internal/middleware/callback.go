@@ -99,11 +99,8 @@ type AdminOnly struct {
 func (a *AdminOnly) Apply(next callback.Handler) callback.Handler {
 	return callback.HandlerFunc(func(ctx *callback.Context) (*callback.Response, error) {
 		if !a.isAdmin(ctx.UserID) {
-			return &callback.Response{
-				Text:        "❌ 此功能仅管理员可用",
-				CallbackMsg: "权限不足",
-				ShowAlert:   true,
-			}, errors.Forbidden("user is not admin")
+			// Unauthorized is a handled callback response, not an execution error.
+			return &callback.Response{CallbackMsg: "权限不足", ShowAlert: true}, nil
 		}
 
 		return next.Handle(ctx)

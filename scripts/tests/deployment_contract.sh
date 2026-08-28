@@ -19,7 +19,7 @@ contains docker-compose.yml 'network_mode:[[:space:]]*"?host"?'
 contains docker-compose.yml 'restart:[[:space:]]*unless-stopped'
 contains docker-compose.yml 'YIMAO_ENV_FILE:-\.env'
 contains docker-compose.yml 'yimao-data:/app/data'
-contains docker-compose.yml '/var/run/docker.sock:/var/run/docker.sock'
+if grep -Eq '/var/run/docker.sock' docker-compose.yml; then fail 'production compose must not mount Docker socket'; fi
 contains docker-compose.yml '^volumes:'
 contains docker-compose.yml '^[[:space:]]+yimao-data:'
 contains Dockerfile '^HEALTHCHECK '

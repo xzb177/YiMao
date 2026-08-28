@@ -3,7 +3,6 @@ package miniapp
 import (
 	"crypto/hmac"
 	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -52,9 +51,8 @@ func ValidateInitData(raw, botToken string, maxAge time.Duration) (AuthUser, err
 	secretMac.Write([]byte(botToken))
 	digest := hmac.New(sha256.New, secretMac.Sum(nil))
 	digest.Write([]byte(dataCheckString))
-	expected := hex.EncodeToString(digest.Sum(nil))
 	provided, err := hex.DecodeString(hashHex)
-	if err != nil || subtle.ConstantTimeCompare(provided, digest.Sum(nil)) != 1 || !hmac.Equal([]byte(expected), []byte(strings.ToLower(hashHex))) {
+	if err != nil || !hmac.Equal(provided, digest.Sum(nil)) {
 		return zero, fmt.Errorf("%w: signature", ErrInvalidInitData)
 	}
 	authDate, err := strconv.ParseInt(values.Get("auth_date"), 10, 64)
