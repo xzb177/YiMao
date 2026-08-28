@@ -44,10 +44,11 @@ func (h *RequestHeatHandler) Handle(ctx *callback.Context) (*callback.Response, 
 
 	if len(items) == 0 {
 		text.WriteString("最近 7 天还没有正在等待的求片。\n\n搜到想看的影片后，可以直接求片或加入想看。")
-		keyboard.InlineKeyboard = [][]callback.Button{
-			{{Text: "🔍 搜索求片", CallbackData: "start_search"}},
-			{{Text: "🏠 主菜单", CallbackData: "start"}},
-		}
+		keyboard.InlineKeyboard = [][]callback.Button{{
+			{Text: "搜索求片", CallbackData: "start_search"},
+			{Text: "查看进度", CallbackData: "requests"},
+			{Text: "返回首页", CallbackData: "start"},
+		}}
 		return &callback.Response{Text: text.String(), Edit: true, ParseMode: "HTML", Keyboard: keyboard}, nil
 	}
 
@@ -68,10 +69,11 @@ func (h *RequestHeatHandler) Handle(ctx *callback.Context) (*callback.Response, 
 		}})
 	}
 	text.WriteString("\n点影片查看详情，也可以直接求片或加入想看。")
-	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard,
-		[]callback.Button{{Text: "🔄 刷新", CallbackData: "request_heat"}},
-		[]callback.Button{{Text: "🏠 主菜单", CallbackData: "start"}},
-	)
+	keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, []callback.Button{
+		{Text: "搜索求片", CallbackData: "start_search"},
+		{Text: "刷新状态", CallbackData: "request_heat"},
+		{Text: "返回首页", CallbackData: "start"},
+	})
 	return &callback.Response{Text: text.String(), Edit: true, ParseMode: "HTML", Keyboard: keyboard}, nil
 }
 

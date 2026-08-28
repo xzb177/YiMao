@@ -7,7 +7,9 @@ import (
 )
 
 // Page is the one user-visible card template: heading, tagline, 1-2 sentences,
-// optional compact facts, then a 2-column 10.3 button grid.
+// optional compact facts, then a 3-column 10.3 button grid. Rows are built with
+// trio/pair/full so no card ever emits an orphan button on its own row unless it
+// is a deliberate full-width closing action.
 type Page struct {
 	Kicker  string
 	Heading string
@@ -54,6 +56,13 @@ func pageBtn(text, callback, style string) types.TelegramRichMessageButton {
 	return richButton(text, callback, style, false)
 }
 
+// trio is the default row shape: three 4-character actions across one row.
+func trio(a, acb, as, b, bcb, bs, c, ccb, cs string) []types.TelegramRichMessageButton {
+	return []types.TelegramRichMessageButton{pageBtn(a, acb, as), pageBtn(b, bcb, bs), pageBtn(c, ccb, cs)}
+}
+
+// pair stays available for rows where only two actions are semantically valid;
+// padding such a row with a filler button would invent an action.
 func pair(a, acb, as, b, bcb, bs string) []types.TelegramRichMessageButton {
 	return []types.TelegramRichMessageButton{pageBtn(a, acb, as), pageBtn(b, bcb, bs)}
 }

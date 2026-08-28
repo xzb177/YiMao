@@ -29,11 +29,21 @@ func ButtonStyleFor(text, callback string) string {
 	if strings.Contains(raw, "关闭") && strings.Contains(actionName, "close") {
 		return ButtonStyleDanger
 	}
-	if strings.Contains(raw, "求片进度") || strings.Contains(raw, "我的进度") {
-		return ButtonStylePrimary
-	}
 	if raw == "搜索求片" {
 		return ButtonStyleSuccess
+	}
+	// The four-character menu lexicon is neutral primary; only 搜索求片 is green.
+	for _, label := range []string{
+		"查看进度", "帮助说明", "更多功能", "返回首页", "刷新状态", "申请洗版",
+		"进入许愿", "系统设置", "问题反馈", "游戏中心", "通知设置", "绑定账号",
+		"重置密码", "我的反馈", "观影周报", "求片热度", "管理后台",
+	} {
+		if raw == label {
+			return ButtonStylePrimary
+		}
+	}
+	if strings.Contains(raw, "求片进度") || strings.Contains(raw, "我的进度") {
+		return ButtonStylePrimary
 	}
 	if raw == "求片" || strings.HasSuffix(raw, " 求片") {
 		return ButtonStyleSuccess

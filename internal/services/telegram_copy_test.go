@@ -7,20 +7,37 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 	if keyboard == nil || len(keyboard.InlineKeyboard) != 2 {
 		t.Fatalf("unexpected start keyboard: %#v", keyboard)
 	}
+	// 方案1: two rows of three, request-first, 搜索求片 the only green control.
 	first := keyboard.InlineKeyboard[0]
-	if len(first) != 2 || first[0].Text != "搜索求片" || first[0].CallbackData != "start_search" || first[1].CallbackData != "requests" {
+	if len(first) != 3 || first[0].Text != "搜索求片" || first[0].CallbackData != "start_search" ||
+		first[1].CallbackData != "requests" || first[2].CallbackData != "wash" {
 		t.Fatalf("primary row = %#v", first)
 	}
 	second := keyboard.InlineKeyboard[1]
-	if len(second) != 2 || second[0].CallbackData != "help" || second[1].CallbackData != "start_more" {
+	if len(second) != 3 || second[0].CallbackData != "start_wish" ||
+		second[1].CallbackData != "help" || second[2].CallbackData != "start_more" {
 		t.Fatalf("second row = %#v", second)
 	}
+	success := 0
 	for _, row := range keyboard.InlineKeyboard {
 		for _, button := range row {
-			if button.CallbackData == "wash" || button.CallbackData == "admin_menu" || button.CallbackData == "game_menu" {
+			if len([]rune(button.Text)) != 4 {
+				t.Fatalf("label %q is not 4 CJK characters", button.Text)
+			}
+			if button.Style == "success" {
+				success++
+				if button.Text != "搜索求片" {
+					t.Fatalf("unexpected success button: %#v", button)
+				}
+			}
+			// Administration and the game drawer stay behind 更多功能.
+			if button.CallbackData == "admin_menu" || button.CallbackData == "game_menu" || button.CallbackData == "start_settings" {
 				t.Fatalf("secondary entry leaked onto home: %#v", button)
 			}
 		}
+	}
+	if success != 1 {
+		t.Fatalf("start keyboard must have exactly one success button, got %d", success)
 	}
 }
 

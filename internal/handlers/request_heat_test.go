@@ -31,8 +31,19 @@ func TestRequestHeatHandlerBuildsDetailLinksWithoutIdentityLeak(t *testing.T) {
 		t.Fatalf("identity leaked: %q", resp.Text)
 	}
 	callbacks := keyboardCallbacks(resp.Keyboard)
-	if callbacks["detail:id:550:type:movie:source:request_heat"] == "" || callbacks["request_heat"] != "🔄 刷新" || callbacks["start"] != "🏠 主菜单" {
+	if callbacks["detail:id:550:type:movie:source:request_heat"] == "" || callbacks["request_heat"] != "刷新状态" ||
+		callbacks["start"] != "返回首页" || callbacks["start_search"] != "搜索求片" {
 		t.Fatalf("callbacks=%#v", callbacks)
+	}
+	// The action row must be a single 3-column row, not stacked singletons.
+	last := resp.Keyboard.InlineKeyboard[len(resp.Keyboard.InlineKeyboard)-1]
+	if len(last) != 3 {
+		t.Fatalf("action row has %d buttons, want a 3-column row: %#v", len(last), last)
+	}
+	for _, button := range last {
+		if len([]rune(button.Text)) != 4 {
+			t.Fatalf("label %q is not 4 CJK characters", button.Text)
+		}
 	}
 	for data := range callbacks {
 		if len([]byte(data)) > 64 {
@@ -73,8 +84,11 @@ func TestRequestHeatHandlerEmptyStatePointsToSearch(t *testing.T) {
 		t.Fatalf("text=%q", resp.Text)
 	}
 	callbacks := keyboardCallbacks(resp.Keyboard)
-	if callbacks["start_search"] != "🔍 搜索求片" || callbacks["start"] != "🏠 主菜单" {
+	if callbacks["start_search"] != "搜索求片" || callbacks["requests"] != "查看进度" || callbacks["start"] != "返回首页" {
 		t.Fatalf("callbacks=%#v", callbacks)
+	}
+	if len(resp.Keyboard.InlineKeyboard) != 1 || len(resp.Keyboard.InlineKeyboard[0]) != 3 {
+		t.Fatalf("empty state must offer one 3-column row: %#v", resp.Keyboard.InlineKeyboard)
 	}
 }
 

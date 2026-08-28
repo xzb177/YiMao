@@ -152,21 +152,203 @@ img{max-width:100%;display:block}
 @supports not (color: color-mix(in srgb,#000 50%,transparent)){:root{--panel-2:rgba(128,138,148,.18);--line:rgba(128,138,148,.32);--glass:var(--tg-card);--glass-strong:var(--tg-bg);--dim:var(--tg-hint);--accent-soft:rgba(59,130,246,.16)}}
 </style>
 <style>
-:root{--cinema-success:#34c759;--cinema-primary:#1c3d73;--cinema-line:#ececec;--cinema-muted:#6e6e73}
-body{background:var(--tg-theme-bg-color,#fff);color:#111}.shell{max-width:430px;padding:calc(var(--safe-top) + 12px) 10px calc(var(--safe-bottom) + 18px)}
-.app-dock{display:none}.cinema-card{overflow:hidden;margin:0 0 14px;border:1px solid var(--cinema-line);border-radius:18px;background:#fff;box-shadow:0 1px 0 rgba(0,0,0,.03)}
-.cinema-hero{position:relative;height:148px;background:linear-gradient(160deg,#1b1430,#0b0d18);overflow:hidden}.cinema-hero img{width:100%;height:100%;object-fit:cover}.cinema-hero:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.08),rgba(0,0,0,.62))}.cinema-credit{position:absolute;z-index:1;left:14px;bottom:12px;color:#fff;font-size:11px;letter-spacing:.12em;opacity:.85}
-.cinema-copy{padding:14px 14px 8px}.cinema-kicker{font-size:11px;letter-spacing:.18em;color:#8e8e93;font-weight:600}.cinema-copy h1{margin:0;font-size:22px;line-height:1.45;letter-spacing:-.03em;font-weight:700}.cinema-tag{margin-top:4px;font-size:15px}.cinema-body{margin-top:8px;color:#3c3c43;font-size:14px;line-height:1.45}.cinema-status{margin-top:10px;color:var(--cinema-muted);font-size:12px}.cinema-rule{height:1px;margin-top:10px;background:#eee}
-.cinema-facts{width:100%;margin-top:8px;border-collapse:collapse;font-size:13px}.cinema-facts td{padding:5px 0;border-bottom:1px solid #f1f1f1;color:#3c3c43}.cinema-facts td:first-child{width:38%;color:#8e8e93}
-.cinema-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px}.cinema-button{min-height:44px;padding:11px 8px;border:0;border-radius:12px;color:#fff;font-size:14px;font-weight:600}.cinema-button.success{background:var(--cinema-success)}.cinema-button.primary{background:var(--cinema-primary)}
-.cinema-search-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}.cinema-search-form input{min-width:0;padding:10px 12px;border:1px solid #ddd;border-radius:12px;color:#111;background:#fff}
-.cinema-list{display:grid;gap:10px;padding:0 12px 12px}.cinema-result{display:grid;grid-template-columns:58px 1fr;gap:10px;padding:8px;border:1px solid #eee;border-radius:12px;text-align:left;color:#111}.cinema-result img{width:58px;height:87px;object-fit:cover;border-radius:7px}.cinema-result strong,.cinema-result small{display:block}.cinema-result small{margin-top:5px;color:#6e6e73}
-.cinema-task-list{display:grid;gap:12px}.cinema-empty{padding:22px 14px;color:#6e6e73;text-align:center}
-.detail,.sheet{color:var(--tg-theme-text-color,#111)}
+/* ==== yunhai premium dark glass — presentation layer only ==== */
+:root{
+  --yh-base-0:#07080b; --yh-base-1:#0a0c11; --yh-base-2:#0d0f14;
+  --yh-ink:#f4f6fa; --yh-ink-2:#c3ccd8; --yh-ink-3:#8e99a8;
+  --yh-line:rgba(255,255,255,.09); --yh-line-2:rgba(255,255,255,.16);
+  --yh-glass:rgba(18,21,28,.72); --yh-glass-2:rgba(24,28,37,.86);
+  --yh-glow:0 18px 46px rgba(0,0,0,.55);
+  --yh-lift:0 1px 0 rgba(255,255,255,.05) inset, 0 12px 30px rgba(0,0,0,.42);
+  --yh-green-1:#31d158; --yh-green-2:#1f9c46;
+  --yh-blue:#4c8dff; --yh-amber:#e8a33d; --yh-red:#ff6b5c;
+  --yh-r-lg:22px; --yh-r-md:16px; --yh-r-sm:11px;
+  --yh-rhythm:20px;
+  --yh-safe-t:max(0px,env(safe-area-inset-top,0px),var(--tg-safe-area-inset-top,0px),var(--tg-content-safe-area-inset-top,0px));
+  --yh-safe-b:max(0px,env(safe-area-inset-bottom,0px),var(--tg-safe-area-inset-bottom,0px));
+  --yh-safe-l:max(0px,env(safe-area-inset-left,0px));
+  --yh-safe-r:max(0px,env(safe-area-inset-right,0px));
+  --yh-gutter:18px;
+  --yh-dock-h:60px;
+  --yh-dock-clear:calc(var(--yh-dock-h) + var(--yh-safe-b) + 26px);
+}
+html,body{background:var(--yh-base-0);color:var(--yh-ink)}
+body{overflow-x:clip;-webkit-font-smoothing:antialiased;
+  background:
+    radial-gradient(120% 62% at 50% 0%,#12161f 0%,rgba(13,15,20,0) 62%),
+    linear-gradient(180deg,var(--yh-base-0) 0%,var(--yh-base-1) 46%,var(--yh-base-2) 100%);
+  background-attachment:fixed}
+.shell{max-width:520px;min-height:100dvh;margin:0 auto;
+  padding:0 var(--yh-gutter) var(--yh-dock-clear);
+  padding-left:max(var(--yh-gutter),var(--yh-safe-l));
+  padding-right:max(var(--yh-gutter),var(--yh-safe-r));
+  padding-bottom:var(--yh-dock-clear);overflow-x:clip}
+.app-dock{display:none}
+
+/* ---- hero ---- */
+.yh-hero{position:relative;isolation:isolate;display:grid;align-content:end;gap:9px;
+  min-height:min(62vh,430px);
+  margin:0 calc(-1 * var(--yh-gutter)) var(--yh-rhythm);
+  padding:calc(var(--yh-safe-t) + 30px) var(--yh-gutter) 22px;
+  border-radius:0 0 26px 26px;overflow:hidden}
+.yh-hero-art,.yh-hero-fallback{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 32%}
+.yh-hero-fallback{background:linear-gradient(155deg,#1b2740,#3a2450 52%,#5a2f33)}
+.yh-hero-scrim{position:absolute;z-index:-1;inset:0;pointer-events:none;
+  background:linear-gradient(to top,var(--yh-base-0) 0%,rgba(7,8,11,.94) 16%,rgba(7,8,11,.62) 44%,rgba(7,8,11,.22) 72%,rgba(7,8,11,.06) 100%)}
+.yh-kicker{font-size:10.5px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(244,246,250,.72)}
+.yh-title{margin:0;font-size:35px;line-height:1.08;letter-spacing:-.035em;font-weight:800;color:#fff;
+  text-shadow:0 2px 22px rgba(0,0,0,.62)}
+.yh-tagline{margin:0;font-size:16px;line-height:1.4;font-weight:600;color:#e9edf4}
+.yh-lede{margin:0;font-size:13.5px;line-height:1.55;color:var(--yh-ink-2);max-width:31em}
+.yh-status{display:inline-flex;align-items:center;gap:7px;width:max-content;margin-top:2px;
+  padding:5px 11px 5px 9px;border:1px solid var(--yh-line-2);border-radius:999px;
+  background:rgba(10,12,17,.6);backdrop-filter:blur(14px);
+  color:var(--yh-ink-2);font-size:11.5px;font-weight:600}
+.yh-dot{width:7px;height:7px;border-radius:50%;background:var(--yh-green-1);
+  box-shadow:0 0 0 4px rgba(49,209,88,.16);animation:yhPulse 2.4s ease-in-out infinite}
+@keyframes yhPulse{0%,100%{box-shadow:0 0 0 3px rgba(49,209,88,.2)}50%{box-shadow:0 0 0 8px rgba(49,209,88,0)}}
+
+/* ---- frosted panel ---- */
+.yh-panel{display:grid;gap:10px;margin:0 0 var(--yh-rhythm);padding:15px 16px;
+  border:1px solid var(--yh-line);border-radius:var(--yh-r-md);
+  background:var(--yh-glass);backdrop-filter:blur(22px) saturate(1.25);box-shadow:var(--yh-lift)}
+.yh-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+.yh-panel-label{font-size:10.5px;font-weight:700;letter-spacing:.2em;text-transform:uppercase;color:var(--yh-ink-3)}
+.yh-panel-row{display:grid;grid-template-columns:56px minmax(0,1fr);gap:12px;align-items:center;min-width:0;text-align:left;padding:0;border:0;background:none;color:inherit;width:100%}
+.yh-panel-row img{width:56px;height:84px;object-fit:cover;border-radius:9px;border:1px solid var(--yh-line);background:#12151c}
+.yh-panel-row .yh-ph{width:56px;height:84px;border-radius:9px;border:1px solid var(--yh-line);background:linear-gradient(160deg,#1d2740,#3b2648)}
+.yh-panel-row strong{display:block;font-size:15px;line-height:1.3;color:var(--yh-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-panel-row small{display:block;margin-top:5px;font-size:12px;color:var(--yh-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ---- 3-column action grid ---- */
+.yh-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:0 0 var(--yh-rhythm)}
+.yh-act{display:grid;justify-items:center;align-content:center;gap:6px;
+  min-height:74px;padding:11px 5px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);
+  background:var(--yh-glass-2);backdrop-filter:blur(18px);box-shadow:var(--yh-lift);
+  color:var(--yh-ink);font-size:12.5px;font-weight:650;letter-spacing:.01em;
+  transition:transform .16s ease,border-color .16s ease}
+.yh-act:active{transform:translateY(1px);border-color:var(--yh-line-2)}
+.yh-act svg{width:17px;height:17px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.yh-act span{display:block;white-space:nowrap}
+.yh-act.is-primary{color:var(--yh-ink)}
+.yh-act.is-primary svg{stroke:var(--yh-blue)}
+.yh-act.is-success{border-color:rgba(49,209,88,.42);color:#062610;
+  background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));
+  box-shadow:0 12px 28px rgba(31,156,70,.3)}
+.yh-act.is-success svg{stroke:#062610}
+.yh-act.is-danger{border-color:rgba(255,107,92,.4);color:#ffd9d4;background:rgba(90,26,22,.5)}
+.yh-act.is-danger svg{stroke:var(--yh-red)}
+
+/* ---- sections + rails ---- */
+.yh-sec{display:grid;gap:11px;margin:0 0 var(--yh-rhythm);min-width:0}
+.yh-sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;min-width:0}
+.yh-sec-head h2{margin:0;font-size:17px;line-height:1.3;letter-spacing:-.015em;font-weight:720;color:var(--yh-ink)}
+.yh-sec-head span,.yh-sec-head button{font-size:12px;color:var(--yh-ink-2)}
+.yh-sec-head button{min-height:34px;padding:0 2px;border:0;background:none;color:var(--yh-blue);font-weight:640}
+.yh-rail{display:flex;align-items:flex-start;gap:12px;min-width:0;
+  margin:0 calc(-1 * var(--yh-gutter));padding:2px 0 6px var(--yh-gutter);
+  overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory;scrollbar-width:none}
+.yh-rail::-webkit-scrollbar{display:none}
+.yh-rail::after{content:"";flex:0 0 var(--yh-gutter);width:var(--yh-gutter);height:1px}
+/* D1 fix: artwork + title + year live in ONE card element and scroll together */
+.yh-card{flex:0 0 122px;width:122px;min-width:122px;max-width:122px;
+  display:grid;grid-template-rows:auto auto auto;gap:7px;
+  padding:0;border:0;background:none;color:inherit;text-align:left;scroll-snap-align:start}
+.yh-card:active{transform:translateY(1px)}
+.yh-art{position:relative;display:block;width:122px;height:183px;overflow:hidden;
+  border:1px solid var(--yh-line);border-radius:13px;background:#12151c;box-shadow:var(--yh-glow)}
+.yh-art img{width:100%;height:100%;object-fit:cover}
+.yh-art-ph{display:block;width:100%;height:100%;background:linear-gradient(160deg,#1d2740,#3b2648)}
+.yh-badge{position:absolute;left:7px;bottom:7px;max-width:calc(100% - 14px);
+  padding:3px 7px;border:1px solid rgba(255,255,255,.14);border-radius:7px;
+  background:rgba(6,8,11,.78);backdrop-filter:blur(10px);
+  color:#fff;font-size:10px;line-height:1.25;font-weight:640;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-card strong{display:block;width:122px;max-width:122px;font-size:13px;line-height:1.3;font-weight:660;
+  color:var(--yh-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-card small{display:block;width:122px;max-width:122px;font-size:11.5px;line-height:1.3;
+  color:var(--yh-ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-empty{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:52px;
+  padding:13px 14px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);
+  background:var(--yh-glass);color:var(--yh-ink-2);font-size:12.5px}
+.yh-empty button{flex:none;min-height:34px;border:0;background:none;color:var(--yh-blue);font-size:12px;font-weight:640}
+
+/* ---- search ---- */
+.yh-search{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;margin:0 0 var(--yh-rhythm)}
+.yh-search input{min-width:0;height:48px;padding:0 15px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);
+  background:var(--yh-glass-2);color:var(--yh-ink);font-size:16px}
+.yh-search input::placeholder{color:var(--yh-ink-3)}
+.yh-search button{min-height:48px;padding:0 17px;border:0;border-radius:var(--yh-r-md);
+  background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));color:#062610;font-size:13.5px;font-weight:700}
+.yh-result{display:grid;grid-template-columns:62px minmax(0,1fr);gap:13px;align-items:center;
+  width:100%;min-width:0;padding:11px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);
+  background:var(--yh-glass);backdrop-filter:blur(18px);box-shadow:var(--yh-lift);text-align:left;color:inherit}
+.yh-result:active{transform:translateY(1px)}
+.yh-result img{width:62px;height:93px;object-fit:cover;border-radius:10px;border:1px solid var(--yh-line);background:#12151c}
+.yh-result .yh-ph{width:62px;height:93px;border-radius:10px;border:1px solid var(--yh-line);background:linear-gradient(160deg,#1d2740,#3b2648)}
+.yh-result strong{display:block;font-size:15px;line-height:1.3;color:var(--yh-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-result small{display:block;margin-top:6px;font-size:12px;color:var(--yh-ink-2)}
+.yh-pill{display:inline-flex;align-items:center;min-height:24px;margin-top:7px;padding:0 9px;
+  border:1px solid var(--yh-line-2);border-radius:999px;background:rgba(10,12,17,.5);
+  color:var(--yh-ink-2);font-size:11px;font-weight:600}
+.yh-list{display:grid;gap:10px;margin:0 0 var(--yh-rhythm)}
+
+/* ---- tasks / timeline ---- */
+.yh-task{display:grid;gap:13px;margin:0 0 var(--yh-rhythm);padding:16px;
+  border:1px solid var(--yh-line);border-radius:var(--yh-r-lg);
+  background:var(--yh-glass);backdrop-filter:blur(22px);box-shadow:var(--yh-lift)}
+.yh-task-head{display:grid;gap:6px;min-width:0}
+.yh-task-head h2{margin:0;font-size:22px;line-height:1.2;letter-spacing:-.025em;font-weight:760;color:var(--yh-ink)}
+.yh-task-state{display:inline-flex;align-items:center;gap:7px;width:max-content;
+  padding:4px 10px;border-radius:999px;background:rgba(76,141,255,.14);
+  color:#9dc0ff;font-size:11.5px;font-weight:650}
+.yh-task-state.is-done{background:rgba(49,209,88,.15);color:#8be6a4}
+.yh-task-state.is-wait{background:rgba(232,163,61,.15);color:#f0c483}
+.yh-task-note{margin:0;font-size:13px;line-height:1.55;color:var(--yh-ink-2)}
+.yh-facts{width:100%;border-collapse:collapse;font-size:13px}
+.yh-facts td{padding:8px 0;border-bottom:1px solid var(--yh-line);color:var(--yh-ink-2)}
+.yh-facts tr:last-child td{border-bottom:0}
+.yh-facts td:first-child{width:34%;color:var(--yh-ink-3);font-size:12.5px}
+.yh-facts td:last-child{color:var(--yh-ink);text-align:right}
+.yh-time{display:grid;gap:0;margin:2px 0 0}
+.yh-step{position:relative;display:grid;grid-template-columns:20px minmax(0,1fr);gap:11px;padding-bottom:15px}
+.yh-step::before{content:"";position:absolute;top:17px;bottom:0;left:9px;width:1px;background:var(--yh-line-2)}
+.yh-step:last-child{padding-bottom:0}
+.yh-step:last-child::before{display:none}
+.yh-node{position:relative;z-index:1;width:11px;height:11px;margin:5px 0 0 4px;border-radius:50%;
+  background:#1d2129;border:2px solid var(--yh-line-2)}
+.yh-node.is-done{background:var(--yh-green-1);border-color:var(--yh-green-1)}
+.yh-node.is-now{background:var(--yh-blue);border-color:var(--yh-blue);box-shadow:0 0 0 4px rgba(76,141,255,.18)}
+.yh-node.is-stop{background:var(--yh-red);border-color:var(--yh-red)}
+.yh-step b{display:block;font-size:13px;font-weight:640;color:var(--yh-ink)}
+.yh-step small{display:block;margin-top:3px;font-size:11.5px;color:var(--yh-ink-3)}
+
+/* ---- dock ---- */
+.yh-dock{position:fixed;z-index:30;right:0;bottom:0;left:0;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-items:center;justify-items:center;
+  height:calc(var(--yh-dock-h) + var(--yh-safe-b));
+  padding:7px max(12px,var(--yh-safe-l)) var(--yh-safe-b) max(12px,var(--yh-safe-r));
+  border-top:1px solid var(--yh-line);background:rgba(7,8,11,.86);backdrop-filter:blur(26px) saturate(1.2)}
+.yh-dock button{display:grid;justify-items:center;gap:3px;width:100%;max-width:112px;min-height:46px;
+  padding:5px 12px;border:0;border-radius:999px;background:transparent;
+  color:var(--yh-ink-3);font-size:11px;font-weight:620}
+.yh-dock button[aria-current="page"]{background:rgba(76,141,255,.16);color:#a8c6ff}
+.yh-dock svg{width:18px;height:18px;display:block;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+
+.yh-boot{padding:44px 16px;color:var(--yh-ink-2);font-size:13.5px;text-align:center}
+@media (max-width:360px){
+  :root{--yh-gutter:14px}
+  .yh-title{font-size:30px}
+  .yh-act{min-height:68px;font-size:11.5px;padding:9px 3px}
+  .yh-card,.yh-card strong,.yh-card small{width:106px;min-width:106px;max-width:106px}
+  .yh-art{width:106px;height:159px}
+}
+@media (min-width:760px){:root{--yh-gutter:26px}.shell{max-width:640px}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none !important;transition:none !important;scroll-behavior:auto !important}}
 </style>
 </head>
 <body>
-<main id="app" class="shell"><section class="boot-fallback" aria-live="polite"><div class="empty">正在打开任务中心…</div></section></main>
+<main id="app" class="shell"><section class="boot-fallback" aria-live="polite"><div class="yh-boot">正在打开云海求片…</div></section></main>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <script>
 function telegramWebApp(){return window.Telegram?.WebApp}
@@ -297,20 +479,30 @@ function syncBack(){if(S.detailVisible)showNativeBack();else tg?.BackButton?.hid
 
 
 
+/* ==== yunhai premium front end — presentation layer only ==== */
 function startRoute(){const q=new URLSearchParams(location.search);const raw=String(q.get("tgWebAppStartParam")||q.get("start_param")||"home").trim();if(raw==="tasks"||raw==="progress")return{view:"tasks"};if(raw==="search")return{view:"search"};const m=raw.match(/^detail_(\d+)_(movie|tv)(?:_(\d+))?$/);if(m)return{view:"detail",id:Number(m[1]),type:m[2],season:Number(m[3]||0)};return{view:"home"}}
 function miniBackdrop(item){const p=String(item?.backdrop_path||item?.backdrop||"");if(!p)return"";return p.startsWith("http")?p:"https://image.tmdb.org/t/p/w1280"+p}
-function cinemaButtons(rows){return `<div class="cinema-buttons">${rows.flat().map(b=>`<button class="cinema-button ${b.style||"primary"}" onclick="${b.action}">${b.text}</button>`).join("")}</div>`}
-function chrome(content){return content}
-function homePage(){const featured=(S.homeDynamic?.featured||[]).find(x=>miniBackdrop(x))||null;const art=featured?miniBackdrop(featured):"";return `<section class="cinema-card" id="welcome"><div class="cinema-hero">${art?`<img src="${esc(art)}" alt="">`:""}<span class="cinema-credit">YUNHAI · CINEMA</span></div><div class="cinema-copy"><h1>云海求片</h1><div class="cinema-tag">想看的，交给云海</div><div class="cinema-body">直接发片名，或点搜索。提交后可在进度里查到。</div><div class="cinema-status">在线 · 可求片</div></div>${cinemaButtons([[{text:"搜索求片",style:"success",action:"navigate('search')"},{text:"查看进度",action:"navigate('tasks')"}],[{text:"帮助说明",action:"showHelp()"},{text:"更多功能",action:"showMore()"}]])}</section>`}
-function searchPage(){return `<section class="cinema-card" id="search"><div class="cinema-copy"><h1>搜索求片</h1><div class="cinema-tag">发中文或英文片名</div><div class="cinema-body">点结果看详情，确认后再提交。已在库的会直接告诉你。</div><form class="cinema-search-form" onsubmit="submitSearch(event)"><input id="q" value="${esc(S.query)}" placeholder="输入片名，中英文都行" autocomplete="off"><button class="cinema-button success" type="submit">搜索求片</button></form></div>${cinemaButtons([[{text:"返回首页",action:"goHome()"},{text:"查看进度",action:"navigate('tasks')"}]])}<div class="cinema-list">${S.loading?`<div class="cinema-empty">正在搜索…</div>`:(S.results||[]).map(x=>{const id=Number(mediaID(x)),type=mediaType(x),art=poster(x);return`<button class="cinema-result" onclick="openDetail(${id},'${type}',0)">${art?`<img src="${esc(art)}" alt="">`:"<span></span>"}<span><strong>${esc(mediaTitle(x))}</strong><small>${esc(x.year||"")} · ${esc(x?.media_status?.text||"可求片")}</small></span></button>`}).join("")}</div></section>`}
-function taskFacts(item){const kind=mediaType(item)==="tv"?"剧集":"电影";const next=item?.status_text||"等待确认";return `<table class="cinema-facts"><tr><td>年份</td><td>${esc(item?.media_year||item?.year||"—")}</td></tr><tr><td>类型</td><td>${kind}</td></tr><tr><td>下一步</td><td>${esc(next)}</td></tr></table>`}
-function taskPlaybill(item){const title=mediaTitle(item);const status=item?.status_text||"等待确认";const sentence=status.includes("入库")?"Emby 确认可看后会再通知你。":"进度变化后会在聊天里通知你。";return `<article class="cinema-card"><div class="cinema-copy"><div class="cinema-kicker">NOW PLAYING</div><h1>${esc(title)}</h1><div class="cinema-tag">${esc(status)}</div><div class="cinema-body">${sentence}</div>${taskFacts(item)}</div>${cinemaButtons([[{text:"返回首页",action:"goHome()"},{text:"刷新状态",action:"loadTasks()"}]])}</article>`}
-function tasksPage(){const items=S.tasks?.requests||[];return `<section class="cinema-task-list" id="progress">${items.length?items.map(taskPlaybill).join(""):`<article class="cinema-card"><div class="cinema-copy"><div class="cinema-kicker">NOW PLAYING</div><h1>求片进度</h1><div class="cinema-tag">提交过的片在这里</div><div class="cinema-body">还没有记录的话，可以先去搜索求片。</div></div>${cinemaButtons([[{text:"返回首页",action:"goHome()"},{text:"刷新状态",action:"loadTasks()"}]])}</article>`}</section>`}
-function showHelp(){document.getElementById("app").innerHTML=`<section class="cinema-card"><div class="cinema-copy"><h1>帮助说明</h1><div class="cinema-tag">三步就能求到</div><div class="cinema-body">发片名 → 选结果 → 等审核。通过后会开始下载，可看时再通知你。</div></div>${cinemaButtons([[{text:"搜索求片",style:"success",action:"navigate('search')"},{text:"返回首页",action:"goHome()"}]])}</section>`}
-function showMore(){document.getElementById("app").innerHTML=`<section class="cinema-card"><div class="cinema-copy"><h1>更多功能</h1><div class="cinema-tag">不常用的入口</div><div class="cinema-body">洗版、许愿、设置都在这，不影响正常求片。</div></div>${cinemaButtons([[{text:"申请洗版",action:"startSearchMode('wash')"},{text:"进入许愿",action:"navigate('tasks')"}],[{text:"系统设置",action:"navigate('tasks')"},{text:"问题反馈",action:"navigate('tasks')"}],[{text:"返回首页",action:"goHome()"}]])}</section>`}
-async function loadHome(){const seq=++S.homeSeq;S.homeLoading=true;const results=await Promise.allSettled([api("/api/miniapp/v1/me"),api("/api/miniapp/v1/discover")]);if(seq!==S.homeSeq||S.view!=="home")return;S.tasks=results[0].status==="fulfilled"?results[0].value:{requests:[]};S.homeDynamic=results[1].status==="fulfilled"?results[1].value:{featured:[]};S.homeLoading=false;render()}
+function yhIcon(name){const p={search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>',progress:'<path d="M5 5h14v14H5z"/><path d="m8.5 12 2.2 2.2L15.5 9.5"/>',wash:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>',wish:'<path d="M12 20s-7-4.3-7-9.2A4 4 0 0 1 12 8a4 4 0 0 1 7 2.8C19 15.7 12 20 12 20z"/>',help:'<circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.4a2.5 2.5 0 0 1 4.8.9c0 1.7-2.4 2-2.4 3.4"/><path d="M12 17h.01"/>',more:'<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>',home:'<path d="m4 11 8-7 8 7"/><path d="M6 10v10h12V10"/>',back:'<path d="M15 5l-7 7 7 7"/>',refresh:'<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>',settings:'<circle cx="12" cy="12" r="3"/><path d="M12 3v2.2M12 18.8V21M4.9 7.5l1.9 1.1M17.2 15.4l1.9 1.1M4.9 16.5l1.9-1.1M17.2 8.6l1.9-1.1"/>',issue:'<path d="M12 4.5 3.8 19h16.4z"/><path d="M12 10v4M12 16.6h.01"/>',game:'<rect x="3" y="7" width="18" height="10" rx="4"/><path d="M8 12h2M9 11v2M15.5 11.5h.01M17 13.5h.01"/>',cancel:'<path d="M6 6l12 12M18 6 6 18"/>',user:'<circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 19c1.2-3.2 3.5-5 6.5-5s5.3 1.8 6.5 5"/>'};return '<svg viewBox="0 0 24 24" aria-hidden="true">'+(p[name]||p.more)+'</svg>'}
+function yhGrid(rows){return '<div class="yh-grid">'+rows.flat().map(function(a){return '<button type="button" class="yh-act is-'+(a.tone||"primary")+'" onclick="'+a.action+'">'+yhIcon(a.icon)+'<span>'+a.text+'</span></button>'}).join("")+'</div>'}
+function yhHomeActions(){return yhGrid([[{text:"搜索求片",icon:"search",tone:"success",action:"navigate('search')"},{text:"查看进度",icon:"progress",action:"navigate('tasks')"},{text:"申请洗版",icon:"wash",action:"startSearchMode('wash')"}],[{text:"进入许愿",icon:"wish",action:"navigate('tasks')"},{text:"帮助说明",icon:"help",action:"showHelp()"},{text:"更多功能",icon:"more",action:"showMore()"}]])}
+function yhTaskActions(){return yhGrid([[{text:"返回首页",icon:"home",action:"goHome()"},{text:"刷新状态",icon:"refresh",action:"loadTasks()"},{text:"搜索求片",icon:"search",tone:"success",action:"navigate('search')"}]])}
+function chrome(content,active){const v=active==="tasks"?"tasks":active==="search"?"search":"home";const tab=function(id,label,icon,fn){return '<button type="button" data-view="'+id+'"'+(v===id?' aria-current="page"':'')+' onclick="'+fn+'">'+yhIcon(icon)+label+'</button>'};return content+'<nav class="yh-dock" aria-label="主导航">'+tab("home","首页","home","goHome()")+tab("search","找片","search","navigate('search')")+tab("tasks","任务","progress","navigate('tasks')")+'</nav>'}
+function yhHero(){const f=(S.homeDynamic?.featured||[]).find(function(x){return miniBackdrop(x)})||null;const art=f?miniBackdrop(f):"";return '<header class="yh-hero">'+(art?'<img class="yh-hero-art" src="'+esc(art)+'" alt="">':'<div class="yh-hero-fallback" aria-hidden="true"></div>')+'<div class="yh-hero-scrim" aria-hidden="true"></div><div class="yh-kicker">YUNHAI · CINEMA</div><h1 class="yh-title">云海求片</h1><p class="yh-tagline">想看的，交给云海</p><p class="yh-lede">直接发片名，或点搜索。提交后可在进度里查到。</p><div class="yh-status"><span class="yh-dot" aria-hidden="true"></span>在线 · 可求片</div></header>'}
+function yhFreshPanel(){const items=(S.homeDynamic?.recently_added||[]).filter(validDynamicMedia);const first=items[0];if(!first)return '<section class="yh-panel"><div class="yh-panel-head"><span class="yh-panel-label">刚刚入库</span></div><div class="yh-empty"><span>'+(S.homeLoading?"正在确认媒体库…":"媒体库还没有新入库")+'</span><button type="button" onclick="goSearch()">去搜索</button></div></section>';const art=poster(first);const id=Number(mediaID(first));const t=mediaType(first);return '<section class="yh-panel"><div class="yh-panel-head"><span class="yh-panel-label">刚刚入库</span><span class="yh-panel-label">'+(t==="tv"?"剧集":"电影")+'</span></div><button type="button" class="yh-panel-row" data-mid="'+id+'" data-type="'+t+'" data-season="'+(Number(first?.season)||0)+'" onclick="openMediaFromElement(this)">'+(art?'<img src="'+esc(art)+'" alt="">':'<span class="yh-ph" aria-hidden="true"></span>')+'<span><strong>'+esc(mediaTitle(first))+'</strong><small>'+esc(first?.year||"")+' · 已入库可直接看</small></span></button></section>'}
+function yhCard(item,caption){const id=Number(mediaID(item));const t=mediaType(item);const art=poster(item);const title=mediaTitle(item);const year=String(item?.year||"");return '<button type="button" class="yh-card" data-mid="'+id+'" data-type="'+t+'" data-season="'+(Number(item?.season)||0)+'" onclick="openMediaFromElement(this)"><span class="yh-art">'+(art?'<img src="'+esc(art)+'" alt="">':'<span class="yh-art-ph" aria-hidden="true"></span>')+(caption?'<span class="yh-badge">'+esc(caption)+'</span>':'')+'</span><strong>'+esc(title)+'</strong><small>'+esc(year||caption||"")+'</small></button>'}
+function yhRail(title,note,items,caption){if(!items.length)return "";return '<section class="yh-sec"><div class="yh-sec-head"><h2>'+title+'</h2><span>'+note+'</span></div><div class="yh-rail">'+items.map(function(x){return yhCard(x,caption)}).join("")+'</div></section>'}
+function homePage(){const fresh=(S.homeDynamic?.recently_added||[]).filter(validDynamicMedia).slice(1,9);const hot=(S.homeDynamic?.recent_requests||[]).filter(validDynamicMedia).slice(0,9);const mine=(S.tasks?.requests||[]).filter(function(x){return taskGroup(x)!=="done"}).slice(0,9);return yhHero()+yhFreshPanel()+yhHomeActions()+yhRail("今晚要看","已入库",fresh,"已入库")+yhRail("大家都在求","最近提交",hot,"处理中")+yhRail("我的任务","进行中",mine,"跟进中")}
+function searchPage(){const list=(S.results||[]);return '<section class="yh-sec" style="padding-top:calc(var(--yh-safe-t) + 22px)"><div class="yh-kicker">SEARCH</div><h2 class="yh-title" style="font-size:27px">搜索求片</h2><p class="yh-lede">发中文或英文片名。点结果看详情，确认后再提交。</p></section><form class="yh-search" onsubmit="submitSearch(event)"><input id="q" value="'+esc(S.query)+'" placeholder="输入片名，中英文都行" autocomplete="off"><button type="submit">搜索求片</button></form>'+yhGrid([[{text:"返回首页",icon:"home",action:"goHome()"},{text:"查看进度",icon:"progress",action:"navigate('tasks')"},{text:"申请洗版",icon:"wash",action:"startSearchMode('wash')"}]])+'<div class="yh-list">'+(S.loading?'<div class="yh-empty"><span>正在搜索…</span></div>':list.length?list.map(function(x){const id=Number(mediaID(x));const t=mediaType(x);const art=poster(x);return '<button type="button" class="yh-result" data-mid="'+id+'" data-type="'+t+'" data-season="0" onclick="openMediaFromElement(this)">'+(art?'<img src="'+esc(art)+'" alt="">':'<span class="yh-ph" aria-hidden="true"></span>')+'<span><strong>'+esc(mediaTitle(x))+'</strong><small>'+esc(x?.year||"")+' · '+(t==="tv"?"剧集":"电影")+'</small><span class="yh-pill">'+esc(x?.media_status?.text||"可以求片")+'</span></span></button>'}).join(""):S.query?'<div class="yh-empty"><span>没有找到匹配内容</span></div>':'<div class="yh-empty"><span>发一个准确片名试试</span></div>')+'</div>'+(S.searchError?'<div class="yh-empty"><span>'+esc(S.searchError)+'</span></div>':'')}
+function yhStateTone(item){const g=taskGroup(item);return g==="done"?"is-done":g==="pending"?"is-wait":""}
+function yhSteps(item){const wash=item?.business_type==="wash";const labels=wash?["创建","已批准","核验","完成"]:["提交","已批准","处理中","入库"];const at=taskStageIndex(item);return '<div class="yh-time">'+labels.map(function(l,i){const cls=i<at?"is-done":i===at?"is-now":"";return '<div class="yh-step"><span class="yh-node '+cls+'" aria-hidden="true"></span><span><b>'+l+'</b><small>'+(i<at?"已完成":i===at?(item?.status_text||"进行中"):"待进行")+'</small></span></div>'}).join("")+'</div>'}
+function yhTask(item){const status=item?.status_text||"等待确认";const note=String(status).includes("入库")?"Emby 确认可看后会再通知你。":"进度变化后会在聊天里通知你。";return '<article class="yh-task"><div class="yh-task-head"><div class="yh-kicker">NOW PLAYING</div><h2>'+esc(mediaTitle(item))+'</h2><span class="yh-task-state '+yhStateTone(item)+'">'+esc(status)+'</span></div><p class="yh-task-note">'+note+'</p><table class="yh-facts"><tr><td>年份</td><td>'+esc(item?.media_year||item?.year||"—")+'</td></tr><tr><td>类型</td><td>'+(mediaType(item)==="tv"?"剧集":"电影")+'</td></tr><tr><td>下一步</td><td>'+esc(taskNext(item))+'</td></tr></table>'+yhSteps(item)+'</article>'}
+function tasksPage(){const items=S.tasks?.requests||[];return '<section class="yh-sec" style="padding-top:calc(var(--yh-safe-t) + 22px)"><div class="yh-kicker">PROGRESS</div><h2 class="yh-title" style="font-size:27px">求片进度</h2><p class="yh-lede">求片和洗版都会聚合在这条时间线上。</p></section>'+(S.tasks?.error?'<div class="yh-empty"><span>'+esc(S.tasks.error)+'</span><button type="button" onclick="loadTasks()">重试</button></div>':"")+(items.length?items.map(yhTask).join(""):'<article class="yh-task"><div class="yh-task-head"><div class="yh-kicker">NOW PLAYING</div><h2>还没有记录</h2><span class="yh-task-state is-wait">等待第一次提交</span></div><p class="yh-task-note">提交过的片会出现在这里，进度会同步到聊天。</p></article>')+yhTaskActions()}
+function showHelp(){document.getElementById("app").innerHTML=chrome('<section class="yh-sec" style="padding-top:calc(var(--yh-safe-t) + 22px)"><div class="yh-kicker">GUIDE</div><h2 class="yh-title" style="font-size:27px">帮助说明</h2><p class="yh-tagline">三步就能求到</p><p class="yh-lede">发片名 → 选结果 → 等审核。通过后会开始下载，可看时再通知你。</p></section><article class="yh-task"><table class="yh-facts"><tr><td>搜索</td><td>中英文片名都行</td></tr><tr><td>审核</td><td>通过后自动下载</td></tr><tr><td>通知</td><td>可看时聊天提醒</td></tr></table></article>'+yhGrid([[{text:"搜索求片",icon:"search",tone:"success",action:"navigate('search')"},{text:"查看进度",icon:"progress",action:"navigate('tasks')"},{text:"返回首页",icon:"home",action:"goHome()"}]]),"home")}
+function showMore(){document.getElementById("app").innerHTML=chrome('<section class="yh-sec" style="padding-top:calc(var(--yh-safe-t) + 22px)"><div class="yh-kicker">MORE</div><h2 class="yh-title" style="font-size:27px">更多功能</h2><p class="yh-tagline">不常用的入口</p><p class="yh-lede">设置、反馈、游戏都在这，不影响正常求片。</p></section>'+yhGrid([[{text:"系统设置",icon:"settings",action:"navigate('tasks')"},{text:"问题反馈",icon:"issue",action:"navigate('tasks')"},{text:"游戏中心",icon:"game",action:"navigate('tasks')"}],[{text:"申请洗版",icon:"wash",action:"startSearchMode('wash')"},{text:"进入许愿",icon:"wish",action:"navigate('tasks')"},{text:"返回首页",icon:"home",action:"goHome()"}]]),"home")}
+async function loadHome(){const seq=++S.homeSeq;if(S.tasks?.error)S.tasks={...S.tasks,error:''};if(S.homeDynamic?.error)S.homeDynamic={...S.homeDynamic,error:''};S.homeLoading=true;render();const r=await Promise.allSettled([api("/api/miniapp/v1/me"),api("/api/miniapp/v1/dynamic"),api("/api/miniapp/v1/discover")]);if(seq!==S.homeSeq||S.view!=="home"||S.detailVisible)return;S.tasks=r[0].status==="fulfilled"?{...r[0].value,requests:Array.isArray(r[0].value.requests)?r[0].value.requests:[]}:{requests:[],error:r[0].reason?.message||"任务加载失败"};const dyn=r[1].status==="fulfilled"?r[1].value:{recently_added:[],error:r[1].reason?.message||"媒体库加载失败"};const disc=r[2].status==="fulfilled"?r[2].value:{featured:[]};S.homeDynamic={...dyn,featured:Array.isArray(disc.featured)?disc.featured:[]};S.homeLoading=false;render()}
 function navigate(view){closeDialog();invalidatePageRequests();S.detailVisible=false;if(view==="home"){S.view="home";render();return}if(view==="search"){S.view="search";render();return}if(view==="tasks"){S.view="tasks";S.tasks=null;render();return}}
 function goHome(){navigate("home")}
+function goSearch(){navigate("search")}
 const approvedStartRoute=startRoute();S.view=approvedStartRoute.view==="detail"?"home":approvedStartRoute.view;if(approvedStartRoute.view==="detail")setTimeout(()=>openDetail(approvedStartRoute.id,approvedStartRoute.type,approvedStartRoute.season),0);
 render();initTelegramWebApp();syncBack();
 </script>

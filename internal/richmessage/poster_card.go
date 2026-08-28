@@ -109,8 +109,9 @@ func BuildRequesterReceiptCard(title string, year int, mediaType string, season 
 		SeasonText: seasonText,
 		Footer:     footer,
 		Buttons: []types.TelegramRichMessageButton{
-			richButton("查看进度", "requests", "primary", false),
-			richButton("返回首页", "start", "", false),
+			richButton("查看进度", "requests", types.ButtonStylePrimary, false),
+			richButton("返回首页", "start", types.ButtonStylePrimary, false),
+			richButton("搜索求片", "search:menu", types.ButtonStyleSuccess, false),
 		},
 	})
 }

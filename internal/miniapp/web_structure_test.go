@@ -20,7 +20,7 @@ var (
 	inlineBlockRe = regexp.MustCompile(`(?s)<script(?:\s+[a-zA-Z-]+(?:="[^"]*")?)*\s*>(.*?)</script>`)
 	onclickRe     = regexp.MustCompile(`onclick="([^"]*)"`)
 	onsubmitRe    = regexp.MustCompile(`onsubmit="([^"]*)"`)
-	cinemaBtnRe   = regexp.MustCompile(`\{text:"([^"]+)"(?:,style:"([a-z]+)")?`)
+	gridBtnRe     = regexp.MustCompile(`\{text:"([^"]+)",icon:"[a-z]+"(?:,tone:"([a-z]+)")?`)
 )
 
 // scriptSpans pairs every script open tag with its close, so a wrongly nested
@@ -108,7 +108,7 @@ func TestMiniAppBootstrapRunsInsideAScriptBlock(t *testing.T) {
 			continue
 		}
 		found = true
-		for _, need := range []string{"function render()", "function startRoute()", "function homePage()", "function tasksPage()"} {
+		for _, need := range []string{"function render()", "function startRoute()", "function homePage()", "function tasksPage()", "function yhGrid(rows)"} {
 			if !strings.Contains(block[1], need) {
 				t.Errorf("bootstrap block is missing %s, so the call would run before it is defined", need)
 			}
@@ -146,22 +146,27 @@ func TestMiniAppInlineHandlersHaveNoBackslashEscapes(t *testing.T) {
 	if !strings.Contains(html, `action:"navigate('search')"`) || !strings.Contains(html, `action:"navigate('tasks')"`) {
 		t.Fatal("cinema buttons must emit single-quoted, valid handlers")
 	}
-	if !strings.Contains(html, `openDetail(${id},'${type}',0)`) {
-		t.Fatal("search result handler must emit a single-quoted media type")
+	// Media ids are passed through data-* attributes and validated in JS rather
+	// than interpolated into the handler string, so no quoting is needed at all.
+	if !strings.Contains(html, `onclick="openMediaFromElement(this)"`) {
+		t.Fatal("media cards must dispatch through the validated data-attribute handler")
+	}
+	if strings.Contains(html, `openDetail(${id}`) || strings.Contains(html, `openDetail(${x.`) {
+		t.Fatal("media ids must not be interpolated directly into an inline handler")
 	}
 }
 
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
 	"返回首页": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
-	"系统设置": true, "问题反馈": true,
+	"系统设置": true, "问题反馈": true, "游戏中心": true,
 }
 
 func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
 	html := miniAppSource(t)
-	matches := cinemaBtnRe.FindAllStringSubmatch(html, -1)
-	if len(matches) < 12 {
-		t.Fatalf("expected the full cinema/playbill button set, found %d", len(matches))
+	matches := gridBtnRe.FindAllStringSubmatch(html, -1)
+	if len(matches) < 15 {
+		t.Fatalf("expected the full three-column button set, found %d", len(matches))
 	}
 	seen := map[string]bool{}
 	for _, m := range matches {
@@ -180,7 +185,7 @@ func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
 			t.Errorf("button label %q is outside the approved lexicon", label)
 		}
 		if style == "success" && label != "搜索求片" {
-			t.Errorf("only 搜索求片 keeps the success style, got %q", label)
+			t.Errorf("only 搜索求片 keeps the success tone, got %q", label)
 		}
 	}
 	for _, need := range []string{"搜索求片", "查看进度", "帮助说明", "更多功能", "返回首页", "刷新状态"} {
@@ -191,6 +196,18 @@ func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
 	for _, stale := range []string{`{text:"帮助"`, `{text:"更多"`, `{text:"返回"`, `{text:"刷新"`, `{text:"洗版"`, `{text:"许愿池"`, `{text:"设置"`, `{text:"主菜单"`, `{text:"求片进度"`} {
 		if strings.Contains(html, stale) {
 			t.Errorf("stale short label remains: %s", stale)
+		}
+	}
+	// Every grid row must be a multiple of three buttons.
+	for _, fn := range []string{"function yhHomeActions()", "function yhTaskActions()"} {
+		at := strings.Index(html, fn)
+		if at < 0 {
+			t.Fatalf("missing %s", fn)
+		}
+		end := strings.Index(html[at:], "\n")
+		row := html[at : at+end]
+		if count := strings.Count(row, `{text:"`); count%3 != 0 || count == 0 {
+			t.Errorf("%s emits %d buttons, want a multiple of 3", fn, count)
 		}
 	}
 }

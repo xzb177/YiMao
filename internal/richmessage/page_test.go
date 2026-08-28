@@ -41,7 +41,7 @@ func TestCinemaWelcomeMatchesMockupA(t *testing.T) {
 
 func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 	search := BuildSearchPromptCard().Markdown
-	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "搜索求片", "返回首页"} {
+	for _, want := range []string{copySearchH1, copySearchTag, copySearchBody, "搜索求片", "查看进度", "返回首页"} {
 		if !strings.Contains(search, want) {
 			t.Fatalf("search missing %q in %q", want, search)
 		}
@@ -53,14 +53,16 @@ func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 		}
 	}
 	more := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://x"}).Markdown
-	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "申请洗版", "进入许愿", "系统设置", "返回首页"} {
+	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "系统设置", "问题反馈", "游戏中心", "返回首页"} {
 		if !strings.Contains(more, want) {
 			t.Fatalf("more missing %q in %q", want, more)
 		}
 	}
-	for _, want := range []string{"问题反馈", "查看进度", "游戏中心"} {
-		if !strings.Contains(more, want) {
-			t.Fatalf("more missing %q in %q", want, more)
+	// 申请洗版 / 进入许愿 / 查看进度 are on the welcome grid now and must not be
+	// duplicated inside the secondary drawer.
+	for _, promoted := range []string{"申请洗版", "进入许愿", "查看进度"} {
+		if strings.Contains(more, promoted) {
+			t.Fatalf("more duplicates promoted entry %q in %q", promoted, more)
 		}
 	}
 }

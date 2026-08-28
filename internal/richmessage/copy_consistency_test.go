@@ -7,16 +7,22 @@ import (
 
 func TestWelcomeCopyKeepsRequestFirstProductOrder(t *testing.T) {
 	markdown := BuildWelcomeMessage("").Markdown
-	search := strings.Index(markdown, "搜索求片")
-	progress := strings.Index(markdown, "查看进度")
-	more := strings.Index(markdown, "更多功能")
-	if search < 0 || progress < 0 || more < 0 {
-		t.Fatalf("welcome copy misses canonical labels: %q", markdown)
+	// 方案1 promotes 申请洗版 and 进入许愿 onto the first screen; the order must
+	// still read request-first, with the secondary drawer last.
+	order := []string{"搜索求片", "查看进度", "申请洗版", "进入许愿", "帮助说明", "更多功能"}
+	last := -1
+	for _, label := range order {
+		at := strings.Index(markdown, label)
+		if at < 0 {
+			t.Fatalf("welcome copy misses canonical label %q: %q", label, markdown)
+		}
+		if at <= last {
+			t.Fatalf("welcome hierarchy is out of order at %q: %q", label, markdown)
+		}
+		last = at
 	}
-	if !(search < progress && progress < more) {
-		t.Fatalf("welcome hierarchy is not request-first: search=%d progress=%d more=%d", search, progress, more)
-	}
-	for _, hidden := range []string{"申请洗版", "管理后台", "游戏中心", "进入许愿"} {
+	// Administration and the game drawer stay behind 更多功能.
+	for _, hidden := range []string{"管理后台", "游戏中心", "系统设置", "问题反馈"} {
 		if strings.Contains(markdown, hidden) {
 			t.Fatalf("first screen leaked %q: %q", hidden, markdown)
 		}
