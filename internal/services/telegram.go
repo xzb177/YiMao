@@ -1808,11 +1808,20 @@ func BuildStartKeyboardWithOptions(isAdmin, showWish bool) *types.TelegramInline
 	kb.AddButton("查看进度", "requests")
 	kb.AddButton("申请洗版", "wash")
 	kb.NewRow()
-	kb.AddButton("进入许愿", "start_wish")
+	if showWish {
+		kb.AddButton("进入许愿", "start_wish")
+	}
 	kb.AddButton("帮助说明", "help")
 	kb.AddButton("更多功能", "start_more")
-	_ = showWish
-	_ = isAdmin
+	if isAdmin {
+		if !showWish {
+			kb.AddButton("管理后台", "admin_menu")
+		} else {
+			kb.NewRow()
+			kb.AddButton("管理后台", "admin_menu")
+			kb.AddButton("返回首页", "start")
+		}
+	}
 	return kb.Build()
 }
 

@@ -286,21 +286,8 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		if !preferencesService.IsNotifyEnabled(userID, services.NotifySeason) {
 			return true
 		}
-		msg := services.NewMessageBuilder()
-		msg.Bold("📺 追更提醒").Newline()
-		msg.Newline()
-		msg.Textf("《%s》出了第 %d 季", html.EscapeString(title), season.SeasonNumber).Newline()
-		if season.AirDate != "" {
-			msg.Textf("开播日期：%s", season.AirDate).Newline()
-		}
-		msg.Newline()
-		msg.Text("想继续追的话，可以直接提交这一季的求片申请。")
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📥 求第 "+strconv.Itoa(season.SeasonNumber)+" 季", fmt.Sprintf("request:id:%d:type:tv:season:%d", tmdbID, season.SeasonNumber))
-		kb.NewRow()
-		kb.AddButton("📊 求片进度", "requests")
-		if _, err := telegramClient.SendMessage(userID, msg.Build(), "HTML", kb.Build()); err != nil {
-			logger.Info("[SeasonRadar] 续季通知发送失败: user=%d tmdb=%d err=%v", userID, tmdbID, err)
+		if err := sendRichSeasonNotice(telegramClient, userID, tmdbID, title, season); err != nil {
+			logger.Info("[SeasonRadar] notice failed: user=%d tmdb=%d err=%v", userID, tmdbID, err)
 			return false
 		}
 		return true
@@ -322,10 +309,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		}
 	}()
 
-	// A4: 数据自动备份（每 24h 备份一次，保留 7 天，启动时立即执行一次）
-	backupService := services.NewDataBackupService(cfg.DataDir, 24*time.Hour, 7*24*time.Hour)
-	backupService.Start()
-	logger.Info("    - BackupService started (interval=24h, retention=7d)")
+	// Automatic data backups are disabled for this deployment.
 
 	// B4: 系统告警（stuck 未处理 / MP API 连续失败 时通知管理员）
 	// 用第一个管理员作为告警接收人（adminService 已加载完管理员列表）
@@ -374,50 +358,19 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
 			return
 		}
-		mediaEmoji := "🎬"
-		if mediaType == "tv" {
-			mediaEmoji = "📺"
+		body := "\u627e\u5230\u8d44\u6e90\u4e86\uff0c\u6b63\u5728\u4e0b\u8f7d\uff0c\u5165\u5e93\u540e\u4f1a\u518d\u901a\u77e5\u3002"
+		if err := sendRichLifecycleNotice(telegramClient, telegramID, title, year, mediaType, title, "\u5f00\u59cb\u4e0b\u8f7d", body); err != nil {
+			logger.Info("[ReviewService] download notice failed: user=%d err=%v", telegramID, err)
 		}
-		yearStr := ""
-		if year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", year)
-		}
-		msg := services.NewMessageBuilder()
-		msg.Bold("⬇️ 开始下载").Newline()
-		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
-		msg.Newline()
-		msg.Text("找到资源了，正在下载，入库后会再通知你")
-		kb := services.NewKeyboardBuilder()
-		kb.AddButton("📊 求片进度", "my_requests")
-		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", kb.Build()); err != nil {
-			logger.Info("[ReviewService] 开始下载通知发送失败: user=%d err=%v", telegramID, err)
-		}
-		logger.Info("[ReviewService] 已通知用户 %d: %s%s 开始下载", telegramID, title, yearStr)
 	}
-	// P1 中间态：暂未找到资源，转入持续搜索（预期管理，用户可关）
 	reviewService.OnSearchStall = func(telegramID int64, title string, year int, mediaType string) {
 		if !preferencesService.IsNotifyEnabled(telegramID, services.NotifyDownload) {
 			return
 		}
-		mediaEmoji := "🎬"
-		if mediaType == "tv" {
-			mediaEmoji = "📺"
+		body := "\u6682\u65f6\u8fd8\u6ca1\u6709\u627e\u5230\u8d44\u6e90\uff0c\u7cfb\u7edf\u4f1a\u7ee7\u7eed\u641c\u7d22\uff0c\u627e\u5230\u540e\u81ea\u52a8\u4e0b\u8f7d\u3002"
+		if err := sendRichLifecycleNotice(telegramClient, telegramID, title, year, mediaType, title, "\u6301\u7eed\u641c\u7d22", body); err != nil {
+			logger.Info("[ReviewService] stall notice failed: user=%d err=%v", telegramID, err)
 		}
-		yearStr := ""
-		if year > 0 {
-			yearStr = fmt.Sprintf(" (%d)", year)
-		}
-		msg := services.NewMessageBuilder()
-		msg.Bold("🔍 暂时没找到资源").Newline()
-		msg.Newline()
-		msg.Textf("%s 《%s》%s", mediaEmoji, html.EscapeString(title), yearStr).Newline()
-		msg.Newline()
-		msg.Text("已转入持续搜索，出了资源会自动下载，不用重新求片")
-		if _, err := telegramClient.SendMessage(telegramID, msg.Build(), "HTML", nil); err != nil {
-			logger.Info("[ReviewService] 持续搜索通知发送失败: user=%d err=%v", telegramID, err)
-		}
-		logger.Info("[ReviewService] 已通知用户 %d: %s%s 暂未找到资源", telegramID, title, yearStr)
 	}
 	// 入库回访：完成 3 天后询问是否看过，按钮回答写入本地统计。
 	reviewService.OnWatchFollowup = func(telegramID int64, requestID, title string) bool {

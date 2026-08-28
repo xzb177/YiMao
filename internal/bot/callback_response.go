@@ -16,9 +16,12 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 		return
 	}
 
+	clearReplyKeyboard := resp.Keyboard != nil && resp.Keyboard.RemoveKeyboard
 	fuseInlineKeyboardIntoRich(resp)
-	if resp.Keyboard != nil && resp.Keyboard.RemoveKeyboard {
+	if clearReplyKeyboard {
 		telegram.ClearReplyKeyboard(ctx.ChatID)
+	}
+	if resp.Keyboard != nil && resp.Keyboard.RemoveKeyboard {
 		if len(resp.Keyboard.InlineKeyboard) == 0 && !resp.Keyboard.ForceReply {
 			resp.Keyboard = nil
 		} else {
@@ -53,16 +56,37 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 			}
 			rich = &types.TelegramInputRichMessage{Markdown: resp.RichMessage}
 		}
+		richEditFailed := false
 		if resp.Edit && !resp.DeleteMessage && ctx.MessageID != 0 && rich != nil {
 			edited, editErr := telegram.EditMessageRich(ctx.ChatID, ctx.MessageID, rich, keyboard)
 			if editErr == nil {
 				notifyDelivered(resp, ctx, edited)
 				return
 			}
-			logger.Info("%s EditMessageRich failed, resending: %v", logPrefix, editErr)
+			richEditFailed = true
+			logger.Info("%s EditMessageRich failed; preserving original before safe fallback: %v", logPrefix, editErr)
 		}
 		deletedOriginal := false
-		if resp.Edit || resp.DeleteMessage {
+		if richEditFailed {
+			if resp.Text != "" {
+				if edited, editErr := telegram.EditMessage(ctx.ChatID, ctx.MessageID, resp.Text, defaultParseMode(resp.ParseMode), nil); editErr == nil {
+					notifyDelivered(resp, ctx, edited)
+					return
+				} else {
+					logger.Info("%s Rich fallback EditMessage error; attempting delete-before-send: %v", logPrefix, editErr)
+				}
+			}
+			if ctx.MessageID == 0 {
+				logger.Info("%s Rich edit failed without message ID; original preserved", logPrefix)
+				return
+			}
+			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
+				logger.Info("%s DeleteMessage after rich edit failure failed; original preserved: %v", logPrefix, delErr)
+				return
+			}
+			deletedOriginal = true
+		}
+		if !deletedOriginal && (resp.Edit || resp.DeleteMessage) && ctx.MessageID != 0 {
 			if delErr := telegram.DeleteMessage(ctx.ChatID, ctx.MessageID); delErr != nil {
 				logger.Info("%s DeleteMessage before Rich Message error: %v", logPrefix, delErr)
 			} else {
@@ -350,7 +374,7 @@ func fuseInlineKeyboardIntoRich(resp *callback.Response) {
 		kb := ConvertKeyboard(resp.Keyboard)
 		types.PolishInlineKeyboard(kb)
 		richmessage.AppendKeyboardAsButtons(resp.StructuredRichMessage, kb)
-		resp.Keyboard = &callback.Keyboard{RemoveKeyboard: true, ForceReply: resp.Keyboard.ForceReply}
+		resp.Keyboard = nil
 		return
 	}
 	if resp.StructuredRichMessage != nil {
