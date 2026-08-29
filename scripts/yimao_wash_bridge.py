@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, os, re, subprocess, sys
 from pathlib import Path
 ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
-MAX_TITLE, MAX_RECORDS = 180, 25
+MAX_TITLE, MAX_RECORDS, MAX_BASELINE_PATHS, MAX_BODY = 180, 25, 50, 12000
 DATA = Path(os.environ.get("YIMAO_REVIEW_FILE", "/app/data/review_requests.json"))
 HERMES = "/opt/hermes/bin/hermes"
 CONTRACT = ("Only operate MoviePilot/qB/Emby for this approved wash; preserve every baseline resource; "
@@ -32,9 +32,10 @@ def eligible(x):
     return bool(ID_RE.fullmatch(rid) and tmdb > 0 and title and 0 <= season <= 1000 and isinstance(x.get("wash_baseline"), list) and x["wash_baseline"])
 
 def body(x):
-    paths = [text(p, 500) for p in x.get("wash_baseline", []) if text(p, 500)]
+    paths = [text(p, 500) for p in x.get("wash_baseline", [])[:MAX_BASELINE_PATHS] if text(p, 500)]
     payload = {"request_id": text(x.get("request_id"),128), "tmdb_id": int(x.get("tmdb_id") or 0), "media_title": text(x.get("media_title"),MAX_TITLE), "media_year": int(x.get("media_year") or 0), "media_type": text(x.get("media_type"),20), "season": int(x.get("season") or 0), "baseline_path_count": len(paths), "baseline_paths": paths}
-    return "YiMao approved wash handoff\n\n" + json.dumps(payload, ensure_ascii=False, indent=2) + "\n\n" + CONTRACT
+    result = "YiMao approved wash handoff\n\n" + json.dumps(payload, ensure_ascii=False, indent=2) + "\n\n" + CONTRACT
+    return result[:MAX_BODY]
 
 def dispatch(x):
     rid = text(x.get("request_id"),128)

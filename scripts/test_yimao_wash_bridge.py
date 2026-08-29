@@ -1,6 +1,4 @@
 import importlib.util
-import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -21,13 +19,17 @@ class BridgeTests(unittest.TestCase):
         body = bridge.body(x)
         self.assertIn('"request_id": "wash_250008_1"', body)
         self.assertIn('"baseline_path_count": 1', body)
-        self.assertLessEqual(len(body), 5000)
+        self.assertLessEqual(len(body), bridge.MAX_BODY)
         self.assertNotIn("TOKEN", body)
         self.assertNotIn("API_KEY", body)
 
     def test_non_approved_invalid_and_missing_baseline_are_skipped(self):
         for x in [self.item(status="pending"), self.item(status="completed"), self.item(business_type="request"), self.item(request_id="bad space"), self.item(tmdb_id=0), self.item(wash_baseline=[])]:
             self.assertFalse(bridge.eligible(x))
+
+    def test_baseline_paths_are_capped(self):
+        body = bridge.body(self.item(wash_baseline=[str(i) for i in range(100)]))
+        self.assertIn('"baseline_path_count": 50', body)
 
     def test_idempotency_key_is_literal_request_id(self):
         x = self.item(request_id="wash:literal.id-1")
