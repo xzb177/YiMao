@@ -397,6 +397,44 @@ body{overflow-x:clip;-webkit-font-smoothing:antialiased;
 .pro-result{display:grid;grid-template-columns:58px minmax(0,1fr);gap:11px;align-items:center;width:100%;padding:9px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);background:var(--yh-glass);color:inherit;text-align:left}.pro-result img,.pro-result-ph{width:58px;height:87px;object-fit:cover;border-radius:8px;background:linear-gradient(160deg,#1d2740,#3b2648)}.pro-result strong,.pro-result small{display:block}.pro-result strong{color:var(--yh-ink);font-size:14px}.pro-result small{margin-top:5px;color:var(--yh-ink-2);font-size:11px}.pro-timeline-toggle{min-height:40px;border:1px solid var(--yh-line-2);border-radius:10px;background:rgba(76,141,255,.1);color:#a8c6ff;font-size:11px}.pro-season-list{display:grid;gap:7px}.pro-season{min-height:42px;padding:0 10px;border:1px solid var(--yh-line);border-radius:10px;background:var(--yh-glass-2);color:var(--yh-ink-2);text-align:left;font-size:12px}.pro-season.is-active{border-color:var(--yh-blue);color:#b4ceff}.pro-detail-hero{height:190px;overflow:hidden;border-radius:var(--yh-r-md);background:#12151c}.pro-detail-hero img{width:100%;height:100%;object-fit:cover}.pro-task{border-left:3px solid var(--yh-blue)}
 @media(max-width:360px){.pro-screen{padding-top:calc(var(--yh-safe-t) + 16px)}.pro-action{font-size:10.5px}.pro-search{grid-template-columns:1fr}.pro-search button{width:100%}}
 </style>
+<style>
+/* ==== midnight cinema theme override (presentation layer only) ==== */
+:root{
+  --tg-bg:#0a0a0e; --tg-text:#f2ede3; --tg-hint:#9a9484; --tg-card:#14141b;
+  --tg-link:#d8a84e; --tg-btn:#d8a84e; --tg-btn-ink:#14100a;
+  --good:#7fb98a; --warn:#d8a84e; --bad:#c96f5e;
+  --yh-base-0:#08080c; --yh-base-1:#0b0b10; --yh-base-2:#101016;
+  --yh-ink:#f2ede3; --yh-ink-2:#cfc8b8; --yh-ink-3:#9a9484;
+  --yh-line:rgba(255,255,255,.08); --yh-line-2:rgba(216,168,78,.32);
+  --yh-glass:rgba(20,20,27,.72); --yh-glass-2:rgba(26,26,34,.88);
+  --yh-green-1:#e8bd66; --yh-green-2:#c9963a;
+  --yh-blue:#d8a84e; --yh-amber:#d8a84e; --yh-red:#c96f5e;
+}
+body{
+  background:
+    radial-gradient(120% 60% at 50% -10%, rgba(216,168,78,.09), transparent 55%),
+    radial-gradient(80% 45% at 95% 100%, rgba(120,90,200,.05), transparent 60%),
+    #0a0a0e;
+}
+.pro-head h1,.aux-header h1,.home-context h1,.detail h2,
+.aux-empty h2,.pro-empty h2,.pro-form-title,.section-title,.page h2{
+  font-family:"Songti SC","STSong","Noto Serif SC","Source Han Serif SC",serif;
+  letter-spacing:.02em;
+}
+.hero-kicker,.pro-kicker,.aux-kicker{color:#d8a84e;letter-spacing:.3em}
+.pro-search button,.yh-search button,.hero-actions .primary,
+.aux-action.is-success,.pro-action.is-success{color:#14100a}
+.aux-action.is-success,.pro-action.is-success{border-color:rgba(216,168,78,.45)}
+.yh-dot{background:#e8bd66;box-shadow:0 0 0 4px rgba(216,168,78,.16)}
+.app-dock button[aria-current="page"]{color:#d8a84e}
+.yh-dock button[aria-current="page"]{background:rgba(216,168,78,.14);color:#e8c47c}
+.yh-title{font-family:"Songti SC","STSong","Noto Serif SC","Source Han Serif SC",serif;letter-spacing:.01em}
+.yh-act.is-success{box-shadow:0 12px 28px rgba(201,150,58,.32)}
+.pro-modes button.is-active,.pro-filters button.is-active{border-color:#d8a84e;color:#e8c47c;background:rgba(216,168,78,.12)}
+.pro-season.is-active,.aux-season.is-active{border-color:#d8a84e;color:#e8c47c}
+.yh-act.is-primary svg{stroke:#d8a84e}
+</style>
+
 </head>
 
 <body>
