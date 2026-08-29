@@ -342,7 +342,7 @@ func (h *StartHandler) HandleSearch(ctx *callback.Context) (*callback.Response, 
 		RichMessage:           card.Markdown,
 		StructuredRichMessage: card.Input(),
 		Edit:                  true,
-		Keyboard:              &callback.Keyboard{ForceReply: true},
+		Keyboard:              nil,
 	}, nil
 }
 
@@ -644,24 +644,28 @@ func buildEphemeralMediaCaption(info richmessage.MediaInfo) string {
 // If posterURL is non-empty, sends photo + Rich Message (dispatcher handles both).
 func (h *DetailHandler) buildRichDetailResponse(info richmessage.MediaInfo, keyboard *types.TelegramInlineKeyboard, posterURL string, edit bool) *callback.Response {
 	msg := richmessage.BuildMediaInfoCard(info)
+	input := msg.Input()
+	if keyboard != nil {
+		richmessage.AppendKeyboardAsButtons(input, keyboard)
+	}
 	if msg.Markdown != "" {
 		if posterURL != "" {
 			return &callback.Response{
 				Text:                  buildEphemeralMediaCaption(info),
 				ParseMode:             "HTML",
 				RichMessage:           msg.Markdown,
-				StructuredRichMessage: msg.Input(),
+				StructuredRichMessage: input,
 				Photo:                 posterURL,
 				Edit:                  false,
-				Keyboard:              convertKeyboard(keyboard),
+				Keyboard:              nil,
 			}
 		}
 		return &callback.Response{
 			Text:                  msg.Markdown,
 			RichMessage:           msg.Markdown,
-			StructuredRichMessage: msg.Input(),
+			StructuredRichMessage: input,
 			Edit:                  edit,
-			Keyboard:              convertKeyboard(keyboard),
+			Keyboard:              nil,
 		}
 	}
 	return nil
@@ -698,7 +702,7 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 			resp.Edit = false
 		}
 		if resp != nil && fromRequestHeat {
-			retargetDetailKeyboard(resp.Keyboard, "request_heat")
+			retargetDetailResponse(resp, "request_heat")
 		}
 		return resp
 	}
@@ -764,6 +768,31 @@ func normalizeDetailStatus(status string) string {
 		return strings.TrimSpace(status)
 	default:
 		return "状态暂未确认"
+	}
+}
+
+func retargetDetailResponse(resp *callback.Response, returnAction string) {
+	if resp == nil {
+		return
+	}
+	retargetDetailKeyboard(resp.Keyboard, returnAction)
+	if resp.StructuredRichMessage == nil {
+		return
+	}
+	for i := range resp.StructuredRichMessage.Blocks {
+		block := &resp.StructuredRichMessage.Blocks[i]
+		if block.Type != "buttons" {
+			continue
+		}
+		for j := range block.Buttons {
+			button := &block.Buttons[j]
+			if button.CallbackData == "back" {
+				button.CallbackData = returnAction
+			}
+			if strings.HasPrefix(button.CallbackData, "detail_seasons:") && !strings.Contains(button.CallbackData, ":source:") {
+				button.CallbackData += ":source:request_heat"
+			}
+		}
 	}
 }
 
@@ -1222,11 +1251,17 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:seasons", targetItem.ID))
 	}
 
+	plain := msg.Build()
+	card := richmessage.BuildPageFromPlainText(plain)
+	input := card.Input()
+	richmessage.AppendKeyboardAsButtons(input, kb.Build())
 	return &callback.Response{
-		Text:      msg.Build(),
-		Edit:      true,
-		Keyboard:  convertKeyboard(kb.Build()),
-		ParseMode: "HTML",
+		Text:                  plain,
+		RichMessage:           card.Markdown,
+		StructuredRichMessage: input,
+		Edit:                  true,
+		ParseMode:             "none",
+		Keyboard:              nil,
 	}, nil
 }
 

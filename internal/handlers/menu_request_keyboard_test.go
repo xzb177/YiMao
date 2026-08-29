@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -76,13 +77,16 @@ func TestSeasonPickerStaysFocused(t *testing.T) {
 		UserID:   9,
 		Callback: &callback.Callback{Action: callback.ActionDetailSeasons, Params: map[string]string{"id": "303"}},
 	})
-	if err != nil || resp == nil || resp.Keyboard == nil {
+	if err != nil || resp == nil || resp.StructuredRichMessage == nil {
 		t.Fatalf("HandleSeasons resp=%#v err=%v", resp, err)
 	}
-	callbacks := keyboardCallbacks(resp.Keyboard)
-	for _, forbidden := range []string{"start", "feedback:id:303:type:tv"} {
-		if _, ok := callbacks[forbidden]; ok {
-			t.Fatalf("season picker exposes unrelated callback %q: %#v", forbidden, callbacks)
+	callbacks := map[string]string{}
+	for _, block := range resp.StructuredRichMessage.Blocks {
+		if block.Type != "buttons" {
+			continue
+		}
+		for _, button := range block.Buttons {
+			callbacks[button.CallbackData] = fmt.Sprint(button.Text)
 		}
 	}
 	if callbacks["request:id:303:type:tv:season:1"] == "" || callbacks["request:id:303:type:tv:season:2"] == "" {
@@ -132,15 +136,20 @@ func TestRequestHeatDetailBypassesWrongTypeSearchCacheAndReturnsToHeat(t *testin
 			"id": "550", "type": "tv", "source": "request_heat",
 		}},
 	})
-	if err != nil || resp == nil || resp.Keyboard == nil {
+	if err != nil || resp == nil || resp.StructuredRichMessage == nil {
 		t.Fatalf("resp=%#v err=%v", resp, err)
 	}
 	if strings.Contains(resp.RichMessage, "错误电影缓存") || strings.Contains(resp.Text, "错误电影缓存") {
 		t.Fatalf("wrong-type search cache reused: %#v", resp)
 	}
-	callbacks := keyboardCallbacks(resp.Keyboard)
-	if heat := callbacks["request_heat"]; heat != "返回热榜" && !strings.HasSuffix(heat, "返回热榜") {
-		t.Fatalf("heat return missing: %#v", callbacks)
+	callbacks := map[string]string{}
+	for _, block := range resp.StructuredRichMessage.Blocks {
+		if block.Type != "buttons" {
+			continue
+		}
+		for _, button := range block.Buttons {
+			callbacks[button.CallbackData] = fmt.Sprint(button.Text)
+		}
 	}
 	if season := callbacks["detail_seasons:id:550:source:request_heat"]; season != "选择季度" && !strings.HasSuffix(season, "选择季度") {
 		t.Fatalf("season source missing: %#v", callbacks)

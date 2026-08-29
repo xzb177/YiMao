@@ -74,6 +74,29 @@ func bodyOutsideScripts(t *testing.T, html string) string {
 	return out.String()
 }
 
+func TestMiniAppCanonicalFunctionsAndRichDetailContract(t *testing.T) {
+	html := miniAppSource(t)
+	for _, name := range []string{"render", "homePage", "searchPage", "tasksPage", "chrome", "detailPage"} {
+		if got := strings.Count(html, "function "+name+"("); got != 1 {
+			t.Fatalf("canonical function %s count=%d", name, got)
+		}
+	}
+	if strings.Contains(html, "detail-actions") || strings.Contains(html, "function detailActionButton(") {
+		t.Fatal("legacy detail action path remains")
+	}
+	if !strings.Contains(html, "yh-detail") || !strings.Contains(html, "yhGrid(") {
+		t.Fatal("premium detail grid contract missing")
+	}
+	for _, label := range []string{"搜索求片", "查看进度", "返回首页"} {
+		if !strings.Contains(html, label) {
+			t.Fatalf("search control %q missing", label)
+		}
+	}
+	if strings.Contains(html, "normalizeControls();render") || strings.Contains(html, "render();normalizeControls") {
+		t.Fatal("canonical render depends on normalizeControls")
+	}
+}
+
 func TestShippedMiniAppScriptBlocksAreBalancedAndNotNested(t *testing.T) {
 	html := miniAppSource(t)
 	depth, maxDepth, spans := scriptSpans(t, html)

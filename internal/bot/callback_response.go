@@ -28,6 +28,9 @@ func RenderCallbackResponse(source string, ctx *callback.Context, resp *callback
 			resp.Keyboard.RemoveKeyboard = false
 		}
 	}
+	if resp.StructuredRichMessage != nil && resp.Keyboard != nil && len(resp.Keyboard.InlineKeyboard) == 0 {
+		resp.Keyboard = nil
+	}
 	keyboard := ConvertKeyboard(resp.Keyboard)
 	logPrefix := "[Callback]"
 	if source != "" {
@@ -367,7 +370,7 @@ func defaultParseMode(parseMode string) string {
 }
 
 func fuseInlineKeyboardIntoRich(resp *callback.Response) {
-	if resp == nil || resp.Photo != "" {
+	if resp == nil {
 		return
 	}
 	if resp.StructuredRichMessage != nil && resp.Keyboard != nil && len(resp.Keyboard.InlineKeyboard) > 0 {
