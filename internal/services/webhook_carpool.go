@@ -341,7 +341,7 @@ func (s *WebhookService) notifyRequesterOnLibraryAdd(tmdbIDStr string, mediaType
 		if _, err := s.telegram.SendMessage(rv.TelegramID, msg, "", nil); err != nil {
 			logger.Info("[入库通知] 私聊求片用户失败 user=%d: %v", rv.TelegramID, err)
 		} else {
-			record := CompletionRecord{RequestID: rv.RequestID, TelegramID: rv.TelegramID, Title: rv.MediaTitle, Year: rv.MediaYear, MediaType: string(rv.MediaType), Season: rv.Season, CompletedAt: time.Now()}
+			record := CompletionRecord{RequestID: rv.RequestID, TelegramID: rv.TelegramID, Title: rv.MediaTitle, Year: rv.MediaYear, MediaType: string(rv.MediaType), Season: rv.Season, Source: "confirmed_library", CompletedAt: time.Now()}
 			if err := s.review.RecordLibraryCompletion(record, s.fulfillmentStats); err != nil {
 				logger.Info("[入库通知] 保存完成状态失败 request=%s: %v", rv.RequestID, err)
 				continue

@@ -45,6 +45,7 @@ type CompletionRecord struct {
 	MediaType   string    `json:"media_type"`
 	Year        int       `json:"year,omitempty"`
 	Season      int       `json:"season,omitempty"`
+	Source      string    `json:"source,omitempty"` // confirmed_library is the only reconciliation-safe provenance
 	CompletedAt time.Time `json:"completed_at"`
 }
 

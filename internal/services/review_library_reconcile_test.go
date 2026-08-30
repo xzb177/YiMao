@@ -16,7 +16,7 @@ func TestReconcileLibraryCompletionsBackfillsExactApprovedRequestIdempotently(t 
 	if _, err := rs.Approve(review.RequestID, 9, stored.ApproveToken); err != nil {
 		t.Fatal(err)
 	}
-	record := CompletionRecord{RequestID: review.RequestID, TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: now}
+	record := CompletionRecord{RequestID: review.RequestID, TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), Source: "confirmed_library", CompletedAt: now}
 	if got, err := rs.ReconcileLibraryCompletions([]CompletionRecord{record}); err != nil || got != 1 {
 		t.Fatalf("reconcile=(%d,%v), want 1,nil", got, err)
 	}
@@ -35,7 +35,8 @@ func TestReconcileLibraryCompletionsRejectsMismatchedIdentity(t *testing.T) {
 		{RequestID: "match", TelegramID: 99, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: time.Now()},
 		{RequestID: "match", TelegramID: 42, Title: "other", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: time.Now()},
 		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeMovie), CompletedAt: time.Now()},
-		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), Season: 2, CompletedAt: time.Now()},
+		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), Season: 2, Source: "confirmed_library", CompletedAt: time.Now()},
+		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: time.Now()},
 	}
 	for i, record := range cases {
 		rs := NewReviewService(t.TempDir(), false)
@@ -97,7 +98,7 @@ func TestRecordLibraryCompletionPersistsMarkerAndLedgerIdempotently(t *testing.T
 	if _, err := rs.Approve("confirmed", 9, approved.ApproveToken); err != nil {
 		t.Fatal(err)
 	}
-	record := CompletionRecord{RequestID: "confirmed", TelegramID: 42, Title: "片", Year: 2026, MediaType: string(MediaTypeMovie), CompletedAt: time.Now()}
+	record := CompletionRecord{RequestID: "confirmed", TelegramID: 42, Title: "片", Year: 2026, MediaType: string(MediaTypeMovie), Source: "confirmed_library", CompletedAt: time.Now()}
 	if err := rs.RecordLibraryCompletion(record, ledger); err != nil {
 		t.Fatal(err)
 	}

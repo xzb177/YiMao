@@ -1198,7 +1198,7 @@ func (s *ReviewService) ReconcileLibraryCompletions(records []CompletionRecord) 
 	defer s.mu.Unlock()
 	changed := 0
 	for _, record := range records {
-		if record.RequestID == "" || record.TelegramID == 0 || record.Title == "" || record.CompletedAt.IsZero() {
+		if record.Source != "confirmed_library" || record.RequestID == "" || record.TelegramID == 0 || record.Title == "" || record.CompletedAt.IsZero() {
 			continue
 		}
 		review, ok := s.reviews[record.RequestID]
