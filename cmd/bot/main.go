@@ -271,12 +271,6 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("    - FulfillmentStatsService...")
 	fulfillmentStats := services.NewFulfillmentStatsService(cfg.DataDir)
 	reviewService.Fulfillment = fulfillmentStats
-	reviewService.OnFulfillmentComplete = func(requestID string, telegramID int64, title string, year int, mediaType string, completedAt time.Time) {
-		fulfillmentStats.AddCompletion(services.CompletionRecord{
-			RequestID: requestID, TelegramID: telegramID, Title: title,
-			Year: year, MediaType: mediaType, CompletedAt: completedAt,
-		})
-	}
 	if repaired, err := reviewService.ReconcileLibraryCompletions(fulfillmentStats.CompletionRecords()); err != nil {
 		logger.Info("[ReviewService] completion reconciliation failed: %v", err)
 	} else if repaired > 0 {

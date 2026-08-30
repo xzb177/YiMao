@@ -35,6 +35,7 @@ func TestReconcileLibraryCompletionsRejectsMismatchedIdentity(t *testing.T) {
 		{RequestID: "match", TelegramID: 99, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: time.Now()},
 		{RequestID: "match", TelegramID: 42, Title: "other", Year: 2017, MediaType: string(MediaTypeTV), CompletedAt: time.Now()},
 		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeMovie), CompletedAt: time.Now()},
+		{RequestID: "match", TelegramID: 42, Title: "醉玲珑", Year: 2017, MediaType: string(MediaTypeTV), Season: 2, CompletedAt: time.Now()},
 	}
 	for i, record := range cases {
 		rs := NewReviewService(t.TempDir(), false)
