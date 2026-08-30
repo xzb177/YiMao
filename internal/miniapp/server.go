@@ -919,8 +919,15 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 				return s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season)
 			}
 		}
-		// External Emby availability is not canonical user completion proof.
-		applySeasonAvailability(view.Seasons, nil, fmt.Errorf("external availability is non-canonical"), activeRequest)
+		// Objective detail availability is separate from user completion proof:
+		// use exact TMDB provider ID + season lookup, while canonical user
+		// completion still requires the persisted review marker.
+		available := map[int]bool(nil)
+		seasonErr := fmt.Errorf("Emby season lookup is unavailable")
+		if s.deps.MoviePilot != nil {
+			available, seasonErr = s.deps.MoviePilot.EmbyAvailableSeasonsByTMDB(id)
+		}
+		applySeasonAvailability(view.Seasons, available, seasonErr, activeRequest)
 	} else {
 		d, err := s.deps.TMDB.GetMovieDetails(id)
 		if err != nil || d == nil || d.Title == "" {

@@ -544,6 +544,25 @@ func TestRequestHandlerSubmissionStatusContract(t *testing.T) {
 	}
 }
 
+func TestGameOfThronesSeasonMapPreservesPerSeasonStates(t *testing.T) {
+	seasons := make([]detailSeason, 8)
+	for i := range seasons {
+		seasons[i] = detailSeason{Number: i + 1, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	}
+	applySeasonAvailability(seasons, map[int]bool{1: true, 3: true, 8: true}, nil, func(season int) (*services.ReviewRequest, bool) {
+		if season == 4 {
+			return &services.ReviewRequest{Status: "approved", SubscriptionState: "R"}, true
+		}
+		return nil, false
+	})
+	want := map[int]string{1: "in_library", 2: "available", 3: "in_library", 4: "requested", 5: "available", 6: "available", 7: "available", 8: "in_library"}
+	for _, season := range seasons {
+		if season.Status.Code != want[season.Number] {
+			t.Fatalf("season %d status=%+v want=%s", season.Number, season.Status, want[season.Number])
+		}
+	}
+}
+
 func TestApplySeasonAvailabilityUsesEmbyThenOwnReview(t *testing.T) {
 	seasons := []detailSeason{
 		{Number: 1, Status: detailStatus{Code: "available", Text: "可以求片"}},

@@ -261,3 +261,12 @@ func TestServedMiniAppHTMLMatchesTheAuditedSource(t *testing.T) {
 		t.Fatal("served HTML leaves the bootstrap call outside a script block")
 	}
 }
+
+func TestMiniAppDetailStatusConfirmationRefreshesSelectedSeason(t *testing.T) {
+	s := miniAppSource(t)
+	for _, required := range []string{"refreshDetailStatus()", "状态已刷新", "状态确认失败", "type:" + "mediaType(x)", "season:season"} {
+		if !strings.Contains(s, required) {
+			t.Fatalf("missing detail refresh contract %q", required)
+		}
+	}
+}
