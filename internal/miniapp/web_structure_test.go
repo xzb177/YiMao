@@ -281,6 +281,7 @@ func TestDetailPageHasCompletePremiumVisualContract(t *testing.T) {
 	if strings.Contains(html, `status==="in_library"){label="申请洗版"`) && strings.Contains(html, `text:"进入许愿"`) {
 		t.Fatal("library detail must not use wish action")
 	}
+	if !strings.Contains(html, `href="data:,"`) { t.Fatal("Mini App favicon must not generate an app-owned 404") }
 	if !strings.Contains(html, "refreshDetailStatus()") {
 		t.Fatal("detail refresh action missing")
 	}
