@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"html"
 	"strings"
 	"sync"
 
@@ -322,6 +323,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			logger.Info("[ReviewHandler] 请求已被处理: %s, 状态: %s", requestID, current.Status)
 			// 重复点击只回一句短提示：不编辑任何消息，避免覆盖申请人进度卡。
 			return &callback.Response{
+				Text:        "✅ " + statusText + "，无需重复操作",
+				Edit:        true,
 				CallbackMsg: fmt.Sprintf("此请求%s，无需重复操作", statusText),
 				ShowAlert:   true,
 			}, nil
@@ -336,6 +339,8 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 			logger.Info("[ReviewHandler] 请求已被其他管理员批准: %s", requestID)
 			// 重复点击只回短提示，不编辑任何消息：申请人的进度卡必须保持原样。
 			return &callback.Response{
+				Text:        "✅ 已批准，无需重复操作",
+				Edit:        true,
 				CallbackMsg: "已被批准",
 				ShowAlert:   true,
 			}, nil
@@ -578,9 +583,30 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 	}
 
 	return &callback.Response{
+		Text:        approvalAdminConfirmation(review, season),
 		CallbackMsg: richmessage.StatusApproved,
 		ShowAlert:   false,
+		Edit:        true,
 	}, nil
+}
+
+func approvalAdminConfirmation(review *services.ReviewRequest, season int) string {
+	if review == nil {
+		return "✅ 审核已通过"
+	}
+	icon, mediaType := "🎬", "电影"
+	if review.MediaType == services.MediaTypeTV {
+		icon, mediaType = "📺", "剧集"
+	}
+	title := html.EscapeString(review.MediaTitle)
+	line := fmt.Sprintf("%s <b>《%s》</b>", icon, title)
+	if review.MediaYear > 0 {
+		line += fmt.Sprintf(" (%d)", review.MediaYear)
+	}
+	if review.MediaType == services.MediaTypeTV && season > 0 {
+		line += fmt.Sprintf(" · 第 %d 季", season)
+	}
+	return fmt.Sprintf("✅ 审核已通过\n\n%s\n\n已提交%s订阅，系统将自动搜索资源。", line, mediaType)
 }
 
 func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Response, error) {
