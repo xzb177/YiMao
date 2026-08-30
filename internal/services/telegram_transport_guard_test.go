@@ -1,6 +1,9 @@
 package services
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -162,5 +165,51 @@ func TestSanitizeInlineKeyboardKeepsOnlyValidExplicitStyle(t *testing.T) {
 	}
 	if row[1].Style != telegramButtonStylePrimary {
 		t.Fatalf("valid explicit style = %q, want %q", row[1].Style, telegramButtonStylePrimary)
+	}
+}
+
+func TestEditMessageOmitsEmptyReplyMarkupOnWire(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/editMessageText" {
+			t.Fatalf("path=%s", r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9,"chat":{"id":42,"type":"private"}}}`))
+	}))
+	defer server.Close()
+	client := NewTelegramClient("test")
+	client.SetBaseURLForTest(server.URL, server.Client())
+	empty := &types.TelegramInlineKeyboard{InlineKeyboard: [][]types.TelegramInlineKeyboardButton{}}
+	if _, err := client.EditMessage(42, 9, "approved", "HTML", empty); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := payload["reply_markup"]; ok {
+		t.Fatalf("empty reply_markup was serialized: %#v", payload["reply_markup"])
+	}
+}
+
+func TestEditMessageKeepsValidReplyMarkupOnWire(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9,"chat":{"id":42,"type":"private"}}}`))
+	}))
+	defer server.Close()
+	client := NewTelegramClient("test")
+	client.SetBaseURLForTest(server.URL, server.Client())
+	keyboard := &types.TelegramInlineKeyboard{InlineKeyboard: [][]types.TelegramInlineKeyboardButton{{{Text: "OK", CallbackData: "ok"}}}}
+	if _, err := client.EditMessage(42, 9, "approved", "HTML", keyboard); err != nil {
+		t.Fatal(err)
+	}
+	markup, ok := payload["reply_markup"].(map[string]any)
+	if !ok || len(markup["inline_keyboard"].([]any)) != 1 {
+		t.Fatalf("valid reply_markup malformed: %#v", payload["reply_markup"])
 	}
 }
