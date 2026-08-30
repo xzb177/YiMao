@@ -566,7 +566,7 @@ func TestApplySeasonAvailabilityPreservesDetailedReviewState(t *testing.T) {
 	applySeasonAvailability(seasons, map[int]bool{}, nil, func(season int) (*services.ReviewRequest, bool) {
 		return &services.ReviewRequest{Status: "approved", SubscriptionState: services.StateRecycled}, true
 	})
-	if seasons[0].Status.Code != "requested" || seasons[0].Status.Text != "重新搜索" {
+	if seasons[0].Status.Code != "requested" || seasons[0].Status.Text != "处理中" {
 		t.Fatalf("season status=%+v", seasons[0].Status)
 	}
 }
@@ -614,7 +614,11 @@ func TestSeasonBaseStatusUsesFullAirDate(t *testing.T) {
 
 func TestUserRequestStatusMPCompleteWaitsForEmby(t *testing.T) {
 	now := time.Now()
-	status, text, group := userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: services.StateCompleted, CompletedNoticeAt: &now})
+	status, text, group := userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: "R", CompletedNoticeAt: &now})
+	if status != "approved" || text != "处理中" || group != "active" {
+		t.Fatalf("unconfirmed processing status=%q text=%q group=%q", status, text, group)
+	}
+	status, text, group = userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: services.StateCompleted, CompletedNoticeAt: &now})
 	if status != "awaiting_library" || text != "资源已齐，等待入库" || group != "active" {
 		t.Fatalf("status=%q text=%q group=%q", status, text, group)
 	}

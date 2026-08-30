@@ -683,7 +683,7 @@ func userRequestStatus(review *services.ReviewRequest) (string, string, string) 
 			return "awaiting_library", "资源已齐，等待入库", "active"
 		}
 		text := services.GetStateText(review.SubscriptionState)
-		if review.SubscriptionState == "" {
+		if review.SubscriptionState == "" || review.SubscriptionState == services.StateRecycled {
 			text = "处理中"
 		}
 		return "approved", strings.TrimSpace(strings.TrimLeft(text, "⏳🔄🔍📥✅❌🚫")), "active"
