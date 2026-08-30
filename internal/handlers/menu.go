@@ -847,6 +847,9 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 	msg.Newline()
 
 	statusText := services.GetStateText(item.State)
+	if item.State == services.StateRecycled || item.State == "R" {
+		statusText = "处理中"
+	}
 	msg.Textf("🎬 %s", item.Name)
 	if item.Year != "" && item.Year != "0" {
 		msg.Textf(" (%s)", item.Year)
