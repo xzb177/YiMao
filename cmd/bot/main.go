@@ -277,6 +277,11 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 			Year: year, MediaType: mediaType, CompletedAt: completedAt,
 		})
 	}
+	if repaired, err := reviewService.ReconcileLibraryCompletions(fulfillmentStats.CompletionRecords()); err != nil {
+		logger.Info("[ReviewService] completion reconciliation failed: %v", err)
+	} else if repaired > 0 {
+		logger.Info("[ReviewService] reconciled %d historical library completions", repaired)
+	}
 	logger.Info("    - SeasonRadarService...")
 	seasonRadar := services.NewSeasonRadarService(cfg.DataDir, nil)
 	seasonRadar.SetEnabled(func(userID int64) bool {
@@ -503,6 +508,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// #3 拼车 +1：把拼车服务注入 webhook，用于入库时 @ 拼车用户（setter 注入，不改构造函数签名）
 	webhookService.SetCarpoolService(carpoolService)
 	webhookService.SetReviewService(reviewService)
+	webhookService.SetFulfillmentStats(fulfillmentStats)
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)

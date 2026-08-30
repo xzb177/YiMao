@@ -675,7 +675,7 @@ func userRequestStatus(review *services.ReviewRequest) (string, string, string) 
 	if review.Status == "cancelled" {
 		return "cancelled", "已撤回", "done"
 	}
-	if review.EmbyExists || review.LibraryNotifiedAt != nil {
+	if review.LibraryNotifiedAt != nil && !review.LibraryNotifiedAt.IsZero() {
 		return "completed", "已入库", "done"
 	}
 	if review.Status == "approved" {
@@ -913,18 +913,14 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 			status := seasonBaseStatus(season.AirDate, time.Now())
 			view.Seasons = append(view.Seasons, detailSeason{Number: season.SeasonNumber, Name: season.Name, EpisodeCount: season.EpisodeCount, AirDate: season.AirDate, Poster: s.deps.TMDB.GetPosterURL(season.PosterPath), Status: status})
 		}
-		available := map[int]bool(nil)
-		seasonErr := fmt.Errorf("Emby season lookup is unavailable")
-		if s.deps.MoviePilot != nil {
-			available, seasonErr = s.deps.MoviePilot.EmbyAvailableSeasonsByTMDB(id)
-		}
 		var activeRequest func(int) (*services.ReviewRequest, bool)
 		if s.deps.Reviews != nil {
 			activeRequest = func(season int) (*services.ReviewRequest, bool) {
 				return s.deps.Reviews.HasActiveSimilarRequest(user.ID, id, mediaType, season)
 			}
 		}
-		applySeasonAvailability(view.Seasons, available, seasonErr, activeRequest)
+		// External Emby availability is not canonical user completion proof.
+		applySeasonAvailability(view.Seasons, nil, fmt.Errorf("external availability is non-canonical"), activeRequest)
 	} else {
 		d, err := s.deps.TMDB.GetMovieDetails(id)
 		if err != nil || d == nil || d.Title == "" {
@@ -941,14 +937,19 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	if len(view.ReleaseDate) >= 4 {
 		view.Year = view.ReleaseDate[:4]
 	}
+	if s.deps.Reviews != nil && s.deps.Reviews.IsLibraryCompletedForMedia(user.ID, id, kind, season) {
+		view.Status = detailStatus{Code: "in_library", Text: "已入库"}
+		if s.deps.Quota != nil {
+			view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
+		}
+		writeJSON(w, http.StatusOK, view)
+		return
+	}
 	if mediaType == services.MediaTypeMovie {
 		exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(r.Context(), id, mediaType)
 		if err != nil {
 			view.Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
 		} else if exists {
-			if !wishJoined {
-				view.Status = detailStatus{Code: "in_library", Text: "库中可看"}
-			}
 			if s.deps.Quota != nil {
 				view.Quota = publicQuota(s.deps.Quota.GetQuotaInfo(user.ID))
 			}

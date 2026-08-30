@@ -1190,6 +1190,98 @@ func (s *ReviewService) IsLibraryNotificationPending(requestID string) bool {
 	return exists && review != nil && (review.LibraryNotifiedAt == nil || review.LibraryNotifiedAt.IsZero())
 }
 
+// ReconcileLibraryCompletions repairs the canonical library marker from the
+// durable confirmed-completion ledger. It requires the literal request ID and
+// matching owner/title/year/type; it never queries or mutates MoviePilot.
+func (s *ReviewService) ReconcileLibraryCompletions(records []CompletionRecord) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	changed := 0
+	for _, record := range records {
+		if record.RequestID == "" || record.TelegramID == 0 || record.Title == "" || record.CompletedAt.IsZero() {
+			continue
+		}
+		review, ok := s.reviews[record.RequestID]
+		if !ok || review == nil || review.NormalizedBusinessType() != BusinessTypeRequest {
+			continue
+		}
+		if review.Status != "approved" && review.Status != "completed" {
+			continue
+		}
+		if review.TelegramID != record.TelegramID || review.MediaTitle != record.Title {
+			continue
+		}
+		if record.Year > 0 && review.MediaYear != record.Year {
+			continue
+		}
+		if normalizeMediaType(record.MediaType) != normalizeMediaType(string(review.MediaType)) {
+			continue
+		}
+		// A season-bearing record must match exactly. Legacy records without a
+		// season are safe only because the literal request ID maps the scope.
+		if record.Season > 0 && review.Season != record.Season {
+			continue
+		}
+		if review.LibraryNotifiedAt != nil && !review.LibraryNotifiedAt.IsZero() {
+			continue
+		}
+		completedAt := record.CompletedAt
+		review.LibraryNotifiedAt = &completedAt
+		changed++
+	}
+	if changed == 0 {
+		return 0, nil
+	}
+	if err := s.saveLocked(); err != nil {
+		return 0, err
+	}
+	return changed, nil
+}
+
+// IsLibraryCompletedForMedia is the canonical user/type/TMDB/season-scoped
+// library resolver used by Bot and Mini App views.
+func (s *ReviewService) IsLibraryCompletedForMedia(userID int64, tmdbID int, mediaType string, season int) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, review := range s.reviews {
+		if review == nil || review.TelegramID != userID || review.TmdbID != tmdbID || review.NormalizedBusinessType() != BusinessTypeRequest {
+			continue
+		}
+		if normalizeMediaType(string(review.MediaType)) != normalizeMediaType(mediaType) {
+			continue
+		}
+		if normalizeMediaType(mediaType) == normalizeMediaType(string(MediaTypeTV)) && review.Season != season {
+			continue
+		}
+		if review.LibraryNotifiedAt != nil && !review.LibraryNotifiedAt.IsZero() {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeMediaType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "tv", "series", "电视剧", "剧集":
+		return "tv"
+	default:
+		return "movie"
+	}
+}
+
+// RecordLibraryCompletion persists the confirmed library marker first and the
+// durable completion ledger second at the library event source. Both writes are
+// idempotent and this path performs no MoviePilot/download operation.
+func (s *ReviewService) RecordLibraryCompletion(record CompletionRecord, ledger *FulfillmentStatsService) error {
+	if err := s.MarkLibraryNotified(record.RequestID); err != nil {
+		return err
+	}
+	if ledger != nil {
+		ledger.AddCompletion(record)
+	}
+	return nil
+}
+
 // MarkLibraryNotified persists a successful Emby library notification.
 func (s *ReviewService) MarkLibraryNotified(requestID string) error {
 	s.mu.Lock()

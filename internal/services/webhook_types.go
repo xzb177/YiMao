@@ -159,7 +159,8 @@ type WebhookService struct {
 	// #3 拼车服务（可选注入）：入库通知时 @ 拼车用户。允许为 nil。
 	carpool *CarpoolService
 	// 审核服务（可选注入）：入库时通知求片用户。允许为 nil。
-	review *ReviewService
+	review           *ReviewService
+	fulfillmentStats *FulfillmentStatsService
 	// 播放结束推送频率限制：userID → lastPushTime
 	playbackPushThrottle   map[int64]time.Time
 	playbackPushThrottleMu sync.Mutex
@@ -175,6 +176,11 @@ func (s *WebhookService) SetCarpoolService(c *CarpoolService) {
 // SetReviewService 注入审核服务（入库时通知求片用户）。
 func (s *WebhookService) SetReviewService(r *ReviewService) {
 	s.review = r
+}
+
+// SetFulfillmentStats injects the durable confirmed-library ledger.
+func (s *WebhookService) SetFulfillmentStats(stats *FulfillmentStatsService) {
+	s.fulfillmentStats = stats
 }
 
 // cachedFileInfo 缓存的文件信息
