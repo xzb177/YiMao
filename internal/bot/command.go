@@ -307,7 +307,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		if createdPassword == "" {
 			createdPassword, err = services.GenerateRandomPassword(16)
 			if err != nil {
-				telegram.SendMessage(msg.Chat.ID, "❌ 生成初始密码失败，请稍后再试", "", nil)
+				_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 生成初始密码失败，请稍后再试", "", nil)
 				return
 			}
 		}
@@ -323,7 +323,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	if userID == 0 {
-		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败：无法获取用户 ID，请稍后再试", "", nil)
+		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败：无法获取用户 ID，请稍后再试", "", nil)
 		return
 	}
 
