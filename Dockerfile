@@ -5,7 +5,11 @@
 # 多阶段构建：Go 1.24 → Alpine
 # 搜索求片为默认路径
 # ========================================
-FROM golang:1.24-alpine AS builder
+# Base images are pinned by digest so rebuilds cannot silently change the
+# toolchain or runtime. Refresh with:
+#   docker buildx imagetools inspect golang:1.24-alpine --format '{{.Manifest.Digest}}'
+#   docker buildx imagetools inspect alpine:3.24.1 --format '{{.Manifest.Digest}}'
+FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064ed54cfd245b7191 AS builder
 
 # Install build dependencies
 RUN apk add --no-cache git
@@ -39,7 +43,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /smoke ./cmd/smoke
 ENTRYPOINT ["/smoke"]
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # Supply the immutable source commit in production builds:
 # docker build --build-arg REVISION="$(git rev-parse HEAD)" .

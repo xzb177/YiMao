@@ -74,6 +74,13 @@ contains internal/api/router.go '"version": *version.Version'
 contains internal/server/server.go '"github.com/xzb177/yimao/internal/version"'
 contains internal/server/server.go '"version": *version.Version'
 contains Dockerfile 'org\.opencontainers\.image\.version=\$VERSION'
+contains Dockerfile '^FROM golang:1\.24-alpine@sha256:[0-9a-f]{64} AS builder$'
+contains Dockerfile '^FROM alpine:3\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$'
+unpinned_from=$(grep -E '^[[:space:]]*FROM[[:space:]]' Dockerfile | grep -vE '@sha256:[0-9a-f]{64}' | grep -E '[:/]' || true)
+if [ -n "$unpinned_from" ]; then
+    printf '%s\n' "$unpinned_from" >&2
+    fail 'production Dockerfile must pin every external base image by digest'
+fi
 
 if grep -Eq '版本: <code>v1\.0</code>' internal/bot/command.go || grep -Eq '"version":[[:space:]]*"2\.0\.0"' internal/api/router.go; then
     fail "runtime contains a stale hard-coded version"
