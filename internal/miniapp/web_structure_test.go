@@ -81,7 +81,7 @@ func TestMiniAppCanonicalFunctionsAndRichDetailContract(t *testing.T) {
 			t.Fatalf("canonical function %s count=%d", name, got)
 		}
 	}
-	if strings.Contains(html, "detail-actions") || strings.Contains(html, "function detailActionButton(") {
+	if strings.Contains(html, "class=\"detail-actions\"") || strings.Contains(html, "function detailActionButton(") {
 		t.Fatal("legacy detail action path remains")
 	}
 	if !strings.Contains(html, "yh-detail") || !strings.Contains(html, "yhGrid(") {
@@ -176,6 +176,7 @@ func TestMiniAppInlineHandlersHaveNoBackslashEscapes(t *testing.T) {
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
 	"返回首页": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
+	"求片提交": true, "继续搜索": true, "已经许愿": true, "状态确认": true, "选择季度": true,
 	"系统设置": true, "问题反馈": true,
 }
 
@@ -201,7 +202,7 @@ func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
 		if !fourCharLexicon[label] {
 			t.Errorf("button label %q is outside the approved lexicon", label)
 		}
-		if style == "success" && label != "搜索求片" {
+		if style == "success" && label != "搜索求片" && label != "求片提交" {
 			t.Errorf("only 搜索求片 keeps the success tone, got %q", label)
 		}
 	}
@@ -259,5 +260,32 @@ func TestServedMiniAppHTMLMatchesTheAuditedSource(t *testing.T) {
 	}
 	if strings.Contains(bodyOutsideScripts(t, served), miniAppBootstrap) {
 		t.Fatal("served HTML leaves the bootstrap call outside a script block")
+	}
+}
+
+func TestMiniAppDetailStatusConfirmationRefreshesSelectedSeason(t *testing.T) {
+	s := miniAppSource(t)
+	for _, required := range []string{"refreshDetailStatus()", "状态已刷新", "状态确认失败", "type:" + "mediaType(x)", "season:season"} {
+		if !strings.Contains(s, required) {
+			t.Fatalf("missing detail refresh contract %q", required)
+		}
+	}
+}
+
+func TestDetailPageHasCompletePremiumVisualContract(t *testing.T) {
+	html := miniAppSource(t)
+	for _, selector := range []string{".yh-detail{", ".yh-detail-art img", ".yh-season-list", ".yh-season{", ".yh-detail-actions", ".yh-synopsis", ".yh-synopsis-toggle", "aria-pressed", "data-season"} {
+		if !strings.Contains(html, selector) {
+			t.Fatalf("missing detail visual contract %q", selector)
+		}
+	}
+	if strings.Contains(html, `status==="in_library"){label="申请洗版"`) && strings.Contains(html, `text:"进入许愿"`) {
+		t.Fatal("library detail must not use wish action")
+	}
+	if !strings.Contains(html, `href="data:,"`) {
+		t.Fatal("Mini App favicon must not generate an app-owned 404")
+	}
+	if !strings.Contains(html, "refreshDetailStatus()") {
+		t.Fatal("detail refresh action missing")
 	}
 }

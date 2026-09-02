@@ -25,7 +25,7 @@ var shippedControlLexicon = map[string]bool{
 	"返回首页": true, "查看进度": true, "查看详情": true, "继续求片": true,
 	"重新加载": true, "求第一部": true, "查看全部": true, "继续加载": true,
 	"动态内容": true, "发现内容": true, "助手功能": true, "想看列表": true,
-	"进入许愿": true, "收起进度": true, "展开进度": true,
+	"进入许愿": true, "已经许愿": true, "继续搜索": true, "收起进度": true, "展开进度": true,
 	"撤回任务": true, "选择季度": true, "求片提交": true, "状态待确认": true,
 	"继续查看": true, "确认求片": true, "确认洗版": true,
 	"查看任务": true, "继续找片": true, "保留任务": true, "确认撤回": true,

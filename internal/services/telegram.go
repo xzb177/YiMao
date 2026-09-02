@@ -1192,7 +1192,11 @@ func normalizeTelegramPayload(payload map[string]interface{}) {
 		}
 	}
 	if keyboard, ok := payload["reply_markup"].(*types.TelegramInlineKeyboard); ok {
-		payload["reply_markup"] = sanitizeInlineKeyboard(keyboard)
+		if clean := sanitizeInlineKeyboard(keyboard); clean != nil {
+			payload["reply_markup"] = clean
+		} else {
+			delete(payload, "reply_markup")
+		}
 	}
 }
 

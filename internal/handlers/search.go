@@ -404,7 +404,7 @@ func (h *SearchHandler) handleTrending(ctx *callback.Context, tType string) (*ca
 func (h *SearchHandler) handleMoodRecommendation(ctx *callback.Context, recType, mood string) (*callback.Response, error) {
 	logger.Info("[SearchHandler] Mood recommendation (fallback to trending): type=%s, mood=%s", recType, mood)
 
-	// AI module removed, fallback to regular trending
+	// Mood shortcuts are deterministic filters over the regular trending feed
 	return h.handleTrending(ctx, recType)
 }
 

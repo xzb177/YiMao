@@ -245,6 +245,40 @@ func TestSearchUsesExactEmbyAvailabilityStatus(t *testing.T) {
 	}
 }
 
+func TestMovieDetailUsesExactEmbyAvailability(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Users/test-user/Items" {
+			http.NotFound(w, r)
+			return
+		}
+		if got := r.URL.Query().Get("AnyProviderIdEquals"); got != "tmdb.271413" {
+			t.Fatalf("provider id=%q", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 1, "Items": []map[string]any{{"Id": "movie-271413"}}})
+	}))
+	defer upstream.Close()
+
+	mp := services.NewMoviePilotClient(upstream.URL, "test", "")
+	mp.SetEmbyConfig(upstream.URL, "test")
+	mp.SetEmbyUserID("test-user")
+	tmdb, _ := newCountingTMDBClient(t)
+	handler := NewServer(Deps{BotToken: miniAppTestToken, MoviePilot: mp, TMDB: tmdb}).Handler()
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, signedRequest(t, http.MethodGet, "/api/miniapp/v1/detail?id=271413&type=movie", "", 101))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Status detailStatus `json:"media_status"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Status.Code != "in_library" {
+		t.Fatalf("status=%+v, want exact Emby availability to expose in_library", payload.Status)
+	}
+}
+
 func TestTVDetailWithoutSeasonFailsClosed(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -544,6 +578,25 @@ func TestRequestHandlerSubmissionStatusContract(t *testing.T) {
 	}
 }
 
+func TestGameOfThronesSeasonMapPreservesPerSeasonStates(t *testing.T) {
+	seasons := make([]detailSeason, 8)
+	for i := range seasons {
+		seasons[i] = detailSeason{Number: i + 1, Status: detailStatus{Code: "available", Text: "可以求片"}}
+	}
+	applySeasonAvailability(seasons, map[int]bool{1: true, 3: true, 8: true}, nil, func(season int) (*services.ReviewRequest, bool) {
+		if season == 4 {
+			return &services.ReviewRequest{Status: "approved", SubscriptionState: "R"}, true
+		}
+		return nil, false
+	})
+	want := map[int]string{1: "in_library", 2: "available", 3: "in_library", 4: "requested", 5: "available", 6: "available", 7: "available", 8: "in_library"}
+	for _, season := range seasons {
+		if season.Status.Code != want[season.Number] {
+			t.Fatalf("season %d status=%+v want=%s", season.Number, season.Status, want[season.Number])
+		}
+	}
+}
+
 func TestApplySeasonAvailabilityUsesEmbyThenOwnReview(t *testing.T) {
 	seasons := []detailSeason{
 		{Number: 1, Status: detailStatus{Code: "available", Text: "可以求片"}},
@@ -566,7 +619,7 @@ func TestApplySeasonAvailabilityPreservesDetailedReviewState(t *testing.T) {
 	applySeasonAvailability(seasons, map[int]bool{}, nil, func(season int) (*services.ReviewRequest, bool) {
 		return &services.ReviewRequest{Status: "approved", SubscriptionState: services.StateRecycled}, true
 	})
-	if seasons[0].Status.Code != "requested" || seasons[0].Status.Text != "重新搜索" {
+	if seasons[0].Status.Code != "requested" || seasons[0].Status.Text != "处理中" {
 		t.Fatalf("season status=%+v", seasons[0].Status)
 	}
 }
@@ -614,7 +667,11 @@ func TestSeasonBaseStatusUsesFullAirDate(t *testing.T) {
 
 func TestUserRequestStatusMPCompleteWaitsForEmby(t *testing.T) {
 	now := time.Now()
-	status, text, group := userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: services.StateCompleted, CompletedNoticeAt: &now})
+	status, text, group := userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: "R", CompletedNoticeAt: &now})
+	if status != "approved" || text != "处理中" || group != "active" {
+		t.Fatalf("unconfirmed processing status=%q text=%q group=%q", status, text, group)
+	}
+	status, text, group = userRequestStatus(&services.ReviewRequest{Status: "approved", SubscriptionState: services.StateCompleted, CompletedNoticeAt: &now})
 	if status != "awaiting_library" || text != "资源已齐，等待入库" || group != "active" {
 		t.Fatalf("status=%q text=%q group=%q", status, text, group)
 	}

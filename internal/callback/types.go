@@ -37,7 +37,6 @@ const (
 	ActionHelp          Action = "help"
 	ActionHelpTopic     Action = "help_topic"
 	ActionSettings      Action = "settings"
-	ActionAI            Action = "ai"
 	ActionRequestHeat   Action = "request_heat"
 	ActionMood          Action = "mood"
 	ActionMoodPick      Action = "moodpick"
@@ -80,8 +79,6 @@ var validActions = map[Action]bool{
 	ActionFeedback:      true,
 	"my_feedback":       true, // User feedback list
 	"start_settings":    true, // Settings page
-	"start_ai":          true, // Reserved
-	"ai":                true, // start_ai 剥前缀后的实际 action
 	"wish":              true, // 许愿池入口（start_wish 剥前缀后）
 	"wash":              true, // 洗版工单
 	"issue":             true, // 首页问题工单入口

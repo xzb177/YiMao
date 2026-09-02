@@ -408,7 +408,7 @@ func (s *WeeklyReportService) FormatReport(report *WeeklyReport) string {
 		sb.WriteString("\n")
 	}
 
-	// 5. AI 建议
+	// 5. 专属建议
 	if len(report.Recommendations) > 0 {
 		sb.WriteString("💡 <b>专属建议</b>\n")
 		sb.WriteString("<blockquote>")

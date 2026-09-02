@@ -265,11 +265,10 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("    - FulfillmentStatsService...")
 	fulfillmentStats := services.NewFulfillmentStatsService(cfg.DataDir)
 	reviewService.Fulfillment = fulfillmentStats
-	reviewService.OnFulfillmentComplete = func(requestID string, telegramID int64, title string, year int, mediaType string, completedAt time.Time) {
-		fulfillmentStats.AddCompletion(services.CompletionRecord{
-			RequestID: requestID, TelegramID: telegramID, Title: title,
-			Year: year, MediaType: mediaType, CompletedAt: completedAt,
-		})
+	if repaired, err := reviewService.ReconcileLibraryCompletions(fulfillmentStats.CompletionRecords()); err != nil {
+		logger.Info("[ReviewService] completion reconciliation failed: %v", err)
+	} else if repaired > 0 {
+		logger.Info("[ReviewService] reconciled %d historical library completions", repaired)
 	}
 	logger.Info("    - SeasonRadarService...")
 	seasonRadar := services.NewSeasonRadarService(cfg.DataDir, nil)
@@ -497,6 +496,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	// #3 拼车 +1：把拼车服务注入 webhook，用于入库时 @ 拼车用户（setter 注入，不改构造函数签名）
 	webhookService.SetCarpoolService(carpoolService)
 	webhookService.SetReviewService(reviewService)
+	webhookService.SetFulfillmentStats(fulfillmentStats)
 
 	// Initialize TMDB client
 	tmdbClient := services.NewTMDBClientWithDefaultKey(cfg.TMDBAPIKey)
@@ -767,8 +767,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc(callback.ActionMore, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionSearch, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionRequestHeat, requestHeatHandler.Handle)
-	// Legacy start_ai buttons now land on the request-focused search entry.
-	registry.RegisterFunc(callback.ActionAI, searchHandler.Handle)
 	registry.RegisterFunc(callback.ActionSettings, startHandler.Handle)
 	registry.RegisterFunc(callback.ActionHelpTopic, startHandler.Handle)
 	registry.RegisterFunc("start_settings", startHandler.Handle)
@@ -973,7 +971,7 @@ func setupBotCommands(telegram *services.TelegramClient) {
 
 	// Group and Community chats expose only privacy-safe entries. Every command
 	// in this scope is ephemeral; credential-bearing and free-form commands such
-	// as /link, /review and /narrate remain private-chat only.
+	// as /link and /resetpw remain private-chat only.
 	groupCommands := []services.BotCommand{
 		{Command: "start", Description: "🌟 私密主菜单", IsEphemeral: true},
 		{Command: "search", Description: "🔍 私密搜索求片", IsEphemeral: true},

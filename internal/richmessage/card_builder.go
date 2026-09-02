@@ -192,7 +192,7 @@ func BuildWeeklyReportCard(data WeeklyReportData) RichMessage {
 		}
 	}
 
-	// AI recommendations
+	// Curated recommendations
 	if len(data.Recommendations) > 0 {
 		builder.Heading("💡 专属建议", 3)
 		for _, rec := range data.Recommendations {

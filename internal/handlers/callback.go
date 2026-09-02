@@ -716,8 +716,8 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 				// Internal season-picker navigation returns to the same detail card and
 				// must not duplicate the search history entry.
 				if !returningFromInternalStep {
-					if isAIRecommendationQuery(query) {
-						sess.PushNavEntry("ai_recommendation", query, query)
+					if isCuratedRecommendationQuery(query) {
+						sess.PushNavEntry("curated_recommendation", query, query)
 					} else {
 						sess.PushNavEntry("search", query, query)
 					}
@@ -726,12 +726,6 @@ func (h *DetailHandler) Handle(ctx *callback.Context) (*callback.Response, error
 				return finalizeDetail(h.buildDetailFromSearch(item, mediaType, sess)), nil
 			}
 		}
-	}
-
-	// Check if we have cached data from AI. Heat-list details deliberately avoid
-	// this cache because movie and TV IDs share a numeric namespace.
-	if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil && !fromRequestHeat && normalizeDetailMediaType(cachedItem.MediaType) == normalizeDetailMediaType(mediaType) {
-		return finalizeDetail(h.buildDetailFromCache(cachedItem, sess)), nil
 	}
 
 	// Try TMDB API for details
@@ -814,8 +808,8 @@ func retargetDetailKeyboard(keyboard *callback.Keyboard, returnAction string) {
 	}
 }
 
-// isAIRecommendationQuery checks if the query is from AI recommendation
-func isAIRecommendationQuery(query string) bool {
+// isCuratedRecommendationQuery checks if the query is from curated recommendation
+func isCuratedRecommendationQuery(query string) bool {
 	aiTypes := []string{"trending", "hot", "new", "toprated", "random"}
 	for _, t := range aiTypes {
 		if query == t {
@@ -823,30 +817,6 @@ func isAIRecommendationQuery(query string) bool {
 		}
 	}
 	return false
-}
-
-func (h *DetailHandler) buildDetailFromCache(item *session.AIRecommendationItem, sess *session.Session) *callback.Response {
-	info := richmessage.MediaInfo{
-		Title:     item.Title,
-		Year:      item.Year,
-		Rating:    item.Rating,
-		Overview:  item.Overview,
-		TMDBID:    item.TmdbID,
-		MediaType: item.MediaType,
-		Status:    "状态暂未确认",
-	}
-
-	keyboard := h.buildMovieActionKeyboard(item.TmdbID, false, false)
-	if item.MediaType == "tv" {
-		keyboard = h.buildTVActionKeyboard(item.TmdbID, 0, false, false)
-	}
-
-	if resp := h.buildRichDetailResponse(info, keyboard, "", true); resp != nil {
-		return resp
-	}
-
-	// Fallback (should not happen)
-	return &callback.Response{Text: "❌ 加载失败", Edit: true}
 }
 
 func (h *DetailHandler) buildDetailFromTMDB(media *services.TMDBMediaInfo, sess *session.Session) *callback.Response {
@@ -1296,15 +1266,15 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 
 	// Based on source, restore appropriate view
 	switch entry.Source {
-	case "ai_recommendation":
-		// Return to AI recommendation - restore the recommendation results page
+	case "curated_recommendation":
+		// Return to curated recommendation - restore the recommendation results page
 		// entry.Query contains the recommendation type (hot, trending, toprated, new, random)
 		tType := entry.Query
 		if tType == "" {
 			tType = "hot" // Default to hot TV shows
 		}
 
-		logger.Info("[BackHandler] Returning to AI recommendation: %s", tType)
+		logger.Info("[BackHandler] Returning to curated recommendation: %s", tType)
 
 		// Check if we have cached search results to restore
 		items, page, query, hasSearch := sess.GetSearchResults()
@@ -1379,8 +1349,8 @@ func (h *BackHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		return h.restoreSearchResults(sess, ctx)
 
 	default:
-		// For any other source, return to AI recommendation or start menu
-		if isAIRecommendationQuery(entry.Source) || isAIRecommendationQuery(entry.Query) {
+		// For any other source, return to curated recommendation or start menu
+		if isCuratedRecommendationQuery(entry.Source) || isCuratedRecommendationQuery(entry.Query) {
 			return &callback.Response{
 				Text:        "",
 				CallbackMsg: "",
@@ -1450,7 +1420,7 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	}, nil
 }
 
-// restoreRecommendationResults restores the AI recommendation results from session
+// restoreRecommendationResults restores the curated recommendation results from session
 func (h *BackHandler) restoreRecommendationResults(sess *session.Session, tType string, items []session.SearchItem, page int) (*callback.Response, error) {
 	logger.Info("[BackHandler] restoreRecommendationResults: tType=%s, items=%d, page=%d", tType, len(items), page)
 

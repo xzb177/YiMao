@@ -38,6 +38,8 @@ func TestLegacyChallengeActionsAreRejected(t *testing.T) {
 		"game_" + "rank",
 		"game_" + "time_machine",
 		"game_" + "prescription",
+		"ai",
+		"start_" + "ai",
 	}
 	parser := NewParser()
 	for _, action := range legacy {

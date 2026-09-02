@@ -69,7 +69,7 @@ Telegram chat menu
 
 当前 Mini App API 路由包括：
 
-- 发现与查询：`search`、`assistant`、`detail`、`discover`
+- 发现与查询：`search`、`detail`、`discover`
 - 首页状态：`dynamic`、`me`、`progress`
 - 用户动作：`watchlist`、`request`、`wash`、`request/cancel`
 - 阻塞项：`issues`、`wishes`。

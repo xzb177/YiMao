@@ -26,3 +26,18 @@ func TestValidateAPIAuthFailsClosedWithoutKeys(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestConfigRejectsMoviePilotURLWithoutScheme(t *testing.T) {
+	c := &Config{
+		TelegramBotToken: strings.Repeat("x", 30),
+		MoviePilotURL:    "moviepilot.local:3000",
+		MoviePilotAPIKey: strings.Repeat("k", 10),
+		EnableAPIAuth:    true,
+		APIKeys:          map[string]string{strings.Repeat("a", 16): "management"},
+		MaxSessions:      100,
+		MaxSessionAge:    24,
+	}
+	if err := c.validate(); err == nil || !strings.Contains(err.Error(), "http:// or https://") {
+		t.Fatalf("validate() error=%v, want explicit MOVIEPILOT_URL scheme rejection", err)
+	}
+}

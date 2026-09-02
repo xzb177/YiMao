@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -217,6 +218,10 @@ func (c *Config) validate() error {
 
 	if c.MoviePilotURL == "" {
 		return fmt.Errorf("MOVIEPILOT_URL is required")
+	}
+	moviePilotURL, err := url.ParseRequestURI(c.MoviePilotURL)
+	if err != nil || moviePilotURL.Host == "" || (moviePilotURL.Scheme != "http" && moviePilotURL.Scheme != "https") {
+		return fmt.Errorf("MOVIEPILOT_URL must use http:// or https://")
 	}
 	if c.MoviePilotAPIKey == "" {
 		return fmt.Errorf("MOVIEPILOT_API_KEY is required")

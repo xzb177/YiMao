@@ -11,9 +11,7 @@ import (
 func TestValidActionsNoStartPrefix(t *testing.T) {
 	for action := range validActions {
 		if strings.HasPrefix(string(action), "start_") {
-			// start_settings 和 start_ai 是例外：它们在 main.go 中注册了
-			// start_settings → settings（ActionSettings）
-			// start_ai → ai（ActionAI）
+			// start_settings is retained for historical settings buttons.
 			// 但这些不会被解析器命中（因为解析器会先剥前缀），
 			// 所以它们是冗余的但无害。只警告不报错。
 			t.Logf("WARNING: validActions contains start_ prefix action %q — 这个不会被回调解析器命中（前缀会被剥掉），可能是误注册", action)
@@ -28,7 +26,6 @@ func TestKnownShortActionsRegistered(t *testing.T) {
 		"search",       // start_search → search
 		"requests",     // start_requests → requests
 		"wish",         // start_wish → wish
-		"ai",           // start_ai → ai
 		"settings",     // start_settings → settings
 		"myreq_cancel", // 用户撤回 pending 求片
 	}
@@ -51,7 +48,6 @@ func TestParserStartPrefixStripping(t *testing.T) {
 		{"start_search", "search"},
 		{"start_requests", "requests"},
 		{"start_wish", "wish"},
-		{"start_ai", "ai"},
 		{"start_settings", "settings"},
 		{"start_requests:page:2", "requests"},
 	}

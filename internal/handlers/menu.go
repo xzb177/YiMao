@@ -553,6 +553,20 @@ func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []serv
 		return mpItems
 	}
 
+	// Confirmed library markers override MoviePilot execution state for the
+	// exact user/TMDB/type/season; MP completion alone is not library proof.
+	if h.reviewSvc != nil {
+		for i := range mpItems {
+			mediaType := "movie"
+			if strings.Contains(strings.ToLower(mpItems[i].Type), "tv") || strings.Contains(mpItems[i].Type, "剧") {
+				mediaType = "tv"
+			}
+			if h.reviewSvc.IsLibraryCompletedForMedia(telegramID, mpItems[i].TMDBID, mediaType, mpItems[i].Season) {
+				mpItems[i].State = services.StateCompleted
+			}
+		}
+	}
+
 	// Review and issue work orders remain authoritative local progress even when
 	// MoviePilot is unavailable or the user is not bound.
 	existing := make(map[string]bool, len(mpItems))
@@ -793,6 +807,16 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 		}
 	}
 
+	if item != nil && h.reviewSvc != nil {
+		mediaType := "movie"
+		if strings.Contains(strings.ToLower(item.Type), "tv") || strings.Contains(item.Type, "剧") {
+			mediaType = "tv"
+		}
+		if h.reviewSvc.IsLibraryCompletedForMedia(ctx.UserID, item.TMDBID, mediaType, item.Season) {
+			item.State = services.StateCompleted
+		}
+	}
+
 	if item == nil {
 		return &callback.Response{
 			Text:        "❌ 请求不存在",
@@ -807,6 +831,9 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 	msg.Newline()
 
 	statusText := services.GetStateText(item.State)
+	if item.State == services.StateRecycled || item.State == "R" {
+		statusText = "处理中"
+	}
 	msg.Textf("🎬 %s", item.Name)
 	if item.Year != "" && item.Year != "0" {
 		msg.Textf(" (%s)", item.Year)

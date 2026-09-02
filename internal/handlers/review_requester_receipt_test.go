@@ -123,8 +123,11 @@ func TestApprovalUpdatesRequesterReceiptCardInPlace(t *testing.T) {
 	if secondErr != nil || secondResp == nil {
 		t.Fatalf("repeat click failed: resp=%+v err=%v", secondResp, secondErr)
 	}
-	if secondResp.Edit || secondResp.Text != "" {
-		t.Fatalf("repeat click overwrote a message: %+v", secondResp)
+	if !secondResp.Edit || strings.TrimSpace(secondResp.Text) == "" {
+		t.Fatalf("repeat click lacks visible confirmation: %+v", secondResp)
+	}
+	if !strings.Contains(secondResp.Text, "无需重复操作") {
+		t.Fatalf("repeat click confirmation is not concise/idempotent: %q", secondResp.Text)
 	}
 	if secondResp.CallbackMsg == "" || strings.Contains(secondResp.CallbackMsg, "已被已批准") {
 		t.Fatalf("repeat click notice is missing or malformed: %q", secondResp.CallbackMsg)

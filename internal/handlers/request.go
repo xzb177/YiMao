@@ -171,7 +171,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 
 	// Get media info from session for better display.
 	// 会话过期不再是死路：GetOrCreate 重建空会话，媒体信息由下方
-	// 搜索缓存 → AI 缓存 → TMDB API 三级兜底补齐，旧消息按钮永远可点。
+	// 搜索缓存 → TMDB API 兜底补齐，旧消息按钮永远可点。
 	sess := h.sessMgr.GetOrCreate(ctx.UserID)
 
 	// Get user name from session
@@ -187,7 +187,7 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 		}
 	}
 
-	// Find media from recent search results or AI cache
+	// Find media from recent search results before using the TMDB fallback
 	var mediaTitle string
 	var mediaYear int
 	var posterPath string
@@ -212,15 +212,6 @@ func (h *RequestHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 				overview = item.Overview
 				break
 			}
-		}
-	}
-
-	// If not found in search results, try AI cache
-	if mediaTitle == "" {
-		if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
-			mediaTitle = cachedItem.Title
-			mediaYear = cachedItem.Year
-			overview = cachedItem.Overview
 		}
 	}
 
@@ -628,13 +619,6 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 				mediaYear = item.Year
 				break
 			}
-		}
-	}
-
-	if mediaTitle == "" {
-		if cachedItem := sess.GetCachedAIItem(tmdbID); cachedItem != nil {
-			mediaTitle = cachedItem.Title
-			mediaYear = cachedItem.Year
 		}
 	}
 

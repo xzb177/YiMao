@@ -53,18 +53,6 @@ type Season struct {
 	Name         string `json:"name,omitempty"`
 }
 
-// AIRecommendationItem represents a cached AI recommendation
-type AIRecommendationItem struct {
-	TmdbID    int       `json:"tmdb_id"`
-	Title     string    `json:"title"`
-	Overview  string    `json:"overview"`
-	Reason    string    `json:"reason"`
-	Year      int       `json:"year"`
-	Rating    float64   `json:"rating"`
-	MediaType string    `json:"media_type"`
-	CachedAt  time.Time `json:"cached_at"`
-}
-
 // NewManager creates a new session manager
 func NewManager(maxAge time.Duration, maxSize int) *Manager {
 	m := &Manager{
@@ -450,62 +438,6 @@ func (s *Session) GetSearchResults() ([]SearchItem, int, string, bool) {
 	return items, page, query, len(items) > 0
 }
 
-// CacheAIItem caches an AI recommendation item
-func (s *Session) CacheAIItem(item *AIRecommendationItem) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Initialize AI cache if needed
-	if s.Data["ai_cache"] == nil {
-		s.Data["ai_cache"] = make(map[int]*AIRecommendationItem)
-	}
-
-	cache, ok := s.Data["ai_cache"].(map[int]*AIRecommendationItem)
-	if !ok {
-		return
-	}
-
-	item.CachedAt = time.Now()
-	cache[item.TmdbID] = item
-
-	// LRU eviction: clean old cache entries when exceeding limit
-	const maxAICacheSize = 50
-	if len(cache) > maxAICacheSize {
-		// Find and remove the oldest entry (true LRU)
-		var oldestKey int
-		var oldestTime time.Time
-		for k, v := range cache {
-			if oldestTime.IsZero() || v.CachedAt.Before(oldestTime) {
-				oldestTime = v.CachedAt
-				oldestKey = k
-			}
-		}
-		if oldestKey != 0 {
-			delete(cache, oldestKey)
-		}
-	}
-}
-
-// GetCachedAIItem retrieves a cached AI recommendation item
-func (s *Session) GetCachedAIItem(tmdbID int) *AIRecommendationItem {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	cache, ok := s.Data["ai_cache"].(map[int]*AIRecommendationItem)
-	if !ok {
-		return nil
-	}
-
-	return cache[tmdbID]
-}
-
-// CacheAIResults caches multiple AI recommendation items
-func (s *Session) CacheAIResults(items []*AIRecommendationItem) {
-	for _, item := range items {
-		s.CacheAIItem(item)
-	}
-}
-
 // SetJellyseerrUserID stores the Jellyseerr user ID mapping
 func (s *Session) SetJellyseerrUserID(jellyseerrID int64) {
 	s.Set("jellyseerr_id", jellyseerrID)
@@ -570,8 +502,6 @@ func (s *Session) Size() int {
 			size += 8
 		case bool:
 			size += 1
-		case map[int]*AIRecommendationItem:
-			size += len(val) * 200 // Approximate per AI item
 		case map[string]interface{}:
 			size += len(val) * 100 // Approximate per entry
 		case []SearchItem:

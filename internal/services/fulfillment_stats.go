@@ -44,6 +44,8 @@ type CompletionRecord struct {
 	Title       string    `json:"title"`
 	MediaType   string    `json:"media_type"`
 	Year        int       `json:"year,omitempty"`
+	Season      int       `json:"season,omitempty"`
+	Source      string    `json:"source,omitempty"` // confirmed_library is the only reconciliation-safe provenance
 	CompletedAt time.Time `json:"completed_at"`
 }
 
@@ -145,6 +147,13 @@ func (s *FulfillmentStatsService) AddCompletion(record CompletionRecord) {
 		s.completions = s.completions[len(s.completions)-maxCompletionRecords:]
 	}
 	s.saveCompletionsLocked()
+}
+
+// CompletionRecords returns a snapshot for safe reconciliation by ReviewService.
+func (s *FulfillmentStatsService) CompletionRecords() []CompletionRecord {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]CompletionRecord(nil), s.completions...)
 }
 
 // StaleUnwatchedTitles 返回已入库超过 days、且没有积极回访回答的片名。
