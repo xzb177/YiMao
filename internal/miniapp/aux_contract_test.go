@@ -13,12 +13,12 @@ func TestAuxiliaryScreenAPIContractsAndRoutes(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		"function wishesPage()", "function issuesPage()", "function settingsPage()", "function gamePage()",
+		"function wishesPage()", "function issuesPage()", "function settingsPage()",
 		"function loadWishes()", "function loadIssues()", "function loadSettings()",
 		"/api/miniapp/v1/wishes", "/api/miniapp/v1/issues", "/api/miniapp/v1/me",
 		"method:\"POST\"", "tmdb_id:Number(mediaID(x))", "type:mediaType(x)", "season:season",
 		"JSON.stringify({title:t,description:d,media_type:\"\",media_id:\"\",media_title:\"\"})",
-		"raw===\"wishes\"", "raw===\"issues\"", "raw===\"settings\"", "raw===\"game\"",
+		"raw===\"wishes\"", "raw===\"issues\"", "raw===\"settings\"",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("missing auxiliary contract %q", want)

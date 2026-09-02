@@ -40,10 +40,11 @@ func TestSetMyCommandsScopesSeparatePrivateAndEphemeralGroupMenus(t *testing.T) 
 	}
 	seenEphemeral := false
 	groupCommands := payloads[1]["commands"].([]any)
-	if len(groupCommands) != 7 {
-		t.Fatalf("group commands=%d, want privacy-safe whitelist of 7", len(groupCommands))
+	if len(groupCommands) != 6 {
+		t.Fatalf("group commands=%d, want privacy-safe whitelist of 6", len(groupCommands))
 	}
-	sensitive := map[string]bool{"link": true, "review": true, "narrate": true, "resetpw": true, "unlink": true}
+	// 敏感或自由输入命令不进群菜单；game/narrate/review 已随玩法与 AI 能力整体下线。
+	sensitive := map[string]bool{"link": true, "review": true, "narrate": true, "resetpw": true, "unlink": true, "game": true}
 	for _, raw := range groupCommands {
 		cmd := raw.(map[string]any)
 		name := cmd["command"].(string)

@@ -96,6 +96,58 @@ def user_visible_segments(path: str, text: str):
             yield lineno, line
 
 
+GUARD_FILE_MARKERS = ("no_legacy", "copy_guard", "copy_consistency")
+GUARD_VAR_RE = re.compile(r"\b(forbidden|legacy|retired|banned|hidden|leak\w*|stale)\s*:?=")
+
+
+def guard_lines(text: str) -> set[int]:
+    """标出「守卫断言」所在行号。
+
+    守卫断言是刻意列出禁用词、断言它们不出现的代码，例如：
+        forbidden := []string{"下次一定赢", "通关才给下载"}
+        for _, legacy := range []string{"普通求片", "趣味求片"} {
+    这些行里的禁用词不算违规。识别方式：从声明了 forbidden/legacy/... 的行开始，
+    直到该字面量闭合为止。
+    """
+    lines = text.splitlines()
+    marked: set[int] = set()
+    depth = 0
+    for index, line in enumerate(lines, 1):
+        if depth > 0:
+            marked.add(index)
+            depth += line.count("{") - line.count("}")
+            depth += line.count("[") - line.count("]")
+            if depth <= 0:
+                depth = 0
+            continue
+        if GUARD_VAR_RE.search(line):
+            marked.add(index)
+            opened = line.count("{") - line.count("}")
+            if opened > 0:
+                depth = opened
+    return marked
+
+
+def is_guard_assertion(name: str, segment: str, lineno: int, guarded: set[int]) -> bool:
+    """判断测试文件里的禁用词是否属于「守卫断言」（刻意断言它不该出现）。
+
+    三种情况放过：
+      1. 专职守卫文件（no_legacy_* / *copy_guard* / *copy_consistency*）
+      2. 位于 forbidden/legacy/... 列表内的行
+      3. 用拼接写法避开本 lint 的断言（如 "电影" + "冒险"）
+
+    其余情况属于真实文案样本（如按钮文字 + callback 的成对数据），
+    必须跟着产品文案一起更新——之前无条件跳过 _test.go，
+    导致 telegram_transport_guard_test.go 里的过期按钮文案逃过检查。
+    """
+    base = name.rsplit("/", 1)[-1]
+    if any(marker in base for marker in GUARD_FILE_MARKERS):
+        return True
+    if lineno in guarded:
+        return True
+    return '" + "' in segment
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stats", action="store_true", help="附带术语分布统计")
@@ -113,12 +165,15 @@ def main() -> int:
         except OSError:
             continue
         is_doc = name.endswith(".md")
+        guarded = guard_lines(text) if is_test else set()
         for lineno, segment in user_visible_segments(path, text):
             for kind, bad, good in RULES:
                 if bad not in segment:
                     continue
-                # 测试文件里出现禁用词通常是「守卫断言」，只在非测试文件报错
-                if is_test:
+                # 测试文件：只放过明确的「守卫断言」，不放过真实文案样本。
+                # 之前无条件跳过 _test.go，导致 telegram_transport_guard_test.go
+                # 里的 "📋 我的进度" 这类过期文案样本逃过检查。
+                if is_test and is_guard_assertion(name, segment, lineno, guarded):
                     continue
                 # 文档需要说明「某功能已下线」，这类描述不算违规；
                 # 已下线词只在真正的用户界面（Go 字面量 / HTML）里禁止。
