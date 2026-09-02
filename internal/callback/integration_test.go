@@ -61,7 +61,7 @@ func TestAllMenuButtonActionsExist(t *testing.T) {
 		{"查看进度", "start_requests"},
 		{"进入许愿", "start_wish"},
 		{"求片热度", "request_heat"},
-		{"游戏中心", "game_menu"},
+		{"观影画像", "portrait"},
 		{"系统设置", "start_settings"},
 		{"管理后台", "admin_menu"},
 	}

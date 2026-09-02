@@ -181,7 +181,7 @@ func HandleWebhookCallback(
 		showAlert = resp.ShowAlert
 	}
 	if isCommunityChat(ctx.ChatType) && callbackMsg == "" {
-		callbackMsg = "私密响应仅你可见；若未显示请重试"
+		callbackMsg = "私密响应仅你可见；若未显示请稍后再试"
 	}
 
 	if err != nil {
@@ -230,7 +230,7 @@ func HandleWebhookMessage(
 	// 群聊处理 @mention 搜索
 	if msg.Chat.Type != "private" {
 		if len(msg.Text) > 1 {
-			HandleWebhookGroupChat(deps.Telegram, msg, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
+			HandleWebhookGroupChat(deps.Telegram, msg, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 		}
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "OK")
@@ -367,15 +367,6 @@ func HandleWebhookMessage(
 			fmt.Fprint(w, "OK")
 			return
 		}
-		// 检查是否处于 AI 解说 pending 状态
-		if deps.GameHandler != nil {
-			if deps.GameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, msg.Text) {
-				w.WriteHeader(http.StatusOK)
-				fmt.Fprint(w, "OK")
-				return
-			}
-		}
-
 		HandleWebhookTextQuery(deps.Telegram, msg, deps.SessionMgr, cfg, registry, deps.MoviePilot, deps.SearchHistory, deps.TMDB)
 	}
 
@@ -414,8 +405,6 @@ func clearPendingInputStates(deps *Dependencies, userID int64) bool {
 		"waiting_for_time_input",
 		"pending_feedback_reply",
 		"pending_issue_reply",
-		// 游戏功能 pending 状态
-		"pending_narrate_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {
@@ -480,7 +469,6 @@ func HandleWebhookGroupChat(
 	sessMgr *session.Manager,
 	searchHistory *services.SearchHistoryService,
 	tmdb *services.TMDBClient,
-	gameHandler *handlers.GameHandler,
 ) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[WebhookGroupChat] ChatID=%d, Text=%q", msg.Chat.ID, text)
@@ -495,25 +483,8 @@ func HandleWebhookGroupChat(
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/portrait":
 		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
-	case "/game", "/游戏", "/游戏中心":
-		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())
-	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
-		movieName := extractMovieName(text, cmd)
-		if movieName == "" {
-			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/解说 电影名`\n\n例如：`/解说 流浪地球`", "Markdown", nil)
-		} else if gameHandler != nil {
-			go func() {
-				sess := sessMgr.GetOrCreate(msg.From.ID)
-				if sess != nil {
-					sess.Set("pending_narrate_input", true)
-				}
-				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
-			}()
-		}
-	case "/review", "/评价", "/影评":
-		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)

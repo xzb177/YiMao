@@ -176,7 +176,7 @@ func TestMiniAppInlineHandlersHaveNoBackslashEscapes(t *testing.T) {
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
 	"返回首页": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
-	"系统设置": true, "问题反馈": true, "游戏中心": true,
+	"系统设置": true, "问题反馈": true,
 }
 
 func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {

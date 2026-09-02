@@ -33,7 +33,7 @@ chmod 600 .env.staging
 - `STAGING_SMOKE_CHAT_ID`：可选；填写后 Smoke 会静默发送一条测试消息并立即删除
 - `STAGING_REQUIRE_CHAT=true`：如要求消息发送/删除必须通过
 
-Mini App 真机验收还需填写测试环境的 `MINI_APP_URL`；必须是无凭据、无 query、无 fragment 的 HTTPS 基础 URL。可选的 Emby、TMDB、AI 配置也必须指向测试服务。不要复制生产凭据。
+Mini App 真机验收还需填写测试环境的 `MINI_APP_URL`；必须是无凭据、无 query、无 fragment 的 HTTPS 基础 URL。可选的 Emby、TMDB 配置也必须指向测试服务。不要复制生产凭据。
 
 ## 启动与自动 Smoke
 
@@ -85,13 +85,11 @@ SOAK_INTERVAL_SECONDS=300 \
 - [ ] 测试账号绑定、求片、重复求片、配额不足、撤回链路正确
 - [ ] 「求片进度」与片单不泄露其他用户数据
 - [ ] 问题反馈、快捷选项、图片、管理员回复完整可达
-- [ ] AI 解说无剧透/剧透切换不串片；过期按钮有友好提示
 - [ ] Mini App 首屏为任务首页；首页、找片、任务三列底栏均可进入且 safe-area 正确
 - [ ] 求片模式使用 request action-chain；快速翻页、取消和重复点击不会被旧响应覆盖或重复提交
 - [ ] Dialog、超时/断网错误和重试恢复不会丢失当前媒体、季度或模式
 
-- [ ] 游戏中心只展示解说、盲盒、轮盘和画像；轮盘进入与“再转一次”均可用，已下线旧按钮不再出现
-- [ ] `/ai` 只返回搜索兼容提示，`/narrate` 才进入 AI 电影解说
+- [ ] 游戏中心、AI 解说、影评等已下线入口不再出现在任何菜单或回调
 - [ ] 洗版批准按钮先进入 <=64 字节 callback 的完成确认，查看详情本身不认领、不完成
 - [ ] 洗版认领/释放/重试正常；旧版缺失、新版未出现或 Emby 不可用时均不得完成
 - [ ] 未认领的 approved 洗版仅在 Emby 确认旧版保留且新 MediaSource 出现后自动完成

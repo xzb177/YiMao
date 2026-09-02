@@ -53,7 +53,7 @@ func TestCinemaSearchHelpMoreCopy(t *testing.T) {
 		}
 	}
 	more := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://x"}).Markdown
-	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "系统设置", "问题反馈", "游戏中心", "返回首页"} {
+	for _, want := range []string{copyMoreH1, copyMoreTag, copyMoreBody, "系统设置", "问题反馈", "观影画像", "返回首页"} {
 		if !strings.Contains(more, want) {
 			t.Fatalf("more missing %q in %q", want, more)
 		}

@@ -159,7 +159,7 @@ func New(
 		TMDB: deps.TMDB, Reviews: deps.Reviews, Quota: deps.QuotaService, Carpool: deps.Carpool,
 		Submission: deps.RequestSubmission, Webhook: deps.WebhookService,
 		Issues: deps.IssueService, Wishes: deps.WishService,
-		Telegram: deps.Telegram, Admins: deps.AdminService, Assistant: newMiniAppAssistant(cfg),
+		Telegram: deps.Telegram, Admins: deps.AdminService,
 		MaxAuthAge: 24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
@@ -178,19 +178,6 @@ func New(
 		WriteTimeout: 120 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-}
-
-func newMiniAppAssistant(cfg *config.Config) *services.MiniAppAssistant {
-	if cfg == nil || !cfg.EnableAI || cfg.OpenAIAPIKey == "" {
-		return services.NewMiniAppAssistant(nil, 8*time.Second)
-	}
-	provider := services.NewOpenAICompatibleMiniAppAssistantProvider(
-		nil,
-		cfg.OpenAIBaseURL,
-		cfg.OpenAIAPIKey,
-		cfg.OpenAIModel,
-	)
-	return services.NewMiniAppAssistant(provider, 8*time.Second)
 }
 
 func localOnlyHandler(next http.HandlerFunc) http.HandlerFunc {

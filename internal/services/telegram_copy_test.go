@@ -31,38 +31,12 @@ func TestStartKeyboardKeepsRequestFirstHierarchy(t *testing.T) {
 				}
 			}
 			// Administration and the game drawer stay behind 更多功能.
-			if button.CallbackData == "admin_menu" || button.CallbackData == "game_menu" || button.CallbackData == "start_settings" {
+			if button.CallbackData == "admin_menu" || button.CallbackData == "portrait" || button.CallbackData == "start_settings" {
 				t.Fatalf("secondary entry leaked onto home: %#v", button)
 			}
 		}
 	}
 	if success != 1 {
 		t.Fatalf("start keyboard must have exactly one success button, got %d", success)
-	}
-}
-
-func TestGameCenterUsesCanonicalCopyAndCallbacks(t *testing.T) {
-	keyboard := BuildGameCenterKeyboard()
-	want := map[string]string{
-		"game_narrator": "电影情报站",
-		"game_blindbox": "盲盒",
-		"game_roulette": "命运轮盘",
-		"portrait":      "观影画像",
-		"start":         "主菜单",
-	}
-	for _, row := range keyboard.InlineKeyboard {
-		for _, button := range row {
-			expected, ok := want[button.CallbackData]
-			if !ok {
-				t.Fatalf("unexpected game-center callback: %q", button.CallbackData)
-			}
-			if button.Text != expected {
-				t.Errorf("%s text = %q, want %q", button.CallbackData, button.Text, expected)
-			}
-			delete(want, button.CallbackData)
-		}
-	}
-	if len(want) != 0 {
-		t.Fatalf("missing callbacks: %#v", want)
 	}
 }

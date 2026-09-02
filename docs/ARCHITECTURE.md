@@ -13,8 +13,7 @@ YiMao HTTP + callback registry + services
         ├── MoviePilot：搜索、订阅、下载状态、入库状态
         ├── Emby：媒体可见性与 Playback-ready 通知
         ├── TMDB：标题、年份、类型、海报和详情
-        ├── AI provider：可选的 Mini App assistant / 媒体问答
-        └── SQLite + JSON：绑定、历史、许愿、社交、审核和偏好
+        └── SQLite + JSON：绑定、历史、许愿、审核和偏好
 ```
 
 运行时数据全部位于 `/app/data`，宿主机对应 named volume `yimao-data`。会话在内存中，重启后不保留临时搜索分页上下文。
@@ -79,7 +78,7 @@ HTML shell 可以公开加载；业务 API 依赖 Telegram `initData`，不能�
 
 Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任务三列。搜索在求片和洗版模式间显式切换；请求链使用 `mode: 'request'`，分页、取消和较早响应不能覆盖更新状态。
 
-## 5. 普通求片主链路
+## 5. 搜索求片主链路
 
 ```text
 用户输入片名
@@ -121,7 +120,6 @@ Mini App 首屏是任务首页，移动端底栏固定为首页、找片、任�
 | 用户映射 | SQLite，兼容旧 JSON 迁移 | `user_mappings.db` |
 | 搜索历史 | SQLite | `search_history.db` |
 | 许愿池 | SQLite WAL | `wishpool.db` |
-| 游戏/社交 | SQLite | `social.db` |
 | 配额、偏好 | JSON | `user_quotas.json`、`preferences.json` |
 | 求片/洗版审核 | JSON | `review_requests.json` |
 | 反馈、绑定请求、通知设置 | JSON | 对应 `feedback.json`、`binding_requests.json` 等 |

@@ -41,13 +41,6 @@ Search & Request remains the default Bot path. The Mini App opens directly on th
 - Search/detail, season selection, request results, task progress, cancellation, watchlist, wishes, and issue reporting
 - Native dialogs, safe-area support, a stable three-column mobile dock, request race guards, and recoverable error states
 
-### 🎮 Game Center
-- Intelligence Station (AI movie narration)
-- Movie blind box and destiny roulette
-- Viewing profile
-
-Roulette remains available through both its entry and spin actions.
-
 ### 📊 Request Tracking
 - `/requests` — unified request view grouped by status
 - Subscription status sync from MoviePilot (searching → downloading → completed)
@@ -89,7 +82,6 @@ Roulette remains available through both its entry and spin actions.
 |---------|-------------|--------|
 | `/start` | Main menu | All |
 | `/search` | Search & Request | All |
-| `/game` | Game center | All |
 | `/wish` | Wish pool | All |
 | `/requests` | Request progress | All |
 | `/watchlist` | Same request-progress view | All |
@@ -98,8 +90,6 @@ Roulette remains available through both its entry and spin actions.
 | `/unlink` | Confirm and remove the account binding | Private/direct |
 | `/resetpw` | Reset the bound account password | Private/direct |
 | `/portrait` | Viewing profile | All |
-| `/narrate` | AI movie narration | Private menu |
-| `/review` | Write a movie review | Private menu |
 | `/status` | Bot status and redacted admin diagnostics | Private/direct |
 | `/id` | Current chat and user IDs | Direct |
 | `/help` | Help | All |
@@ -130,9 +120,6 @@ The service listens on `:8080`; `/health` is the health endpoint. New deployment
 | `EMBY_URL` | — | Emby/Jellyfin URL |
 | `EMBY_API_KEY` | — | Emby API Key |
 | `TMDB_API_KEY` | — | TMDB API Key (v3 auth) |
-| `OPENAI_API_KEY` | — | AI provider key for movie narration and the optional assistant |
-| `OPENAI_BASE_URL` | — | AI provider base URL |
-| `OPENAI_MODEL` | — | AI model name |
 | `MINI_APP_URL` | — | Public HTTPS Mini App base URL used by Telegram menus and Bot buttons; credentials, query parameters and fragments are rejected |
 
 | `WEBHOOK_SECRET` | — | HMAC-SHA256 secret for inbound webhooks |
@@ -167,9 +154,9 @@ When `WEBHOOK_SECRET` is set, requests must include `?token=<secret>` or `X-Webh
 |-------|--------|
 | Language | Go 1.24 |
 | Distribution | Single binary, Docker multi-stage (Alpine) |
-| Storage | JSON files + SQLite (wish pool, search history, user mapping, social data) |
+| Storage | JSON files + SQLite (wish pool, search history, user mapping) |
 | Telegram | Bot API (polling/webhook dual mode) |
-| Backend | MoviePilot, Emby/Jellyfin, TMDB, OpenAI-compatible AI |
+| Backend | MoviePilot, Emby/Jellyfin, TMDB |
 
 ---
 

@@ -113,18 +113,3 @@ func TestDetailMediaIssueKeepsDirectDescriptionFlow(t *testing.T) {
 		t.Fatalf("step=%q", step)
 	}
 }
-
-func TestCompactNarrationCallbackParses(t *testing.T) {
-	ref := callback.ShortRef("一部非常非常长的电影名称")
-	data := "game_narrate:ref:" + ref + ":spoiler:1"
-	if len(data) > 64 {
-		t.Fatalf("narration callback is %d bytes", len(data))
-	}
-	parsed, err := callback.NewParser().Parse(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if parsed.Action != "game_narrate" || parsed.Params["ref"] != ref || parsed.Params["spoiler"] != "1" {
-		t.Fatalf("unexpected callback: %#v", parsed)
-	}
-}

@@ -13,7 +13,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/pkg/logger"
@@ -35,7 +34,6 @@ type Deps struct {
 	Wishes     *services.WishService
 	Telegram   *services.TelegramClient
 	Admins     *services.AdminService
-	Assistant  *services.MiniAppAssistant
 	MaxAuthAge time.Duration
 }
 
@@ -44,18 +42,10 @@ type requestSubmitter interface {
 }
 
 type Server struct {
-	deps               Deps
-	dynamicMu          sync.Mutex
-	dynamicAt          time.Time
-	dynamicCache       map[string]any
-	assistantMu        sync.Mutex
-	assistantLimits    map[int64]assistantRateWindow
-	assistantLastPurge time.Time
-}
-
-type assistantRateWindow struct {
-	started time.Time
-	count   int
+	deps         Deps
+	dynamicMu    sync.Mutex
+	dynamicAt    time.Time
+	dynamicCache map[string]any
 }
 
 type detailSeason struct {
@@ -160,10 +150,9 @@ type userRequestView struct {
 }
 
 const (
-	defaultSearchLimit         = 12
-	maxSearchLimit             = 24
-	maxSearchLookahead         = 3
-	assistantRequestsPerMinute = 12
+	defaultSearchLimit = 12
+	maxSearchLimit     = 24
+	maxSearchLookahead = 3
 )
 
 type searchResponseView struct {
@@ -183,10 +172,7 @@ func NewServer(deps Deps) *Server {
 	if deps.MaxAuthAge <= 0 {
 		deps.MaxAuthAge = 24 * time.Hour
 	}
-	if deps.Assistant == nil {
-		deps.Assistant = services.NewMiniAppAssistant(nil, 8*time.Second)
-	}
-	return &Server{deps: deps, assistantLimits: make(map[int64]assistantRateWindow)}
+	return &Server{deps: deps}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -195,7 +181,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/miniapp/", s.handleIndex)
 	mux.HandleFunc("/miniapp/telegram-web-app.js", s.handleTelegramSDK)
 	mux.HandleFunc("/api/miniapp/v1/search", s.handleSearch)
-	mux.HandleFunc("/api/miniapp/v1/assistant", s.handleAssistant)
 	mux.HandleFunc("/api/miniapp/v1/detail", s.handleDetail)
 	mux.HandleFunc("/api/miniapp/v1/discover", s.handleDiscover)
 	mux.HandleFunc("/api/miniapp/v1/dynamic", s.handleDynamic)
@@ -234,116 +219,6 @@ func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any, limit int64
 		return err
 	}
 	return nil
-}
-
-type assistantResponseView struct {
-	services.MiniAppAssistantResult
-	Items []services.SearchResult `json:"items"`
-}
-
-func (s *Server) handleAssistant(w http.ResponseWriter, r *http.Request) {
-	user, ok := s.auth(w, r)
-	if !ok {
-		return
-	}
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	var input services.MiniAppAssistantInput
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32<<10))
-	if err := decoder.Decode(&input); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "请求内容有误"})
-		return
-	}
-	var extra any
-	if err := decoder.Decode(&extra); err != io.EOF {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "请求内容有误"})
-		return
-	}
-	input.Message = strings.TrimSpace(input.Message)
-	if utf8.RuneCountInString(input.Message) < 1 || utf8.RuneCountInString(input.Message) > 500 || len(input.History) > 6 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{"message": "请输入 1 到 500 个字符，历史最多保留 6 条"})
-		return
-	}
-	for index := range input.History {
-		input.History[index].Role = strings.ToLower(strings.TrimSpace(input.History[index].Role))
-		input.History[index].Content = strings.TrimSpace(input.History[index].Content)
-		contentRunes := utf8.RuneCountInString(input.History[index].Content)
-		if (input.History[index].Role != "user" && input.History[index].Role != "assistant") || contentRunes < 1 || contentRunes > 500 {
-			writeJSON(w, http.StatusBadRequest, map[string]any{"message": "历史消息格式有误"})
-			return
-		}
-	}
-	if !s.allowAssistantRequest(user.ID, time.Now()) {
-		w.Header().Set("Retry-After", "60")
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{"message": "问得有点快，稍等一分钟再试"})
-		return
-	}
-
-	result := s.deps.Assistant.Assist(r.Context(), input)
-	response := assistantResponseView{MiniAppAssistantResult: result, Items: []services.SearchResult{}}
-	if !result.Degraded && result.Query != "" && s.deps.MoviePilot != nil {
-		search, err := s.deps.MoviePilot.SearchMediaWithCountContext(r.Context(), result.Query, 1, 6)
-		if err == nil {
-			response.Items = validAssistantSearchResults(search.Results, result.Type, 6)
-		}
-	}
-	writeJSON(w, http.StatusOK, response)
-}
-
-func (s *Server) allowAssistantRequest(userID int64, now time.Time) bool {
-	const window = time.Minute
-	s.assistantMu.Lock()
-	defer s.assistantMu.Unlock()
-	if s.assistantLimits == nil {
-		s.assistantLimits = make(map[int64]assistantRateWindow)
-	}
-	if s.assistantLastPurge.IsZero() || now.Sub(s.assistantLastPurge) >= window {
-		for id, entry := range s.assistantLimits {
-			if now.Sub(entry.started) >= window {
-				delete(s.assistantLimits, id)
-			}
-		}
-		s.assistantLastPurge = now
-	}
-	entry := s.assistantLimits[userID]
-	if entry.started.IsZero() || now.Sub(entry.started) >= window {
-		s.assistantLimits[userID] = assistantRateWindow{started: now, count: 1}
-		return true
-	}
-	if entry.count >= assistantRequestsPerMinute {
-		return false
-	}
-	entry.count++
-	s.assistantLimits[userID] = entry
-	return true
-}
-
-func validAssistantSearchResults(results []services.SearchResult, requestedType string, limit int) []services.SearchResult {
-	valid := make([]services.SearchResult, 0, min(limit, len(results)))
-	for _, item := range results {
-		if item.ID <= 0 {
-			continue
-		}
-		typeName := ""
-		switch strings.ToLower(strings.TrimSpace(item.Type)) {
-		case "movie", "电影":
-			typeName = "movie"
-		case "tv", "电视剧":
-			typeName = "tv"
-		}
-		if typeName == "" || (requestedType != "all" && typeName != requestedType) {
-			continue
-		}
-		item.Type = typeName
-		valid = append(valid, item)
-		if len(valid) == limit {
-			break
-		}
-	}
-	return valid
 }
 
 func (s *Server) auth(w http.ResponseWriter, r *http.Request) (AuthUser, bool) {

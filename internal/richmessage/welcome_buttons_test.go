@@ -37,7 +37,7 @@ func TestWelcomeSearchButtonIsAPI103RichButtonNotWebApp(t *testing.T) {
 		}
 	}
 	// Administration, the game drawer and any Mini App button stay off screen one.
-	for _, leak := range []string{"管理后台", "游戏中心", "系统设置", "问题反馈", "打开云海小程序", "web_app"} {
+	for _, leak := range []string{"管理后台", "观影画像", "系统设置", "问题反馈", "打开云海小程序", "web_app"} {
 		if strings.Contains(body, leak) {
 			t.Fatalf("first screen leaked %q: %s", leak, body)
 		}
@@ -68,7 +68,7 @@ func TestWelcomeWithoutHeroKeepsTheSixButtonGrid(t *testing.T) {
 func TestWelcomeMoreHidesSecondaryUntilTapped(t *testing.T) {
 	card := BuildWelcomeMoreCard(WelcomeOptions{IsAdmin: true, MiniAppURL: "https://example.com/miniapp"})
 	body := string(mustJSON(t, card.Input()))
-	for _, want := range []string{"系统设置", "问题反馈", "游戏中心", "返回首页", copyMoreTag, copyMoreBody} {
+	for _, want := range []string{"系统设置", "问题反馈", "观影画像", "返回首页", copyMoreTag, copyMoreBody} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("more missing %q in %s", want, body)
 		}

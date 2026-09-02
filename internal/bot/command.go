@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/handlers"
 	"github.com/xzb177/yimao/internal/richmessage"
@@ -71,9 +70,6 @@ func HandleCommand(
 	case "/search":
 		text := "🔍 请输入影片名称进行搜索"
 		telegram.SendMessage(msg.Chat.ID, text, "", nil)
-	case "/ai":
-		// Keep the legacy command harmless for old clients without advertising it.
-		telegram.SendMessage(msg.Chat.ID, "🔍 直接发送片名，我来帮你搜索求片", "", nil)
 	case "/requests":
 		// 群组隐私保护：群内不发长卡片，引导去私聊
 		if msg.Chat.Type == "group" || msg.Chat.Type == "supergroup" {
@@ -134,12 +130,6 @@ func HandleCommand(
 		}
 	case "/portrait":
 		HandlePortraitCommand(telegram, msg, cfg, userMapping)
-	case "/game":
-		HandleGameCommand(telegram, msg)
-	case "/narrate":
-		HandleNarrateCommand(telegram, msg, cfg, sessMgr)
-	case "/review":
-		HandleReviewCommand(telegram, msg, cfg, userMapping)
 		// Unknown commands are silently ignored
 	}
 }
@@ -317,7 +307,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 		if createdPassword == "" {
 			createdPassword, err = services.GenerateRandomPassword(16)
 			if err != nil {
-				telegram.SendMessage(msg.Chat.ID, "❌ 生成初始密码失败，请稍后重试", "", nil)
+				telegram.SendMessage(msg.Chat.ID, "❌ 生成初始密码失败，请稍后再试", "", nil)
 				return
 			}
 		}
@@ -333,7 +323,7 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 	}
 
 	if userID == 0 {
-		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败：无法获取用户ID，请稍后重试", "", nil)
+		telegram.SendMessage(msg.Chat.ID, "❌ 绑定失败：无法获取用户 ID，请稍后再试", "", nil)
 		return
 	}
 
@@ -605,8 +595,6 @@ func BuildStatusMessage(msg *types.TelegramMessage, cfg *config.Config, adminSer
 	sb.WriteString(statusLine("MoviePilot URL", cfg != nil && cfg.MoviePilotURL != ""))
 	sb.WriteString(statusLine("MoviePilot API Key", cfg != nil && cfg.MoviePilotAPIKey != ""))
 	sb.WriteString(statusLine("Emby/Jellyfin", cfg != nil && cfg.EmbyURL != "" && cfg.EmbyAPIKey != ""))
-	sb.WriteString(statusLine("AI 开关", os.Getenv("AI_ENABLED") == "true" || os.Getenv("ENABLE_AI") == "true"))
-	sb.WriteString(statusLine("OpenAI 兼容配置", os.Getenv("OPENAI_API_KEY") != "" && os.Getenv("OPENAI_BASE_URL") != ""))
 	sb.WriteString(statusLine("Rich Message", richMessageStatusEnabled()))
 	sb.WriteString(statusLine("Webhook Secret", cfg != nil && cfg.WebhookSecret != ""))
 	sb.WriteString(statusLine("密码重置配置", cfg != nil && cfg.MoviePilotDBPath != "" && os.Getenv("MOVIEPILOT_CONTAINER") != ""))
@@ -736,146 +724,4 @@ func HandlePortraitCommand(telegram *services.TelegramClient, msg *types.Telegra
 	}
 
 	logger.Info("[Portrait] Portrait generated for %s (%d items)", mpUsername, result.TotalItems)
-}
-
-// ==================== 游戏化命令 ====================
-
-// gameNarratorSvc 单例
-var (
-	gameNarratorOnce sync.Once
-	gameNarratorSvc  *services.NarratorService
-)
-
-// gameSocialDB 单例
-var (
-	gameSocialOnce sync.Once
-	gameSocialDB   *services.SocialDB
-)
-
-// HandleGameCommand 处理 /game 命令 — 游戏中心入口
-func HandleGameCommand(telegram *services.TelegramClient, msg *types.TelegramMessage) {
-	card := richmessage.BuildGameCenterCard()
-	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, services.BuildGameCenterKeyboard())
-}
-
-// HandleNarrateCommand 处理 /narrate 命令 — AI 电影解说
-func HandleNarrateCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, sessMgr *session.Manager) {
-	parts := strings.Fields(msg.Text)
-	if len(parts) < 2 {
-		telegram.SendMessage(msg.Chat.ID, "🎬 用法: /narrate 电影名\n\n例如: /narrate 流浪地球", "", nil)
-		return
-	}
-	movieName := strings.Join(parts[1:], " ")
-
-	// 初始化服务
-	gameNarratorOnce.Do(func() {
-		gameNarratorSvc = services.NewNarratorService(cfg.EmbyURL, cfg.EmbyAPIKey, cfg.OpenAIAPIKey, "", "")
-	})
-
-	if gameNarratorSvc == nil {
-		telegram.SendMessage(msg.Chat.ID, "❌ AI 服务未就绪", "", nil)
-		return
-	}
-
-	// 发送"生成中"提示
-	sent, _ := telegram.SendMessage(msg.Chat.ID, "🎬 正在为你解说《"+movieName+"》...", "", nil)
-
-	// 搜索电影信息
-	title, year, genres, rating, _ := gameNarratorSvc.SearchMovie(movieName)
-	if title == "" {
-		title = movieName
-	}
-
-	// 生成解说
-	result, err := gameNarratorSvc.GenerateNarration(title, year, false)
-	if err != nil {
-		logger.Info("[NarrateCommand] Generation failed for user %d: %v", msg.From.ID, err)
-		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 解说生成失败，请稍后再试", "", nil)
-		if sent != nil {
-			go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
-		}
-		return
-	}
-	result.Rating = rating
-	result.Genres = genres
-
-	// 构建卡片
-	card := richmessage.BuildNarratorCard(richmessage.NarratorCardData{
-		Title:     result.Title,
-		Year:      result.Year,
-		Summary:   result.Summary,
-		KeyPoints: result.KeyPoints,
-		Mood:      result.Mood,
-		Similar:   result.Similar,
-		Rating:    result.Rating,
-		Genres:    result.Genres,
-	})
-
-	kb := services.NewKeyboardBuilder()
-	if sessMgr != nil {
-		sess := sessMgr.GetOrCreate(msg.From.ID)
-		ref := callback.ShortRef(movieName)
-		sess.Set("narrate_movie_name", movieName)
-		sess.Set("narrate_movie_"+ref, movieName)
-		kb.AddButton("🔥 剧透版", "game_narrate:ref:"+ref+":spoiler:1")
-	}
-	kb.AddButton("🎮 游戏中心", "game_menu")
-
-	// 删除"生成中"提示
-	if sent != nil {
-		go telegram.DeleteMessage(msg.Chat.ID, sent.MessageID)
-	}
-
-	telegram.SendRichMessage(msg.Chat.ID, card.Markdown, kb.Build())
-}
-
-// HandleReviewCommand 处理 /review 命令 — 写影评
-func HandleReviewCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore) {
-	parts := strings.Fields(msg.Text)
-	if len(parts) < 3 {
-		telegram.SendMessage(msg.Chat.ID, "✍️ 用法: /review 电影名 评分(1-5) 评语\n\n例如: /review 流浪地球 5 特效炸裂", "", nil)
-		return
-	}
-
-	movieName := parts[1]
-	ratingStr := parts[2]
-	rating, err := strconv.Atoi(ratingStr)
-	if err != nil || rating < 1 || rating > 5 {
-		telegram.SendMessage(msg.Chat.ID, "❌ 评分必须是 1-5 的数字", "", nil)
-		return
-	}
-
-	content := ""
-	if len(parts) > 3 {
-		content = strings.Join(parts[3:], " ")
-	}
-
-	// 初始化社交DB
-	gameSocialOnce.Do(func() {
-		gameSocialDB, _ = services.NewSocialDB(cfg.DataDir)
-	})
-
-	if gameSocialDB == nil {
-		telegram.SendMessage(msg.Chat.ID, "❌ 社交服务未就绪", "", nil)
-		return
-	}
-
-	// 获取用户名
-	mpUsername := fmt.Sprintf("用户%d", msg.From.ID)
-	if userMapping != nil {
-		if name, err := userMapping.GetMoviePilotUsername(msg.From.ID); err == nil && name != "" {
-			mpUsername = name
-		}
-	}
-
-	err = gameSocialDB.AddReview(msg.From.ID, mpUsername, movieName, 0, rating, content)
-	if err != nil {
-		logger.Info("[ReviewCommand] AddReview failed for user %d: %v", msg.From.ID, err)
-		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 发表影评失败，请稍后再试", "", nil)
-		return
-	}
-
-	stars := strings.Repeat("⭐", rating)
-	text := fmt.Sprintf("✅ 影评发表成功！\n\n🎬 《%s》\n%s\n%s", movieName, stars, content)
-	telegram.SendMessage(msg.Chat.ID, text, "", nil)
 }

@@ -35,8 +35,7 @@
 | 求片、重复、配额、撤回 | ⬜ | |
 | 求片进度与隐私 | ⬜ | |
 | 反馈、图片、管理员回复 | ⬜ | |
-| AI 解说切换与过期按钮 | ⬜ | |
-| `/ai` 搜索兼容提示与 `/narrate` 解说入口 | ⬜ | |
+| 已下线入口（游戏中心 / AI 解说 / 影评）不再出现 | ⬜ | |
 | Mini App App-first 首页与三列移动底栏 | ⬜ | |
 | Mini App request mode、分页/取消/race guards | ⬜ | |
 | Mini App Dialog、safe-area 与错误恢复 | ⬜ | |

@@ -183,7 +183,7 @@ func (h *MyRequestsHandler) HandleItemAction(ctx *callback.Context) (*callback.R
 
 	if !hasAction || !hasID {
 		return &callback.Response{
-			Text:        "❌ 这次操作没有成功，请返回后重试",
+			Text:        "❌ 操作失败，请返回后重试",
 			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil
@@ -369,7 +369,7 @@ func (h *MyRequestsHandler) buildRequestsMessage(requests []services.SubscribeIt
 		msg.Newline()
 		msg.Text("暂无记录").Newline()
 		msg.Newline()
-		msg.Italic("搜索后点击“求片”即可添加")
+		msg.Italic("搜索后点击「求片」即可添加")
 
 		kb := &callback.Keyboard{
 			InlineKeyboard: [][]callback.Button{
@@ -819,7 +819,7 @@ func (h *MyRequestsHandler) handleInfo(ctx *callback.Context, itemID string, pag
 	case services.StateCompleted:
 		actionText = "可前往 Emby 观看"
 	case services.StateFailed:
-		actionText = "可点击“重新搜索”重试"
+		actionText = "可点击「重新搜索」重试"
 	case services.StateRecycled:
 		actionText = "已加入重新搜索队列"
 	case services.StateSearching, services.StateDownloading:

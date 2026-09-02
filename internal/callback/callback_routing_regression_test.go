@@ -10,9 +10,8 @@ func TestGeneratedCallbacksParseAndReachRegistry(t *testing.T) {
 	}{
 		{"search trends", "search_trends", map[string]string{"days": "30"}},
 		{"popular period", "search_popular", map[string]string{"period": "all"}},
-		{"blindbox horror", "game_blindbox_horror", nil},
-		{"narrator spoiler", "game_narrate", map[string]string{"spoiler": "1", "name": "Alien"}},
-		{"blindbox personality", "game_blindbox_personality", nil},
+		{"portrait", "portrait", nil},
+		{"resource pick", ActionResourcePick, map[string]string{"idx": "2"}},
 		{"my requests legacy button", "my_requests", nil},
 	}
 

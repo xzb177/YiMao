@@ -13,7 +13,7 @@ import (
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
 	"返回首页": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
-	"系统设置": true, "问题反馈": true, "游戏中心": true, "通知设置": true,
+	"系统设置": true, "问题反馈": true, "观影画像": true, "通知设置": true,
 	"绑定账号": true, "重置密码": true, "我的反馈": true, "观影周报": true,
 	"取消操作": true, "求片热度": true, "管理后台": true,
 }
@@ -166,7 +166,7 @@ func TestCallbackDataIsFrozen(t *testing.T) {
 		"刷新状态": "requests",
 		"系统设置": "start_settings",
 		"问题反馈": "issue",
-		"游戏中心": "game_menu",
+		"观影画像": "portrait",
 		"通知设置": "notify_settings",
 		"绑定账号": "start_link",
 		"重置密码": "resetpw",

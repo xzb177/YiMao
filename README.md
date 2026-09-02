@@ -1,6 +1,6 @@
-# YiMao
+# YiMao · 云海求片助手
 
-YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；AI 和许愿池是增强能力，不是部署主链路的前置条件。
+YiMao 是面向 Telegram 的私人影视任务中心，把搜索、求片、审核、MoviePilot 下载/整理进度和 Emby 入库通知放在同一条链路中。用户可以使用 Bot 对话或 Mini App；许愿池、洗版和观影画像是增强能力，不是部署主链路的前置条件。
 
 ## 工作方式
 
@@ -16,7 +16,7 @@ Telegram Bot / Mini App
           +-- SQLite/JSON：绑定、审核、任务和用户偏好
 ```
 
-普通求片的实际流程：
+搜索求片的实际流程：
 
 ```text
 搜索 -> 选择媒体/季度 -> 绑定与配额检查 -> 自动通过或管理员审核
@@ -29,12 +29,12 @@ Telegram Bot / Mini App
 
 - Bot 以搜索求片为默认路径，保留详情/季度、候选资源、求片进度、想看/拼车、许愿池、洗版、问题反馈和入库通知。
 - Mini App 是 App-first 任务中心：首页先展示“今晚要看 / 卡住的事 / 正在替你办”，再进入找片、求片/洗版提交、任务时间线、想看、许愿和反馈。
-- 游戏中心只保留电影情报站、盲盒、命运轮盘和观影画像；Roulette 的进入和再转一次回调都可用。
+- 观影画像基于 Emby 观看记录做统计；需要绑定账号并配置 Emby 才有数据。
 - 管理员负责求片/洗版审核、洗版认领与 MediaSource 安全核验、反馈处理和通知设置。洗版完成必须先进入明确确认，不会绕过旧版保留检查。
 
 ## 新用户一键部署
 
-前置条件：Linux、Docker daemon、Git、curl，以及宿主机可访问的 MoviePilot。
+前置条件：Linux、Docker daemon（可访问）、Git、curl、sha256sum，以及宿主机可访问的 MoviePilot。
 
 ```bash
 git clone https://github.com/xzb177/YiMao.git /opt/YiMao
@@ -42,24 +42,25 @@ cd /opt/YiMao
 ./install.sh
 ```
 
-首次执行会生成权限为 `0600` 的 `.env` 并退出。填写以下必需项：
+首次执行会生成权限为 `0600` 的 `.env`，打印必填项清单后以退出码 2 停下——这是预期行为，不是失败。填写这些必需项：
 
-- `TELEGRAM_BOT_TOKEN`
-- `ADMIN_USER_IDS`，第一个 Telegram 数字 ID 是 root admin
-- `MOVIEPILOT_URL`
-- `MOVIEPILOT_API_KEY`
-- `API_KEYS`，默认 API auth 开启时必填
+| 变量 | 从哪里拿 |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | Telegram 里找 @BotFather 创建 Bot |
+| `ADMIN_USER_IDS` | @userinfobot 查自己的数字 ID；逗号分隔，第一个是 root admin |
+| `MOVIEPILOT_URL` | 宿主机可访问的 MoviePilot 地址，必须带 `http://` 或 `https://` |
+| `MOVIEPILOT_API_KEY` | MoviePilot → 设置 → 安全设置 |
+| `API_KEYS` | 自行生成的 JSON 对象，每个 key 至少 16 位随机字符 |
 
-然后执行：
+填好后再跑一次：
 
 ```bash
-chmod 600 .env
 ./manage.sh install
 ```
 
-安装脚本会真实执行 Docker verify stage、生产镜像构建、Git revision 标记、named volume 创建、事务式容器切换和健康等待。已有容器升级失败时会自动恢复旧容器。
+安装脚本会先校验必填项是否还是模板占位值，再执行 Docker verify stage、生产镜像构建、Git revision 标记、named volume 创建、事务式容器切换和健康等待。已有容器升级失败时会自动恢复旧容器。
 
-`/link` 用于绑定 MoviePilot 账号，不会自动授予管理员权限。
+装完在 Telegram 里给 Bot 发 `/start`，然后用 `/link 用户名` 绑定 MoviePilot 账号——绑定不会自动授予管理员权限，管理员只认 `ADMIN_USER_IDS`。
 
 完整步骤、Webhook、Mini App、备份、回滚和排障见 [部署与运维](docs/DEPLOY.md)。
 
@@ -113,7 +114,7 @@ chmod 600 .env
 
 运行数据位于 `/app/data`：
 
-- SQLite：用户映射、搜索历史、许愿池、游戏/社交数据
+- SQLite：用户映射、搜索历史、许愿池
 - JSON：配额、偏好、审核工单、反馈和通知设置
 - 内存：临时搜索分页和对话会话
 

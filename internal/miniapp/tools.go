@@ -223,7 +223,7 @@ func (s *Server) createWish(w http.ResponseWriter, r *http.Request, user AuthUse
 		}
 	}
 	if !visible {
-		http.Error(w, "许愿已记录，但当前列表尚未同步，请重试", http.StatusConflict)
+		http.Error(w, "许愿已记录，但当前列表尚未同步，请稍后再试", http.StatusConflict)
 		return
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "status": status, "wisher_count": s.deps.Wishes.CountWishers(key)})

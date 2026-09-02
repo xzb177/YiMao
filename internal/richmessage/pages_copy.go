@@ -64,7 +64,7 @@ func morePage() Page {
 		Tagline: copyMoreTag,
 		Body:    copyMoreBody,
 		Buttons: [][]types.TelegramRichMessageButton{
-			trio("系统设置", "start_settings", types.ButtonStylePrimary, "问题反馈", "issue", types.ButtonStylePrimary, "游戏中心", "game_menu", types.ButtonStylePrimary),
+			trio("系统设置", "start_settings", types.ButtonStylePrimary, "问题反馈", "issue", types.ButtonStylePrimary, "观影画像", "portrait", types.ButtonStylePrimary),
 			full("返回首页", "start", types.ButtonStylePrimary),
 		},
 	}

@@ -20,7 +20,7 @@ var (
 
 var shippedControlLexicon = map[string]bool{
 	"搜索求片": true, "求片模式": true, "洗版模式": true, "开始搜索": true,
-	"系统设置": true, "问题反馈": true, "游戏中心": true, "申请洗版": true, "帮助说明": true, "更多功能": true,
+	"系统设置": true, "问题反馈": true, "观影画像": true, "申请洗版": true, "帮助说明": true, "更多功能": true,
 	"刷新状态": true, "状态确认": true,
 	"返回首页": true, "查看进度": true, "查看详情": true, "继续求片": true,
 	"重新加载": true, "求第一部": true, "查看全部": true, "继续加载": true,

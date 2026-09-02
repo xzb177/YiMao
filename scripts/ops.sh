@@ -49,14 +49,35 @@ prepare_env() {
     if [ ! -f "$ENV_FILE" ]; then
         cp .env.example "$ENV_FILE"
         chmod 600 "$ENV_FILE"
-        info "Created $ENV_FILE with mode 0600"
-        info "Fill TELEGRAM_BOT_TOKEN, ADMIN_USER_IDS, MOVIEPILOT_URL, MOVIEPILOT_API_KEY and API_KEYS, then run ./manage.sh install again."
+        info "已生成 $ENV_FILE（权限 0600）"
+        info ""
+        info "请编辑 $ENV_FILE 填写以下必填项："
+        info "  TELEGRAM_BOT_TOKEN   从 @BotFather 获取"
+        info "  ADMIN_USER_IDS       Telegram 数字 ID，逗号分隔；第一个是 root admin（可用 @userinfobot 查询）"
+        info "  MOVIEPILOT_URL       宿主机可访问的 MoviePilot 地址，例如 http://192.168.1.10:3000"
+        info "  MOVIEPILOT_API_KEY   MoviePilot 设置 → 安全设置里的 API Key"
+        info "  API_KEYS             JSON 对象，每个 key 至少 16 位随机字符"
+        info ""
+        info "填好后再执行一次：./manage.sh install"
         exit 2
     fi
     mode=$(stat -c %a "$ENV_FILE" 2>/dev/null || stat -f %Lp "$ENV_FILE")
-    [ "$mode" = 600 ] || die "$ENV_FILE must have mode 0600 (run: chmod 600 .env)"
+    [ "$mode" = 600 ] || die "$ENV_FILE 权限必须是 0600，请执行：chmod 600 .env"
     admin_ids=$(get_env ADMIN_USER_IDS)
-    [ -n "$admin_ids" ] || die "ADMIN_USER_IDS is required; its first ID becomes root admin"
+    [ -n "$admin_ids" ] || die "ADMIN_USER_IDS 未填写；第一个 ID 会成为 root admin"
+    case "$admin_ids" in
+        *replace-with*) die "ADMIN_USER_IDS 仍是模板占位值，请填入真实的 Telegram 数字 ID" ;;
+    esac
+    bot_token=$(get_env TELEGRAM_BOT_TOKEN)
+    case "$bot_token" in
+        ''|*replace-with*) die "TELEGRAM_BOT_TOKEN 未填写或仍是模板占位值" ;;
+    esac
+    moviepilot_url=$(get_env MOVIEPILOT_URL)
+    case "$moviepilot_url" in
+        http://*|https://*) ;;
+        '') die "MOVIEPILOT_URL 未填写；host network 下必须是宿主机可访问的地址" ;;
+        *) die "MOVIEPILOT_URL 必须以 http:// 或 https:// 开头，当前值无效" ;;
+    esac
 }
 
 preflight() {

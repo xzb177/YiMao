@@ -397,7 +397,7 @@ func (h *ReviewHandler) handleApprove(ctx *callback.Context) (*callback.Response
 				return nil, fmt.Errorf("requeue after Emby lookup failure: %w", requeueErr)
 			}
 			return &callback.Response{
-				Text:        "⚠️ 审核已通过，但媒体库状态暂时无法确认\n\n系统会保留这条请求，请稍后重试，不会直接重复下载。",
+				Text:        "⚠️ 审核已通过，但媒体库状态暂时无法确认\n\n系统会保留这条请求，请稍后再试，不会直接重复下载。",
 				CallbackMsg: "状态待确认",
 				ShowAlert:   true,
 				Edit:        true,

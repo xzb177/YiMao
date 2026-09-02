@@ -21,8 +21,8 @@ func TestWelcomeCopyKeepsRequestFirstProductOrder(t *testing.T) {
 		}
 		last = at
 	}
-	// Administration and the game drawer stay behind 更多功能.
-	for _, hidden := range []string{"管理后台", "游戏中心", "系统设置", "问题反馈"} {
+	// Administration and secondary tools stay behind 更多功能.
+	for _, hidden := range []string{"管理后台", "观影画像", "系统设置", "问题反馈"} {
 		if strings.Contains(markdown, hidden) {
 			t.Fatalf("first screen leaked %q: %q", hidden, markdown)
 		}

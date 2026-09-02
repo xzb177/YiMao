@@ -23,14 +23,6 @@ type EmbyConfig struct {
 	APIKey string
 }
 
-// AIConfig holds AI service API keys
-type AIConfig struct {
-	AnthropicKey string
-	ZhipuKey     string
-	OpenAIKey    string
-	Enabled      bool
-}
-
 // ServerConfig holds HTTP server settings
 type ServerConfig struct {
 	Port       string

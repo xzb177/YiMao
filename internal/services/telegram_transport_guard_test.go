@@ -115,7 +115,7 @@ func TestTelegramButtonStyleUsesRestrainedMenuPalette(t *testing.T) {
 		{"♻️ 洗版", "wash", telegramButtonStylePrimary},
 		{"📝 遇到问题", "issue", telegramButtonStylePrimary},
 		{"📋 我的进度", "start_requests", telegramButtonStylePrimary},
-		{"🎮 游戏中心", "game_menu", telegramButtonStylePrimary},
+		{"🧠 观影画像", "portrait", ""},
 		{"⚙️ 设置", "start_settings", telegramButtonStylePrimary},
 		{"✅ 待办中心", "admin_todo", telegramButtonStylePrimary},
 		{"📊 求片统计", "admin_request_stats", ""},

@@ -195,24 +195,6 @@ var validActions = map[Action]bool{
 	// Portrait actions
 	"portrait": true, // 观影画像
 
-	// Game center actions
-	"game_menu":                 true, // 游戏中心主菜单
-	"game_rank":                 true, // 段位系统
-	"game_narrator":             true, // AI解说入口
-	"game_narrate":              true, // AI解说生成/剧透切换
-	"game_blindbox":             true, // 盲盒入口
-	"game_blindbox_open":        true, // 盲盒开盒
-	"game_blindbox_horror":      true, // 恐怖盲盒
-	"game_blindbox_personality": true, // 盲盒性格分析
-	"game_personality":          true, // 旧画像入口（兼容提示）
-	"game_contract":             true, // 旧契约入口（兼容提示）
-	"game_social":               true, // 社交动态
-	"game_emotion":              true, // 情绪画像
-	"game_achievements":         true, // 成就系统
-	"game_compare":              true, // 品味对比
-	"game_roulette":             true, // 随机轮盘
-	"game_roulette_spin":        true, // 轮盘旋转
-
 	// Resource candidate actions
 	ActionResourceList: true,
 	ActionResourcePick: true,

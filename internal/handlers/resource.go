@@ -610,7 +610,7 @@ func (h *ResourceHandler) handlePick(ctx *callback.Context) (*callback.Response,
 	idxStr := ctx.Callback.Params["idx"]
 	if idxStr == "" {
 		return &callback.Response{
-			Text:          "❌ 这次操作没有成功，请返回后重试",
+			Text:          "❌ 操作失败，请返回后重试",
 			Edit:          false,
 			DeleteMessage: true,
 		}, nil

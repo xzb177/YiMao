@@ -1534,7 +1534,7 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	// handler (for example, a refresh button whose callback is requests).
 	for _, marker := range []string{
 		"主菜单", "返回", "刷新", "上一页", "下一页", "重选", "换一批",
-		"设置", "帮助", "游戏中心", "概览", "统计", "通知设置", "管理员列表",
+		"设置", "帮助", "概览", "统计", "通知设置", "管理员列表",
 	} {
 		if strings.Contains(text, marker) {
 			return ""
@@ -1545,8 +1545,7 @@ func telegramButtonStyle(button types.TelegramInlineKeyboardButton) string {
 	switch actionName {
 	case "start_search", "search", "request", "force_subscribe", "wish_add",
 		"start_link", "link", "admin_todo", "admin_pending", "admin_feedback",
-		"admin_issue_processing", "admin_issue_reply", "admin_feedback_reply", "admin_add_start",
-		"game_blindbox", "game_blindbox_open", "game_blindbox_horror", "game_review":
+		"admin_issue_processing", "admin_issue_reply", "admin_feedback_reply", "admin_add_start":
 		return telegramButtonStylePrimary
 	default:
 		return ""
@@ -1829,7 +1828,7 @@ func BuildWelcomeMoreKeyboard(isAdmin, showWish bool) *types.TelegramInlineKeybo
 	kb := NewKeyboardBuilder()
 	kb.AddButton("系统设置", "start_settings")
 	kb.AddButton("问题反馈", "issue")
-	kb.AddButton("游戏中心", "game_menu")
+	kb.AddButton("观影画像", "portrait")
 	kb.NewRow()
 	kb.AddButton("求片热度", "request_heat")
 	if isAdmin {
@@ -1913,19 +1912,6 @@ func validateWebAppTransportURL(raw string) string {
 // transport validation from drifting apart or forwarding accidental secrets.
 func ValidatedMiniAppURL() string {
 	return validateMiniAppURL(os.Getenv("MINI_APP_URL"))
-}
-
-// BuildGameCenterKeyboard builds the single canonical game-center menu.
-func BuildGameCenterKeyboard() *types.TelegramInlineKeyboard {
-	kb := NewKeyboardBuilder()
-	kb.AddButton("📖 电影情报站", "game_narrator")
-	kb.AddButton("🎰 盲盒", "game_blindbox")
-	kb.NewRow()
-	kb.AddButton("🎡 命运轮盘", "game_roulette")
-	kb.AddButton("🧠 观影画像", "portrait")
-	kb.NewRow()
-	kb.AddButton("🏠 主菜单", "start")
-	return kb.Build()
 }
 
 // Int64ToString converts int64 to string

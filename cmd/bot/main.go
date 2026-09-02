@@ -180,11 +180,6 @@ func main() {
 			logger.Info("[UserMappingDB] 关闭数据库出错: %v", err)
 		}
 	}
-	// 关闭 GameHandler (SocialDB)
-	if depsWithHandlers.GameHandler != nil {
-		depsWithHandlers.GameHandler.Close()
-	}
-
 	logger.Info("✅ All services stopped")
 }
 
@@ -219,7 +214,6 @@ type Dependencies struct {
 	WishHandler       *handlers.WishHandler             // #6 许愿池命令/回调处理器
 	RequestSubmission *services.RequestSubmissionService
 	MyRequestsHandler *handlers.MyRequestsHandler // 求片进度聚合视图（/requests 命令复用）
-	GameHandler       *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // initServices initializes all services
@@ -753,20 +747,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		startHandler.SetPortraitService(services.NewPortraitService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey))
 	}
 
-	// ====== 游戏化服务 ======
-	personalitySvc := services.NewPersonalityService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
-	narratorSvc := services.NewNarratorService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	blindBoxSvc := services.NewBlindBoxService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
-	rouletteSvc := services.NewRouletteService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.TMDBAPIKey)
-	socialDB, socialErr := services.NewSocialDB(deps.Cfg.DataDir)
-	if socialErr != nil {
-		logger.Info("[initRegistry] SocialDB init failed: %v", socialErr)
-	}
-	emotionSvc := services.NewEmotionTimelineService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey, deps.Cfg.OpenAIAPIKey, deps.Cfg.OpenAIBaseURL, deps.Cfg.OpenAIModel)
-	viewingSvc := services.NewViewingHistoryService(deps.Cfg.EmbyURL, deps.Cfg.EmbyAPIKey)
-	gameHandler := handlers.NewGameHandler(personalitySvc, narratorSvc, blindBoxSvc, socialDB, rouletteSvc, deps.UserMapping, deps.Telegram, deps.SessionMgr, emotionSvc, groupChatID)
-	gameHandler.SetViewingHistoryService(viewingSvc)
-	logger.Info("[initRegistry] Game services initialized")
 	backHandler.SetAdminService(deps.AdminService)
 	adminHandler.SetMediaNotificationService(deps.MediaNotification)
 	adminHandler.SetIssueService(deps.IssueService)
@@ -820,28 +800,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	registry.RegisterFunc("portrait", startHandler.Handle)
 	logger.Info("[initRegistry] portrait callback registered → startHandler.Handle")
 
-	// 游戏化功能回调
-	registry.RegisterFunc("game_menu", gameHandler.Handle)
-	registry.RegisterFunc("game_personality", gameHandler.Handle)
-	registry.RegisterFunc("game_narrator", gameHandler.Handle)
-	registry.RegisterFunc("game_narrate", gameHandler.Handle)
-	registry.RegisterFunc("game_blindbox", gameHandler.Handle)
-	registry.RegisterFunc("game_blindbox_open", gameHandler.Handle)
-	registry.RegisterFunc("game_social", gameHandler.Handle)
-	registry.RegisterFunc("game_review", gameHandler.Handle)
-	registry.RegisterFunc("game_review_rate", gameHandler.Handle)
-	registry.RegisterFunc("game_roulette", gameHandler.Handle)
-	registry.RegisterFunc("game_roulette_spin", gameHandler.Handle)
-	registry.RegisterFunc("game_emotion", gameHandler.Handle)
-	registry.RegisterFunc("game_time_machine", gameHandler.Handle)
-	registry.RegisterFunc("game_prescription", gameHandler.Handle)
-	registry.RegisterFunc("game_contract", gameHandler.Handle)
-	registry.RegisterFunc("game_blindbox_horror", gameHandler.Handle)
-	registry.RegisterFunc("game_blindbox_personality", gameHandler.Handle)
-	registry.RegisterFunc("game_contract_complete", gameHandler.Handle)
-	registry.RegisterFunc("game_compare", gameHandler.Handle)
-	registry.RegisterFunc("game_achievements", gameHandler.Handle)
-	logger.Info("[initRegistry] Game callbacks registered")
 	registry.RegisterFunc("admin_approve", adminHandler.Handle)
 	registry.RegisterFunc("admin_decline", adminHandler.Handle)
 	registry.RegisterFunc("admin_pending", adminHandler.Handle)
@@ -980,7 +938,6 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		WishHandler:       wishHandler,
 		RequestSubmission: submissionService,
 		MyRequestsHandler: myRequestsHandler,
-		GameHandler:       gameHandler,
 	}
 
 	return registry, resultDeps
@@ -1006,9 +963,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "link", Description: "🔗 绑定账号"},
 		{Command: "quota", Description: "💎 查看配额"},
 		{Command: "portrait", Description: "🧠 观影画像"},
-		{Command: "game", Description: "🎮 游戏中心"},
-		{Command: "narrate", Description: "🎬 AI 电影解说"},
-		{Command: "review", Description: "✍️ 写影评"},
 		{Command: "help", Description: "❓ 帮助中心"},
 	}
 	if err := telegram.SetMyCommandsForScope(privateCommands, "", map[string]interface{}{"type": "all_private_chats"}); err != nil {
@@ -1027,7 +981,6 @@ func setupBotCommands(telegram *services.TelegramClient) {
 		{Command: "wish", Description: "✨ 私密许愿", IsEphemeral: true},
 		{Command: "quota", Description: "💎 私密查看配额", IsEphemeral: true},
 		{Command: "portrait", Description: "🧠 私密观影画像", IsEphemeral: true},
-		{Command: "game", Description: "🎮 私密游戏中心", IsEphemeral: true},
 	}
 	if err := telegram.SetMyCommandsForScope(groupCommands, "", map[string]interface{}{"type": "all_group_chats"}); err != nil {
 		logger.Info("⚠️  Failed to set group/community bot commands: %v", err)
@@ -1072,6 +1025,5 @@ func toBotDeps(deps *Dependencies) *bot.Dependencies {
 		FeedbackHandler: deps.FeedbackHandler,
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequestsHandler,
-		GameHandler:     deps.GameHandler,
 	}
 }

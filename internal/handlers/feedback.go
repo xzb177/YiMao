@@ -624,7 +624,7 @@ func (h *FeedbackHandler) handleConfirm(ctx *callback.Context) (*callback.Respon
 	issue, err := h.issueService.CreateIssueWithPhoto(ctx.UserID, userName, feedbackTypeLabel(issueType), description, mediaType, tmdbID, mediaTitle, photoFileID)
 	if err != nil {
 		logger.Info("[FeedbackHandler] Failed to create confirmed issue: %v", err)
-		return &callback.Response{CallbackMsg: "提交失败，草稿已保留，请稍后重试", ShowAlert: true}, nil
+		return &callback.Response{CallbackMsg: "提交失败，草稿已保留，请稍后再试", ShowAlert: true}, nil
 	}
 	clearFeedbackDraft(sess)
 	go h.notifyAdmins(issue, feedbackTypeLabel(issueType))

@@ -45,7 +45,7 @@
 ② 每个 ID 查 Emby externalId=tmdb:xxx / AnyProviderIdEquals → 内部 ItemID
 ③ 过滤无 MediaSources / 非 Available（校验要廉价，别拉全量）
 ④ 剩余里随机选 1；若 0 个可播放 → 本次不推
-⑤ 私聊发送，文案带推荐理由（AI 画像，如"你最近爱悬疑+日剧，这部 8.x 分"）
+⑤ 私聊发送，文案带推荐理由（基于观看统计，如"你最近常看悬疑+日剧，这部 8.x 分"）
 ```
 置信不足 / 可播放候选为 0 → 宁可不发，绝不硬推垃圾片。
 
@@ -81,7 +81,7 @@ WISHED → SEARCHING ─→ FOUND → NOTIFIED → FULFILLED
 - 通知带「🎬 立即求片」inline 按钮（复用拼车回调机制，新 action `wish_request`），点了才走求片并置 FULFILLED。
 
 ### 去重（分层，Codex + DeepSeek）
-- canonical key = TMDB/IMDb id（+ 媒体类型 + 季）。**许愿池与求片子系统必须同键**，否则 FOUND 触发求片会和用户已有求片记录撞出两条任务/两次下载。
+- canonical key = TMDB/IMDb id（+ 媒体类型 + 季）。**许愿池与求片子系统必须同键**，否则 FOUND 触发求片会和用户已有求片撞出两条任务/两次下载。
 - 入池时按 id 搜已有求片/订阅记录，命中 → 拒绝入池提示"已有人求过"。
 - FOUND → 触发求片前再搜一遍，命中 → 直接标 FULFILLED 不触发。
 

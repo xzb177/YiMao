@@ -1069,11 +1069,11 @@ func (s *WebhookService) handlePlaybackStop(payload EmbyWebhookPayload) {
 	s.playbackPushThrottleMu.Unlock()
 
 	// 播放结束后提供非强制的发现入口。
-	message := fmt.Sprintf("🎬 *%s* 看完了！\n\n还想继续逛逛？游戏中心里有盲盒、轮盘和观影工具。", itemName)
+	message := fmt.Sprintf("🎬 *%s* 看完了！\n\n想接着看点什么？直接发片名就能求片。", itemName)
 	kb := &types.TelegramInlineKeyboard{
 		InlineKeyboard: [][]types.TelegramInlineKeyboardButton{
 			{
-				{Text: "🎮 游戏中心", CallbackData: "game_menu"},
+				{Text: "🔍 搜索求片", CallbackData: "start_search"},
 			},
 		},
 	}

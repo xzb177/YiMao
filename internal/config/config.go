@@ -34,13 +34,6 @@ type Config struct {
 	// TMDB
 	TMDBAPIKey string
 
-	// AI Services
-	AnthropicAPIKey string
-	ZhipuAPIKey     string
-	OpenAIAPIKey    string
-	OpenAIBaseURL   string // Custom OpenAI-compatible base URL (e.g. mimo)
-	OpenAIModel     string // Custom model name (e.g. mimo-v2-pro)
-
 	// Server
 	ServerPort string
 	ServerHost string
@@ -59,7 +52,6 @@ type Config struct {
 	AdminProfileDir string
 
 	// Features
-	EnableAI        bool
 	EnableTrending  bool
 	EnableHotTV     bool
 	EnableNewMovies bool
@@ -126,12 +118,6 @@ func Load() (*Config, error) {
 		EmbyUserID:            getEnv("EMBY_USER_ID", ""),
 		EmbySkipTLSVerify:     getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
 		TMDBAPIKey:            getEnv("TMDB_API_KEY", ""),
-		// Support both ANTHROPIC_API_KEY and CLAUDE_API_KEY (for compatibility)
-		AnthropicAPIKey:       getEnvFirst("ANTHROPIC_API_KEY", "CLAUDE_API_KEY", ""),
-		ZhipuAPIKey:           getEnv("ZHIPU_API_KEY", ""),
-		OpenAIAPIKey:          getEnv("OPENAI_API_KEY", ""),
-		OpenAIBaseURL:         getEnv("OPENAI_BASE_URL", ""),
-		OpenAIModel:           getEnv("OPENAI_MODEL", ""),
 		ServerPort:            getEnv("PORT", "8080"),
 		ServerHost:            getEnv("HOST", "0.0.0.0"),
 		WebhookURL:            getEnv("WEBHOOK_URL", ""),
@@ -139,7 +125,6 @@ func Load() (*Config, error) {
 		DataDir:               getEnv("DATA_DIR", "/app/data"),
 		MaxSessionAge:         getEnvInt("MAX_SESSION_AGE", 24),
 		MaxSessions:           getEnvInt("MAX_SESSIONS", 1000),
-		EnableAI:              getEnvBoolFirst(false, "AI_ENABLED", "ENABLE_AI"),
 		EnableTrending:        getEnvBool("ENABLE_TRENDING", true),
 		EnableHotTV:           getEnvBool("ENABLE_HOT_TV", true),
 		EnableNewMovies:       getEnvBool("ENABLE_NEW_MOVIES", true),
@@ -413,11 +398,6 @@ func (c *Config) Emby() EmbyConfig {
 	return EmbyConfig{URL: c.EmbyURL, APIKey: c.EmbyAPIKey}
 }
 
-// AI returns AI service configuration
-func (c *Config) AI() AIConfig {
-	return AIConfig{AnthropicKey: c.AnthropicAPIKey, ZhipuKey: c.ZhipuAPIKey, OpenAIKey: c.OpenAIAPIKey, Enabled: c.EnableAI}
-}
-
 // Server returns server configuration
 func (c *Config) Server() ServerConfig {
 	return ServerConfig{Port: c.ServerPort, Host: c.ServerHost, WebhookURL: c.WebhookURL}
@@ -456,16 +436,6 @@ func getEnv(key, defaultValue string) string {
 	return defaultValue
 }
 
-// getEnvFirst tries multiple environment variable names in order, returns first non-empty value
-func getEnvFirst(keys ...string) string {
-	for _, key := range keys {
-		if value := os.Getenv(key); value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		var i int
@@ -479,15 +449,6 @@ func getEnvInt(key string, defaultValue int) int {
 func getEnvBool(key string, defaultValue bool) bool {
 	if value := os.Getenv(key); value != "" {
 		return value == "true" || value == "1" || value == "yes"
-	}
-	return defaultValue
-}
-
-func getEnvBoolFirst(defaultValue bool, keys ...string) bool {
-	for _, key := range keys {
-		if value := os.Getenv(key); value != "" {
-			return value == "true" || value == "1" || value == "yes"
-		}
 	}
 	return defaultValue
 }

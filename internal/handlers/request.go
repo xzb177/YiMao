@@ -572,7 +572,7 @@ func (h *RequestHandler) HandleForceSubscribe(ctx *callback.Context) (*callback.
 
 	if !hasID || !hasType {
 		return &callback.Response{
-			Text:        "❌ 这次操作没有成功，请重新打开详情页",
+			Text:        "❌ 操作失败，请重新打开详情页",
 			CallbackMsg: "操作失败",
 			ShowAlert:   true,
 		}, nil

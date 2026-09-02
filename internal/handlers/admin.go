@@ -405,7 +405,7 @@ func (h *AdminHandler) handleIssueFixed(ctx *callback.Context) (*callback.Respon
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusFixed); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
-			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
+			return &callback.Response{CallbackMsg: "状态保存失败，请稍后再试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -468,7 +468,7 @@ func (h *AdminHandler) handleIssueProcessing(ctx *callback.Context) (*callback.R
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusProcessing); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
-			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
+			return &callback.Response{CallbackMsg: "状态保存失败，请稍后再试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -531,7 +531,7 @@ func (h *AdminHandler) handleIssueClose(ctx *callback.Context) (*callback.Respon
 	if h.issueService != nil {
 		if err := h.issueService.UpdateStatusWithNotify(issueID, services.IssueStatusClosed); err != nil {
 			logger.Info("[AdminHandler] Failed to update issue status: %v", err)
-			return &callback.Response{CallbackMsg: "状态保存失败，请重试", ShowAlert: true}, err
+			return &callback.Response{CallbackMsg: "状态保存失败，请稍后再试", ShowAlert: true}, err
 		}
 		// Get issue and notify user
 		if issue, exists := h.issueService.GetIssue(issueID); exists {
@@ -1010,7 +1010,7 @@ func (h *AdminHandler) handleNotifCustomTime(ctx *callback.Context) (*callback.R
 	msg.Text("例如：23:00 或 08:30").Newline()
 	msg.Text("范围：00:00 - 23:59").Newline()
 	msg.Newline()
-	msg.Italic("输入 /cancel 或“取消”可退出").Newline()
+	msg.Italic("输入 /cancel 或「取消」可退出").Newline()
 
 	kb := services.NewKeyboardBuilder()
 	kb.AddButton("取消", "admin_notif_settings")

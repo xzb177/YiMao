@@ -8,11 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/services"
-	"github.com/xzb177/yimao/internal/session"
 	"github.com/xzb177/yimao/pkg/types"
 )
 
@@ -112,22 +109,5 @@ func TestUserScopedSenderGroupStructuredRichMessageFailsClosedToEphemeralText(t 
 	params, _ := got["ephemeral_message_parameters"].(map[string]any)
 	if got["_path"] != "/sendRichMessage" || params["receiver_user_id"] != float64(42) {
 		t.Fatalf("group structured rich missing ephemeral targeting: %+v", got)
-	}
-}
-
-func TestNarratorEntryDuplicateTapDoesNotSendSecondCard(t *testing.T) {
-	h := &GameHandler{sessionMgr: session.NewManager(time.Hour, 10)}
-	ctx := &callback.Context{UserID: 42}
-
-	first, err := h.handleNarratorEntry(ctx)
-	if err != nil || first.RichMessage == "" {
-		t.Fatalf("first response=%+v err=%v, want rich card", first, err)
-	}
-	second, err := h.handleNarratorEntry(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.RichMessage != "" || second.Text != "" || second.CallbackMsg == "" {
-		t.Fatalf("second response=%+v, want callback acknowledgement only", second)
 	}
 }

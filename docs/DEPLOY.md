@@ -44,23 +44,31 @@ cd /opt/YiMao
 ./install.sh
 ```
 
-首次运行会创建 `.env` 并退出。编辑配置后再次运行：
+首次运行会创建 `.env`（权限 `0600`）、打印必填项清单，然后以退出码 2 停下。这是预期行为，不是安装失败。编辑配置后再次运行：
 
 ```bash
-chmod 600 .env
 ./manage.sh install
 ```
 
 `install` 的实际顺序：
 
 1. 检查 Docker daemon、socket、`curl` 和 checksum 工具。
-2. 校验 `.env` 权限与管理员配置。
+2. 校验 `.env` 权限（必须 0600）、必填项是否仍为模板占位值、`MOVIEPILOT_URL` 协议是否合法。
 3. 运行 Docker verify stage、应用配置校验及生产镜像构建。
 4. 将 Git commit 写入 OCI revision label。
 5. 创建 `yimao-data` named volume。
 6. 事务切换容器并等待 Docker health 与 `/health` 同时成功。
 7. 新容器失败时自动恢复原容器。
 8. 配置了 `MINI_APP_URL` 时更新 Telegram 默认 Mini App 菜单。
+
+第 2 步会直接拦住这些常见错误，不会等到容器起不来才发现：
+
+| 提示 | 原因 |
+|---|---|
+| `.env 权限必须是 0600` | 执行 `chmod 600 .env` |
+| `TELEGRAM_BOT_TOKEN 未填写或仍是模板占位值` | 没替换 `replace-with-bot-token` |
+| `ADMIN_USER_IDS 仍是模板占位值` | 没替换成真实 Telegram 数字 ID |
+| `MOVIEPILOT_URL 必须以 http:// 或 https:// 开头` | 只写了 `IP:端口`，漏了协议 |
 
 ## 3. 环境变量
 
@@ -79,19 +87,6 @@ chmod 600 .env
 - `EMBY_URL` 与 `EMBY_API_KEY`：必须同时填写。用于媒体库检查和“真正可看”状态确认。
 - `WEBHOOK_SECRET`：保护 Emby/MoviePilot 入站 Webhook。
 - `TMDB_API_KEY`：影视元数据与海报搜索。
-
-### OpenAI 兼容 AI
-
-启用时同时配置：
-
-```dotenv
-AI_ENABLED=true
-OPENAI_BASE_URL=https://provider.example/v1
-OPENAI_API_KEY=[REDACTED]
-OPENAI_MODEL=model-name
-```
-
-AI 不是求片主链路的前置条件。未启用时搜索、订阅、追踪、入库通知和 Mini App 仍可工作。
 
 ### Telegram Webhook 与 polling
 

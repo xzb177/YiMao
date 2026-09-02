@@ -33,7 +33,6 @@ type Dependencies struct {
 	FallbackService *services.SearchFallbackService
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
-	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // PollDeps holds dependencies for polling (reduced set)
@@ -55,7 +54,6 @@ type PollDeps struct {
 	FallbackService *services.SearchFallbackService
 	WishHandler     *handlers.WishHandler       // #6 许愿池
 	MyRequests      *handlers.MyRequestsHandler // 求片进度（/requests 命令复用）
-	GameHandler     *handlers.GameHandler       // 游戏化功能处理器
 }
 
 // StartPolling starts the Telegram update polling
@@ -88,7 +86,6 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 		WishHandler:     deps.WishHandler,
 		MyRequests:      deps.MyRequests,
-		GameHandler:     deps.GameHandler,
 	}
 	// 去重 + 并发上限：Telegram 会在 offset 确认前重复投递同一条 update，
 	// 处理两次会造成重复回复/重复求片/重复扣配额；同时限制并发处理数，
@@ -174,7 +171,7 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Group chat: handle search queries only
 	if msg.Chat.Type != "private" {
-		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB, deps.GameHandler)
+		HandleGroupChatMessage(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.TMDB)
 		return
 	}
 
@@ -394,13 +391,6 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 			return
 		}
 
-		// 检查是否处于 AI 解说 pending 状态
-		if deps.GameHandler != nil {
-			if deps.GameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, sanitizedText) {
-				return
-			}
-		}
-
 		HandlePollSearchQuery(msg, deps.Telegram, deps.MoviePilot, deps.SessionMgr, deps.SearchHistory, deps.SearchHistoryDB, deps.TMDB, deps.FallbackService)
 	}
 }
@@ -434,8 +424,6 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		"waiting_for_time_input",
 		"pending_feedback_reply",
 		"pending_issue_reply",
-		// 游戏功能 pending 状态
-		"pending_narrate_input",
 	}
 	for _, key := range pendingKeys {
 		if _, exists := sess.Get(key); exists {
@@ -458,7 +446,7 @@ func allDigits(s string) bool {
 
 // HandleGroupChatMessage handles messages in group chats
 // 群组只做轻量引导和通知，不在群里展开搜索结果/求片进度，避免暴露观影隐私。
-func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient, gameHandler *handlers.GameHandler) {
+func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.TelegramClient, moviepilot *services.MoviePilotClient, sessMgr *session.Manager, searchHistory *services.SearchHistoryService, tmdb *services.TMDBClient) {
 	text := strings.TrimSpace(msg.Text)
 	logger.Info("[PollGroupChat] ChatID=%d, Title=%s, Text=%q", msg.Chat.ID, msg.Chat.Title, text)
 
@@ -473,28 +461,10 @@ func HandleGroupChatMessage(msg *types.TelegramMessage, telegram *services.Teleg
 	}
 
 	switch cmd {
-	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/ai", "/portrait":
+	case "/start", "/search", "/wish", "/requests", "/watchlist", "/quota", "/portrait":
 		// Ephemeral command response: visible only to the invoking member. Fail
 		// closed instead of posting private details when delivery is unavailable.
 		sendCommunityCommandMessage(telegram, msg, "🔒 这是你的私密操作入口。请点下方菜单继续；群里只保留入库喜报、拼车到货等高光通知。", "", services.BuildStartKeyboardWithOptions(false, true))
-	case "/game", "/游戏", "/游戏中心":
-		sendCommunityCommandMessage(telegram, msg, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())
-	case "/narrate", "/解说", "/讲讲", "/说说", "/聊聊", "/讲解", "/介绍":
-		// 群聊中直接解说：/解说 电影名
-		movieName := extractMovieName(text, cmd)
-		if movieName == "" {
-			telegram.SendMessage(msg.Chat.ID, "🎬 用法：`/解说 电影名`\n\n例如：`/解说 流浪地球`\n\n也可以用：`/narrate 流浪地球`", "Markdown", nil)
-		} else if gameHandler != nil {
-			go func() {
-				sess := sessMgr.GetOrCreate(msg.From.ID)
-				if sess != nil {
-					sess.Set("pending_narrate_input", true)
-				}
-				gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
-			}()
-		}
-	case "/review", "/评价", "/影评":
-		telegram.SendMessage(msg.Chat.ID, "✍️ 用法：`/评价 电影名 评分(1-5) 评语`\n\n例如：`/评价 流浪地球 5 特效炸裂`", "Markdown", nil)
 	case "/id":
 		text := fmt.Sprintf("📋 当前聊天信息\n\n聊天 ID: <code>%d</code>\n聊天类型: %s\n用户 ID: <code>%d</code>", msg.Chat.ID, msg.Chat.Type, msg.From.ID)
 		telegram.SendMessage(msg.Chat.ID, text, "HTML", nil)
@@ -515,95 +485,6 @@ func sendCommunityCommandMessage(telegram *services.TelegramClient, msg *types.T
 	if _, err := telegram.SendMessage(msg.Chat.ID, text, parseMode, keyboard, opt); err != nil {
 		logger.Info("[Community] Ephemeral command response unavailable for user=%d: %v", msg.From.ID, err)
 	}
-}
-
-// extractMovieName 从命令文本中提取电影名
-// 支持: "/解说 逐玉", "/narrate@bot 逐玉", "/讲讲流浪地球"
-func extractMovieName(text, cmd string) string {
-	movieName := strings.TrimSpace(strings.TrimPrefix(text, cmd))
-	// 去掉 @bot 后缀
-	if idx := strings.Index(movieName, "@"); idx >= 0 {
-		movieName = movieName[:idx]
-	}
-	return strings.TrimSpace(movieName)
-}
-
-// handleNaturalLanguageGame 识别自然语言触发游戏功能
-// 需要 # 前缀触发，避免正常聊天误触
-// 返回 true 表示已处理
-func handleNaturalLanguageGame(telegram *services.TelegramClient, msg *types.TelegramMessage, sessMgr *session.Manager, gameHandler *handlers.GameHandler, text string) bool {
-	// 必须以 # 开头才触发
-	if !strings.HasPrefix(text, "#") {
-		return false
-	}
-	// 去掉 # 前缀
-	input := strings.TrimSpace(text[1:])
-	if input == "" {
-		return false
-	}
-
-	// 游戏中心
-	gameKeywords := []string{"游戏中心", "游戏", "玩游戏", "来个游戏", "游戏菜单"}
-	for _, kw := range gameKeywords {
-		if input == kw {
-			telegram.SendMessage(msg.Chat.ID, "🎮 **游戏中心**\n\n只保留有真实战绩闭环的玩法：", "Markdown", services.BuildGameCenterKeyboard())
-			return true
-		}
-	}
-
-	// AI解说：支持多种自然语言前缀
-	narratePrefixes := []string{"解说", "讲讲", "说说", "聊聊", "讲一下", "说一下", "介绍一下", "讲解", "这电影怎么样", "这片好看吗", "好看吗"}
-	for _, prefix := range narratePrefixes {
-		if strings.HasPrefix(input, prefix) {
-			movieName := strings.TrimSpace(strings.TrimPrefix(input, prefix))
-			if movieName != "" {
-				go func() {
-					sess := sessMgr.GetOrCreate(msg.From.ID)
-					if sess != nil {
-						sess.Set("pending_narrate_input", true)
-					}
-					gameHandler.HandleNarrateText(msg.From.ID, msg.Chat.ID, movieName)
-				}()
-				return true
-			}
-		}
-	}
-
-	// 盲盒
-	blindboxKeywords := []string{"开盲盒", "盲盒", "来个盲盒", "开盒"}
-	for _, kw := range blindboxKeywords {
-		if input == kw {
-			go func() {
-				ctx := &callback.Context{
-					UserID:   msg.From.ID,
-					ChatID:   msg.Chat.ID,
-					ChatType: msg.Chat.Type,
-					Callback: &callback.Callback{Action: "game_blindbox"},
-				}
-				gameHandler.Handle(ctx)
-			}()
-			return true
-		}
-	}
-
-	// 轮盘
-	rouletteKeywords := []string{"转轮盘", "轮盘", "命运轮盘", "今晚看什么", "选个片"}
-	for _, kw := range rouletteKeywords {
-		if input == kw {
-			go func() {
-				ctx := &callback.Context{
-					UserID:   msg.From.ID,
-					ChatID:   msg.Chat.ID,
-					ChatType: msg.Chat.Type,
-					Callback: &callback.Callback{Action: "game_roulette"},
-				}
-				gameHandler.Handle(ctx)
-			}()
-			return true
-		}
-	}
-
-	return false
 }
 
 // sendRecommendationMenu sends the recommendation menu.
@@ -767,7 +648,7 @@ func HandleCallbackQuery(cb *types.TelegramCallbackQuery, registry *callback.Reg
 			showAlert = resp.ShowAlert
 		}
 		if isCommunityChat(ctx.ChatType) && callbackMsg == "" {
-			callbackMsg = "私密响应仅你可见；若未显示请重试"
+			callbackMsg = "私密响应仅你可见；若未显示请稍后再试"
 		}
 
 		if showAlert && len(callbackMsg) > 200 {
