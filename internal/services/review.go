@@ -24,7 +24,8 @@ type ReviewRequest struct {
 	MediaTitle      string            `json:"media_title"`
 	MediaYear       int               `json:"media_year"`
 	MediaType       MediaType         `json:"media_type"`
-	Season          int               `json:"season,omitempty"` // Season number for TV shows (0 = all seasons)
+	Season          int               `json:"season,omitempty"`  // TV season; movies use zero
+	Episode         int               `json:"episode,omitempty"` // TV episode; movies use zero
 	PosterPath      string            `json:"poster_path,omitempty"`
 	Overview        string            `json:"overview,omitempty"`
 	Status          string            `json:"status"`   // pending, approved, rejected
@@ -430,6 +431,9 @@ func (s *ReviewService) checkAllNewCompletions() {
 
 // CreateRequest creates a new review request
 func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
+	if err := validateWashScope(review); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -483,13 +487,16 @@ func (s *ReviewService) CreateRequest(review *ReviewRequest) error {
 // and creates the request. This prevents concurrent Telegram callbacks from
 // notifying administrators twice for the same work order.
 func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*ReviewRequest, bool, error) {
+	if err := validateWashScope(review); err != nil {
+		return nil, false, err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, current := range s.reviews {
 		if current == nil || current.TmdbID != review.TmdbID || current.MediaType != review.MediaType || current.NormalizedBusinessType() != review.NormalizedBusinessType() {
 			continue
 		}
-		if review.MediaType == MediaTypeTV && current.Season != review.Season {
+		if review.MediaType == MediaTypeTV && (current.Season != review.Season || current.Episode != review.Episode) {
 			continue
 		}
 		if isActiveReviewStatus(current.Status) {
@@ -513,6 +520,25 @@ func (s *ReviewService) CreateRequestIfNoActiveSimilar(review *ReviewRequest) (*
 		return nil, false, err
 	}
 	return cloneReview(review), true, nil
+}
+
+func validateWashScope(review *ReviewRequest) error {
+	if review == nil {
+		return fmt.Errorf("wash request is nil")
+	}
+	if review.NormalizedBusinessType() != BusinessTypeWash {
+		return nil
+	}
+	if review.MediaType != MediaTypeMovie && review.MediaType != MediaTypeTV {
+		return nil // legacy records can lack a media type; do not mutate or reject them on maintenance paths
+	}
+	if review.MediaType == MediaTypeMovie && review.Season == 0 && review.Episode == 0 {
+		return nil
+	}
+	if review.MediaType == MediaTypeTV && review.Season > 0 && review.Episode > 0 {
+		return nil
+	}
+	return fmt.Errorf("invalid wash scope: movies require whole-title scope; TV requires one season and one episode")
 }
 
 func isActiveReviewStatus(status string) bool {
@@ -903,11 +929,11 @@ func (s *ReviewService) GetActiveUserIDs(since time.Time) []int64 {
 
 // HasActiveSimilarRequest checks if user already has a similar active request
 func (s *ReviewService) HasActiveSimilarRequest(telegramID int64, tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
-	return s.HasActiveSimilarRequestForBusiness(telegramID, tmdbID, mediaType, season, BusinessTypeRequest)
+	return s.HasActiveSimilarRequestForBusiness(telegramID, tmdbID, mediaType, season, 0, BusinessTypeRequest)
 }
 
 // HasActiveSimilarRequestForBusiness includes business type in the duplicate key.
-func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmdbID int, mediaType MediaType, season int, businessType string) (*ReviewRequest, bool) {
+func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmdbID int, mediaType MediaType, season int, episode int, businessType string) (*ReviewRequest, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -926,7 +952,7 @@ func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmd
 		}
 
 		// TV requests should match season; movie season is always ignored
-		if mediaType == MediaTypeTV && review.Season != season {
+		if mediaType == MediaTypeTV && (review.Season != season || review.Episode != episode) {
 			continue
 		}
 
@@ -942,11 +968,11 @@ func (s *ReviewService) HasActiveSimilarRequestForBusiness(telegramID int64, tmd
 // HasActiveSimilarContent checks active requests across users. Callers that need
 // check+create atomicity provide their own transaction lock; no external I/O occurs here.
 func (s *ReviewService) HasActiveSimilarContent(tmdbID int, mediaType MediaType, season int) (*ReviewRequest, bool) {
-	return s.HasActiveSimilarContentForBusiness(tmdbID, mediaType, season, BusinessTypeRequest)
+	return s.HasActiveSimilarContentForBusiness(tmdbID, mediaType, season, 0, BusinessTypeRequest)
 }
 
 // HasActiveSimilarContentForBusiness includes business type in the duplicate key.
-func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType MediaType, season int, businessType string) (*ReviewRequest, bool) {
+func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType MediaType, season int, episode int, businessType string) (*ReviewRequest, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, review := range s.reviews {
@@ -956,7 +982,7 @@ func (s *ReviewService) HasActiveSimilarContentForBusiness(tmdbID int, mediaType
 		if review.NormalizedBusinessType() != normalizeBusinessType(businessType) {
 			continue
 		}
-		if mediaType == MediaTypeTV && review.Season != season {
+		if mediaType == MediaTypeTV && (review.Season != season || review.Episode != episode) {
 			continue
 		}
 		if isActiveReviewStatus(review.Status) {

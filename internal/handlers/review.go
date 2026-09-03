@@ -637,7 +637,7 @@ func (h *ReviewHandler) handleCompleteWash(ctx *callback.Context) (*callback.Res
 		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, "媒体库核验服务不可用")
 		return &callback.Response{Text: "⚠️ 暂时无法连接媒体库核验，工单仍保持认领状态，请恢复 Emby 连接后重试。", CallbackMsg: "媒体库核验不可用", ShowAlert: true}, nil
 	}
-	currentSources, verifyErr := h.webhookService.CaptureEmbyWashBaseline(review.TmdbID, review.MediaType, review.Season)
+	currentSources, verifyErr := h.webhookService.CaptureEmbyWashBaseline(review.TmdbID, review.MediaType, review.Season, review.Episode)
 	if verifyErr != nil {
 		_ = h.reviewService.RecordWashVerificationFailure(requestID, ctx.UserID, verifyErr.Error())
 		return &callback.Response{Text: "⚠️ 媒体库核验失败，未标记完成。请确认 Emby 已扫描新旧版本后重试。", CallbackMsg: "核验失败", ShowAlert: true}, nil

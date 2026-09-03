@@ -18,6 +18,7 @@ func newWashWorkOrder(t *testing.T, dir string) (*ReviewService, *ReviewRequest)
 		MediaYear:    2023,
 		MediaType:    MediaTypeTV,
 		Season:       1,
+		Episode:      1,
 		WashBaseline: []string{"/media/old.mkv"},
 	}
 	if err := svc.CreateRequest(review); err != nil {

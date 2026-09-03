@@ -12,7 +12,7 @@ spec.loader.exec_module(bridge)
 
 class BridgeTests(unittest.TestCase):
     def item(self, **overrides):
-        x = {"request_id": "wash_250008_1", "business_type": "wash", "status": "approved", "tmdb_id": 250008, "media_title": "\\u6d4b\\u8bd5\\u7247", "media_year": 2026, "media_type": "movie", "season": 0, "wash_baseline": ["/library/old/a.mkv"]}
+        x = {"request_id": "wash_250008_1", "business_type": "wash", "status": "approved", "tmdb_id": 250008, "media_title": "\\u6d4b\\u8bd5\\u7247", "media_year": 2026, "media_type": "movie", "season": 0, "episode": 0, "wash_baseline": ["/library/old/a.mkv"]}
         x.update(overrides)
         return x
 
@@ -42,11 +42,15 @@ class BridgeTests(unittest.TestCase):
                 else: os.environ["YIMAO_WASH_BRIDGE_STATE"] = old_state
             self.assertEqual(json.loads(state.read_text())["seen"], ["wash_250008_1"])
 
-    def test_tv_wash_is_not_eligible(self):
+    def test_tv_wash_requires_exact_episode_and_body_carries_it(self):
         self.assertFalse(bridge.eligible(self.item(media_type="tv", season=1)))
+        tv = self.item(media_type="tv", season=1, episode=2)
+        self.assertTrue(bridge.eligible(tv))
+        self.assertIn('"episode": 2', bridge.body(tv))
 
-    def test_movie_wash_requires_zero_season(self):
+    def test_movie_wash_requires_zero_season_and_episode(self):
         self.assertFalse(bridge.eligible(self.item(season=1)))
+        self.assertFalse(bridge.eligible(self.item(episode=1)))
 
     def test_non_approved_invalid_and_missing_baseline_are_skipped(self):
         for x in [self.item(status="pending"), self.item(status="completed"), self.item(business_type="request"), self.item(request_id="bad space"), self.item(tmdb_id=0), self.item(wash_baseline=[])]:

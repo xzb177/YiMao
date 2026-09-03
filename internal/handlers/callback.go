@@ -582,7 +582,7 @@ func (h *DetailHandler) buildTVActionKeyboard(tmdbID, _ int, includeResources, i
 	// TV requests are season-exact. The legacy season=0 action is hidden because
 	// approval currently turns it into S01 rather than requesting every season.
 	kb.AddButton("🗂️ 选择季度", fmt.Sprintf("detail_seasons:id:%d", tmdbID))
-	kb.AddButton("♻️ 按季度洗版", fmt.Sprintf("wash:id:%d:type:tv", tmdbID))
+	kb.AddButton("♻️ 单集洗版", fmt.Sprintf("wash:id:%d:type:tv", tmdbID))
 	kb.NewRow()
 	kb.AddButton(h.carpoolButtonText(tmdbID, "tv"), fmt.Sprintf("carpool:id:%d:type:tv", tmdbID))
 	if includeResources || includeFeedback {
