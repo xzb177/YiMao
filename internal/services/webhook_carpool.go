@@ -264,7 +264,7 @@ func (s *WebhookService) completeWashOnLibraryAdd(tmdbIDStr, mediaType string, s
 	var currentSources []string
 	var err error
 	if mediaType == "tv" {
-		currentSources, err = s.CaptureEmbyWashBaseline(tmdbID, MediaTypeTV, season, 0)
+		currentSources, err = s.CaptureEmbyWashBaseline(tmdbID, MediaTypeTV, season)
 	} else {
 		currentSources, err = s.fetchEmbyMediaSourcePaths(itemID)
 	}

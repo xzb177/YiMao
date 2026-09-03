@@ -798,15 +798,12 @@ func (s *WebhookService) SearchEmbyMediaByTMDB(tmdbID int, mediaType MediaType) 
 // CaptureEmbyWashBaseline returns the exact MediaSource paths currently bound
 // to the requested movie or TV season. The result is suitable for persistent
 // comparison when an administrator later marks the wash complete.
-func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType, season int, episodeNumber int) ([]string, error) {
+func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType, season int) ([]string, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return nil, fmt.Errorf("Emby URL or API key not configured")
 	}
 	if mediaType == MediaTypeTV && season <= 0 {
 		return nil, fmt.Errorf("TV wash requires a positive season")
-	}
-	if mediaType == MediaTypeMovie && (season != 0 || episodeNumber != 0) {
-		return nil, fmt.Errorf("movie wash requires zero season and episode")
 	}
 	includeItemTypes := "Movie"
 	if mediaType == MediaTypeTV {
@@ -843,7 +840,7 @@ func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType
 	if mediaType == MediaTypeTV {
 		params = url.Values{}
 		params.Set("Season", strconv.Itoa(season))
-		params.Set("Fields", "MediaSources,ParentIndexNumber,IndexNumber")
+		params.Set("Fields", "MediaSources")
 		if s.embyUserID != "" {
 			params.Set("UserId", s.embyUserID)
 		}
@@ -851,7 +848,6 @@ func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType
 		var episodes struct {
 			Items []struct {
 				ParentIndexNumber int               `json:"ParentIndexNumber"`
-				IndexNumber       int               `json:"IndexNumber"`
 				MediaSources      []EmbyMediaSource `json:"MediaSources"`
 			} `json:"Items"`
 		}
@@ -860,8 +856,8 @@ func (s *WebhookService) CaptureEmbyWashBaseline(tmdbID int, mediaType MediaType
 		}
 		sources = nil
 		for _, episode := range episodes.Items {
-			// Do not trust server-side filtering alone: retain exact episode safety.
-			if episode.ParentIndexNumber == season && (episodeNumber == 0 || episode.IndexNumber == episodeNumber) {
+			// Do not trust server-side filtering alone: retain exact-season safety.
+			if episode.ParentIndexNumber == season {
 				sources = append(sources, episode.MediaSources...)
 			}
 		}
@@ -924,7 +920,7 @@ func (s *WebhookService) getEmbyJSON(endpoint string, dst interface{}) error {
 // exists in Emby. TV requests must also point at an existing regular season.
 // The check fails closed: an unavailable Emby API must not create a zero-quota
 // substitute for an ordinary request.
-func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, mediaType MediaType, season int, episode int) (bool, error) {
+func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, mediaType MediaType, season int) (bool, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
 		return false, fmt.Errorf("Emby URL or API key not configured")
 	}
@@ -975,28 +971,41 @@ func (s *WebhookService) HasEmbyWashTarget(tmdbID int, title string, year int, m
 	if mediaType != MediaTypeTV {
 		return true, nil
 	}
-	if season <= 0 || episode <= 0 {
-		return false, fmt.Errorf("TV wash requires one positive season and episode")
+	if season <= 0 {
+		return false, fmt.Errorf("TV wash requires a positive season")
 	}
+
 	params = url.Values{}
-	params.Set("Season", strconv.Itoa(season))
-	params.Set("Fields", "ParentIndexNumber,IndexNumber,MediaSources")
 	if s.embyUserID != "" {
 		params.Set("UserId", s.embyUserID)
 	}
-	episodesEndpoint := fmt.Sprintf("%s/Shows/%s/Episodes?%s", s.embyURL, url.PathEscape(media.ID), params.Encode())
+	seasonEndpoint := fmt.Sprintf("%s/Shows/%s/Seasons?%s", s.embyURL, url.PathEscape(media.ID), params.Encode())
+	seasonReq, err := http.NewRequest(http.MethodGet, seasonEndpoint, http.NoBody)
+	if err != nil {
+		return false, err
+	}
+	seasonReq.Header.Set("X-Emby-Token", s.embyAPIKey)
+	seasonReq.Header.Set("Accept", "application/json")
+	seasonCtx, seasonCancel := context.WithTimeout(seasonReq.Context(), 8*time.Second)
+	defer seasonCancel()
+	seasonResp, err := s.embyHTTPClient().Do(seasonReq.WithContext(seasonCtx))
+	if err != nil {
+		return false, err
+	}
+	defer seasonResp.Body.Close()
+	if seasonResp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("Emby seasons API returned status %d", seasonResp.StatusCode)
+	}
 	var payload struct {
 		Items []struct {
-			ParentIndexNumber int               `json:"ParentIndexNumber"`
-			IndexNumber       int               `json:"IndexNumber"`
-			MediaSources      []EmbyMediaSource `json:"MediaSources"`
+			IndexNumber int `json:"IndexNumber"`
 		} `json:"Items"`
 	}
-	if err := s.getEmbyJSON(episodesEndpoint, &payload); err != nil {
+	if err := json.NewDecoder(seasonResp.Body).Decode(&payload); err != nil {
 		return false, err
 	}
 	for _, item := range payload.Items {
-		if item.ParentIndexNumber == season && item.IndexNumber == episode && len(item.MediaSources) > 0 {
+		if item.IndexNumber == season {
 			return true, nil
 		}
 	}

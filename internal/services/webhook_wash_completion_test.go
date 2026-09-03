@@ -54,7 +54,7 @@ func newApprovedTVWashForWebhookTest(t *testing.T, baseline []string) *ReviewSer
 	reviews := NewReviewService(t.TempDir(), false)
 	review := &ReviewRequest{
 		RequestID: "wash-tv-auto", BusinessType: BusinessTypeWash, TelegramID: 7,
-		TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, Episode: 1, MediaTitle: "House of Cards", WashBaseline: baseline,
+		TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards", WashBaseline: baseline,
 	}
 	if err := reviews.CreateRequest(review); err != nil {
 		t.Fatal(err)
@@ -173,7 +173,7 @@ func TestItemAddedCompletesEpisodeWashBeforeAggregation(t *testing.T) {
 			if r.URL.Query().Get("Season") != "2" {
 				t.Fatalf("Season=%q, want 2", r.URL.Query().Get("Season"))
 			}
-			_, _ = w.Write([]byte(`{"Items":[{"ParentIndexNumber":2,"IndexNumber":1,"MediaSources":[{"Path":"/media/old-s02e01.mkv"},{"Path":"/media/new-s02e01.mkv"}]},{"ParentIndexNumber":2,"IndexNumber":2,"MediaSources":[{"Path":"/media/old-s02e02.mkv"}]}]}`))
+			_, _ = w.Write([]byte(`{"Items":[{"ParentIndexNumber":2,"MediaSources":[{"Path":"/media/old-s02e01.mkv"},{"Path":"/media/new-s02e01.mkv"}]},{"ParentIndexNumber":2,"MediaSources":[{"Path":"/media/old-s02e02.mkv"}]}]}`))
 		case "/Users/user/Items/episode-1", "/Users/test-key/Items/series-1", "/Users/test-key/Items/episode-1":
 			_, _ = w.Write([]byte(`{"MediaSources":[{"Path":"/media/old-s02e01.mkv"},{"Path":"/media/new-s02e01.mkv"}]}`))
 		default:
@@ -182,7 +182,7 @@ func TestItemAddedCompletesEpisodeWashBeforeAggregation(t *testing.T) {
 	}))
 	defer api.Close()
 
-	reviews := newApprovedTVWashForWebhookTest(t, []string{"/media/old-s02e01.mkv"})
+	reviews := newApprovedTVWashForWebhookTest(t, []string{"/media/old-s02e01.mkv", "/media/old-s02e02.mkv"})
 	webhook := &WebhookService{
 		review: reviews, embyURL: api.URL, embyAPIKey: "test-key", embyUserID: "user",
 		epAggregation: make(map[string]*EpisodeAggregation), aggregationDelay: time.Hour,

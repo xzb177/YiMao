@@ -26,16 +26,18 @@ def records(raw):
     return []
 
 def eligible(x):
+    # This bridge is deliberately movie-only. TV wash behavior remains entirely
+    # in YiMao's existing workbench and is never sent to the MoviePilot worker.
     if x.get("business_type") != "wash" or x.get("status") != "approved": return False
+    if x.get("media_type") != "movie": return False
     rid, title = text(x.get("request_id"), 128), text(x.get("media_title"), MAX_TITLE)
-    try: tmdb, season, episode = int(x.get("tmdb_id") or 0), int(x.get("season") or 0), int(x.get("episode") or 0)
+    try: tmdb, season = int(x.get("tmdb_id") or 0), int(x.get("season") or 0)
     except (TypeError, ValueError): return False
-    scoped = (x.get("media_type") == "movie" and season == 0 and episode == 0) or (x.get("media_type") == "tv" and season > 0 and episode > 0)
-    return bool(ID_RE.fullmatch(rid) and tmdb > 0 and title and scoped and isinstance(x.get("wash_baseline"), list) and x["wash_baseline"])
+    return bool(ID_RE.fullmatch(rid) and tmdb > 0 and title and season == 0 and isinstance(x.get("wash_baseline"), list) and x["wash_baseline"])
 
 def body(x):
     paths = [text(p, 500) for p in x.get("wash_baseline", [])[:MAX_BASELINE_PATHS] if text(p, 500)]
-    payload = {"request_id": text(x.get("request_id"),128), "tmdb_id": int(x.get("tmdb_id") or 0), "media_title": text(x.get("media_title"),MAX_TITLE), "media_year": int(x.get("media_year") or 0), "media_type": text(x.get("media_type"),20), "season": int(x.get("season") or 0), "episode": int(x.get("episode") or 0), "baseline_path_count": len(paths), "baseline_paths": paths}
+    payload = {"request_id": text(x.get("request_id"),128), "tmdb_id": int(x.get("tmdb_id") or 0), "media_title": text(x.get("media_title"),MAX_TITLE), "media_year": int(x.get("media_year") or 0), "media_type": text(x.get("media_type"),20), "season": int(x.get("season") or 0), "baseline_path_count": len(paths), "baseline_paths": paths}
     result = "YiMao approved wash handoff\n\n" + json.dumps(payload, ensure_ascii=False, indent=2) + "\n\n" + CONTRACT
     return result[:MAX_BODY]
 
@@ -96,7 +98,7 @@ def main(argv=None):
             save_state(seen)
         else:
             failed += 1
-    print(f"scan=approved_scoped_wash candidates={len(chosen)} new={len(pending)} created_or_reused={len(pending)-failed} failed={failed}")
+    print(f"scan=approved_movie_wash candidates={len(chosen)} new={len(pending)} created_or_reused={len(pending)-failed} failed={failed}")
     return 1 if failed else 0
 
 if __name__ == "__main__": raise SystemExit(main(sys.argv[1:]))

@@ -21,7 +21,6 @@ func TestLegacyExhaustedWashOrdersAreTerminatedAtStartup(t *testing.T) {
 		MediaTitle:   "沧元图",
 		MediaType:    MediaTypeTV,
 		Season:       1,
-		Episode:      1,
 	}
 	if err := svc.CreateRequest(review); err != nil {
 		t.Fatal(err)

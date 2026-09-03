@@ -58,7 +58,6 @@ type RequestSubmission struct {
 	MediaYear    int
 	MediaType    MediaType
 	Season       int
-	Episode      int
 	PosterPath   string
 	Overview     string
 	EmbyInfo     *EmbySearchResult
@@ -107,17 +106,12 @@ func (s *RequestSubmissionService) SubmitResult(in RequestSubmission) (Submissio
 	if s == nil || s.reviews == nil || s.create == nil {
 		return SubmissionResult{}, errors.New("request submission service is not configured")
 	}
-	if in.TmdbID <= 0 || (in.MediaType != MediaTypeMovie && in.MediaType != MediaTypeTV) || in.Season < 0 || in.Episode < 0 {
+	if in.TmdbID <= 0 || (in.MediaType != MediaTypeMovie && in.MediaType != MediaTypeTV) || in.Season < 0 {
 		return SubmissionResult{}, fmt.Errorf("%w: tmdb_id must be positive, media_type must be movie or tv, and season must be non-negative", ErrInvalidSubmission)
 	}
 	businessType := normalizeBusinessType(in.BusinessType)
-	if businessType == BusinessTypeWash {
-		if in.MediaType == MediaTypeTV && (in.Season <= 0 || in.Episode <= 0) {
-			return SubmissionResult{}, fmt.Errorf("%w: TV wash requires one positive season and episode", ErrInvalidSubmission)
-		}
-		if in.MediaType == MediaTypeMovie && (in.Season != 0 || in.Episode != 0) {
-			return SubmissionResult{}, fmt.Errorf("%w: movie wash requires zero season and episode", ErrInvalidSubmission)
-		}
+	if in.MediaType == MediaTypeTV && businessType == BusinessTypeWash && in.Season <= 0 {
+		return SubmissionResult{}, fmt.Errorf("%w: TV wash requires a positive season", ErrInvalidSubmission)
 	}
 	mpID := int64(0)
 	if businessType == BusinessTypeRequest {
@@ -142,7 +136,7 @@ func (s *RequestSubmissionService) SubmitResult(in RequestSubmission) (Submissio
 }
 
 func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64) (SubmissionResult, error) {
-	if existing, duplicate := s.reviews.HasActiveSimilarContentForBusiness(in.TmdbID, in.MediaType, in.Season, in.Episode, in.BusinessType); duplicate {
+	if existing, duplicate := s.reviews.HasActiveSimilarContentForBusiness(in.TmdbID, in.MediaType, in.Season, in.BusinessType); duplicate {
 		status := SubmissionDuplicateOther
 		if existing.TelegramID == in.TelegramID {
 			status = SubmissionDuplicateOwn
@@ -168,7 +162,7 @@ func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64
 	if origin == "" {
 		origin = "normal"
 	}
-	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, Episode: in.Episode, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, WashBaseline: append([]string(nil), in.WashBaseline...)}
+	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, WashBaseline: append([]string(nil), in.WashBaseline...)}
 	if in.UseQuota {
 		review.QuotaCost = quotaCost
 	}

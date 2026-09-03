@@ -139,7 +139,6 @@ type userRequestView struct {
 	Year         int                `json:"media_year,omitempty"`
 	Type         services.MediaType `json:"media_type"`
 	Season       int                `json:"season,omitempty"`
-	Episode      int                `json:"episode,omitempty"`
 	Poster       string             `json:"poster_path,omitempty"`
 	Status       string             `json:"status"`
 	StatusText   string             `json:"status_text"`
@@ -501,7 +500,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		} else if review.Stuck {
 			note = "系统正在自动重试，无需重复提交"
 		}
-		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Episode: review.Episode, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note, BusinessType: review.NormalizedBusinessType()})
+		requests = append(requests, userRequestView{RequestID: review.RequestID, TmdbID: review.TmdbID, Title: review.MediaTitle, Year: review.MediaYear, Type: review.MediaType, Season: review.Season, Poster: review.PosterPath, Status: status, StatusText: text, Group: group, CreatedAt: review.CreatedAt, CanCancel: review.Status == "pending", Note: note, BusinessType: review.NormalizedBusinessType()})
 	}
 	var quota *quotaView
 	if s.deps.Quota != nil {
@@ -1174,13 +1173,12 @@ func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID      int    `json:"tmdb_id"`
-		Type    string `json:"type"`
-		Season  int    `json:"season"`
-		Episode int    `json:"episode"`
+		ID     int    `json:"tmdb_id"`
+		Type   string `json:"type"`
+		Season int    `json:"season"`
 	}
-	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") || (body.Type == "movie" && (body.Season != 0 || body.Episode != 0)) || (body.Type == "tv" && (body.Season <= 0 || body.Episode <= 0)) {
-		http.Error(w, "仅限单集", http.StatusBadRequest)
+	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") || (body.Type == "movie" && body.Season != 0) || (body.Type == "tv" && body.Season <= 0) {
+		http.Error(w, "洗版参数不完整", http.StatusBadRequest)
 		return
 	}
 	if s.deps.Submission == nil || s.deps.TMDB == nil || s.deps.Webhook == nil {
@@ -1204,7 +1202,7 @@ func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
 	if len(date) >= 4 {
 		year, _ = strconv.Atoi(date[:4])
 	}
-	exists, err := s.deps.Webhook.HasEmbyWashTarget(body.ID, title, year, mediaType, body.Season, body.Episode)
+	exists, err := s.deps.Webhook.HasEmbyWashTarget(body.ID, title, year, mediaType, body.Season)
 	if err != nil {
 		http.Error(w, "暂时无法核验媒体库，请稍后再试", http.StatusServiceUnavailable)
 		return
@@ -1213,14 +1211,14 @@ func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"ok": false, "status": "not_in_library", "message": "媒体库中没有当前版本，不能申请洗版"})
 		return
 	}
-	baseline, err := s.deps.Webhook.CaptureEmbyWashBaseline(body.ID, mediaType, body.Season, body.Episode)
+	baseline, err := s.deps.Webhook.CaptureEmbyWashBaseline(body.ID, mediaType, body.Season)
 	if err != nil || len(baseline) == 0 {
 		http.Error(w, "无法记录当前版本，已停止提交", http.StatusServiceUnavailable)
 		return
 	}
 	result, err := s.deps.Submission.SubmitResult(services.RequestSubmission{
 		BusinessType: services.BusinessTypeWash, TelegramID: user.ID, TelegramName: user.FirstName,
-		TmdbID: body.ID, MediaTitle: title, MediaYear: year, MediaType: mediaType, Season: body.Season, Episode: body.Episode,
+		TmdbID: body.ID, MediaTitle: title, MediaYear: year, MediaType: mediaType, Season: body.Season,
 		PosterPath: s.deps.TMDB.GetPosterURL(media.PosterPath), Overview: media.Overview,
 		Origin: "miniapp_wash", UseQuota: false, WashBaseline: baseline,
 	})

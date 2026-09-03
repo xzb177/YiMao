@@ -23,14 +23,14 @@ func TestReviewBusinessTypeBackwardCompatibilityAndDuplicateKey(t *testing.T) {
 	if !ok || old.NormalizedBusinessType() != BusinessTypeRequest {
 		t.Fatalf("legacy business type not normalized: %#v", old)
 	}
-	if _, duplicate := svc.HasActiveSimilarContentForBusiness(550, MediaTypeMovie, 0, 0, BusinessTypeWash); duplicate {
+	if _, duplicate := svc.HasActiveSimilarContentForBusiness(550, MediaTypeMovie, 0, BusinessTypeWash); duplicate {
 		t.Fatal("ordinary request must not collide with wash")
 	}
 	wash := &ReviewRequest{RequestID: "wash", BusinessType: BusinessTypeWash, TelegramID: 1, TmdbID: 550, MediaType: MediaTypeMovie, MediaTitle: "Fight Club"}
 	if err := svc.CreateRequest(wash); err != nil {
 		t.Fatal(err)
 	}
-	if _, duplicate := svc.HasActiveSimilarContentForBusiness(550, MediaTypeMovie, 0, 0, BusinessTypeWash); !duplicate {
+	if _, duplicate := svc.HasActiveSimilarContentForBusiness(550, MediaTypeMovie, 0, BusinessTypeWash); !duplicate {
 		t.Fatal("wash duplicate not found")
 	}
 	if wash.QuotaCost != 0 {
@@ -44,11 +44,11 @@ func TestReviewBusinessTypeBackwardCompatibilityAndDuplicateKey(t *testing.T) {
 
 func TestCreateWashIfNoActiveSimilarAndComplete(t *testing.T) {
 	svc := NewReviewService(t.TempDir(), false)
-	first := &ReviewRequest{RequestID: "wash-1", BusinessType: BusinessTypeWash, TelegramID: 7, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, Episode: 1, MediaTitle: "House of Cards", WashBaseline: []string{"/old/s02e01.mkv"}}
+	first := &ReviewRequest{RequestID: "wash-1", BusinessType: BusinessTypeWash, TelegramID: 7, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards", WashBaseline: []string{"/old/s02e01.mkv"}}
 	if _, created, err := svc.CreateRequestIfNoActiveSimilar(first); err != nil || !created {
 		t.Fatalf("first create: created=%v err=%v", created, err)
 	}
-	second := &ReviewRequest{RequestID: "wash-2", BusinessType: BusinessTypeWash, TelegramID: 8, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, Episode: 1, MediaTitle: "House of Cards"}
+	second := &ReviewRequest{RequestID: "wash-2", BusinessType: BusinessTypeWash, TelegramID: 8, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards"}
 	if existing, created, err := svc.CreateRequestIfNoActiveSimilar(second); err != nil || created || existing.RequestID != first.RequestID {
 		t.Fatalf("duplicate create: existing=%v created=%v err=%v", existing, created, err)
 	}
@@ -58,7 +58,7 @@ func TestCreateWashIfNoActiveSimilarAndComplete(t *testing.T) {
 	if _, err := svc.ClaimWash(first.RequestID, 99); err != nil {
 		t.Fatal(err)
 	}
-	third := &ReviewRequest{RequestID: "wash-3", BusinessType: BusinessTypeWash, TelegramID: 9, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, Episode: 1, MediaTitle: "House of Cards"}
+	third := &ReviewRequest{RequestID: "wash-3", BusinessType: BusinessTypeWash, TelegramID: 9, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards"}
 	if existing, created, err := svc.CreateRequestIfNoActiveSimilar(third); err != nil || created || existing.RequestID != first.RequestID || existing.Status != "claimed" {
 		t.Fatalf("claimed duplicate create: existing=%v created=%v err=%v", existing, created, err)
 	}
@@ -179,7 +179,7 @@ func TestCreateWashIfNoActiveSimilarConcurrentAcrossUsers(t *testing.T) {
 		wg.Add(1)
 		go func(i int, userID int64) {
 			defer wg.Done()
-			review := &ReviewRequest{RequestID: fmt.Sprintf("wash-concurrent-%d", i), BusinessType: BusinessTypeWash, TelegramID: userID, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, Episode: 1, MediaTitle: "House of Cards"}
+			review := &ReviewRequest{RequestID: fmt.Sprintf("wash-concurrent-%d", i), BusinessType: BusinessTypeWash, TelegramID: userID, TmdbID: 1425, MediaType: MediaTypeTV, Season: 2, MediaTitle: "House of Cards"}
 			_, wasCreated, err := svc.CreateRequestIfNoActiveSimilar(review)
 			if err != nil {
 				t.Errorf("create: %v", err)
