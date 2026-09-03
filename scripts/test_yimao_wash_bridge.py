@@ -1,4 +1,7 @@
 import importlib.util
+import json
+import os
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,7 +12,7 @@ spec.loader.exec_module(bridge)
 
 class BridgeTests(unittest.TestCase):
     def item(self, **overrides):
-        x = {"request_id": "wash_250008_1", "business_type": "wash", "status": "approved", "tmdb_id": 250008, "media_title": "\\u6d4b\\u8bd5\\u7247", "media_year": 2026, "media_type": "tv", "season": 1, "wash_baseline": ["/library/old/a.mkv"]}
+        x = {"request_id": "wash_250008_1", "business_type": "wash", "status": "approved", "tmdb_id": 250008, "media_title": "\\u6d4b\\u8bd5\\u7247", "media_year": 2026, "media_type": "movie", "season": 0, "wash_baseline": ["/library/old/a.mkv"]}
         x.update(overrides)
         return x
 
@@ -22,6 +25,28 @@ class BridgeTests(unittest.TestCase):
         self.assertLessEqual(len(body), bridge.MAX_BODY)
         self.assertNotIn("TOKEN", body)
         self.assertNotIn("API_KEY", body)
+
+    def test_bootstrap_marks_existing_movies_without_dispatch(self):
+        with tempfile.TemporaryDirectory() as d:
+            review = Path(d) / "reviews.json"
+            state = Path(d) / "state.json"
+            review.write_text(json.dumps([self.item(), self.item(request_id="tv", media_type="tv", season=1)]), encoding="utf-8")
+            old_file, old_state = bridge.DATA, os.environ.get("YIMAO_WASH_BRIDGE_STATE")
+            try:
+                bridge.DATA = review
+                os.environ["YIMAO_WASH_BRIDGE_STATE"] = str(state)
+                self.assertEqual(bridge.main(["--bootstrap"]), 0)
+            finally:
+                bridge.DATA = old_file
+                if old_state is None: os.environ.pop("YIMAO_WASH_BRIDGE_STATE", None)
+                else: os.environ["YIMAO_WASH_BRIDGE_STATE"] = old_state
+            self.assertEqual(json.loads(state.read_text())["seen"], ["wash_250008_1"])
+
+    def test_tv_wash_is_not_eligible(self):
+        self.assertFalse(bridge.eligible(self.item(media_type="tv", season=1)))
+
+    def test_movie_wash_requires_zero_season(self):
+        self.assertFalse(bridge.eligible(self.item(season=1)))
 
     def test_non_approved_invalid_and_missing_baseline_are_skipped(self):
         for x in [self.item(status="pending"), self.item(status="completed"), self.item(business_type="request"), self.item(request_id="bad space"), self.item(tmdb_id=0), self.item(wash_baseline=[])]:
