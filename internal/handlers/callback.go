@@ -1405,14 +1405,22 @@ func (h *BackHandler) restoreSearchResults(sess *session.Session, ctx *callback.
 	// Rebuild the same self-contained visual cards from the complete search
 	// snapshot. Legacy snapshots without status degrade conservatively.
 	results, statuses := restoreSearchCardSnapshot(items)
+	washIntent := searchIntentIsWash(sess)
 	text := buildSearchResultsText(query, page, results)
+	if washIntent {
+		text = washSearchNotice + "\n\n" + text
+	}
 	keyboard := buildSearchResultsKeyboard(results, page, len(items) >= 8)
 
 	logger.Info("[BackHandler] Restoring search results: query=%s, items=%d, page=%d", query, len(items), page)
 	// Use DeleteMessage=true when returning from photo to text message
+	rich := buildVisualSearchMessage(query, page, results, statuses)
+	if washIntent {
+		prependWashSearchNotice(rich)
+	}
 	return &callback.Response{
 		Text:                  text,
-		StructuredRichMessage: buildVisualSearchMessage(query, page, results, statuses),
+		StructuredRichMessage: rich,
 		Edit:                  false,
 		DeleteMessage:         true,
 		Keyboard:              convertKeyboard(keyboard),

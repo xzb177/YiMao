@@ -344,6 +344,7 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 			Keyboard:    convertKeyboard(buildSearchRecoveryKeyboard(page - 1)),
 		}, nil
 	}
+	washIntent := h.searchIntentIsWash(ctx.UserID)
 	statuses := h.resolveSearchCardStatuses(results.Results)
 	h.storeSearchResults(ctx.UserID, query, results.Results, page, statuses)
 	var rich *types.TelegramInputRichMessage
@@ -351,13 +352,20 @@ func (h *SearchHandler) handlePage(ctx *callback.Context, pageStr string) (*call
 		rich = buildVisualSearchMessage(query, page, results.Results, statuses)
 	}
 	tkb := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
+	text := buildSearchResultsText(query, page, results.Results)
+	if washIntent {
+		text = washSearchNotice + "\n\n" + text
+	}
 	resp := &callback.Response{
-		Text:                  buildSearchResultsText(query, page, results.Results),
+		Text:                  text,
 		StructuredRichMessage: rich,
 		CallbackMsg:           fmt.Sprintf("第 %d 页", page),
 	}
 	if rich != nil {
 		richmessage.AppendKeyboardAsButtons(rich, tkb)
+		if washIntent {
+			prependWashSearchNotice(rich)
+		}
 	} else {
 		resp.Keyboard = convertKeyboard(tkb)
 	}
@@ -579,10 +587,39 @@ func (h *SearchHandler) trySearchFallback(query string) ([]services.SearchResult
 	return h.fallbackService.TryFallback(query)
 }
 
+// washSearchNotice is the single explanation paragraph shown above the
+// shared search cards while a user picks a title for a wash work order.
+const washSearchNotice = "♻️ 为洗版选择影片\n\n找到以下结果，请点正确的片名打开详情。确认后点「申请洗版」。"
+
+// searchIntentIsWash reports whether the pending media pick belongs to a wash
+// work order. Both the search surface and the back-restore surface read it so
+// the shared renderer stays the single source of layout.
+func searchIntentIsWash(sess *session.Session) bool {
+	if sess == nil {
+		return false
+	}
+	intent, _ := sess.GetString("media_search_intent")
+	return intent == "wash"
+}
+
+func (h *SearchHandler) searchIntentIsWash(userID int64) bool {
+	return searchIntentIsWash(h.sessMgr.GetOrCreate(userID))
+}
+
+// prependWashSearchNotice keeps wash rendering identical to a request
+// search and only adds one leading explanation block.
+func prependWashSearchNotice(rich *types.TelegramInputRichMessage) {
+	if rich == nil {
+		return
+	}
+	rich.Blocks = append([]types.TelegramInputRichBlock{{Type: "paragraph", Text: washSearchNotice}}, rich.Blocks...)
+}
+
 func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query string, results *services.SearchResponse, page int) {
+	washIntent := h.searchIntentIsWash(userID)
 	text := buildSearchResultsText(query, page, results.Results)
-	if intent, _ := h.sessMgr.GetOrCreate(userID).GetString("media_search_intent"); intent == "wash" {
-		text = fmt.Sprintf("♻️ 为洗版选择影片\n\n找到以下结果，请点正确的片名打开详情。确认后点「申请洗版」。\n\n%s", text)
+	if washIntent {
+		text = washSearchNotice + "\n\n" + text
 	}
 	keyboard := buildSearchResultsKeyboard(results.Results, page, len(results.Results) >= 8)
 	statuses := h.resolveSearchCardStatuses(results.Results)
@@ -591,15 +628,15 @@ func (h *SearchHandler) sendSearchResults(userID int64, chatID int64, query stri
 	// Telegram chat IDs for groups/channels are negative. Avoid both rich-message
 	// composition and transport there; community searches remain ephemeral text.
 	if chatID > 0 {
-		intent, _ := h.sessMgr.GetOrCreate(userID).GetString("media_search_intent")
-		if intent != "wash" {
-			if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
-				richmessage.AppendKeyboardAsButtons(rich, keyboard)
-				if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, nil); err == nil {
-					return
-				} else {
-					logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)
-				}
+		if rich := buildVisualSearchMessage(query, page, results.Results, statuses); rich != nil {
+			richmessage.AppendKeyboardAsButtons(rich, keyboard)
+			if washIntent {
+				prependWashSearchNotice(rich)
+			}
+			if _, err := h.telegram.SendStructuredRichMessage(chatID, rich, nil); err == nil {
+				return
+			} else {
+				logger.Info("[SearchHandler] Rich slideshow failed, falling back to text: %v", err)
 			}
 		}
 	}
@@ -736,8 +773,12 @@ func (h *SearchHandler) buildVisualSearchSlideshow(query string, page int, resul
 	return buildVisualSearchMessage(query, page, results, h.resolveSearchCardStatuses(results))
 }
 
+// searchVisualCards is the poster-card compositor seam. Tests stub it so the
+// shared search rendering contract can be asserted without network fetches.
+var searchVisualCards = services.BuildSearchVisualCards
+
 func buildVisualSearchMessage(query string, page int, results []services.SearchResult, statuses map[string]string) *types.TelegramInputRichMessage {
-	return buildVisualSearchMessageFromCards(query, page, results, services.BuildSearchVisualCards(results, statuses))
+	return buildVisualSearchMessageFromCards(query, page, results, searchVisualCards(results, statuses))
 }
 
 func buildVisualSearchMessageFromCards(query string, page int, results []services.SearchResult, cards []services.SearchVisualCard) *types.TelegramInputRichMessage {
