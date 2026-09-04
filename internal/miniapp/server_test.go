@@ -190,13 +190,17 @@ func TestSearchUsesExactEmbyAvailabilityStatus(t *testing.T) {
 			})
 		case "/Users/test-user/Items":
 			tmdbID := r.URL.Query().Get("AnyProviderIdEquals")
-			if got := r.URL.Query().Get("IncludeItemTypes"); got != "Movie" {
-				t.Fatalf("unexpected Emby media type: %q", got)
+			wantType := "Movie"
+			if tmdbID == "tmdb.404" {
+				wantType = "Series"
+			}
+			if got := r.URL.Query().Get("IncludeItemTypes"); got != wantType {
+				t.Errorf("unexpected Emby media type for %s: got %q want %q", tmdbID, got, wantType)
 			}
 			switch tmdbID {
 			case "tmdb.101":
 				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 1, "Items": []map[string]any{{"Id": "movie-101"}}})
-			case "tmdb.202":
+			case "tmdb.202", "tmdb.404":
 				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 0})
 			case "tmdb.303":
 				http.Error(w, "unavailable", http.StatusBadGateway)
@@ -232,11 +236,11 @@ func TestSearchUsesExactEmbyAvailabilityStatus(t *testing.T) {
 		t.Fatalf("unexpected search response: status=%d body=%s", response.Code, response.Body.String())
 	}
 	wants := []detailStatus{
-		{Code: "in_library", Text: "库中可看"},
-		{Code: "available", Text: "可以求片"},
-		{Code: "unknown", Text: "媒体库状态暂时无法确认"},
-		{Code: "unknown", Text: "选择季后确认状态"},
-		{Code: "unknown", Text: "媒体库状态暂时无法确认"},
+		{Code: "in_library", Text: "已在库"},
+		{Code: "unknown", Text: "状态暂未确认"},
+		{Code: "unknown", Text: "状态暂未确认"},
+		{Code: "unknown", Text: "状态暂未确认"},
+		{Code: "unknown", Text: "状态暂未确认"},
 	}
 	for i, want := range wants {
 		if got := payload.Results[i].Status; got != want {
@@ -839,5 +843,57 @@ func TestSearchCancellationStopsMoviePilotRequest(t *testing.T) {
 	case <-cancelled:
 	case <-time.After(2 * time.Second):
 		t.Fatal("MoviePilot request context was not cancelled")
+	}
+}
+
+func TestSearchResolutionIncludesTVAndSharesTelegramCopy(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/subscribe/":
+			_ = json.NewEncoder(w).Encode([]services.SubscribeItem{
+				{TMDBID: 202, Type: "电影", State: services.StateDownloading},
+				{TMDBID: 505, Type: "电视剧", State: services.StateSearching},
+			})
+		case "/Users/test-user/Items":
+			id := r.URL.Query().Get("AnyProviderIdEquals")
+			kind := r.URL.Query().Get("IncludeItemTypes")
+			if (id == "tmdb.404" || id == "tmdb.505" || id == "tmdb.606") && kind != "Series" {
+				t.Fatalf("TV Emby lookup type=%q for %s", kind, id)
+			}
+			if (id == "tmdb.101" || id == "tmdb.202" || id == "tmdb.303") && kind != "Movie" {
+				t.Fatalf("movie Emby lookup type=%q for %s", kind, id)
+			}
+			switch id {
+			case "tmdb.101", "tmdb.404":
+				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 1, "Items": []map[string]any{{"Id": "present"}}})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{"TotalRecordCount": 0, "Items": []map[string]any{}})
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	mp := services.NewMoviePilotClient(upstream.URL, "test", "")
+	mp.SetEmbyConfig(upstream.URL, "test")
+	mp.SetEmbyUserID("test-user")
+	mp.WarmupSubscriptionCache()
+	server := NewServer(Deps{MoviePilot: mp})
+	views := server.searchResultViews(context.Background(), []services.SearchResult{
+		{ID: 101, Type: "movie"}, {ID: 202, Type: "movie"}, {ID: 303, Type: "movie"},
+		{ID: 404, Type: "tv"}, {ID: 505, Type: "tv"}, {ID: 606, Type: "tv"},
+	})
+	wants := []detailStatus{
+		{Code: "in_library", Text: "已在库"},
+		{Code: "downloading", Text: "下载中"},
+		{Code: "available", Text: "可求片"},
+		{Code: "in_library", Text: "已在库"},
+		{Code: "downloading", Text: "下载中"},
+		{Code: "available", Text: "可求片"},
+	}
+	for i, want := range wants {
+		if got := views[i].Status; got != want {
+			t.Errorf("result[%d] status=%+v want %+v", i, got, want)
+		}
 	}
 }

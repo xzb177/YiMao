@@ -175,9 +175,9 @@ func TestMiniAppInlineHandlersHaveNoBackslashEscapes(t *testing.T) {
 
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
-	"返回首页": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
+	"返回首页": true, "返回结果": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
 	"求片提交": true, "继续搜索": true, "已经许愿": true, "状态确认": true, "选择季度": true,
-	"系统设置": true, "问题反馈": true,
+	"系统设置": true, "问题反馈": true, "不可洗版": true, "加载更多": true,
 }
 
 func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
@@ -287,5 +287,88 @@ func TestDetailPageHasCompletePremiumVisualContract(t *testing.T) {
 	}
 	if !strings.Contains(html, "refreshDetailStatus()") {
 		t.Fatal("detail refresh action missing")
+	}
+}
+
+func TestMiniAppSearchModeChangesCopyActionsAndPersists(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`function searchModeCopy()`,
+		`S.mode==="wash"`,
+		`title:"搜索洗版"`,
+		`button:"搜索洗版"`,
+		`已有内容换个更好的版本。只可选择已在库内容，新版本可用前会保留旧版。`,
+		`function searchResultAction(x)`,
+		`return status==="in_library"?"申请洗版":status==="unknown"?"状态确认":"不可洗版"`,
+		`function requestSearch(){startSearchMode("request")}`,
+		`function washSearch(){startSearchMode("wash")}`,
+		`if(S.mode==="wash")`,
+		`function loadMoreSearch(){if(!S.loading&&S.hasMore)searchNow(true,S.nextPage)}`,
+		`function backDetail(){closeDialog();S.detailSeq++;S.detailVisible=false;render()}`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing mode contract %q", required)
+		}
+	}
+	requestCopy := `title:"搜索求片",lede:"发中文或英文片名。点结果看详情，确认后再提交。",button:"搜索求片"`
+	if !strings.Contains(html, requestCopy) {
+		t.Fatalf("ordinary request copy must stay wash-free: missing %q", requestCopy)
+	}
+	if strings.Contains(requestCopy, "洗版") {
+		t.Fatal("ordinary request copy leaks wash wording")
+	}
+}
+
+func TestMiniAppUsesCanonicalFourStatusLabels(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`const SEARCH_STATUS_TEXT={in_library:"已在库",available:"可求片",downloading:"下载中",unknown:"状态暂未确认"}`,
+		`function searchStatusText(x)`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing shared status contract %q", required)
+		}
+	}
+	for _, legacy := range []string{"库中可看", "可以求片", "媒体库状态暂时无法确认", "选择季后确认状态"} {
+		if strings.Contains(html, legacy) {
+			t.Errorf("legacy Mini App search status remains: %q", legacy)
+		}
+	}
+}
+
+func TestMiniAppDetailAndSeasonStatusesUseCanonicalDisplayCopy(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`function mediaStatusText(x)`,
+		`<span>"+esc(mediaStatusText(status))+"</span>`,
+		`<b>"+esc(mediaStatusText(season.status))+"</b>`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing canonical detail display contract %q", required)
+		}
+	}
+}
+
+func TestOrdinaryRequestLibraryResultDoesNotOfferWash(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`return status==="in_library"?"已在库"`,
+		`}else if(status==="in_library"){primary={text:"返回结果",icon:"back",tone:"primary",action:"backDetail()"};secondary={text:"继续搜索",icon:"search",action:"continueFinding()"}}`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing ordinary request no-wash contract %q", required)
+		}
+	}
+}
+
+func TestWashModeDoesNotLeakAfterLeavingSearchFlow(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`if(view==="home"){S.mode="request";S.view="home";render();return}`,
+		`function goTasks(){closeDialog();S.mode="request";S.detailVisible=false;S.view='tasks';S.tasks=null;render()}`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing wash scope reset %q", required)
+		}
 	}
 }

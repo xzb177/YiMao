@@ -645,22 +645,25 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) searchResultViews(ctx context.Context, results []services.SearchResult) []searchResultView {
 	views := make([]searchResultView, len(results))
+	if s.deps.MoviePilot == nil {
+		for i, result := range results {
+			views[i] = searchResultView{SearchResult: result, Status: searchDetailStatus("状态暂未确认")}
+		}
+		return views
+	}
+
+	subscribedKeys, cacheFresh := s.deps.MoviePilot.CachedSubscriptionMediaKeys()
 	semaphore := make(chan struct{}, 4)
 	var wg sync.WaitGroup
 	for i, result := range results {
-		views[i] = searchResultView{
-			SearchResult: result,
-			Status:       detailStatus{Code: "unknown", Text: "选择季后确认状态"},
+		views[i] = searchResultView{SearchResult: result, Status: searchDetailStatus("状态暂未确认")}
+		mediaType := services.MediaTypeMovie
+		if result.Type == "tv" || result.Type == "电视剧" {
+			mediaType = services.MediaTypeTV
 		}
-		if result.Type != "movie" {
-			continue
-		}
-		views[i].Status = detailStatus{Code: "unknown", Text: "媒体库状态暂时无法确认"}
-		if s.deps.MoviePilot == nil {
-			continue
-		}
+		_, subscribed := subscribedKeys[services.MediaStatusKey(result.ID, result.Type)]
 		wg.Add(1)
-		go func(index int, tmdbID int) {
+		go func(index int, tmdbID int, mediaType services.MediaType, subscribed bool) {
 			defer wg.Done()
 			select {
 			case semaphore <- struct{}{}:
@@ -668,19 +671,28 @@ func (s *Server) searchResultViews(ctx context.Context, results []services.Searc
 			case <-ctx.Done():
 				return
 			}
-			exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(ctx, tmdbID, services.MediaTypeMovie)
-			if err != nil || ctx.Err() != nil {
+			exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(ctx, tmdbID, mediaType)
+			if ctx.Err() != nil {
 				return
 			}
-			if exists {
-				views[index].Status = detailStatus{Code: "in_library", Text: "库中可看"}
-				return
-			}
-			views[index].Status = detailStatus{Code: "available", Text: "可以求片"}
-		}(i, result.ID)
+			views[index].Status = searchDetailStatus(services.ResolveSearchCardStatus(exists, err, subscribed, cacheFresh))
+		}(i, result.ID, mediaType, subscribed)
 	}
 	wg.Wait()
 	return views
+}
+
+func searchDetailStatus(text string) detailStatus {
+	switch text {
+	case "已在库":
+		return detailStatus{Code: "in_library", Text: text}
+	case "下载中":
+		return detailStatus{Code: "downloading", Text: text}
+	case "可求片":
+		return detailStatus{Code: "available", Text: text}
+	default:
+		return detailStatus{Code: "unknown", Text: "状态暂未确认"}
+	}
 }
 
 func canonicalSearchResultType(value string) (string, bool) {
