@@ -176,7 +176,7 @@ func TestMiniAppInlineHandlersHaveNoBackslashEscapes(t *testing.T) {
 var fourCharLexicon = map[string]bool{
 	"搜索求片": true, "查看进度": true, "帮助说明": true, "更多功能": true,
 	"返回首页": true, "返回结果": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
-	"求片提交": true, "继续搜索": true, "已经许愿": true, "状态确认": true, "选择季度": true,
+	"求片提交": true, "提交求片": true, "继续搜索": true, "已经许愿": true, "状态确认": true, "选择季度": true,
 	"系统设置": true, "问题反馈": true, "不可洗版": true, "加载更多": true,
 }
 
@@ -202,7 +202,7 @@ func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {
 		if !fourCharLexicon[label] {
 			t.Errorf("button label %q is outside the approved lexicon", label)
 		}
-		if style == "success" && label != "搜索求片" && label != "求片提交" {
+		if style == "success" && label != "搜索求片" && label != "求片提交" && label != "提交求片" {
 			t.Errorf("only 搜索求片 keeps the success tone, got %q", label)
 		}
 	}
@@ -352,7 +352,7 @@ func TestMiniAppDetailAndSeasonStatusesUseCanonicalDisplayCopy(t *testing.T) {
 func TestOrdinaryRequestLibraryResultDoesNotOfferWash(t *testing.T) {
 	html := miniAppSource(t)
 	for _, required := range []string{
-		`return status==="in_library"?"已在库"`,
+		`return status==="in_library"?"查看详情"`,
 		`}else if(status==="in_library"){primary={text:"返回结果",icon:"back",tone:"primary",action:"backDetail()"};secondary={text:"继续搜索",icon:"search",action:"continueFinding()"}}`,
 	} {
 		if !strings.Contains(html, required) {
@@ -370,5 +370,52 @@ func TestWashModeDoesNotLeakAfterLeavingSearchFlow(t *testing.T) {
 		if !strings.Contains(html, required) {
 			t.Errorf("missing wash scope reset %q", required)
 		}
+	}
+}
+
+func TestMiniAppSearchDockLabelFollowsMode(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`const searchDockLabel=S.mode==="wash"?"搜索洗版":"搜索求片"`,
+		`tab("search",searchDockLabel,"search","requestSearch()")`,
+		`grid-template-columns:repeat(3,minmax(0,1fr))`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing dynamic search dock contract %q", required)
+		}
+	}
+}
+
+func TestMiniAppOrdinarySearchActionsUseFourCharacterBusinessCopy(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`return status==="in_library"?"查看详情"`,
+		`return status==="in_library"?"查看详情":status==="downloading"?"查看进度":status==="unknown"?"状态确认":mediaType(x)==="tv"?"选择季度":"提交求片"`,
+		`primary={text:"提交求片",icon:"search",tone:"success",action:"openRequestConfirm()"}`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing ordinary action contract %q", required)
+		}
+	}
+}
+
+func TestMiniAppWashResultActionsAreSeparatedAndUnavailableDisabled(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`.yh-pill{`,
+		`.result-action{`,
+		`min-height:44px`,
+		`background:var(--yh-glass-2)`,
+		`function resultActionClass(x)`,
+		`class="result-action ${resultActionClass(x)}"`,
+		`aria-disabled="true"`,
+		`不可洗版`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing wash action visual contract %q", required)
+		}
+	}
+	if strings.Contains(html, `.result-action{display:inline-flex;flex:none;align-items:center;justify-content:center;min-height:36px`) {
+		t.Fatal("result action remains below the 44px touch target")
 	}
 }
