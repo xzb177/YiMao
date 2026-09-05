@@ -207,15 +207,39 @@ func TestMiniAppProgressViewIsATimeline(t *testing.T) {
 		`class="yh-node`,
 		"is-done",
 		"is-now",
-		`class="yh-facts"`,
-		`<tr><td>年份</td>`,
-		`<tr><td>类型</td>`,
-		`<tr><td>下一步</td>`,
-		"NOW PLAYING",
-		`class="yh-task-state`,
-		"Emby 确认可看后会再通知你。",
+		`function groupedTasks(items)`,
+		`function taskTimelineBlock(requestID)`,
+		`function toggleTaskTimeline(element)`,
+		`class="yh-task-state `,
+		`class="timeline-toggle"`,
+		`进度明细`,
 		`/api/miniapp/v1/me`,
 		`/api/miniapp/v1/progress?request_id=`,
+	)
+	// The redesign moved facts out of the old table. Keep the identity,
+	// year/type/season, state, and expandable event controls tied to yhTask.
+	start := strings.Index(html, "function yhTask(item)")
+	end := strings.Index(html, "function mcTaskGroup(")
+	if start < 0 || end <= start {
+		t.Fatal("task renderer boundaries missing")
+	}
+	task := html[start:end]
+	requireSource(t, task,
+		`esc(mediaTitle(item))`,
+		`class="task-meta"`,
+		`esc(item?.media_year||item?.year||'年份待定')`,
+		`mediaType(item)==='tv'?'剧集内容':'电影内容'`,
+		`Number(item.season)`,
+		`item?.business_type==='wash'?'洗版任务':'求片任务'`,
+		`esc(status)`,
+		`yhSteps(item)`,
+		`data-request-id="`,
+		`esc(id)`,
+		`aria-expanded="`,
+		`S.timelineOpen===id`,
+		`toggleTaskTimeline(this)`,
+		`taskTimelineBlock(id)`,
+		`item.can_cancel&&id`,
 	)
 }
 

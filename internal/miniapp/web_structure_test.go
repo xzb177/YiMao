@@ -376,8 +376,12 @@ func TestWashModeDoesNotLeakAfterLeavingSearchFlow(t *testing.T) {
 func TestMiniAppSearchDockLabelFollowsMode(t *testing.T) {
 	html := miniAppSource(t)
 	for _, required := range []string{
-		`const searchDockLabel=S.mode==="wash"?"搜索洗版":"搜索求片"`,
-		`tab("search",searchDockLabel,"search","requestSearch()")`,
+		`const searchDockLabel=S.mode==='wash'?'搜索洗版':'搜索求片'`,
+		`const searchDockAction=S.mode==='wash'?'washSearch()':'requestSearch()'`,
+		`tab("search",searchDockLabel,"search",searchDockAction)`,
+		`function continueFinding(){`,
+		`S.detailVisible=false;S.view='search';render();document.getElementById('q')?.focus()`,
+		`function loadMoreSearch(){if(!S.loading&&S.hasMore)searchNow(true,S.nextPage)}`,
 		`grid-template-columns:repeat(3,minmax(0,1fr))`,
 	} {
 		if !strings.Contains(html, required) {
@@ -425,7 +429,6 @@ func TestMiniAppWashUnavailableResultsSayNotInLibraryAndRemainReadOnly(t *testin
 	for _, required := range []string{
 		`function washSearchStatusText(x)`,
 		`return statusCode(x)==="in_library"?"已在库":"尚未入库"`,
-		`S.mode==="wash"?washSearchStatusText(x):searchStatusText(x)`,
 		`.yh-pill{`,
 		`pointer-events:none`,
 		`result-action.is-disabled`,
@@ -434,7 +437,15 @@ func TestMiniAppWashUnavailableResultsSayNotInLibraryAndRemainReadOnly(t *testin
 			t.Errorf("missing wash result presentation contract %q", required)
 		}
 	}
-	if strings.Contains(html, `S.mode==="wash"?searchStatusText(x):searchStatusText(x)`) {
-		t.Fatal("wash results still expose request-mode status copy")
+	// Test the mode-dependent expression in the actual search renderer, not
+	// an incidental choice of JavaScript quote style or a legacy helper.
+	start := strings.Index(html, "function searchPage()")
+	end := strings.Index(html, "function yhStateTone(item)")
+	if start < 0 || end <= start {
+		t.Fatal("search renderer boundaries missing")
+	}
+	modeStatus := regexp.MustCompile(`S\.mode\s*===\s*["']wash["']\s*\?\s*washSearchStatusText\(x\)\s*:\s*searchStatusText\(x\)`)
+	if !modeStatus.MatchString(html[start:end]) {
+		t.Fatal("search renderer must use wash status copy only in wash mode")
 	}
 }
