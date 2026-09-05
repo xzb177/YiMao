@@ -419,3 +419,22 @@ func TestMiniAppWashResultActionsAreSeparatedAndUnavailableDisabled(t *testing.T
 		t.Fatal("result action remains below the 44px touch target")
 	}
 }
+
+func TestMiniAppWashUnavailableResultsSayNotInLibraryAndRemainReadOnly(t *testing.T) {
+	html := miniAppSource(t)
+	for _, required := range []string{
+		`function washSearchStatusText(x)`,
+		`return statusCode(x)==="in_library"?"已在库":"尚未入库"`,
+		`S.mode==="wash"?washSearchStatusText(x):searchStatusText(x)`,
+		`.yh-pill{`,
+		`pointer-events:none`,
+		`result-action.is-disabled`,
+	} {
+		if !strings.Contains(html, required) {
+			t.Errorf("missing wash result presentation contract %q", required)
+		}
+	}
+	if strings.Contains(html, `S.mode==="wash"?searchStatusText(x):searchStatusText(x)`) {
+		t.Fatal("wash results still expose request-mode status copy")
+	}
+}
