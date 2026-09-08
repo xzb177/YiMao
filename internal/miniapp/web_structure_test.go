@@ -265,7 +265,16 @@ func TestServedMiniAppHTMLMatchesTheAuditedSource(t *testing.T) {
 
 func TestMiniAppDetailStatusConfirmationRefreshesSelectedSeason(t *testing.T) {
 	s := miniAppSource(t)
-	for _, required := range []string{"refreshDetailStatus()", "状态已刷新", "状态确认失败", "type:" + "mediaType(x)", "season:season"} {
+	for _, required := range []string{
+		"refreshDetailStatus()",
+		"状态已刷新",
+		"状态确认失败",
+		"type:" + "mediaType(x)",
+		"season:season",
+		"detailRefreshController?.abort()",
+		"{signal:controller.signal}",
+		"isCurrentDetailRefresh(ctx)",
+	} {
 		if !strings.Contains(s, required) {
 			t.Fatalf("missing detail refresh contract %q", required)
 		}
