@@ -28,7 +28,7 @@ const fixtureAuth = 'fixture-init-data-not-a-real-signature';
 const media = [
   {tmdb_id: 101, type: 'movie', title: '未入库测试电影', year: '2026', media_status: {code: 'available', text: '可求片'}},
   {tmdb_id: 102, type: 'movie', title: '已入库测试电影', year: '2025', media_status: {code: 'in_library', text: '已在库'}},
-  {tmdb_id: 103, type: 'tv', title: '分页测试剧集', year: '2024', media_status: {code: 'available', text: '可求片'}, seasons: [
+  {tmdb_id: 103, type: 'tv', title: '分页测试剧集', year: '2024', media_status: {code: 'wish_joined', text: '已经许愿'}, seasons: [
     {number: 1, episode_count: 8, status: {code: 'available', text: '可求片'}},
     {number: 2, episode_count: 6, status: {code: 'in_library', text: '已在库'}}
   ]}
@@ -44,6 +44,9 @@ const errors = [];
 const report = {kind: 'synthetic API fixtures; real Chromium; not authenticated phone acceptance', viewport: {width: 390, height: 844}, cases: [], screenshots: [], console_errors: errors};
 let sdkDelay = 0;
 let issueFailure = false;
+const detailPlans = [];
+const progressPlans = [];
+function controlledPlan(match, body) {let release;const wait = new Promise(resolve => {release = resolve});const plan = {match, body, wait, release};return plan}
 let page, browser;
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://fixture.test');
@@ -61,9 +64,9 @@ const server = http.createServer(async (req, res) => {
   if (!entry.auth) return send(401, {message: 'Mini App 会话已过期，请从 Telegram 重新打开'});
   switch (url.pathname.split('/').pop()) {
     case 'search': {const n = Number(url.searchParams.get('page') || 1); return send(200, {results: n === 1 ? media.slice(0, 2) : media.slice(2), has_more: n === 1, next_page: n + 1});}
-    case 'detail': {const item = media.find(m => m.tmdb_id === Number(url.searchParams.get('id'))); return send(item ? 200 : 404, item ? {...item, overview: '测试简介。'.repeat(40)} : {message: '未找到测试详情'});}
+    case 'detail': {const id=Number(url.searchParams.get('id')),season=Number(url.searchParams.get('season')||0);const planned=detailPlans.findIndex(p=>p.match.id===id&&Number(p.match.season||0)===season);if(planned>=0){const plan=detailPlans.splice(planned,1)[0];await plan.wait;return send(200,plan.body)}const item = media.find(m => m.tmdb_id === id);if(!item)return send(404,{message:'未找到测试详情'});const detail={...item,overview:'测试简介。'.repeat(40)};if(id===103)detail.media_status=season===2?{code:'wish_joined',text:'已经许愿'}:{code:'available',text:'可求片'};return send(200,detail);}
     case 'me': return send(200, {requests: tasks, user: {first_name: 'Fixture'}});
-    case 'progress': return send(200, {request_id: url.searchParams.get('request_id'), events: [{code: 'created', text: '已提交测试任务', at: '2026-09-01T10:00:00Z'}, {code: 'download_complete', text: '下载完成，等待入库', at: '2026-09-02T10:00:00Z'}]});
+    case 'progress': {const id=url.searchParams.get('request_id');const planned=progressPlans.findIndex(p=>p.match.id===id);if(planned>=0){const plan=progressPlans.splice(planned,1)[0];await plan.wait;return send(200,plan.body)}return send(200, {request_id:id,events:[{code:'created',text:'已提交测试任务',at:'2026-09-01T10:00:00Z'},{code:'download_complete',text:'下载完成，等待入库',at:'2026-09-02T10:00:00Z'}]})}
     case 'dynamic': return send(200, {recently_added: [], recent_requests: []});
     case 'discover': return send(200, {featured: []});
     case 'issues':
@@ -84,18 +87,27 @@ async function run(name, fn) {
   try {await fn(); report.cases.push({name, pass: true}); console.log('PASS', name);}
   catch (error) {report.cases.push({name, pass: false, error: error.message}); console.error('FAIL', name, error.message); throw error;}
 }
+async function waitForRequestCount(pathSuffix, count, timeout = 2000) {
+  const deadline = Date.now() + timeout;
+  while (requests.filter(x => x.path.endsWith(pathSuffix)).length < count) {
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${pathSuffix} request ${count}`);
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+}
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}/miniapp`;
   const authHash = '#tgWebAppData=' + encodeURIComponent(fixtureAuth) + '&tgWebAppVersion=8.0&tgWebAppPlatform=web';
-  browser = await chromium.launch({executablePath: process.env.CHROMIUM || '/usr/bin/chromium', headless: true, args: ['--no-sandbox']});
+  const launchOptions = {headless: true, args: ['--no-sandbox']};
+  if (process.env.CHROMIUM) launchOptions.executablePath = process.env.CHROMIUM;
+  browser = await chromium.launch(launchOptions);
   report.chromium = browser.version();
   page = await browser.newPage({viewport: report.viewport, deviceScaleFactor: 1});
   page.on('pageerror', e => errors.push({type: 'pageerror', message: e.message}));
   page.on('console', msg => {if (msg.type() === 'error') errors.push({type: 'console', message: msg.text()});});
   await run('ordinary search reaches results and keeps mode through pagination/detail/back/dock', async () => {
     await page.goto(base + authHash);
-    await page.locator('.studio-brand h1').waitFor();
+    await page.locator('.yh-hero .yh-title').waitFor();
     await page.locator('#q').fill('fixture query');
     await page.locator('#q').press('Enter');
     await page.locator('.yh-result').nth(1).waitFor();
@@ -176,9 +188,86 @@ async function run(name, fn) {
     await task.locator('.task-row-actions button').first().click();
     await page.locator('.yh-season-list').waitFor();
     eq(await page.locator('.yh-season.is-selected').getAttribute('data-season'), '2');
-    eq(await page.locator('.yh-detail-actions button').first().innerText(), '返回结果');
+    eq(await page.locator('.yh-detail-actions button').first().innerText(), '已经许愿');
     await page.locator('.detail-back button').click();
     eq(await page.evaluate(() => S.view), 'tasks');
+  });
+  await run('detail refresh generations reject cross-media, season and out-of-order responses', async () => {
+    await page.evaluate(() => openDetail(101, 'movie', 0));
+    await page.locator('.yh-detail .yh-title', {hasText: '未入库测试电影'}).waitFor();
+    const staleMovie = controlledPlan({id: 101, season: 0}, {...media[0], title: '不应覆盖的新标题', media_status: {code: 'in_library', text: '已在库'}});
+    detailPlans.push(staleMovie);
+    const detailRequestsBeforeStaleMovie = requests.filter(x => x.path.endsWith('/detail')).length;
+    await page.evaluate(() => {refreshDetailStatus()});
+    await waitForRequestCount('/detail', detailRequestsBeforeStaleMovie + 1);
+    await page.evaluate(() => openDetail(102, 'movie', 0));
+    await page.locator('.yh-detail .yh-title', {hasText: '已入库测试电影'}).waitFor();
+    staleMovie.release();
+    await page.waitForTimeout(30);
+    eq(await page.locator('.yh-detail .yh-title').innerText(), '已入库测试电影', 'late A refresh cannot replace B detail');
+
+    await page.evaluate(() => openDetail(103, 'tv', 2));
+    await page.locator('.yh-season.is-selected').waitFor();
+    eq(await page.locator('.yh-detail-actions button').first().innerText(), '已经许愿', 'selected-season user wish beats objective season availability');
+    await page.locator('.yh-season[data-season="1"]').click();
+    eq(await page.locator('.yh-detail-actions button').first().innerText(), '提交求片', 'wish state does not leak into another season');
+    await page.locator('.yh-season[data-season="2"]').click();
+    eq(await page.locator('.yh-detail-actions button').first().innerText(), '已经许愿', 'returning to the wished season restores its user state');
+    const oldSeason = controlledPlan({id: 103, season: 2}, {...media[2], media_status: {code: 'wish_joined', text: '旧许愿'}});
+    detailPlans.push(oldSeason);
+    const detailRequestsBeforeOldSeason = requests.filter(x => x.path.endsWith('/detail')).length;
+    await page.evaluate(() => {refreshDetailStatus()});
+    await waitForRequestCount('/detail', detailRequestsBeforeOldSeason + 1);
+    const newest = controlledPlan({id: 103, season: 2}, {...media[2], media_status: {code: 'requested', text: '新请求'}});
+    detailPlans.push(newest);
+    const detailRequestsBeforeNewest = requests.filter(x => x.path.endsWith('/detail')).length;
+    await page.evaluate(() => {refreshDetailStatus()});
+    await waitForRequestCount('/detail', detailRequestsBeforeNewest + 1);
+    newest.release();
+    await page.waitForFunction(() => S.detail?.media_status?.code === 'requested');
+    oldSeason.release();
+    await page.waitForTimeout(30);
+    eq(await page.evaluate(() => [S.season, S.detail.media_status.code]), [2, 'requested'], 'latest same-season refresh wins');
+    const invalidated = controlledPlan({id: 103, season: 2}, {...media[2], media_status: {code: 'in_library', text: '旧季度结果'}});
+    detailPlans.push(invalidated);
+    const detailRequestsBeforeInvalidated = requests.filter(x => x.path.endsWith('/detail')).length;
+    await page.evaluate(() => {refreshDetailStatus()});
+    await waitForRequestCount('/detail', detailRequestsBeforeInvalidated + 1);
+    await page.locator('.yh-season[data-season="1"]').click();
+    invalidated.release();
+    await page.waitForTimeout(30);
+    eq(await page.evaluate(() => [S.season, S.detail.media_status.code]), [1, 'available'], 'season switch invalidates pending refresh without leaking another season user state');
+  });
+  await run('expanded timeline refreshes and stale progress cannot overwrite latest events', async () => {
+    await page.evaluate(() => navigate('tasks'));
+    const task = page.locator('.yh-task').filter({hasText: '等待入库测试剧集'});
+    await task.locator('.timeline-toggle').click();
+    await task.locator('.timeline-item').nth(1).waitFor();
+    await task.locator('.timeline-toggle').click();
+    const beforeReopen = requests.filter(x => x.path.endsWith('/progress')).length;
+    await task.locator('.timeline-toggle').click();
+    await page.waitForTimeout(20);
+    assert.ok(requests.filter(x => x.path.endsWith('/progress')).length > beforeReopen, 'collapse/reopen performs another progress request');
+    const stale = controlledPlan({id: 'fixture-library'}, {events:[{code:'created',text:'过期明细',at:'2026-09-01T10:00:00Z'}]});
+    progressPlans.push(stale);
+    const progressRequestsBeforeStale = requests.filter(x => x.path.endsWith('/progress')).length;
+    await page.evaluate(() => {loadTaskTimeline('fixture-library')});
+    await waitForRequestCount('/progress', progressRequestsBeforeStale + 1);
+    const fresh = controlledPlan({id: 'fixture-library'}, {events:[{code:'download_complete',text:'最新明细',at:'2026-09-03T10:00:00Z'}]});
+    progressPlans.push(fresh);
+    const progressRequestsBeforeFresh = requests.filter(x => x.path.endsWith('/progress')).length;
+    await page.evaluate(() => {loadTaskTimeline('fixture-library')});
+    await waitForRequestCount('/progress', progressRequestsBeforeFresh + 1);
+    fresh.release();
+    await task.locator('.timeline-item strong', {hasText: '最新明细'}).waitFor();
+    stale.release();
+    await page.waitForTimeout(30);
+    eq(await task.locator('.timeline-item strong').allTextContents(), ['最新明细']);
+    const beforeRefresh = requests.filter(x => x.path.endsWith('/progress')).length;
+    await page.getByRole('button', {name:'刷新状态', exact:true}).click();
+    await page.waitForTimeout(30);
+    assert.ok(requests.filter(x => x.path.endsWith('/progress')).length > beforeRefresh, 'refresh status forces expanded timeline request');
+    eq(await task.locator('.timeline-item strong').allTextContents(), ['已提交测试任务', '下载完成，等待入库']);
   });
   await run('feedback draft/counts survive fixture failure and clear only on success', async () => {
     await page.goto(base + '?start_param=issues' + authHash);
@@ -215,7 +304,7 @@ async function run(name, fn) {
     assert.ok(requests.slice(start).every(x => x.auth));
     await snapshot('deeplink-season');
     await page.evaluate(() => window.Telegram.WebView.receiveEvent('back_button_pressed'));
-    await page.locator('.studio-brand').waitFor();
+    await page.locator('.yh-hero .yh-title').waitFor();
     eq(await page.evaluate(() => S.detailVisible), false);
     sdkDelay = 0;
   });

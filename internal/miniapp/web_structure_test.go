@@ -304,7 +304,7 @@ func TestMiniAppSearchModeChangesCopyActionsAndPersists(t *testing.T) {
 		`function washSearch(){startSearchMode("wash")}`,
 		`if(S.mode==="wash")`,
 		`function loadMoreSearch(){if(!S.loading&&S.hasMore)searchNow(true,S.nextPage)}`,
-		`function backDetail(){closeDialog();S.detailSeq++;S.detailVisible=false;render()}`,
+		`function backDetail(){closeDialog();invalidateDetailRefresh();S.detailSeq++;S.detailVisible=false;render()}`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Errorf("missing mode contract %q", required)
@@ -365,7 +365,7 @@ func TestWashModeDoesNotLeakAfterLeavingSearchFlow(t *testing.T) {
 	html := miniAppSource(t)
 	for _, required := range []string{
 		`if(view==="home"){S.mode="request";S.view="home";render();return}`,
-		`function goTasks(){closeDialog();S.mode="request";S.detailVisible=false;S.view='tasks';S.tasks=null;render()}`,
+		`function goTasks(){closeDialog();invalidateDetailRefresh();S.mode="request";S.detailVisible=false;S.view='tasks';S.tasks=null;render()}`,
 	} {
 		if !strings.Contains(html, required) {
 			t.Errorf("missing wash scope reset %q", required)
