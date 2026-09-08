@@ -870,10 +870,12 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 	}
 
 	// Restore quota only for ordinary requests; wash work orders never consume it.
+	quotaRestored := review.NormalizedBusinessType() != services.BusinessTypeRequest
 	if review.NormalizedBusinessType() == services.BusinessTypeRequest {
-		if _, err := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); err != nil {
-			logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, err)
+		if _, restoreErr := h.reviewService.RestoreQuotaOnce(requestID, h.quotaService); restoreErr != nil {
+			logger.Info("[ReviewHandler] Failed to restore quota for user %d: %v", review.TelegramID, restoreErr)
 		} else {
+			quotaRestored = true
 			logger.Info("[ReviewHandler] Quota restored for user %d, cost: %d", review.TelegramID, review.QuotaCost)
 		}
 	}
@@ -884,8 +886,15 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		rejectMediaIcon = "📺"
 	}
 	rejectCard := richmessage.BuildReviewRejectedCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
+	if !quotaRestored {
+		rejectCard = richmessage.BuildReviewRejectedPendingRefundCard(review.MediaTitle, review.MediaYear, rejectMediaIcon)
+	}
 	_, _ = h.telegram.SendStructuredRichMessage(review.TelegramID, rejectCard.Input(), nil)
-	h.updateRequesterReceipt(review, "", richmessage.StatusRejected, "配额已退还，可换片名再试。")
+	receiptDetail := "配额已退还，可换片名再试。"
+	if !quotaRestored {
+		receiptDetail = "配额返还暂时失败，系统已记录并将在下次启动安全重试。"
+	}
+	h.updateRequesterReceipt(review, "", richmessage.StatusRejected, receiptDetail)
 
 	// 通知其他管理员：此请求已被处理
 	h.notifyOtherAdmins(ctx.UserID, fmt.Sprintf("❌ 《%s》已被管理员拒绝", review.MediaTitle))
@@ -895,7 +904,16 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 		go h.OnCarpoolNotify(review.TmdbID, string(review.MediaType), review.MediaTitle, "管理员拒绝")
 	}
 
+	if !quotaRestored {
+		return &callback.Response{
+			Text:        "⚠️ 已拒绝请求，但配额返还暂时失败；补偿已记录，将安全重试。",
+			CallbackMsg: "已拒绝，退款待重试",
+			ShowAlert:   true,
+			Edit:        true,
+		}, nil
+	}
 	return &callback.Response{
+		Text:        "✅ 已拒绝请求，配额已退还。",
 		CallbackMsg: richmessage.StatusRejected,
 		ShowAlert:   false,
 	}, nil

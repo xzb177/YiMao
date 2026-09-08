@@ -6,6 +6,7 @@ import (
 	"github.com/xzb177/yimao/pkg/logger"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,7 @@ type QuotaService struct {
 	moviepilot       *MoviePilotClient
 	mu               sync.RWMutex
 	persistMu        sync.Mutex
+	loadErr          error          // makes compatibility fallback permanently read-only
 	adminIDs         map[int64]bool // admin users with unlimited quota
 }
 
@@ -41,24 +43,24 @@ type quotaFileData struct {
 	RestoredRequests map[string]bool      `json:"restored_requests,omitempty"`
 }
 
-// NewQuotaService creates a new quota service
+// NewQuotaService preserves the old API. On load failure it returns an inert,
+// empty service and starts no background writer; production uses Checked.
 func NewQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService {
-	quotasFile := filepath.Join(dataDir, "user_quotas.json")
-	if strings.HasSuffix(strings.ToLower(dataDir), ".json") {
-		quotasFile = dataDir
+	service, err := NewQuotaServiceChecked(dataDir, moviepilot)
+	if err == nil {
+		return service
 	}
+	logger.Error("[QuotaService] critical ledger load failed: %v", err)
+	inert := newQuotaService(dataDir, moviepilot)
+	inert.loadErr = err
+	return inert
+}
 
-	service := &QuotaService{
-		quotasFile:       quotasFile,
-		quotas:           make(map[int64]*UserQuota),
-		restoredRequests: make(map[string]bool),
-		moviepilot:       moviepilot,
-		adminIDs:         make(map[int64]bool),
+func NewQuotaServiceChecked(dataDir string, moviepilot *MoviePilotClient) (*QuotaService, error) {
+	service := newQuotaService(dataDir, moviepilot)
+	if err := service.load(); err != nil {
+		return nil, fmt.Errorf("load quota ledger: %w", err)
 	}
-
-	service.load()
-
-	// Start daily sync routine
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -67,8 +69,15 @@ func NewQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService
 		}()
 		service.syncRoutine()
 	}()
+	return service, nil
+}
 
-	return service
+func newQuotaService(dataDir string, moviepilot *MoviePilotClient) *QuotaService {
+	quotasFile := filepath.Join(dataDir, "user_quotas.json")
+	if strings.HasSuffix(strings.ToLower(dataDir), ".json") {
+		quotasFile = dataDir
+	}
+	return &QuotaService{quotasFile: quotasFile, quotas: make(map[int64]*UserQuota), restoredRequests: make(map[string]bool), moviepilot: moviepilot, adminIDs: make(map[int64]bool)}
 }
 
 // load loads quotas from file
@@ -84,27 +93,48 @@ func (s *QuotaService) load() error {
 		return err
 	}
 
-	var fileData quotaFileData
-
-	if err := json.Unmarshal(data, &fileData); err != nil {
-		// Try legacy format (string keys)
-		var legacyData map[string]*UserQuota
-		if err := json.Unmarshal(data, &legacyData); err == nil {
-			s.quotas = make(map[int64]*UserQuota)
-			for key, quota := range legacyData {
-				var id int64
-				fmt.Sscanf(key, "%d", &id)
-				s.quotas[id] = quota
-			}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("parse quota JSON: %w", err)
+	}
+	if raw == nil {
+		return fmt.Errorf("quota ledger must be a JSON object")
+	}
+	if _, modern := raw["quotas"]; modern {
+		var fileData quotaFileData
+		if err := json.Unmarshal(data, &fileData); err != nil {
+			return fmt.Errorf("parse current quota format: %w", err)
 		}
-	} else {
+		if fileData.Quotas == nil {
+			return fmt.Errorf("current quota ledger must contain a quota object")
+		}
 		s.quotas = fileData.Quotas
 		if fileData.RestoredRequests != nil {
 			s.restoredRequests = fileData.RestoredRequests
 		}
+	} else if _, modern := raw["restored_requests"]; modern {
+		return fmt.Errorf("current quota ledger is missing quotas")
+	} else {
+		var legacyData map[string]*UserQuota
+		if err := json.Unmarshal(data, &legacyData); err != nil {
+			return fmt.Errorf("parse legacy quota format: %w", err)
+		}
+		s.quotas = make(map[int64]*UserQuota, len(legacyData))
+		for key, quota := range legacyData {
+			id, err := strconv.ParseInt(key, 10, 64)
+			if err != nil || id <= 0 || quota == nil {
+				return fmt.Errorf("invalid legacy quota entry %q", key)
+			}
+			s.quotas[id] = quota
+		}
 	}
 	if s.quotas == nil {
 		s.quotas = make(map[int64]*UserQuota)
+	}
+	for id, quota := range s.quotas {
+		if id <= 0 || quota == nil {
+			return fmt.Errorf("invalid quota entry for user %d", id)
+		}
 	}
 
 	// Reset daily usage if needed
@@ -128,6 +158,9 @@ func (s *QuotaService) load() error {
 // Lock ordering is always mu then persistMu, so an older snapshot cannot be
 // written after a newer synchronous update.
 func (s *QuotaService) save() error {
+	if s.loadErr != nil {
+		return fmt.Errorf("quota ledger unavailable: %w", s.loadErr)
+	}
 	s.mu.RLock()
 	s.persistMu.Lock()
 	snapshot := s.snapshotLocked()
@@ -168,6 +201,9 @@ func (s *QuotaService) saveAsync(_ quotaFileData) {
 // saveLocked saves quotas to file (caller must hold mu lock)
 // Creates a copy of quotas to avoid deadlock
 func (s *QuotaService) saveLocked() error {
+	if s.loadErr != nil {
+		return fmt.Errorf("quota ledger unavailable: %w", s.loadErr)
+	}
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 
@@ -315,23 +351,18 @@ func (s *QuotaService) CheckTVQuota(telegramID int64) bool {
 // UseMovieQuota uses one movie quota
 func (s *QuotaService) UseMovieQuota(telegramID int64) error {
 	s.mu.Lock()
-
-	// Use unsafe version to avoid recursive locking
+	defer s.mu.Unlock()
+	before := s.snapshotLocked()
 	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	s.checkAndResetUnsafe(telegramID)
-
 	if quota.MovieLimit != -1 && quota.MovieUsed >= quota.MovieLimit {
-		s.mu.Unlock()
 		return fmt.Errorf("movie quota exceeded")
 	}
-
 	quota.MovieUsed++
-
-	// Make a copy for async save
-	quotasCopy := s.snapshotLocked()
-	s.mu.Unlock()
-
-	s.saveAsync(quotasCopy)
+	if err := s.saveLocked(); err != nil {
+		s.restoreSnapshotLocked(before)
+		return fmt.Errorf("persist movie quota: %w", err)
+	}
 	return nil
 }
 
@@ -343,24 +374,22 @@ func (s *QuotaService) UseTVQuota(telegramID int64) error {
 
 // UseTVQuotaN 扣除 N 个剧集配额。
 func (s *QuotaService) UseTVQuotaN(telegramID int64, n int) error {
+	if n <= 0 {
+		return fmt.Errorf("TV quota cost must be positive")
+	}
 	s.mu.Lock()
-
-	// Use unsafe version to avoid recursive locking
+	defer s.mu.Unlock()
+	before := s.snapshotLocked()
 	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	s.checkAndResetUnsafe(telegramID)
-
 	if quota.TVLimit != -1 && quota.TVUsed+n > quota.TVLimit {
-		s.mu.Unlock()
 		return fmt.Errorf("TV quota exceeded")
 	}
-
 	quota.TVUsed += n
-
-	// Make a copy for async save
-	quotasCopy := s.snapshotLocked()
-	s.mu.Unlock()
-
-	s.saveAsync(quotasCopy)
+	if err := s.saveLocked(); err != nil {
+		s.restoreSnapshotLocked(before)
+		return fmt.Errorf("persist TV quota: %w", err)
+	}
 	return nil
 }
 
@@ -375,11 +404,13 @@ func (s *QuotaService) RestoreQuota(telegramID int64, mediaType string) error {
 
 // RestoreQuotaN restores an exact persisted request cost.
 func (s *QuotaService) RestoreQuotaN(telegramID int64, mediaType string, cost int) error {
+	if cost <= 0 {
+		return fmt.Errorf("quota restore cost must be positive")
+	}
 	s.mu.Lock()
-
-	// Use unsafe version to avoid recursive locking
+	defer s.mu.Unlock()
+	before := s.snapshotLocked()
 	quota := s.getOrCreateQuotaUnsafe(telegramID)
-
 	switch mediaType {
 	case "movie":
 		quota.MovieUsed -= cost
@@ -391,14 +422,19 @@ func (s *QuotaService) RestoreQuotaN(telegramID int64, mediaType string, cost in
 		if quota.TVUsed < 0 {
 			quota.TVUsed = 0
 		}
+	default:
+		return fmt.Errorf("unsupported media type: %s", mediaType)
 	}
-
-	// Make a copy for async save
-	quotasCopy := s.snapshotLocked()
-	s.mu.Unlock()
-
-	s.saveAsync(quotasCopy)
+	if err := s.saveLocked(); err != nil {
+		s.restoreSnapshotLocked(before)
+		return fmt.Errorf("persist quota restore: %w", err)
+	}
 	return nil
+}
+
+func (s *QuotaService) restoreSnapshotLocked(snapshot quotaFileData) {
+	s.quotas = snapshot.Quotas
+	s.restoredRequests = snapshot.RestoredRequests
 }
 
 // RestoreQuotaForRequest restores quota and persists an idempotency ledger in

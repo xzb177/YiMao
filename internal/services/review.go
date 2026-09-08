@@ -78,6 +78,7 @@ type ReviewRequest struct {
 
 	QuotaCost     int  `json:"quota_cost,omitempty"`     // 创建时实际扣除配额；0 表示旧 JSON
 	QuotaRestored bool `json:"quota_restored,omitempty"` // 已返还，持久化保证幂等
+	RefundPending bool `json:"refund_pending,omitempty"` // 终止后待补偿；成功返还后清除
 
 	// WashBaseline captures the exact Emby media-source paths present when a
 	// wash work order is created. Legacy work orders intentionally have no
@@ -116,6 +117,8 @@ type ReviewService struct {
 	mu              sync.RWMutex
 	moviepilot      *MoviePilotClient // For updating subscription status
 	autoResubscribe bool
+	startupAllowed  bool  // false when critical ledger loading failed
+	loadErr         error // makes compatibility fallback permanently read-only
 	// OnSubscriptionComplete 订阅完成时的通知回调（由 main 注入）。
 	// 参数：telegramID, mediaTitle, year, mediaType。
 	// 解耦 ReviewService 与 Telegram client，Emby 不可用时用 MP 轮询触发此回调即可。
@@ -179,27 +182,48 @@ type DailyCompletion struct {
 	CompletedAt time.Time
 }
 
-// NewReviewService creates a new review service
+// NewReviewService preserves the historical constructor for tests and callers
+// that cannot yet handle errors. A corrupt ledger produces an inert service:
+// importantly, no background routine is started and no file is overwritten.
 func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
-	reviewsFile := fmt.Sprintf("%s/review_requests.json", dataDir)
+	service, err := NewReviewServiceChecked(dataDir, autoResubscribe)
+	if err == nil {
+		return service
+	}
+	logger.Error("[ReviewService] critical ledger load failed: %v", err)
+	inert := newReviewService(dataDir, autoResubscribe)
+	inert.loadErr = err
+	return inert
+}
 
-	service := &ReviewService{
-		reviewsFile:      reviewsFile,
+// NewReviewServiceChecked loads the critical review ledger before starting any
+// background work. notified_subs.json is deliberately non-critical: it is only
+// a delivery de-duplication cache, not business state, so damage is logged and
+// starts with an empty cache rather than making request processing unavailable.
+func NewReviewServiceChecked(dataDir string, autoResubscribe bool) (*ReviewService, error) {
+	service := newReviewService(dataDir, autoResubscribe)
+	if err := service.load(); err != nil {
+		return nil, fmt.Errorf("load review ledger: %w", err)
+	}
+	service.startupAllowed = true
+	service.loadNotifiedSubs()
+	service.terminateExhaustedWashOrders()
+	service.startBackgroundRoutines()
+	return service, nil
+}
+
+func newReviewService(dataDir string, autoResubscribe bool) *ReviewService {
+	return &ReviewService{
+		reviewsFile:      fmt.Sprintf("%s/review_requests.json", dataDir),
 		reviews:          make(map[string]*ReviewRequest),
 		autoResubscribe:  autoResubscribe,
 		notifiedSubsFile: fmt.Sprintf("%s/notified_subs.json", dataDir),
 		notifiedSubs:     make(map[int]bool),
+		dailySummaryHour: getDailySummaryHour(),
 	}
+}
 
-	service.load()
-	service.loadNotifiedSubs()
-	// 历史洗版工单在自动核验上限落地之前写入，可能永远停在 approved 并被每次
-	// 入库事件反复重试。启动时一次性转入终态 failed，仍保留记录供人工处理。
-	service.terminateExhaustedWashOrders()
-	service.dailySummaryHour = getDailySummaryHour() // 默认 21:00，可通过 DAILY_SUMMARY_HOUR 环境变量配置
-	service.dailySummaryMin = 0
-
-	// Start cleanup routine for old reviews
+func (service *ReviewService) startBackgroundRoutines() {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -208,7 +232,6 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 		}()
 		service.cleanupRoutine()
 	}()
-	// 启动每日汇总定时任务
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -217,7 +240,6 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 		}()
 		service.dailySummaryRoutine()
 	}()
-	// 超期待审核提醒：启动后延迟一轮再扫，等 main 注入回调完成。
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -227,8 +249,6 @@ func NewReviewService(dataDir string, autoResubscribe bool) *ReviewService {
 		time.Sleep(reviewOverdueStartupDelay)
 		service.remindOverduePendingReviews()
 	}()
-
-	return service
 }
 
 // SetUserMapping 注入用户映射服务（用于 MP 用户名 → Telegram ID 反查）。
@@ -239,8 +259,10 @@ func (s *ReviewService) SetUserMapping(um UserMappingStore) {
 // SetMoviePilotClient sets the MoviePilot client (called after initialization)
 func (s *ReviewService) SetMoviePilotClient(mp *MoviePilotClient) {
 	s.moviepilot = mp
-	// Start subscription status refresh routine
-	go s.refreshSubscriptionStatus()
+	// A compatibility constructor may return an inert service after load failure.
+	if s.startupAllowed {
+		go s.refreshSubscriptionStatus()
+	}
 }
 
 // load loads reviews from file
@@ -259,6 +281,9 @@ func (s *ReviewService) load() error {
 	if err := json.Unmarshal(data, &s.reviews); err != nil {
 		return err
 	}
+	if s.reviews == nil {
+		return fmt.Errorf("review ledger must be a JSON object")
+	}
 
 	logger.Info("[ReviewService] Loaded %d review requests", len(s.reviews))
 	return nil
@@ -266,6 +291,9 @@ func (s *ReviewService) load() error {
 
 // saveLocked saves reviews to file (must be called with lock held)
 func (s *ReviewService) saveLocked() error {
+	if s.loadErr != nil {
+		return fmt.Errorf("review ledger unavailable: %w", s.loadErr)
+	}
 	data, err := json.MarshalIndent(s.reviews, "", "  ")
 	if err != nil {
 		logger.Info("[ReviewService] 序列化失败: %v", err)
@@ -770,10 +798,12 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 	if err != nil {
 		return false, err
 	}
+	previousCost, previousPending := review.QuotaCost, review.RefundPending
 	review.QuotaCost = cost
 	review.QuotaRestored = true
+	review.RefundPending = false
 	if err := s.saveLocked(); err != nil {
-		review.QuotaRestored = false
+		review.QuotaCost, review.QuotaRestored, review.RefundPending = previousCost, false, previousPending
 		return false, err
 	}
 	// If the quota ledger already contained this request, this call reconciled
@@ -1371,16 +1401,17 @@ func (s *ReviewService) Reject(requestID string, reviewedBy int64, reason string
 		return nil, fmt.Errorf("请求状态为 %s, 无法拒绝", review.Status)
 	}
 
-	previousStatus, previousReviewedAt, previousReviewedBy, previousReason := review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason
+	previousStatus, previousReviewedAt, previousReviewedBy, previousReason, previousPending := review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason, review.RefundPending
 	review.Status = "rejected"
 	review.ReviewedAt = time.Now()
 	review.ReviewedBy = reviewedBy
 	review.RejectionReason = reason
+	review.RefundPending = review.NormalizedBusinessType() == BusinessTypeRequest && !review.QuotaRestored
 
 	logger.Info("[ReviewService] Rejected review request: %s, reason: %s", requestID, reason)
 
 	if err := s.saveLocked(); err != nil {
-		review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason = previousStatus, previousReviewedAt, previousReviewedBy, previousReason
+		review.Status, review.ReviewedAt, review.ReviewedBy, review.RejectionReason, review.RefundPending = previousStatus, previousReviewedAt, previousReviewedBy, previousReason, previousPending
 		return nil, err
 	}
 	return cloneReview(review), nil
@@ -1421,16 +1452,17 @@ func (s *ReviewService) CancelByUser(requestID string, telegramID int64) error {
 		return fmt.Errorf("cannot cancel: status is %s, only pending can be cancelled", review.Status)
 	}
 
-	previousStatus, previousReason, previousReviewedAt := review.Status, review.RejectionReason, review.ReviewedAt
+	previousStatus, previousReason, previousReviewedAt, previousPending := review.Status, review.RejectionReason, review.ReviewedAt, review.RefundPending
 	review.Status = "cancelled"
 	review.RejectionReason = "用户主动撤回"
 	review.ReviewedAt = time.Now()
+	review.RefundPending = review.NormalizedBusinessType() == BusinessTypeRequest && !review.QuotaRestored
 
 	logger.Info("[ReviewService] 用户撤回请求: %s, 用户: %d, 影片: %s",
 		requestID, telegramID, review.MediaTitle)
 
 	if err := s.saveLocked(); err != nil {
-		review.Status, review.RejectionReason, review.ReviewedAt = previousStatus, previousReason, previousReviewedAt
+		review.Status, review.RejectionReason, review.ReviewedAt, review.RefundPending = previousStatus, previousReason, previousReviewedAt, previousPending
 		return err
 	}
 	return nil
@@ -1505,50 +1537,84 @@ func (s *ReviewService) cleanupRoutine() {
 	}
 }
 
-// cleanup removes reviews older than 7 days that are approved/rejected
+// cleanup removes only business-terminal records. Active MP states (including
+// unknown/empty states) are never aged out merely because approval is old.
 func (s *ReviewService) cleanup() {
+	s.cleanupAt(time.Now())
+}
+
+func (s *ReviewService) cleanupAt(now time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	cutoff := time.Now().AddDate(0, 0, -7)
-	var toDelete []string
-
+	cutoff := now.Add(-7 * 24 * time.Hour)
+	completedCutoff := now.Add(-14 * 24 * time.Hour)
+	toDelete := make(map[string]*ReviewRequest)
 	for id, review := range s.reviews {
-		// 已完成单据至少保留完成后 14 天：第 3 天发回访，给用户留足回答窗口。
-		// 否则旧逻辑按 ReviewedAt 7 天清理，审批较早的单据可能在回访前消失。
+		if review == nil {
+			continue
+		}
 		if review.CompletedNoticeAt != nil && !review.CompletedNoticeAt.IsZero() {
-			if time.Since(*review.CompletedNoticeAt) < 14*24*time.Hour {
-				continue
+			if review.CompletedNoticeAt.Before(completedCutoff) {
+				toDelete[id] = review
 			}
-			toDelete = append(toDelete, id)
 			continue
 		}
-		// Approved wash work orders remain active until explicitly completed;
-		// deleting them here would remove the only safe recovery path.
-		if review.NormalizedBusinessType() == BusinessTypeWash && review.Status == "approved" {
+		if review.NormalizedBusinessType() == BusinessTypeWash {
+			if (review.Status == "completed" || review.Status == "rejected" || review.Status == "cancelled") && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+				toDelete[id] = review
+			}
 			continue
 		}
-		// Also delete approved reviews without subscription ID (old data before tracking)
-		if review.Status == "approved" && review.SubscriptionID == 0 && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
-			toDelete = append(toDelete, id)
-			logger.Info("[ReviewService] Cleaning up old approved review without subscription: %s", id)
+		if review.RefundPending {
 			continue
 		}
-
-		if (review.Status == "approved" || review.Status == "rejected") &&
-			review.ReviewedAt.Before(cutoff) {
-			toDelete = append(toDelete, id)
+		if review.SubscriptionID != 0 {
+			if (review.SubscriptionState == "F" || review.SubscriptionState == "X") && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+				toDelete[id] = review
+			}
+			continue
+		}
+		// Legacy records without a subscription are retained unless explicitly
+		// rejected/cancelled. Old approved/stuck records may still need recovery.
+		if (review.Status == "rejected" || review.Status == "cancelled") && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+			toDelete[id] = review
 		}
 	}
-
-	for _, id := range toDelete {
+	if len(toDelete) == 0 {
+		return
+	}
+	for id := range toDelete {
 		delete(s.reviews, id)
 	}
-
-	if len(toDelete) > 0 {
-		logger.Info("[ReviewService] Cleaned up %d old review requests", len(toDelete))
-		s.saveLocked()
+	if err := s.saveLocked(); err != nil {
+		for id, review := range toDelete {
+			s.reviews[id] = review
+		}
+		logger.Info("[ReviewService] cleanup persistence failed; rolled back: %v", err)
+		return
 	}
+	logger.Info("[ReviewService] Cleaned up %d terminal review requests", len(toDelete))
+}
+
+// RetryPendingRefunds safely reconciles persisted compensation intents.
+func (s *ReviewService) RetryPendingRefunds(quota *QuotaService) (int, error) {
+	s.mu.RLock()
+	ids := make([]string, 0)
+	for id, review := range s.reviews {
+		if review != nil && review.RefundPending {
+			ids = append(ids, id)
+		}
+	}
+	s.mu.RUnlock()
+	sort.Strings(ids)
+	done := 0
+	for _, id := range ids {
+		if _, err := s.RestoreQuotaOnce(id, quota); err != nil {
+			return done, fmt.Errorf("retry refund %s: %w", id, err)
+		}
+		done++
+	}
+	return done, nil
 }
 
 // GetStats returns review statistics

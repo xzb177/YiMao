@@ -256,12 +256,23 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	logger.Info("    - AdminService...")
 	adminService := services.NewAdminService(cfg.DataDir)
 	logger.Info("    - QuotaService...")
-	quotaService := services.NewQuotaService(cfg.DataDir, moviepilotClient)
+	quotaService, err := services.NewQuotaServiceChecked(cfg.DataDir, moviepilotClient)
+	if err != nil {
+		log.Fatalf("Failed to load quota ledger: %v", err)
+	}
 	logger.Info("    - ReviewService...")
-	reviewService := services.NewReviewService(cfg.DataDir, cfg.EnableAutoResubscribe)
+	reviewService, err := services.NewReviewServiceChecked(cfg.DataDir, cfg.EnableAutoResubscribe)
+	if err != nil {
+		log.Fatalf("Failed to load review ledger: %v", err)
+	}
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
 	reviewService.SetUserMapping(userMappingService) // Issue #1: 全量检测需要 MP 用户名→TG ID 反查
+	if repaired, retryErr := reviewService.RetryPendingRefunds(quotaService); retryErr != nil {
+		logger.Warn("[ReviewService] pending quota refund retry failed after %d repairs: %v", repaired, retryErr)
+	} else if repaired > 0 {
+		logger.Info("[ReviewService] repaired %d pending quota refunds", repaired)
+	}
 	logger.Info("    - FulfillmentStatsService...")
 	fulfillmentStats := services.NewFulfillmentStatsService(cfg.DataDir)
 	reviewService.Fulfillment = fulfillmentStats

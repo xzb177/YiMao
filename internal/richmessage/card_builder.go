@@ -860,6 +860,22 @@ func BuildReviewRejectedCard(title string, year int, mediaIcon string) RichMessa
 	}).Rich()
 }
 
+// BuildReviewRejectedPendingRefundCard avoids claiming a refund that has not
+// yet durably committed. The persisted compensation marker drives later retry.
+func BuildReviewRejectedPendingRefundCard(title string, year int, mediaIcon string) RichMessage {
+	_ = mediaIcon
+	return buildPosterCard(posterCardData{
+		Title:  title,
+		Year:   year,
+		Status: StatusRejected,
+		Footer: "配额返还暂时失败，系统已记录并将在下次启动安全重试。",
+		Buttons: []types.TelegramRichMessageButton{
+			richButton("查看进度", "requests", types.ButtonStylePrimary, false),
+			richButton("返回首页", "start", types.ButtonStylePrimary, false),
+		},
+	}).Rich()
+}
+
 // BuildReviewStuckCard builds user notification for stuck (sync failed) request.
 func BuildReviewStuckCard(title string, year int, mediaIcon string) RichMessage {
 	_ = mediaIcon
