@@ -91,8 +91,9 @@ type ReviewRequest struct {
 }
 
 const (
-	BusinessTypeRequest = "request"
-	BusinessTypeWash    = "wash"
+	BusinessTypeRequest   = "request"
+	BusinessTypeWash      = "wash"
+	reviewStatusCancelled = "cancelled" //nolint:misspell // Persisted API/JSON protocol spelling.
 )
 
 // NormalizedBusinessType treats legacy records without business_type as requests.
@@ -1560,7 +1561,7 @@ func (s *ReviewService) cleanupAt(now time.Time) {
 			continue
 		}
 		if review.NormalizedBusinessType() == BusinessTypeWash {
-			if (review.Status == "completed" || review.Status == "rejected" || review.Status == "cancelled") && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+			if (review.Status == "completed" || review.Status == "rejected" || review.Status == reviewStatusCancelled) && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
 				toDelete[id] = review
 			}
 			continue
@@ -1576,7 +1577,7 @@ func (s *ReviewService) cleanupAt(now time.Time) {
 		}
 		// Legacy records without a subscription are retained unless explicitly
 		// rejected/cancelled. Old approved/stuck records may still need recovery.
-		if (review.Status == "rejected" || review.Status == "cancelled") && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+		if (review.Status == "rejected" || review.Status == reviewStatusCancelled) && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
 			toDelete[id] = review
 		}
 	}
