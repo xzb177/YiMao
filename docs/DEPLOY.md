@@ -160,7 +160,9 @@ YiMao 接收：
 - `POST /webhook/moviepilot` 或 `/webhook/mp`
 - `POST /webhook/emby`
 
-设置 `WEBHOOK_SECRET` 后，调用方必须携带匹配的 token/signature。公网反向代理只需暴露必要路由；管理 API 不应直接裸露。
+设置 `WEBHOOK_SECRET` 后，调用方应在 `X-Webhook-Signature: sha256=<hex>` 中携带对原始请求体计算的 HMAC-SHA256。迁移期兼容 header `X-Webhook-Token`，但 URL query token 会被拒绝，以避免凭据进入代理、访问日志和浏览历史。
+
+HTTP 管理 API 仅开放只读的 `GET /api/stats` 与 `GET /api/admins`，且无论 `ENABLE_API_AUTH` 如何都必须携带有效 `X-API-Key`。共享 API key 无法证明 Telegram 用户主体，因此 `/api/summary`、管理员新增/删除等写操作均返回 403；伪造 `X-Admin-User-ID` 不会获得权限。管理员增删请使用 Telegram 内经验证的 root admin 流程。公网反向代理只需暴露必要路由，管理 API 不应直接裸露。
 
 MoviePilot “下载完成”只表示资源已齐，YiMao 会显示等待入库；Emby webhook 确认媒体已索引后，才进入“真正可看”通知。
 

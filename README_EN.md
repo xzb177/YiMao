@@ -140,10 +140,13 @@ Before release, run the isolated [staging and device acceptance workflow](docs/S
 |------|---------|
 | `POST /webhook/emby` | Emby import callbacks |
 | `POST /webhook/moviepilot` | MoviePilot callbacks |
-| `POST /api/summary` | Manual daily summary trigger |
+| `GET /api/stats` | Authenticated read-only runtime statistics |
+| `GET /api/admins` | Authenticated read-only administrator list |
 | `GET /health` | Health check |
 
-When `WEBHOOK_SECRET` is set, requests must include `?token=<secret>` or `X-Webhook-Signature: sha256=<hex>`.
+When `WEBHOOK_SECRET` is set, requests must include `X-Webhook-Signature: sha256=<hex>` (HMAC-SHA256 of the raw body). `X-Webhook-Token` remains available temporarily for migration; query-string tokens are rejected.
+
+The HTTP management API is read-only: `GET /api/stats` and `GET /api/admins` require `X-API-Key`. Administrator additions/removals and other management writes are disabled because a shared API key cannot prove a Telegram principal. Perform administrator changes through the Telegram root-admin workflow; `X-Admin-User-ID` is not an identity credential.
 
 
 ---

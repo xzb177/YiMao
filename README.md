@@ -106,9 +106,10 @@ cd /opt/YiMao
 - `POST /webhook/emby`：Emby 事件
 - `GET /miniapp`：App-first Mini App shell
 - `/api/miniapp/v1/*`：Telegram initData 鉴权后的搜索、详情、任务、求片/洗版和反馈 API。
-- `/api/summary`、`/api/stats`、`/api/admins*`：受 API auth 或 localhost 限制的管理 API
+- `GET /api/stats`、`GET /api/admins`：必须携带 `X-API-Key` 的只读 HTTP 管理 API。
+- HTTP 管理写操作（包括 `/api/summary`、管理员增删）已禁用；共享 API key 不能证明 Telegram 主体，管理员增删必须通过 Telegram 内的 root admin 流程完成，`X-Admin-User-ID` 不作为身份凭据。
 
-设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带匹配的 token/signature。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。
+设置 `WEBHOOK_SECRET` 后，MoviePilot/Emby webhook 调用方必须携带 `X-Webhook-Signature: sha256=<hex>`（对原始请求体计算 HMAC-SHA256）；迁移期也可用 header `X-Webhook-Token`。URL query token 不再接受。Mini App API 使用 Telegram `initData` HMAC 校验，不信任客户端直接传入的 user ID。
 
 ## 存储
 

@@ -143,13 +143,13 @@ func New(
 	mux.HandleFunc("/webhook/moviepilot", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 	mux.HandleFunc("/webhook/mp", securityService.PublicMiddleware(apiRouter.HandleWebhook))
 
-	// Register additional API routes. These are management endpoints, NOT
-	// webhooks: without API auth they must stay localhost-only (the previous
-	// fallback exposed them publicly with only IP rate limiting).
-	var apiHandler http.HandlerFunc = apiRouter.HandleWebhook
-	mux.HandleFunc("/api/stats", securityService.ManagementMiddleware(apiHandler))
-	mux.HandleFunc("/api/admins", securityService.ManagementMiddleware(apiHandler))
-	mux.HandleFunc("/api/admins/", securityService.ManagementMiddleware(apiHandler))
+	// Management routes use their real handlers and always require an API key.
+	// Administrator mutations remain disabled in Router until requests can carry
+	// a cryptographically verified root principal (a caller-supplied user ID is
+	// not an identity).
+	mux.HandleFunc("/api/stats", securityService.ManagementMiddleware(apiRouter.HandleStats))
+	mux.HandleFunc("/api/admins", securityService.ManagementMiddleware(apiRouter.HandleAdmins))
+	mux.HandleFunc("/api/admins/", securityService.ManagementMiddleware(apiRouter.HandleAdminsByID))
 
 	// Telegram Mini App routes. Authentication for API calls is handled by the
 	// Mini App package using Telegram initData; the HTML shell is public so

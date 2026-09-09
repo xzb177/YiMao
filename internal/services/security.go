@@ -2,11 +2,13 @@ package services
 
 import (
 	"crypto/subtle"
-	"github.com/xzb177/yimao/pkg/logger"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/xzb177/yimao/pkg/logger"
 )
 
 // Default Security Config
@@ -117,32 +119,50 @@ func (s *SecurityService) EnableAPIAuth(enabled bool) {
 	logger.Info("[Security] API auth %v", map[bool]string{true: "enabled", false: "disabled"}[enabled])
 }
 
-// getClientIP extracts the real client IP from request
+// getClientIP extracts the client IP without trusting caller-controlled proxy
+// headers. Starting at RemoteAddr, it walks X-Forwarded-For right-to-left,
+// discards consecutive trusted proxy hops, and returns the first valid
+// non-trusted IP. Any malformed XFF entry makes the whole chain unusable.
 func (s *SecurityService) getClientIP(r *http.Request) string {
-	// Only trust proxy headers when request comes from a trusted proxy
-	remoteIP := r.RemoteAddr
-	if idx := strings.LastIndex(remoteIP, ":"); idx != -1 {
-		remoteIP = remoteIP[:idx]
+	remoteIP := parseRemoteIP(r.RemoteAddr)
+	if remoteIP == nil {
+		return r.RemoteAddr
+	}
+	fallback := remoteIP.String()
+	if !s.isTrustedProxy(fallback) {
+		return fallback
 	}
 
-	if s.isTrustedProxy(remoteIP) {
-		// Request is from a trusted proxy, honor X-Forwarded-For / X-Real-IP
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			ips := strings.Split(xff, ",")
-			if len(ips) > 0 {
-				ip := strings.TrimSpace(ips[0])
-				if ip != "" {
-					return ip
-				}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		parts := strings.Split(xff, ",")
+		chain := make([]net.IP, len(parts))
+		for i, part := range parts {
+			chain[i] = net.ParseIP(strings.TrimSpace(part))
+			if chain[i] == nil {
+				return fallback
 			}
 		}
-		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			return xri
+		for i := len(chain) - 1; i >= 0; i-- {
+			candidate := chain[i].String()
+			if s.isTrustedProxy(candidate) {
+				continue
+			}
+			return candidate
 		}
+		return fallback
 	}
 
-	// Direct connection or untrusted proxy — use RemoteAddr
-	return remoteIP
+	// X-Real-IP has no proxy-chain semantics and may be forwarded unchanged by
+	// a reverse proxy. Require the standard, validated XFF chain instead.
+	return fallback
+}
+
+func parseRemoteIP(remoteAddr string) net.IP {
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return net.ParseIP(host)
+	}
+	return net.ParseIP(strings.TrimSpace(remoteAddr))
 }
 
 // isTrustedProxy checks if an IP is a trusted proxy
