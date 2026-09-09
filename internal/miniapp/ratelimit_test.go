@@ -2,6 +2,7 @@ package miniapp
 
 import (
 	"encoding/json"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -104,8 +105,9 @@ func TestMiniAppRateLimitHTTPResponse(t *testing.T) {
 	if got := limited.Header().Get("Retry-After"); got != strconv.Itoa(30) {
 		t.Fatalf("Retry-After=%q", got)
 	}
-	if got := limited.Header().Get("Content-Type"); got != "application/json" {
-		t.Fatalf("Content-Type=%q", got)
+	mediaType, _, err := mime.ParseMediaType(limited.Header().Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		t.Fatalf("Content-Type=%q err=%v", limited.Header().Get("Content-Type"), err)
 	}
 	var body struct {
 		OK    bool   `json:"ok"`
