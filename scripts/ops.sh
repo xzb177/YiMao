@@ -125,7 +125,7 @@ run_container() {
 }
 
 data_mount() {
-    mounts=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{println .Type "|" .Name "|" .Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)
+    mounts=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/app/data"}}{{printf "%s|%s|%s\n" .Type .Name .Source}}{{end}}{{end}}' "$CONTAINER_NAME" 2>/dev/null || true)
     lines=$(printf '%s\n' "$mounts" | sed '/^[[:space:]]*$/d' | wc -l | tr -d ' ')
     [ "$lines" = 1 ] || die "container $CONTAINER_NAME must have exactly one /app/data mount"
     printf '%s\n' "$mounts"
@@ -133,8 +133,8 @@ data_mount() {
 
 require_managed_data_volume() {
     mount=$(data_mount)
-    mount_type=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $1}')
-    mount_name=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $2}')
+    mount_type=$(printf '%s\n' "$mount" | cut -d '|' -f 1)
+    mount_name=$(printf '%s\n' "$mount" | cut -d '|' -f 2)
     if [ "$mount_type" != volume ] || [ "$mount_name" != "$VOLUME_NAME" ]; then
         die "container $CONTAINER_NAME uses a non-managed /app/data mount; migrate it to named volume $VOLUME_NAME before install/update"
     fi
@@ -237,9 +237,9 @@ backup_data() (
     docker inspect "$CONTAINER_NAME" >/dev/null 2>&1 || die "container $CONTAINER_NAME does not exist; nothing can be backed up consistently"
     backup_image=$(docker inspect -f '{{.Config.Image}}' "$CONTAINER_NAME")
     mount=$(data_mount)
-    mount_type=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $1}')
-    mount_name=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $2}')
-    mount_source=$(printf '%s\n' "$mount" | awk -F ' \| ' '{print $3}')
+    mount_type=$(printf '%s\n' "$mount" | cut -d '|' -f 1)
+    mount_name=$(printf '%s\n' "$mount" | cut -d '|' -f 2)
+    mount_source=$(printf '%s\n' "$mount" | cut -d '|' -f 3-)
     case "$mount_type" in
         volume) backup_mount="type=volume,src=$mount_name,dst=/source,readonly" ;;
         bind) backup_mount="type=bind,src=$mount_source,dst=/source,readonly" ;;

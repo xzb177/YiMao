@@ -145,7 +145,7 @@ docker run -d --name "$NAME" --network host --restart unless-stopped --env-file 
     "$IMAGE" >/dev/null
 BIND_BACKUP=$(PATH="$FAKEBIN:$PATH" YIMAO_CONTAINER_NAME="$NAME" YIMAO_VOLUME_NAME="$VOLUME" \
     YIMAO_ENV_FILE="$ENV_FILE" YIMAO_BACKUP_DIR="$BIND_BACKUPS" YIMAO_HEALTH_ATTEMPTS=8 \
-    "$ROOT/scripts/ops.sh" backup | tail -n 1)
+    "$ROOT/scripts/ops.sh" backup)
 [ "$(tar -xOzf "$BIND_BACKUP/data.tar.gz" ./probe.txt)" = bind-original ] || {
     echo "bind-mounted data backup mismatch" >&2
     exit 1
@@ -196,11 +196,11 @@ fi
 
 BACKUP=$(PATH="$FAKEBIN:$PATH" YIMAO_CONTAINER_NAME="$NAME" YIMAO_VOLUME_NAME="$VOLUME" \
     YIMAO_ENV_FILE="$ENV_FILE" YIMAO_BACKUP_DIR="$BACKUPS" YIMAO_HEALTH_ATTEMPTS=8 \
-    "$ROOT/scripts/ops.sh" backup | tail -n 1)
+    "$ROOT/scripts/ops.sh" backup)
 [ -n "$BACKUP" ] && [ -d "$BACKUP" ] || { echo "backup path was not returned" >&2; exit 1; }
 SECOND_BACKUP=$(PATH="$FAKEBIN:$PATH" YIMAO_CONTAINER_NAME="$NAME" YIMAO_VOLUME_NAME="$VOLUME" \
     YIMAO_ENV_FILE="$ENV_FILE" YIMAO_BACKUP_DIR="$BACKUPS" YIMAO_HEALTH_ATTEMPTS=8 \
-    "$ROOT/scripts/ops.sh" backup | tail -n 1)
+    "$ROOT/scripts/ops.sh" backup)
 [ "$SECOND_BACKUP" != "$BACKUP" ] || { echo "consecutive backups reused one directory" >&2; exit 1; }
 (cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null)
 (cd "$SECOND_BACKUP" && sha256sum -c SHA256SUMS >/dev/null)
