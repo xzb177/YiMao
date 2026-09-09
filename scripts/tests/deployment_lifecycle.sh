@@ -167,13 +167,46 @@ docker run -d --name "$NAME" --network host --restart unless-stopped --env-file 
 
 # The test image overrides only Docker HEALTHCHECK. HTTP probing is replaced below.
 for _ in 1 2 3 4 5 6; do
-    [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] && break
+    running=$(timeout --kill-after=1 2 docker inspect -f '{{.State.Running}}' "$NAME") || {
+        echo "cannot inspect container PID 1 startup" >&2
+        exit 1
+    }
+    [ "$running" = true ] && break
     sleep 1
 done
-RUN_UID=$(docker exec "$NAME" awk '/^Uid:/ {print $2}' /proc/1/status)
-RUN_GID=$(docker exec "$NAME" awk '/^Gid:/ {print $2}' /proc/1/status)
-[ "$RUN_UID:$RUN_GID" = "10001:10001" ] || {
-    echo "container PID 1 runs as $RUN_UID:$RUN_GID, want 10001:10001" >&2
+[ "$running" = true ] || {
+    echo "container PID 1 did not start (timed out)" >&2
+    exit 1
+}
+
+# Running precedes entrypoint ownership setup and su-exec. Poll a single
+# snapshot, with bounded Docker calls; never trust the fixture HEALTHCHECK.
+RUN_IDS=
+attempt=0
+while [ "$attempt" -lt 30 ]; do
+    RUN_IDS=$(timeout --kill-after=1 2 docker exec "$NAME" awk '
+        /^Uid:/ || /^Gid:/ {
+            if (NF != 5) invalid=1
+            for (i=2; i<=5; i++) {
+                if ($i !~ /^[0-9]+$/ || $i != $2) invalid=1
+            }
+            if ($1 == "Uid:") { uid=$2; uid_count++ }
+            else { gid=$2; gid_count++ }
+        }
+        END {
+            if (invalid || uid_count != 1 || gid_count != 1) exit 1
+            print uid ":" gid
+        }
+    ' /proc/1/status) || {
+        echo "cannot read valid container PID 1 UID:GID" >&2
+        exit 1
+    }
+    [ "$RUN_IDS" = "10001:10001" ] && break
+    attempt=$((attempt + 1))
+    [ "$attempt" -ge 30 ] || sleep 1
+done
+[ "$RUN_IDS" = "10001:10001" ] || {
+    echo "container PID 1 runs as $RUN_IDS, want 10001:10001 (timed out)" >&2
     exit 1
 }
 

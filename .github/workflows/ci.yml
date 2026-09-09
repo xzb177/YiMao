@@ -59,7 +59,9 @@ jobs:
         run: python3 scripts/copy-lint.py
 
       - name: Deployment contract
-        run: scripts/tests/deployment_contract.sh
+        run: |
+          python3 scripts/tests/deployment_lifecycle_pid1.py
+          scripts/tests/deployment_contract.sh
 
       - name: Browser test syntax
         run: node --check scripts/tests/miniapp_browser.cjs
