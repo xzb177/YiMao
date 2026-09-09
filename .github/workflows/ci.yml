@@ -8,18 +8,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 2
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
@@ -51,11 +55,20 @@ jobs:
           docker compose --env-file .env.staging -f docker-compose.staging.yml config --quiet
           rm .env.staging
 
+      - name: Product copy contract
+        run: python3 scripts/copy-lint.py
+
+      - name: Deployment contract
+        run: scripts/tests/deployment_contract.sh
+
+      - name: Browser test syntax
+        run: node --check scripts/tests/miniapp_browser.cjs
+
       - name: Go vet
         run: go vet ./...
 
       - name: Lint new issues
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@55c2c1448f86e01eaae002a5a3a9624417608d84 # v6
         with:
           version: v1.64.8
           args: --timeout=5m --new-from-rev=HEAD~1
@@ -80,3 +93,76 @@ jobs:
 
       - name: Go build
         run: go build ./...
+
+  race:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install CJK font
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fonts-noto-cjk
+
+      - name: Race detector
+        run: go test -race ./internal/services/... ./internal/miniapp/... ./internal/server/... ./internal/handlers/...
+
+  browser:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Playwright
+        run: |
+          npm install --no-save --package-lock=false playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Mini App browser regression
+        env:
+          PLAYWRIGHT_MODULE: playwright
+        run: node scripts/tests/miniapp_browser.cjs "$RUNNER_TEMP/miniapp-browser"
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: miniapp-browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/miniapp-browser
+          if-no-files-found: ignore
+          retention-days: 7
+
+  release-gate:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 2
+
+      - name: Build production image
+        run: |
+          docker build --build-arg "REVISION=$GITHUB_SHA" -t yimao:ci .
+          revision=$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' yimao:ci)
+          test "$revision" = "$GITHUB_SHA"
+
+      - name: Deployment lifecycle
+        env:
+          YIMAO_LIFECYCLE_BASE_IMAGE: yimao:ci
+          YIMAO_LIFECYCLE_BASE_REVISION: ${{ github.sha }}
+          YIMAO_TEST_TMP_ROOT: ${{ runner.temp }}/yimao-lifecycle-tests
+          YIMAO_TEST_HOST_TMP_ROOT: ${{ runner.temp }}/yimao-lifecycle-tests
+        run: scripts/tests/deployment_lifecycle.sh

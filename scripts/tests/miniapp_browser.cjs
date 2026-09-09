@@ -246,8 +246,7 @@ async function waitForRequestCount(pathSuffix, count, timeout = 2000) {
     await task.locator('.timeline-toggle').click();
     const beforeReopen = requests.filter(x => x.path.endsWith('/progress')).length;
     await task.locator('.timeline-toggle').click();
-    await page.waitForTimeout(20);
-    assert.ok(requests.filter(x => x.path.endsWith('/progress')).length > beforeReopen, 'collapse/reopen performs another progress request');
+    await waitForRequestCount('/progress', beforeReopen + 1);
     const stale = controlledPlan({id: 'fixture-library'}, {events:[{code:'created',text:'过期明细',at:'2026-09-01T10:00:00Z'}]});
     progressPlans.push(stale);
     const progressRequestsBeforeStale = requests.filter(x => x.path.endsWith('/progress')).length;
@@ -265,8 +264,8 @@ async function waitForRequestCount(pathSuffix, count, timeout = 2000) {
     eq(await task.locator('.timeline-item strong').allTextContents(), ['最新明细']);
     const beforeRefresh = requests.filter(x => x.path.endsWith('/progress')).length;
     await page.getByRole('button', {name:'刷新状态', exact:true}).click();
-    await page.waitForTimeout(30);
-    assert.ok(requests.filter(x => x.path.endsWith('/progress')).length > beforeRefresh, 'refresh status forces expanded timeline request');
+    await waitForRequestCount('/progress', beforeRefresh + 1);
+    await task.locator('.timeline-item strong', {hasText: '下载完成，等待入库'}).waitFor();
     eq(await task.locator('.timeline-item strong').allTextContents(), ['已提交测试任务', '下载完成，等待入库']);
   });
   await run('feedback draft/counts survive fixture failure and clear only on success', async () => {

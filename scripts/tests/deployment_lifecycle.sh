@@ -6,7 +6,9 @@ NAME=yimao-lifecycle-test
 VOLUME=yimao-lifecycle-data
 DR_NAME=yimao-lifecycle-disaster
 DR_VOLUME=yimao-lifecycle-disaster-data
-BASE_IMAGE=yimao:lifecycle-base
+BASE_IMAGE=${YIMAO_LIFECYCLE_BASE_IMAGE:-yimao:lifecycle-base}
+BASE_REVISION=${YIMAO_LIFECYCLE_BASE_REVISION:-lifecycle-test}
+HELPER_IMAGE=${YIMAO_TEST_HELPER_IMAGE:-alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b}
 IMAGE=yimao:lifecycle-test
 UNHEALTHY_IMAGE=yimao:lifecycle-unhealthy
 PORT=18088
@@ -36,7 +38,7 @@ cleanup() {
         docker image rm "$test_image" >/dev/null 2>&1 || true
     done
     if [ -n "${HOST_TMP:-}" ]; then
-        docker run --rm --mount "type=bind,src=$HOST_TMP,dst=/cleanup" alpine:latest \
+        docker run --rm --mount "type=bind,src=$HOST_TMP,dst=/cleanup" "$HELPER_IMAGE" \
             sh -c "chown -R $(id -u):$(id -g) /cleanup" >/dev/null 2>&1 || true
     fi
     rm -rf "$TMP"
@@ -51,12 +53,19 @@ MOVIEPILOT_API_KEY=abcdefghijklmnopqrstuvwxyz123456
 ENABLE_API_AUTH=true
 API_KEYS={"abcdefghijklmnopqrstuvwxyz123456":"lifecycle"}
 PORT=$PORT
-PUID=0
-PGID=0
+PUID=10001
+PGID=10001
 EOF
 chmod 600 "$ENV_FILE"
 
-docker build --build-arg REVISION=lifecycle-test -t "$BASE_IMAGE" "$ROOT"
+if [ -n "${YIMAO_LIFECYCLE_BASE_IMAGE:-}" ]; then
+    docker image inspect "$BASE_IMAGE" >/dev/null 2>&1 || {
+        echo "prebuilt lifecycle base image is unavailable: $BASE_IMAGE" >&2
+        exit 1
+    }
+else
+    docker build --build-arg "REVISION=$BASE_REVISION" -t "$BASE_IMAGE" "$ROOT"
+fi
 docker build -f "$ROOT/scripts/tests/lifecycle.Dockerfile" --build-arg BASE_IMAGE="$BASE_IMAGE" -t "$IMAGE" "$ROOT"
 cat > "$TMP/unhealthy.Dockerfile" <<'EOF'
 ARG BASE_IMAGE
@@ -161,6 +170,12 @@ for _ in 1 2 3 4 5 6; do
     [ "$(docker inspect -f '{{.State.Running}}' "$NAME")" = true ] && break
     sleep 1
 done
+RUN_UID=$(docker exec "$NAME" awk '/^Uid:/ {print $2}' /proc/1/status)
+RUN_GID=$(docker exec "$NAME" awk '/^Gid:/ {print $2}' /proc/1/status)
+[ "$RUN_UID:$RUN_GID" = "10001:10001" ] || {
+    echo "container PID 1 runs as $RUN_UID:$RUN_GID, want 10001:10001" >&2
+    exit 1
+}
 
 # TERM during archive creation must abort and restore the original service.
 if PATH="$FAKEBIN:$PATH" YIMAO_TEST_SIGNAL_BACKUP=1 \
@@ -189,8 +204,8 @@ SECOND_BACKUP=$(PATH="$FAKEBIN:$PATH" YIMAO_CONTAINER_NAME="$NAME" YIMAO_VOLUME_
 [ "$SECOND_BACKUP" != "$BACKUP" ] || { echo "consecutive backups reused one directory" >&2; exit 1; }
 (cd "$BACKUP" && sha256sum -c SHA256SUMS >/dev/null)
 (cd "$SECOND_BACKUP" && sha256sum -c SHA256SUMS >/dev/null)
-grep -qx 'image=yimao:lifecycle-test' "$BACKUP/container.state"
-grep -qx 'revision=lifecycle-test' "$BACKUP/container.state"
+grep -qx "image=$IMAGE" "$BACKUP/container.state"
+grep -qx "revision=$BASE_REVISION" "$BACKUP/container.state"
 grep -qx 'network=host' "$BACKUP/container.state"
 grep -qx 'restart=unless-stopped' "$BACKUP/container.state"
 

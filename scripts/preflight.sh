@@ -7,6 +7,7 @@ ENV_FILE=""
 COMPOSE_FILE="docker-compose.yml"
 ENGINE="auto"
 RUN_LIFECYCLE=0
+LIFECYCLE_HELPER_IMAGE=${YIMAO_TEST_HELPER_IMAGE:-alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b}
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -207,7 +208,7 @@ if [ "$RUN_LIFECYCLE" -eq 1 ]; then
   trap lifecycle_int INT
   trap lifecycle_term TERM
   printf '%s\n' "$$" > "$lifecycle_marker"
-  docker run --rm --mount "type=bind,src=$lifecycle_host_tmp_root,dst=/probe,readonly" alpine:latest \
+  docker run --rm --mount "type=bind,src=$lifecycle_host_tmp_root,dst=/probe,readonly" "$LIFECYCLE_HELPER_IMAGE" \
     sh -c 'test -f "/probe/$(basename "$1")"' sh "$(basename "$lifecycle_marker")"
   cleanup_lifecycle_marker
   trap - EXIT HUP INT TERM

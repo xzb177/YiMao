@@ -58,6 +58,20 @@ contains .dockerignore '^env\.backup$'
 contains scripts/preflight.sh '--lifecycle'
 contains scripts/preflight.sh 'deployment_lifecycle\.sh'
 contains scripts/preflight.sh 'YIMAO_TEST_TMP_ROOT.*yimao-lifecycle-tests'
+contains scripts/tests/deployment_lifecycle.sh 'YIMAO_LIFECYCLE_BASE_IMAGE'
+contains scripts/tests/deployment_lifecycle.sh '/proc/1/status'
+contains .github/workflows/ci.yml 'go test -race'
+contains .github/workflows/ci.yml 'miniapp_browser\.cjs'
+contains .github/workflows/ci.yml 'docker build --build-arg.*REVISION=.*-t yimao:ci'
+contains .github/workflows/ci.yml 'scripts/tests/deployment_lifecycle\.sh'
+if grep -Eq 'uses:[[:space:]]+[^#[:space:]]+@v[0-9]+' .github/workflows/ci.yml; then
+  fail 'GitHub Actions must be pinned to immutable commit SHAs'
+fi
+floating_alpine=$(find scripts .github -type f ! -path 'scripts/tests/deployment_contract.sh' -exec grep -Hn -- 'alpine:latest' {} + 2>/dev/null || true)
+if [ -n "$floating_alpine" ]; then
+  printf '%s\n' "$floating_alpine" >&2
+  fail 'test and CI helpers must not use floating alpine:latest'
+fi
 contains scripts/preflight.sh 'YIMAO_TEST_HOST_TMP_ROOT.*lifecycle_tmp_root'
 contains scripts/preflight.sh 'YIMAO_ENV_FILE=.*ENV_FILE.*docker-compose --env-file.*ENV_FILE'
 contains scripts/preflight.sh 'lifecycle_term.*exit 143'
