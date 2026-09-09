@@ -30,7 +30,10 @@ YiMao 固定使用：
 - `restart=unless-stopped`
 - named volume `yimao-data:/app/data`
 - no Docker socket mount in the production `yimao` container
+- 默认以 `10001:10001` 非 root 身份运行；entrypoint 仅在启动时调整 named volume 权限
 - Docker `HEALTHCHECK` 与 `GET /health`
+
+默认权限从旧版 root 改为 `PUID=10001`、`PGID=10001`。升级时 named volume 会由 entrypoint 自动改属主；若使用旧 bind mount，先停止旧实例、备份并确认宿主路径允许 `chown`。只有明确依赖 root 的旧部署才可在 `.env` 显式设置 `PUID=0`（`PGID` 可保持 `0`）作为兼容过渡，并应尽快消除依赖。非 root `PUID` 不允许搭配 `PGID=0`；目标 UID/GID 已被其他账户占用时容器会明确失败，避免静默回退到 root。
 
 因此 `MOVIEPILOT_URL`、`EMBY_URL` 必须是**宿主机可访问地址**。不要照搬 Compose service name，除非宿主机本身能解析该名称。
 
@@ -264,7 +267,9 @@ chmod 600 .env
 
 ### `/resetpw` 失败
 
-确认 Docker socket 已挂载、`MOVIEPILOT_CONTAINER` 与实际容器名一致、`MOVIEPILOT_DB_PATH` 是 MoviePilot 容器内数据库路径。不要手工编辑密码哈希。
+`/resetpw` 是例外功能：它需要调用 Docker CLI 进入 MoviePilot 容器。生产镜像暂时保留 `docker-cli`，以免破坏选择启用该功能的部署；但普通 `docker-compose.yml` **不会**挂载 Docker socket，因此默认非 root 容器不能使用它。只有风险评估后才叠加 `docker-compose.resetpw.yml`；该显式高权限 override 会挂载 Docker socket，并把这一服务实例改为 `PUID=0`、`PGID=0`。不要在常规生产配置中手工复制这些权限。
+
+确认显式 override 已提供 Docker 访问能力、`MOVIEPILOT_CONTAINER` 与实际容器名一致、`MOVIEPILOT_DB_PATH` 是 MoviePilot 容器内数据库路径。不要手工编辑密码哈希。
 
 ### Mini App 打不开或仍是旧版
 

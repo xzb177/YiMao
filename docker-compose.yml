@@ -11,8 +11,8 @@ services:
       - ${YIMAO_ENV_FILE:-.env}
     environment:
       DATA_DIR: /app/data
-      PUID: ${PUID:-0}
-      PGID: ${PGID:-0}
+      PUID: ${PUID:-10001}
+      PGID: ${PGID:-10001}
     network_mode: "host"
     volumes:
       - yimao-data:/app/data

@@ -35,6 +35,7 @@ type Deps struct {
 	Telegram   *services.TelegramClient
 	Admins     *services.AdminService
 	MaxAuthAge time.Duration
+	RateLimit  RateLimitConfig
 }
 
 type requestSubmitter interface {
@@ -43,6 +44,7 @@ type requestSubmitter interface {
 
 type Server struct {
 	deps         Deps
+	rateLimiter  *userRateLimiter
 	dynamicMu    sync.Mutex
 	dynamicAt    time.Time
 	dynamicCache map[string]any
@@ -172,7 +174,7 @@ func NewServer(deps Deps) *Server {
 	if deps.MaxAuthAge <= 0 {
 		deps.MaxAuthAge = 24 * time.Hour
 	}
-	return &Server{deps: deps}
+	return &Server{deps: deps, rateLimiter: newUserRateLimiter(deps.RateLimit)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -225,8 +227,16 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) (AuthUser, bool) {
 	raw := r.Header.Get("X-Telegram-Init-Data")
 	user, err := ValidateInitData(raw, s.deps.BotToken, s.deps.MaxAuthAge)
 	if err != nil {
+		if allowed, retry := s.rateLimiter.allowAuthFailure(r); !allowed {
+			writeRateLimit(w, retry)
+			return AuthUser{}, false
+		}
 		logger.Info("[MiniApp] initData rejected: %v", err)
 		http.Error(w, "Mini App 身份验证失败", http.StatusUnauthorized)
+		return AuthUser{}, false
+	}
+	if allowed, retry := s.rateLimiter.allow(user.ID, miniAppRateClass(r)); !allowed {
+		writeRateLimit(w, retry)
 		return AuthUser{}, false
 	}
 	return user, true

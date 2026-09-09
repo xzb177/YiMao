@@ -4,7 +4,10 @@
 services:
   yimao:
     environment:
-      - MOVIEPILOT_DB_PATH=${MOVIEPILOT_DB_PATH:-/config/user.db}
-      - MOVIEPILOT_CONTAINER=${MOVIEPILOT_CONTAINER:-moviepilot-v2}
+      MOVIEPILOT_DB_PATH: ${MOVIEPILOT_DB_PATH:-/config/user.db}
+      MOVIEPILOT_CONTAINER: ${MOVIEPILOT_CONTAINER:-moviepilot-v2}
+      # This explicit high-privilege profile needs root to access docker.sock.
+      PUID: "0"
+      PGID: "0"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock

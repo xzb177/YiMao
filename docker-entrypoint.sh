@@ -1,42 +1,66 @@
 #!/bin/sh
-set -e
-# PUID/PGID 动态适配：根据环境变量创建运行用户，解决宿主机权限错配
-PUID=${PUID:-0}
-PGID=${PGID:-0}
+set -eu
+
+# The entrypoint starts as root only to reconcile named-volume ownership.
+# PUID=0 remains an explicit compatibility override; it is never the default.
+PUID=${PUID:-10001}
+PGID=${PGID:-10001}
+
+case "$PUID" in
+    ''|*[!0-9]*)
+        echo "[Entrypoint] PUID must be numeric" >&2
+        exit 1
+        ;;
+esac
+case "$PGID" in
+    ''|*[!0-9]*)
+        echo "[Entrypoint] PGID must be numeric" >&2
+        exit 1
+        ;;
+esac
 
 echo "[Entrypoint] PUID=$PUID PGID=$PGID"
 
-# UID 0 = root, no need to create user
 if [ "$PUID" = "0" ]; then
-    chown -R root:root /app/data 2>/dev/null || true
-    echo "[Entrypoint] Running as root"
+    if [ "$PGID" != "0" ]; then
+        echo "[Entrypoint] PGID must also be 0 when PUID=0" >&2
+        exit 1
+    fi
+    chown -R root:root /app/data
+    echo "[Entrypoint] Running as root (explicit PUID=0 compatibility override)"
     exec "$@"
 fi
+if [ "$PGID" = "0" ]; then
+    echo "[Entrypoint] PGID=0 is not allowed when PUID is non-root" >&2
+    exit 1
+fi
 
-# 如果 PGID 组不存在则创建
+existing_group=$(getent group "$PGID" | cut -d: -f1 || true)
+if [ -n "$existing_group" ] && [ "$existing_group" != "yimao" ]; then
+    echo "[Entrypoint] requested PGID $PGID already belongs to group $existing_group" >&2
+    exit 1
+fi
+existing_user=$(getent passwd "$PUID" | cut -d: -f1 || true)
+if [ -n "$existing_user" ] && [ "$existing_user" != "yimao" ]; then
+    echo "[Entrypoint] requested PUID $PUID already belongs to user $existing_user" >&2
+    exit 1
+fi
+
 if ! getent group yimao >/dev/null 2>&1; then
     groupadd -g "$PGID" yimao
-else
-    existing_gid=$(getent group yimao | cut -d: -f3)
-    if [ "$existing_gid" != "$PGID" ]; then
-        groupmod -g "$PGID" yimao
-    fi
+elif [ "$(getent group yimao | cut -d: -f3)" != "$PGID" ]; then
+    groupmod -g "$PGID" yimao
 fi
 
-# 如果 PUID 用户不存在则创建
 if ! getent passwd yimao >/dev/null 2>&1; then
     useradd -u "$PUID" -g "$PGID" -d /app -s /bin/sh yimao
-else
-    existing_uid=$(id -u yimao 2>/dev/null || echo "0")
-    if [ "$existing_uid" != "$PUID" ]; then
-        usermod -u "$PUID" yimao
-    fi
+elif [ "$(id -u yimao)" != "$PUID" ]; then
+    usermod -u "$PUID" yimao
 fi
 
-# 确保 /app/data 归属正确
-chown -R yimao:yimao /app/data 2>/dev/null || true
+# Ensure an existing user follows a changed primary group as well.
+usermod -g "$PGID" yimao
+chown -R yimao:yimao /app/data
 
 echo "[Entrypoint] Running as $(id yimao)"
-
-# 切换到 yimao 用户执行
 exec su-exec yimao "$@"
