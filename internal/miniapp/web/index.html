@@ -26,7 +26,7 @@
   /* 主操作：暖金属渐变。--yh-green-* 为被测试锁定的历史别名，语义等同 act */
   --yh-act-1:#f2d9a4; --yh-act-2:#c9973c; --yh-act-ink:#170f04;
   --yh-green-1:var(--yh-act-1); --yh-green-2:var(--yh-act-2);
-  --yh-gold:#d8a84e; --yh-gold-soft:rgba(216,168,78,.13);
+  --yh-gold:#d8a84e; --yh-gold-soft:rgba(216,168,78,.13); --yh-gold-text:#eccd8b;
   /* 导航与信息：冷蓝，只用于当前位置与中性提示，不与主操作抢焦点 */
   --yh-blue:#6f9dff; --yh-blue-soft:rgba(76,141,255,.16);
   --yh-amber:#e0a83c; --yh-red:#e8796a; --yh-good:#63c48f;
@@ -84,7 +84,7 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .yh-sec-head span{color:var(--yh-ink-3);font-size:11px;letter-spacing:.08em}
 .yh-sec-head button{min-height:32px;padding:0;color:var(--yh-ink-3);font-size:11px;letter-spacing:.08em}
 .yh-sec-head button:active{color:var(--yh-gold)}
-.yh-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:999px;border:1px solid var(--yh-line-gold);background:var(--yh-gold-soft);color:#eccd8b;font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
+.yh-count{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 7px;border-radius:999px;border:1px solid var(--yh-line-gold);background:var(--yh-gold-soft);color:var(--yh-gold-text);font-size:11px;font-weight:700;font-variant-numeric:tabular-nums}
 .yh-section-note{margin:-3px 0 0;color:var(--yh-ink-3);font-size:11.5px;line-height:1.65}
 .yh-foot{margin:40px 0 6px;text-align:center;color:var(--yh-ink-3);font-size:9px;letter-spacing:.28em;text-transform:uppercase}
 
@@ -121,13 +121,16 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 
 /* --- 动作栅格：三列等宽，主操作独占金属渐变 ------------------------- */
 .yh-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
-.yh-act{display:grid;justify-items:center;align-content:center;gap:7px;min-width:0;min-height:74px;padding:12px 6px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);background:var(--yh-glass);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--yh-edge);color:var(--yh-ink-2);font-size:12px;font-weight:600;letter-spacing:.02em;text-align:center;transition:transform .16s ease,border-color .16s ease,color .16s ease}
-.yh-act svg{width:21px;height:21px;stroke-width:1.7;color:var(--yh-ink-3);transition:color .16s ease}
+.yh-act,.aux-action{display:grid;justify-items:center;align-content:center;gap:7px;min-width:0;min-height:74px;padding:12px 6px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);background:var(--yh-glass);color:var(--yh-ink-2);font-size:12px;font-weight:600;text-align:center}
+.yh-act{backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);box-shadow:var(--yh-edge);letter-spacing:.02em;transition:transform .16s ease,border-color .16s ease,color .16s ease}
+.yh-act svg,.aux-action svg{width:21px;height:21px;color:var(--yh-ink-3)}
+.yh-act svg{stroke-width:1.7;transition:color .16s ease}
 .yh-act:active{transform:translateY(1px) scale(.985)}
 .yh-act.is-primary{border-color:var(--yh-line-2);color:var(--yh-ink)}
 .yh-act.is-primary svg{color:var(--yh-gold)}
-.yh-act.is-success{border-color:rgba(216,168,78,.46);background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));color:var(--yh-act-ink);box-shadow:0 16px 32px -16px rgba(201,151,60,.72),var(--yh-edge)}
-.yh-act.is-success svg{color:var(--yh-act-ink);stroke-width:2}
+.yh-act.is-success,.aux-action.is-success{border-color:rgba(216,168,78,.46);background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));color:var(--yh-act-ink);box-shadow:0 16px 32px -16px rgba(201,151,60,.72)}
+.yh-act.is-success{box-shadow:0 16px 32px -16px rgba(201,151,60,.72),var(--yh-edge)}
+.yh-act.is-success svg,.aux-action.is-success svg{color:var(--yh-act-ink);stroke-width:2}
 .yh-act.is-danger{border-color:rgba(232,121,106,.4);color:#f0a79b}
 .yh-act.is-danger svg{color:#e8796a}
 
@@ -141,7 +144,7 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .yh-art img{width:100%;height:100%;object-fit:cover}
 .yh-art::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(5,6,9,.72),transparent 46%);pointer-events:none}
 .yh-art-ph{display:block;width:100%;height:100%;background:radial-gradient(84% 66% at 26% 16%,#2b3450,transparent 58%),radial-gradient(72% 62% at 84% 84%,#4a3129,transparent 56%),#12151c}
-.yh-badge{position:absolute;left:7px;bottom:7px;z-index:1;max-width:calc(100% - 14px);padding:3px 8px;border:1px solid var(--yh-line-gold);border-radius:7px;background:rgba(7,8,11,.76);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#eccd8b;font-size:10px;letter-spacing:.04em;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.yh-badge{position:absolute;left:7px;bottom:7px;z-index:1;max-width:calc(100% - 14px);padding:3px 8px;border:1px solid var(--yh-line-gold);border-radius:7px;background:rgba(7,8,11,.76);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--yh-gold-text);font-size:10px;letter-spacing:.04em;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .yh-card strong{display:block;width:122px;max-width:122px;min-width:0;font-size:13px;line-height:1.34;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .yh-card small{display:block;width:122px;max-width:122px;min-width:0;color:var(--yh-ink-3);font-size:11px;line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -155,7 +158,7 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .yh-tl-title{display:flex;flex-wrap:wrap;align-items:center;gap:8px;min-width:0;font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .yh-tl-sub{margin-top:5px;color:var(--yh-ink-3);font-size:11.5px;line-height:1.66}
 .yh-pill{display:inline-flex;align-items:center;flex:none;width:max-content;min-height:24px;padding:0 9px;border:1px solid var(--yh-line);border-radius:999px;background:rgba(255,255,255,.045);color:var(--yh-ink-3);font-size:10.5px;letter-spacing:.04em}
-.yh-pill.gold{border-color:var(--yh-line-gold);background:var(--yh-gold-soft);color:#eccd8b}
+.yh-pill.gold{border-color:var(--yh-line-gold);background:var(--yh-gold-soft);color:var(--yh-gold-text)}
 .yh-pill.blue{border-color:rgba(111,157,255,.36);background:var(--yh-blue-soft);color:#a8c3ff}
 
 /* --- 快捷入口：2×2 大按钮，衬线序号点题 ------------------------------- */
@@ -165,20 +168,25 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .workflow-modes button[aria-pressed="true"]{background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));color:var(--yh-act-ink);font-weight:700;box-shadow:0 10px 22px -12px rgba(201,151,60,.66)}
 .search-filters{display:flex;gap:4px;margin:14px 0 6px;border-bottom:1px solid var(--yh-line)}
 .search-filter{flex:1;max-width:132px;min-height:44px;padding:0 8px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--yh-ink-3);font-size:12.5px;transition:color .18s ease,border-color .18s ease}
-.search-filter.is-active{border-bottom-color:var(--yh-gold);color:#eccd8b;font-weight:700}
+.search-filter.is-active{border-bottom-color:var(--yh-gold);color:var(--yh-gold-text);font-weight:700}
 .result-summary{min-height:26px;padding:6px 0;color:var(--yh-ink-3);font-size:11.5px;letter-spacing:.06em;font-variant-numeric:tabular-nums}
 .yh-list{display:grid;gap:9px}
 .yh-result{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:start;gap:13px;min-width:0;padding:10px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);background:var(--yh-glass);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:var(--yh-edge);text-align:left;color:inherit;transition:transform .16s ease,border-color .16s ease}
 .yh-result:active{transform:translateY(1px);border-color:var(--yh-line-2)}
 .yh-result img,.yh-result .yh-ph{grid-column:1;grid-row:1;width:74px;height:111px;border-radius:10px;object-fit:cover;background:var(--yh-base-3)}
 .yh-result .yh-ph{background:radial-gradient(84% 66% at 26% 16%,#2b3450,transparent 58%),radial-gradient(72% 62% at 84% 84%,#4a3129,transparent 56%),#12151c}
+.yh-result.skeleton{pointer-events:none;opacity:.85}
+.yh-result.skeleton .sk{background:linear-gradient(90deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.16) 50%,rgba(255,255,255,.05) 100%);background-size:200% 100%;animation:yh-sk 1.4s linear infinite}
+.sk-line{display:block;width:60%;height:11px;border-radius:6px;margin-top:7px;background:linear-gradient(90deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.16) 50%,rgba(255,255,255,.05) 100%);background-size:200% 100%;animation:yh-sk 1.4s linear infinite}
+.sk-line.w40{width:40%}
+@keyframes yh-sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .yh-result .result-copy{grid-column:2;align-self:center;min-width:0;display:grid;gap:6px;justify-items:start}
 .yh-result strong{font-size:15px;line-height:1.36;font-weight:650;white-space:normal;overflow-wrap:anywhere}
 .yh-result small{color:var(--yh-ink-3);font-size:11.5px}
 .load-more{width:100%;min-height:48px;margin-top:16px;border:1px solid var(--yh-line);border-radius:var(--yh-r-sm);background:var(--yh-glass-2);color:var(--yh-ink-2);font-size:13px}
 
 /* 结果行右侧动作标签：展示性元素，点击由整行按钮承载 */
-.result-action{display:inline-flex;flex:none;align-items:center;justify-content:center;width:max-content;min-height:44px;padding:0 13px;border:1px solid var(--yh-line-gold);border-radius:var(--yh-r-sm);background:var(--yh-gold-soft);color:#eccd8b;font-size:11.5px;font-weight:700;line-height:1.2;pointer-events:none}
+.result-action{display:inline-flex;flex:none;align-items:center;justify-content:center;width:max-content;min-height:44px;padding:0 13px;border:1px solid var(--yh-line-gold);border-radius:var(--yh-r-sm);background:var(--yh-gold-soft);color:var(--yh-gold-text);font-size:11.5px;font-weight:700;line-height:1.2;pointer-events:none}
 .result-action.is-disabled{border-color:var(--yh-line);background:rgba(255,255,255,.035);color:var(--yh-ink-3);opacity:.62;cursor:default}
 
 /* --- 详情页：大幅剧照 + 衬线片名 + 季选择 + 底部主操作 --------------- */
@@ -205,7 +213,7 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .yh-season small{color:var(--yh-ink-3);font-size:11px}
 .yh-season b{flex:none;color:var(--yh-ink-3);font-size:11px;font-weight:600;text-align:right}
 .yh-season.is-selected{border-color:var(--yh-line-gold);background:var(--yh-gold-soft)}
-.yh-season.is-selected b{color:#eccd8b}
+.yh-season.is-selected b{color:var(--yh-gold-text)}
 .yh-detail-actions{display:flex;gap:10px;margin-top:4px;padding-top:16px;border-top:1px solid var(--yh-line)}
 .yh-detail-actions .yh-act{flex:1;min-width:0;min-height:52px;grid-auto-flow:column;justify-items:center;align-items:center;gap:8px;font-size:13px}
 .yh-detail-actions svg{width:18px;height:18px}
@@ -260,11 +268,8 @@ body::after{content:"";position:fixed;z-index:0;inset:0;pointer-events:none;back
 .aux-facts tr:last-child td{border-bottom:0}
 .aux-facts td:last-child{text-align:right;color:var(--yh-ink);font-variant-numeric:tabular-nums}
 .aux-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:4px}
-.aux-action{display:grid;justify-items:center;align-content:center;gap:7px;min-width:0;min-height:74px;padding:12px 6px;border:1px solid var(--yh-line);border-radius:var(--yh-r-md);background:var(--yh-glass);color:var(--yh-ink-2);font-size:12px;font-weight:600;text-align:center;transition:transform .15s ease}
-.aux-action svg{width:21px;height:21px;color:var(--yh-ink-3)}
+.aux-action{transition:transform .15s ease}
 .aux-action:active{transform:translateY(1px)}
-.aux-action.is-success{border-color:rgba(216,168,78,.46);background:linear-gradient(165deg,var(--yh-green-1),var(--yh-green-2));color:var(--yh-act-ink);box-shadow:0 16px 32px -16px rgba(201,151,60,.72)}
-.aux-action.is-success svg{color:var(--yh-act-ink);stroke-width:2}
 .aux-form{display:grid;gap:11px;margin-top:20px;padding-top:20px;border-top:1px solid var(--yh-line)}
 .aux-form h2{margin:0;font-family:var(--yh-serif);font-size:18px;font-weight:600}
 .aux-form label{display:grid;gap:7px;color:var(--yh-ink-2);font-size:12.5px}
@@ -496,8 +501,9 @@ function searchPage(){
   const modeOptions=[{value:'request',text:"求片模式"},{value:'wash',text:"洗版模式"}];
   const modes='<div class="workflow-modes" role="group" aria-label="搜索模式">'+modeOptions.map(({value,text})=>'<button type="button" data-mode="'+value+'" aria-pressed="'+(S.mode===value)+'" onclick="startSearchMode(this.dataset.mode)">'+text+'</button>').join('')+'</div>';
   const cards=list.map(x=>{const id=Number(mediaID(x)),t=mediaType(x),art=poster(x);return '<button type="button" class="yh-result" data-mid="'+id+'" data-type="'+t+'" data-season="0" onclick="openMediaFromElement(this)">'+(art?'<img loading="lazy" src="'+esc(art)+'" alt="" onerror="this.hidden=true">':'<span class="yh-ph" aria-hidden="true"></span>')+'<span class="result-copy"><strong>'+esc(mediaTitle(x))+'</strong><small>'+esc(x.year||'年份待定')+' · '+(t==='tv'?'剧集内容':'电影内容')+'</small><span class="yh-pill">'+esc(S.mode==='wash'?washSearchStatusText(x):searchStatusText(x))+'</span>'+resultButton(x)+'</span></button>'}).join('');
+  const skeleton=S.loading&&!list.length?Array.from({length:4},()=>'<div class="yh-result skeleton" aria-hidden="true"><span class="yh-ph sk"></span><span class="result-copy"><span class="sk-line"></span><span class="sk-line w40"></span></span></div>').join(''):'';
   const state=S.searchError?'<div class="yh-empty" role="alert"><span>'+esc(S.searchError)+'</span><button type="button" onclick="retrySearch()">重新加载</button></div>':S.loading?'<div class="yh-empty" role="status">正在搜索…</div>':!list.length?'<div class="yh-empty" role="status">'+(S.query?'没有找到匹配内容':'输入片名开始搜索')+'</div>':'';
-  return yhHead('SEARCH',copy.title,copy.lede)+modes+'<form class="yh-search" role="search" onsubmit="submitSearch(event)"><input id="q" type="search" aria-label="搜索片名" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="搜索电影、剧集" autocomplete="off"><button type="submit">'+yhIcon('search')+'<span>'+copy.button+'</span></button></form>'+searchTypeFilters()+'<div class="result-summary" role="status">'+(list.length?list.length+' 部结果':'')+'</div><div class="yh-list" aria-busy="'+S.loading+'">'+cards+'</div>'+state+(S.hasMore&&!S.searchError?'<button type="button" class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMoreSearch()">'+(S.loading?'正在加载…':'加载更多')+'</button>':'');
+  return yhHead('SEARCH',copy.title,copy.lede)+modes+'<form class="yh-search" role="search" onsubmit="submitSearch(event)"><input id="q" type="search" aria-label="搜索片名" enterkeyhint="search" value="'+esc(S.query)+'" placeholder="搜索电影、剧集" autocomplete="off"><button type="submit">'+yhIcon('search')+'<span>'+copy.button+'</span></button></form>'+searchTypeFilters()+'<div class="result-summary" role="status">'+(list.length?list.length+' 部结果':'')+'</div><div class="yh-list" aria-busy="'+S.loading+'">'+cards+skeleton+'</div>'+state+(S.hasMore&&!S.searchError?'<button type="button" class="load-more" '+(S.loading?'disabled':'')+' onclick="loadMoreSearch()">'+(S.loading?'正在加载…':'加载更多')+'</button>':'');
 }
 
 /* --- 详情页：主操作随媒体状态与当前模式切换 --------------------------- */
