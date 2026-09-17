@@ -492,17 +492,26 @@ func (c *MoviePilotClient) SearchMediaWithCountContext(ctx context.Context, quer
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	var response []SearchResult
-	if err := json.Unmarshal(body, &response); err != nil {
-		logger.Info("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
-		return nil, fmt.Errorf("failed to decode search response: %w", err)
+	// MoviePilot returns its standard API envelope: {success, message, data:[...]}.
+	// Keep accepting the legacy bare array during rolling upgrades.
+	var envelope struct {
+		Success bool           `json:"success"`
+		Message string         `json:"message"`
+		Data    []SearchResult `json:"data"`
 	}
-
-	logger.Info("[MoviePilot] SearchMedia: found %d results for query=%s (page %d)", len(response), query, page)
-
-	return &SearchResponse{
-		Results: response,
-	}, nil
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		var legacy []SearchResult
+		if legacyErr := json.Unmarshal(body, &legacy); legacyErr != nil {
+			logger.Info("[MoviePilot] SearchMedia decode error: body=%s, err=%v", string(body), err)
+			return nil, fmt.Errorf("failed to decode search response: %w", err)
+		}
+		envelope.Data = legacy
+	}
+	if !envelope.Success && envelope.Message != "" {
+		return nil, fmt.Errorf("MoviePilot search failed: %s", envelope.Message)
+	}
+	logger.Info("[MoviePilot] SearchMedia: found %d results for query=%s (page %d)", len(envelope.Data), query, page)
+	return &SearchResponse{Results: envelope.Data}, nil
 }
 
 // GetMediaInfo retrieves detailed information about media
