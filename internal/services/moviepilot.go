@@ -249,11 +249,8 @@ const (
 	maxResponseBodySize             = 10 * 1024 * 1024 // 10MB
 	maxSubscriptionResponseBodySize = 32 * 1024 * 1024 // Large MP installations can exceed the generic limit.
 
-	// subscriptionsEndpoint returns the complete subscription list in one
-	// response. MoviePilot ignores page/count here, so a single successful
-	// response IS the complete snapshot; never treat it as page 1 of N and
-	// never request a second page to "confirm" completeness.
-	subscriptionsEndpoint = "/api/v1/subscribe/?page=1&count=1000"
+	// MoviePilot paginates subscriptions and accepts at most 200 per page.
+	subscriptionsEndpoint = "/api/v1/subscribe/?page=%d&count=200"
 
 	// subscriptionSnapshotTimeout covers the whole snapshot request. A large
 	// library serializes several MB, which regularly exceeds the generic 30s
@@ -835,30 +832,56 @@ func (c *MoviePilotClient) storeSubscriptionStatuses(items []SubscribeStatus) {
 	c.statusCacheMu.Unlock()
 }
 
-// fetchSubscriptionStatusSnapshot downloads the one-shot full subscription list.
+// fetchSubscriptionStatusSnapshot downloads the complete paginated subscription list.
 func (c *MoviePilotClient) fetchSubscriptionStatusSnapshot() ([]SubscribeStatus, error) {
-	body, err := c.requestSubscriptionSnapshot(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("subscription snapshot: %w", err)
+	var all []SubscribeStatus
+	for page := 1; ; page++ {
+		body, err := c.requestSubscriptionSnapshot(context.Background(), page)
+		if err != nil {
+			return nil, fmt.Errorf("subscription snapshot page %d: %w", page, err)
+		}
+		items, err := decodeSubscriptionEnvelope[SubscribeStatus](body)
+		if err != nil {
+			return nil, fmt.Errorf("decode subscription snapshot page %d: %w", page, err)
+		}
+		all = append(all, items...)
+		if len(items) < 200 {
+			break
+		}
 	}
-
-	var items []SubscribeStatus
-	if err := json.Unmarshal(body, &items); err != nil {
-		return nil, fmt.Errorf("decode subscription snapshot: %w", err)
-	}
-
-	return items, nil
+	return all, nil
 }
 
-// requestSubscriptionSnapshot performs the single full-list request using the
-// long-timeout snapshot client. The request has no body, so retrying it is safe.
-func (c *MoviePilotClient) requestSubscriptionSnapshot(ctx context.Context) ([]byte, error) {
+type moviePilotEnvelope[T any] struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Data    []T    `json:"data"`
+}
+
+func decodeSubscriptionEnvelope[T any](body []byte) ([]T, error) {
+	var response moviePilotEnvelope[T]
+	if err := json.Unmarshal(body, &response); err == nil {
+		if !response.Success {
+			return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+		}
+		return response.Data, nil
+	}
+	// Older MoviePilot versions and existing compatibility fixtures return a bare array.
+	var legacy []T
+	if err := json.Unmarshal(body, &legacy); err != nil {
+		return nil, err
+	}
+	return legacy, nil
+}
+
+// requestSubscriptionSnapshot performs one paginated request using the long-timeout client.
+func (c *MoviePilotClient) requestSubscriptionSnapshot(ctx context.Context, page int) ([]byte, error) {
 	client := c.snapshotClient
 	if client == nil {
 		client = c.httpClient
 	}
 
-	url := c.baseURL + subscriptionsEndpoint
+	url := c.baseURL + fmt.Sprintf(subscriptionsEndpoint, page)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -915,16 +938,21 @@ func (c *MoviePilotClient) preWarmSubscriptionCache() error {
 	}
 
 	logger.Info("[MoviePilot] preWarmSubscriptionCache: 开始拉取全量订阅...")
-	body, err := c.requestSubscriptionSnapshot(context.Background())
-	if err != nil {
-		return fmt.Errorf("拉取订阅列表失败: %w", err)
-	}
-
 	var items []SubscribeItem
-	if err := json.Unmarshal(body, &items); err != nil {
-		return fmt.Errorf("解析订阅列表失败: %w", err)
+	for page := 1; ; page++ {
+		body, err := c.requestSubscriptionSnapshot(context.Background(), page)
+		if err != nil {
+			return fmt.Errorf("拉取订阅列表第 %d 页失败: %w", page, err)
+		}
+		pageItems, err := decodeSubscriptionEnvelope[SubscribeItem](body)
+		if err != nil {
+			return fmt.Errorf("解析订阅列表第 %d 页失败: %w", page, err)
+		}
+		items = append(items, pageItems...)
+		if len(pageItems) < 200 {
+			break
+		}
 	}
-
 	c.subsCacheData = items
 	c.subsCacheTime = time.Now()
 	logger.Info("[MoviePilot] preWarmSubscriptionCache: 完成，%d 条订阅", len(items))
