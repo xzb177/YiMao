@@ -519,17 +519,18 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 		typeStr = "电视剧"
 	}
 	// URL encode the type string for Chinese characters
-	endpoint := fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s",
-		url.QueryEscape(typeStr), mediaID, url.QueryEscape(typeStr))
+	// MoviePilot requires media_source as a query parameter since v3; omitting it
+	// returns 422 "Field required" and every metadata lookup fails.
+	endpoint := buildMediaDetailEndpoint(mediaID, typeStr)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var info MediaInfo
-	if err := json.Unmarshal(body, &info); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	info, err := decodeMediaInfoEnvelope(body)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if the media actually exists (title should not be empty)
@@ -540,24 +541,23 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 		if mediaType == MediaTypeTV {
 			oppTypeStr = "电影"
 		}
-		endpoint = fmt.Sprintf("/api/v1/media/%s?tmdbid=%d&type_name=%s",
-			url.QueryEscape(oppTypeStr), mediaID, url.QueryEscape(oppTypeStr))
+		endpoint = buildMediaDetailEndpoint(mediaID, oppTypeStr)
 
 		body, err = c.makeRequest("GET", endpoint, nil)
 		if err != nil {
 			return nil, fmt.Errorf("media not found in MoviePilot: %w", err)
 		}
 
-		var info2 MediaInfo
-		if err := json.Unmarshal(body, &info2); err != nil {
-			return nil, fmt.Errorf("failed to decode response: %w", err)
+		info2, err := decodeMediaInfoEnvelope(body)
+		if err != nil {
+			return nil, err
 		}
 
 		// Check if media exists with opposite type
 		if info2.Title != "" || info2.ID != 0 {
 			logger.Info("[MoviePilot] Found media with opposite type %s", oppTypeStr)
 			info2.Type = mediaType // Keep original type
-			return &info2, nil
+			return info2, nil
 		}
 
 		return nil, fmt.Errorf("media not found in MoviePilot (tried both types)")
@@ -566,7 +566,7 @@ func (c *MoviePilotClient) GetMediaInfo(mediaID int, mediaType MediaType) (*Medi
 	// Set the media type from our parameter (more reliable than parsing response)
 	info.Type = mediaType
 
-	return &info, nil
+	return info, nil
 }
 
 // RequestMedia creates a new media request/subscription
@@ -684,12 +684,12 @@ func (c *MoviePilotClient) GetUserByID(userID int64) (*User, error) {
 		return nil, err
 	}
 
-	var user User
-	if err := json.Unmarshal(body, &user); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	user, err := decodeUserObjectEnvelope(body)
+	if err != nil {
+		return nil, err
 	}
 
-	return &user, nil
+	return user, nil
 }
 
 // GetAllUsers retrieves all users from MoviePilot
@@ -701,18 +701,32 @@ func (c *MoviePilotClient) GetAllUsers() ([]User, error) {
 		return nil, err
 	}
 
-	// MoviePilot returns an array directly
-	var users []User
-	if err := json.Unmarshal(body, &users); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	users, err := decodeUserListEnvelope(body)
+	if err != nil {
+		return nil, err
 	}
 
 	return users, nil
 }
 
-// GetUserByUsername retrieves a user by username
+// GetUserByUsername retrieves a user by username.
+//
+// MoviePilot exposes GET /api/v1/user/{name}, so query that directly instead of
+// paging the collection. The old implementation only ever looked at the first
+// 100 users, which silently missed anyone beyond that window. A 404 means "no
+// such user" (a legitimate answer, not a transport failure), so the collection
+// is used only as a compatibility fallback.
 func (c *MoviePilotClient) GetUserByUsername(username string) (*User, error) {
-	// MoviePilot uses pagination for user list
+	if username != "" {
+		body, err := c.makeRequest("GET", "/api/v1/user/"+url.PathEscape(username), nil)
+		if err == nil {
+			if user, decErr := decodeUserObjectEnvelope(body); decErr == nil {
+				return user, nil
+			}
+		}
+	}
+
+	// Fallback for older MoviePilot builds without the per-name endpoint.
 	endpoint := "/api/v1/user/?page=1&count=100"
 
 	body, err := c.makeRequest("GET", endpoint, nil)
@@ -720,16 +734,16 @@ func (c *MoviePilotClient) GetUserByUsername(username string) (*User, error) {
 		return nil, err
 	}
 
-	// MoviePilot returns an array directly
-	var users []User
-	if err := json.Unmarshal(body, &users); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	users, err := decodeUserListEnvelope(body)
+	if err != nil {
+		return nil, err
 	}
 
 	// Search for matching user
 	for _, user := range users {
 		if user.Username == username || user.Email == username {
-			return &user, nil
+			found := user
+			return &found, nil
 		}
 	}
 
@@ -769,6 +783,11 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 	}
 
 	if !response.Success {
+		// The account may already exist. Treat that as success so binding is
+		// idempotent instead of failing the user with a misleading error.
+		if existing, lookupErr := c.GetUserByUsername(username); lookupErr == nil {
+			return existing, nil
+		}
 		return nil, fmt.Errorf("registration failed")
 	}
 
@@ -872,6 +891,145 @@ func decodeSubscriptionEnvelope[T any](body []byte) ([]T, error) {
 		return nil, err
 	}
 	return legacy, nil
+}
+
+// decodeUserListEnvelope unwraps the MoviePilot user listing response.
+//
+// MoviePilot v3 returns collection endpoints inside the standard
+// {success, message, data} envelope, so /api/v1/user/ yields an object rather
+// than a bare array. Decoding that object straight into []User fails with
+// "cannot unmarshal object into Go value of type []services.User" and breaks
+// account binding. Accept both shapes: the current envelope (data as list or
+// null) and the legacy bare array used by older servers and test fixtures.
+// buildMediaDetailEndpoint assembles the media detail query.
+//
+// MoviePilot v3 made media_source a required query parameter; a request without it
+// fails with 422 Unprocessable Content ({"location":["query","media_source"],
+// "message":"Field required"}). tmdb is the only source the bot resolves natively,
+// and resolve_media_identity also accepts a bare tmdb id in the path.
+func buildMediaDetailEndpoint(mediaID int, typeStr string) string {
+	return fmt.Sprintf("/api/v1/media/%d?tmdbid=%d&type_name=%s&media_source=tmdb",
+		mediaID, mediaID, url.QueryEscape(typeStr))
+}
+
+// decodeMediaInfoEnvelope unwraps the media detail response, which MoviePilot v3
+// returns inside the standard {success, message, data} envelope. Decoding it
+// directly into MediaInfo yields an all-zero struct, so the bot silently showed
+// "状态暂未确认" for every request.
+func decodeMediaInfoEnvelope(body []byte) (*MediaInfo, error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return nil, fmt.Errorf("failed to decode media info: %w", err)
+	}
+
+	if _, isEnvelope := probe["success"]; isEnvelope {
+		var response struct {
+			Success bool       `json:"success"`
+			Message string     `json:"message"`
+			Data    *MediaInfo `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to decode media info: %w", err)
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+		}
+		if response.Data == nil {
+			return &MediaInfo{}, nil
+		}
+		return response.Data, nil
+	}
+
+	var bare MediaInfo
+	if err := json.Unmarshal(body, &bare); err != nil {
+		return nil, fmt.Errorf("failed to decode media info: %w", err)
+	}
+	return &bare, nil
+}
+
+func decodeUserListEnvelope(body []byte) ([]User, error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err == nil {
+		if _, isEnvelope := probe["success"]; !isEnvelope {
+			// Not an envelope: fall through to the legacy bare-array path.
+			var legacy []User
+			if err := json.Unmarshal(body, &legacy); err != nil {
+				return nil, fmt.Errorf("failed to decode user list: %w", err)
+			}
+			return legacy, nil
+		}
+	}
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    []User `json:"data"`
+		Items   []User `json:"items"`
+		Results []User `json:"results"`
+	}
+	if err := json.Unmarshal(body, &response); err == nil {
+		// success=false must never yield users. MoviePilot reuses the data field for
+		// structured errors, so a 422 validation report would otherwise decode into a
+		// bogus user with the error text as its name.
+		if !response.Success {
+			return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+		}
+		switch {
+		case response.Data != nil:
+			return response.Data, nil
+		case response.Items != nil:
+			return response.Items, nil
+		case response.Results != nil:
+			return response.Results, nil
+		default:
+			// success=true with an empty or omitted list is a valid empty result.
+			return []User{}, nil
+		}
+	}
+	// Legacy MoviePilot builds returned the collection unwrapped.
+	var legacy []User
+	if err := json.Unmarshal(body, &legacy); err != nil {
+		return nil, fmt.Errorf("failed to decode user list: %w", err)
+	}
+	return legacy, nil
+}
+
+// decodeUserObjectEnvelope unwraps a single-object response such as
+// GET /api/v1/user/{username}. Like the collection decoder it tolerates both the
+// current envelope and a bare object.
+func decodeUserObjectEnvelope(body []byte) (*User, error) {
+	// Distinguish the envelope from a bare user object by the presence of the
+	// "success" key. A bare object such as {"id":9,"name":"bare"} decodes into the
+	// envelope struct with Success=false, which would otherwise be misread as a
+	// server-reported failure.
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return nil, fmt.Errorf("failed to decode user object: %w", err)
+	}
+
+	if _, isEnvelope := probe["success"]; isEnvelope {
+		var response struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+			Data    *User  `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to decode user object: %w", err)
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+		}
+		if response.Data == nil {
+			return nil, fmt.Errorf("MoviePilot returned no user data: %s", response.Message)
+		}
+		return response.Data, nil
+	}
+
+	// Legacy MoviePilot builds returned the user unwrapped.
+	var bare User
+	if err := json.Unmarshal(body, &bare); err != nil {
+		return nil, fmt.Errorf("failed to decode user object: %w", err)
+	}
+	return &bare, nil
 }
 
 // requestSubscriptionSnapshot performs one paginated request using the long-timeout client.
