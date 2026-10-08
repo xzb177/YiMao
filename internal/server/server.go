@@ -74,8 +74,9 @@ func New(
 		}
 
 		// Check Emby connectivity
+		// Emby 通常在 Cloudflare 等外部 HTTPS 服务之后，首次 TLS 握手可达 4s 以上；3s 超时会持续误报 unreachable 并让 healthcheck 失败。
 		if cfg.EmbyURL != "" && cfg.EmbyAPIKey != "" {
-			client := &http.Client{Timeout: 3 * time.Second}
+			client := &http.Client{Timeout: 15 * time.Second}
 			req, _ := http.NewRequest("GET", cfg.EmbyURL+"/System/Info", nil)
 			req.Header.Set("X-Emby-Token", cfg.EmbyAPIKey)
 			resp, err := client.Do(req)
