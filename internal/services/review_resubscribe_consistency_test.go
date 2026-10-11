@@ -13,7 +13,7 @@ func TestCleanupReplacedSubscriptionsRetriesUntilDeleteSucceeds(t *testing.T) {
 	var failDelete atomic.Bool
 	failDelete.Store(true)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/subscription/41" {
+		if r.Method != http.MethodDelete || r.URL.Path != "/api/v1/subscribe/41" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		if failDelete.Load() {
@@ -64,7 +64,7 @@ func TestResubscribeDeletesNewSubscriptionWhenLinkPersistenceFails(t *testing.T)
 				"success": true,
 				"data":    map[string]any{"id": 42},
 			})
-		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/subscription/42":
+		case r.Method == http.MethodDelete && r.URL.Path == "/api/v1/subscribe/42":
 			deleted <- 42
 			_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/subscribe/search":

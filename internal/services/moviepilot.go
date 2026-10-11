@@ -131,6 +131,100 @@ func (fi FlexibleInt64) String() string {
 	return strconv.FormatInt(int64(fi), 10)
 }
 
+// FlexibleGenres decodes the several shapes MoviePilot uses for genre lists.
+//
+// MoviePilot v3 media detail returns genres as objects, e.g.
+// [{"id":878,"name":"科幻"},{"id":28,"name":"动作"}], while older endpoints and
+// the bot's own payloads use plain strings. Every consumer (rich cards, detail
+// captions, webhooks) only needs the display names, but decoding the object form
+// into []string aborted the whole media detail response with
+// "cannot unmarshal object into Go struct field MediaInfo.data.genres of type
+// string", so the bot fell back to "状态暂未确认" for every request. This type
+// normalises all observed shapes into a []string of names.
+type FlexibleGenres []string
+
+func (g *FlexibleGenres) UnmarshalJSON(b []byte) error {
+	trimmed := bytes.TrimSpace(b)
+	if len(trimmed) == 0 || string(trimmed) == "null" {
+		*g = nil
+		return nil
+	}
+
+	switch trimmed[0] {
+	case '"':
+		// Defensive: a single genre delivered as a bare string.
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return err
+		}
+		if s == "" {
+			*g = nil
+			return nil
+		}
+		*g = FlexibleGenres{s}
+		return nil
+
+	case '{':
+		// Defensive: a single genre object instead of a list.
+		var obj genreName
+		if err := json.Unmarshal(trimmed, &obj); err != nil {
+			return err
+		}
+		*g = obj.names()
+		return nil
+
+	case '[':
+		var raw []json.RawMessage
+		if err := json.Unmarshal(trimmed, &raw); err != nil {
+			return err
+		}
+		names := make(FlexibleGenres, 0, len(raw))
+		for _, item := range raw {
+			item = bytes.TrimSpace(item)
+			if len(item) == 0 {
+				continue
+			}
+			switch item[0] {
+			case '"':
+				var s string
+				if err := json.Unmarshal(item, &s); err != nil {
+					return err
+				}
+				if s != "" {
+					names = append(names, s)
+				}
+			case '{':
+				var obj genreName
+				if err := json.Unmarshal(item, &obj); err != nil {
+					return err
+				}
+				names = append(names, obj.names()...)
+			default:
+				// Ignore unexpected scalar entries rather than failing the whole
+				// media detail response over a decorative field.
+			}
+		}
+		*g = names
+		return nil
+	}
+
+	return fmt.Errorf("unsupported genres payload: %s", string(trimmed))
+}
+
+// genreName is the object shape MoviePilot v3 uses inside genre lists.
+type genreName struct {
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+}
+
+func (g genreName) names() FlexibleGenres {
+	name := strings.TrimSpace(g.Name)
+	if name == "" {
+		return nil
+	}
+	return FlexibleGenres{name}
+}
+
 // MoviePilotClient provides access to MoviePilot API.
 //
 // The client handles authentication via API key and manages HTTP connection pooling
@@ -265,17 +359,17 @@ const (
 
 // MediaInfo represents media information from MoviePilot
 type MediaInfo struct {
-	ID         int          `json:"tmdb_id"`
-	Title      string       `json:"title"`
-	Year       FlexibleYear `json:"year"`
-	Overview   string       `json:"overview"`
-	Poster     string       `json:"poster_path"`
-	Backdrop   string       `json:"backdrop_path"`
-	Rating     float64      `json:"vote_average"`
-	Type       MediaType    `json:"type"`
-	Seasons    interface{}  `json:"seasons,omitempty"` // Can be object or array
-	SeasonInfo []SeasonInfo `json:"season_info,omitempty"`
-	Genres     []string     `json:"genres,omitempty"`
+	ID         int            `json:"tmdb_id"`
+	Title      string         `json:"title"`
+	Year       FlexibleYear   `json:"year"`
+	Overview   string         `json:"overview"`
+	Poster     string         `json:"poster_path"`
+	Backdrop   string         `json:"backdrop_path"`
+	Rating     float64        `json:"vote_average"`
+	Type       MediaType      `json:"type"`
+	Seasons    interface{}    `json:"seasons,omitempty"` // Can be object or array
+	SeasonInfo []SeasonInfo   `json:"season_info,omitempty"`
+	Genres     FlexibleGenres `json:"genres,omitempty"`
 }
 
 // SeasonInfo represents season information from MoviePilot
@@ -692,21 +786,28 @@ func (c *MoviePilotClient) GetUserByID(userID int64) (*User, error) {
 	return user, nil
 }
 
-// GetAllUsers retrieves all users from MoviePilot
+// GetAllUsers retrieves all users from MoviePilot, walking the collection
+// pagination instead of reading only the first page. The default page size
+// is 100, so instances with more users silently truncated the result.
 func (c *MoviePilotClient) GetAllUsers() ([]User, error) {
-	endpoint := "/api/v1/user/?page=1&count=100"
+	var all []User
+	for page := 1; ; page++ {
+		endpoint := fmt.Sprintf("/api/v1/user/?page=%d&count=100", page)
 
-	body, err := c.makeRequest("GET", endpoint, nil)
-	if err != nil {
-		return nil, err
+		body, err := c.makeRequest("GET", endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		users, err := decodeUserListEnvelope(body)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, users...)
+		if len(users) < 100 {
+			return all, nil
+		}
 	}
-
-	users, err := decodeUserListEnvelope(body)
-	if err != nil {
-		return nil, err
-	}
-
-	return users, nil
 }
 
 // GetUserByUsername retrieves a user by username.
@@ -791,20 +892,17 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 		return nil, fmt.Errorf("registration failed")
 	}
 
-	// MoviePilot API doesn't return user ID on creation,
-	// so we query the user list to find the newly created user
-	users, err := c.GetAllUsers()
+	// MoviePilot API doesn't return user ID on creation. Query the user
+	// directly by name: the v3 user collection is paginated, so a single
+	// page-1 list request silently misses anyone beyond the first page
+	// (this instance has well over 100 users, and new users are appended
+	// after it).
+	user, err := c.GetUserByUsername(username)
 	if err != nil {
-		return nil, fmt.Errorf("user created but failed to query ID: %w", err)
+		return nil, fmt.Errorf("user created but not found: %w", err)
 	}
 
-	for _, u := range users {
-		if u.Username == username {
-			return &u, nil
-		}
-	}
-
-	return nil, fmt.Errorf("user created but not found in user list")
+	return user, nil
 }
 
 // GetAllSubscriptions retrieves all subscriptions from MoviePilot.
@@ -893,6 +991,53 @@ func decodeSubscriptionEnvelope[T any](body []byte) ([]T, error) {
 	return legacy, nil
 }
 
+// decodeListEnvelope unwraps a MoviePilot v3 collection response.
+//
+// v3 returns collections inside the standard {success, message, data} envelope,
+// so /api/v1/site/ and /api/v1/site/resource/{id} yield an object whose data is a
+// list. Decoding that object straight into a slice fails with
+// "cannot unmarshal object into Go value of type []services.SiteInfo" and aborted
+// wish-pool re-searches entirely. Accept both shapes: the envelope (including
+// data:null) and the legacy bare array used by older servers and test fixtures.
+// The caller supplies the label so the error keeps naming the affected resource.
+func decodeListEnvelope[T any](body []byte, label string) ([]T, error) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) > 0 && trimmed[0] != '{' {
+		// Legacy bare array (older MoviePilot builds and test fixtures).
+		var legacy []T
+		if err := json.Unmarshal(trimmed, &legacy); err != nil {
+			return nil, fmt.Errorf("failed to decode %s: %w", label, err)
+		}
+		if legacy == nil {
+			return []T{}, nil
+		}
+		return legacy, nil
+	}
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		Data    []T    `json:"data"`
+	}
+	if err := json.Unmarshal(trimmed, &response); err != nil {
+		// A bare object (no envelope keys) is not a v3 collection response; try
+		// the legacy array path so the error still names the real shape problem.
+		var legacy []T
+		if legacyErr := json.Unmarshal(trimmed, &legacy); legacyErr != nil {
+			return nil, fmt.Errorf("failed to decode %s: %w", label, err)
+		}
+		return legacy, nil
+	}
+	if !response.Success {
+		return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+	}
+	if response.Data == nil {
+		// success=true with an empty or omitted list is a valid empty result.
+		return []T{}, nil
+	}
+	return response.Data, nil
+}
+
 // decodeUserListEnvelope unwraps the MoviePilot user listing response.
 //
 // MoviePilot v3 returns collection endpoints inside the standard
@@ -943,6 +1088,40 @@ func decodeMediaInfoEnvelope(body []byte) (*MediaInfo, error) {
 	var bare MediaInfo
 	if err := json.Unmarshal(body, &bare); err != nil {
 		return nil, fmt.Errorf("failed to decode media info: %w", err)
+	}
+	return &bare, nil
+}
+
+// decodeObjectEnvelope unwraps a MoviePilot v3 single-object response.
+// v3 returns objects inside the standard {success, message, data} envelope;
+// older deployments return the bare object.
+func decodeObjectEnvelope[T any](body []byte, label string) (*T, error) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return nil, fmt.Errorf("failed to decode %s: %w", label, err)
+	}
+
+	if _, isEnvelope := probe["success"]; isEnvelope {
+		var response struct {
+			Success bool   `json:"success"`
+			Message string `json:"message"`
+			Data    *T     `json:"data"`
+		}
+		if err := json.Unmarshal(body, &response); err != nil {
+			return nil, fmt.Errorf("failed to decode %s: %w", label, err)
+		}
+		if !response.Success {
+			return nil, fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+		}
+		if response.Data == nil {
+			return new(T), nil
+		}
+		return response.Data, nil
+	}
+
+	var bare T
+	if err := json.Unmarshal(body, &bare); err != nil {
+		return nil, fmt.Errorf("failed to decode %s: %w", label, err)
 	}
 	return &bare, nil
 }
@@ -1367,26 +1546,27 @@ func (c *MoviePilotClient) GetUserRequests(userID int64) ([]SubscribeItem, error
 }
 
 // GetRequest retrieves a request by ID
+//
+// Deprecated: MoviePilot v3 serves subscription details from
+// /api/v1/subscribe/{id} inside the standard {success, message, data}
+// envelope, and the payload no longer carries the legacy Request fields
+// (media_type, status, created_at, requested_by). No in-tree caller relies
+// on it today; kept for compatibility.
 func (c *MoviePilotClient) GetRequest(requestID int) (*Request, error) {
-	endpoint := fmt.Sprintf("/api/v1/subscription/%d", requestID)
+	endpoint := fmt.Sprintf("/api/v1/subscribe/%d", requestID)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var request Request
-	if err := json.Unmarshal(body, &request); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &request, nil
+	return decodeObjectEnvelope[Request](body, "request")
 }
 
 // DeleteRequest deletes a request
 // Returns nil error if subscription doesn't exist (404), since the goal is achieved
 func (c *MoviePilotClient) DeleteRequest(requestID int) error {
-	endpoint := fmt.Sprintf("/api/v1/subscription/%d", requestID)
+	endpoint := fmt.Sprintf("/api/v1/subscribe/%d", requestID)
 	_, err := c.makeRequest("DELETE", endpoint, nil)
 	// If subscription doesn't exist (404), that's fine - goal achieved
 	if err != nil && strings.Contains(err.Error(), "status 404") {
@@ -1543,54 +1723,53 @@ func GetStateText(state string) string {
 
 // GetSubscriptionStatus gets the status of a subscription request
 func (c *MoviePilotClient) GetSubscriptionStatus(requestID int) (*SubscribeStatus, error) {
-	endpoint := fmt.Sprintf("/api/v1/subscription/%d", requestID)
+	endpoint := fmt.Sprintf("/api/v1/subscribe/%d", requestID)
 
 	body, err := c.makeRequest("GET", endpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var status SubscribeStatus
-	if err := json.Unmarshal(body, &status); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return &status, nil
+	return decodeObjectEnvelope[SubscribeStatus](body, "subscription status")
 }
 
 // ReshareSubscription triggers a reshare for a subscription
 func (c *MoviePilotClient) ReshareSubscription(subscriptionID string) error {
-	// MoviePilot API uses PUT /api/v1/subscription/{id} to update
-	// To trigger reshare, we set the state to "R" (Recycled)
-	endpoint := fmt.Sprintf("/api/v1/subscription/%s", subscriptionID)
+	// MoviePilot v3 exposes the re-search trigger as a state transition:
+	// PUT /api/v1/subscribe/status/{id}?state=R (StateRecycled).
+	// The status endpoint only accepts the states R, P and S.
+	endpoint := fmt.Sprintf("/api/v1/subscribe/status/%s?state=%s", subscriptionID, StateRecycled)
 
-	payload := map[string]interface{}{
-		"state": "R", // StateRecycled - triggers reshare
-	}
-
-	data, err := json.Marshal(payload)
+	body, err := c.makeRequest("PUT", endpoint, nil)
 	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+		return err
 	}
 
-	_, err = c.makeRequest("PUT", endpoint, data)
-	return err
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+	if !response.Success {
+		return fmt.Errorf("MoviePilot returned success=false: %s", response.Message)
+	}
+	return nil
 }
 
-// CancelSubscription cancels a MoviePilot subscription by setting its state to cancelled.
+// CancelSubscription cancels a MoviePilot subscription.
+// MoviePilot v3 dropped the cancelled state (the status endpoint only
+// accepts P, R and S); the supported way to cancel is deleting the
+// subscription. A missing subscription (404) already satisfies the goal.
 func (c *MoviePilotClient) CancelSubscription(subscriptionID string) error {
-	endpoint := fmt.Sprintf("/api/v1/subscription/%s", subscriptionID)
+	endpoint := fmt.Sprintf("/api/v1/subscribe/%s", subscriptionID)
 
-	payload := map[string]interface{}{
-		"state": StateCancelled,
+	_, err := c.makeRequest("DELETE", endpoint, nil)
+	if err != nil && strings.Contains(err.Error(), "status 404") {
+		logger.Info("[MoviePilot] Subscription %s not found (already cancelled)", subscriptionID)
+		return nil
 	}
-
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
-	}
-
-	_, err = c.makeRequest("PUT", endpoint, data)
 	return err
 }
 
@@ -1725,12 +1904,7 @@ func (c *MoviePilotClient) GetSites() ([]SiteInfo, error) {
 		return nil, err
 	}
 
-	var sites []SiteInfo
-	if err := json.Unmarshal(body, &sites); err != nil {
-		return nil, fmt.Errorf("failed to decode sites response: %w", err)
-	}
-
-	return sites, nil
+	return decodeListEnvelope[SiteInfo](body, "sites response")
 }
 
 // TorrentResource represents a torrent resource from a site
@@ -1760,12 +1934,7 @@ func (c *MoviePilotClient) GetSiteResources(siteID int, keyword string, page int
 		return nil, err
 	}
 
-	var resources []TorrentResource
-	if err := json.Unmarshal(body, &resources); err != nil {
-		return nil, fmt.Errorf("failed to decode resources response: %w", err)
-	}
-
-	return resources, nil
+	return decodeListEnvelope[TorrentResource](body, "resources response")
 }
 
 // SearchAllResources searches all sites for resources matching the keyword
