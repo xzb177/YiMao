@@ -14,6 +14,10 @@ FROM golang:1.24-alpine@sha256:8bee1901f1e530bfb4a7850aa7a479d17ae3a18beb6e09064
 # Install build dependencies
 RUN apk add --no-cache git
 
+# Local build fix: reach the Go module proxy through the China mirror.
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GONOSUMCHECK=*
+
 WORKDIR /app
 
 # Copy go mod files

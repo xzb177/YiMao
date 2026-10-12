@@ -63,6 +63,30 @@ func (s TransferSeriesSummary) DisplayTitle() string {
 	return title + "：" + s.EpisodeDisplay()
 }
 
+// CompactTitle returns a compact daily-summary title with emoji, year, season
+// and episode range, e.g. "📺暗芝居 (2013) S17E13" or "🎬片名 (2026)".
+func (s TransferSeriesSummary) CompactTitle() string {
+	isMovie := isTransferMovie(s.Type)
+	emoji := "📺"
+	if isMovie {
+		emoji = "🎬"
+	}
+	title := s.Title
+	if s.Year > 0 {
+		title += fmt.Sprintf(" (%d)", s.Year)
+	}
+	if isMovie {
+		return emoji + title
+	}
+	if s.Season >= 0 {
+		title += fmt.Sprintf(" S%02d", s.Season)
+	}
+	if eps := s.EpisodeDisplay(); eps != "" && eps != fmt.Sprintf("%d 个文件", s.Files) {
+		title += eps
+	}
+	return emoji + title
+}
+
 type TransferDailySummary struct {
 	Day         time.Time
 	Movies      []TransferSeriesSummary

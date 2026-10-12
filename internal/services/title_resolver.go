@@ -272,31 +272,26 @@ func NewAggregatedSeries(items []*MediaItem) *AggregatedSeries {
 	return agg
 }
 
-// FormatForSummary formats the aggregated series for daily summary display
+// FormatForSummary formats the aggregated series for daily summary display.
+// Compact single-line form: "剧名 (年份) SxxEyy" (episode range compressed).
 func (a *AggregatedSeries) FormatForSummary() string {
 	title := a.SeriesName
-
-	// Add season
+	if a.Year > 1900 && a.Year < 2100 {
+		title += fmt.Sprintf(" (%d)", a.Year)
+	}
 	if a.SeasonNumber > 0 {
-		title += fmt.Sprintf(" 第%d季", a.SeasonNumber)
+		title += fmt.Sprintf(" S%02d", a.SeasonNumber)
 	}
-
-	// Add episode info
 	if a.Count == 1 {
-		title += fmt.Sprintf("：EP%02d", a.MinEpisode)
+		title += fmt.Sprintf("E%02d", a.MinEpisode)
 	} else if a.IsConsecutive() {
-		// Continuous range - show as range
-		title += fmt.Sprintf("：EP%02d-EP%02d", a.MinEpisode, a.MaxEpisode)
+		title += fmt.Sprintf("E%02d-E%02d", a.MinEpisode, a.MaxEpisode)
 	} else {
-		// Non-continuous - show max
-		title += fmt.Sprintf("：更新至 EP%02d", a.MaxEpisode)
+		title += fmt.Sprintf("更新至E%02d", a.MaxEpisode)
 	}
-
-	// Add completion marker
 	if a.IsComplete {
 		title += "（完结）"
 	}
-
 	return title
 }
 

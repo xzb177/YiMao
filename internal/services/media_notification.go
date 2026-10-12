@@ -715,12 +715,12 @@ func (s *MediaNotificationService) sendTransferHistorySummary(adminID int64, day
 	}
 	movies := make([]richmessage.TransferDailySummarySeries, 0, len(summary.Movies))
 	for _, item := range summary.Movies {
-		movies = append(movies, richmessage.TransferDailySummarySeries{Title: item.DisplayTitle(), Files: item.Files})
+		movies = append(movies, richmessage.TransferDailySummarySeries{Title: item.CompactTitle(), Files: item.Files})
 	}
 	series := make([]richmessage.TransferDailySummarySeries, 0, len(summary.Series))
 	for _, item := range summary.Series {
 		series = append(series, richmessage.TransferDailySummarySeries{
-			Title: item.DisplayTitle(), WorkTitle: item.Title, Files: item.Files,
+			Title: item.CompactTitle(), WorkTitle: item.Title, Files: item.Files,
 		})
 	}
 	richMsg := richmessage.BuildTransferDailySummaryCard(
@@ -905,23 +905,31 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 	}
 	sortMovieKeys(sortedMovieKeys, uniqueMovies)
 
-	// Build message
+	// Build message - compact single-line sections mirroring the rich card
 	if len(sortedSeriesKeys) > 0 {
-		builder.WriteString(fmt.Sprintf("📺 剧集更新（%d 部）\n", len(sortedSeriesKeys)))
+		var seriesLine strings.Builder
+		seriesLine.WriteString("电视剧更新 ")
 		for _, key := range sortedSeriesKeys {
 			agg := seriesAggregations[key]
-			builder.WriteString(fmt.Sprintf("• %s\n", agg.FormatForSummary()))
+			seriesLine.WriteString("📺")
+			seriesLine.WriteString(agg.FormatForSummary())
+			seriesLine.WriteString(" ")
 		}
-		builder.WriteString("\n")
+		builder.WriteString(strings.TrimSpace(seriesLine.String()))
+		builder.WriteString("\n\n")
 	}
 
 	if len(sortedMovieKeys) > 0 {
-		builder.WriteString(fmt.Sprintf("🎥 新增电影（%d 部）\n", len(sortedMovieKeys)))
+		var movieLine strings.Builder
+		movieLine.WriteString("电影更新 ")
 		for _, key := range sortedMovieKeys {
 			movie := uniqueMovies[key]
-			builder.WriteString(fmt.Sprintf("• %s\n", movie.FormatForSummary()))
+			movieLine.WriteString("🎬")
+			movieLine.WriteString(movie.FormatForSummary())
+			movieLine.WriteString(" ")
 		}
-		builder.WriteString("\n")
+		builder.WriteString(strings.TrimSpace(movieLine.String()))
+		builder.WriteString("\n\n")
 	}
 
 	// Summary statistics

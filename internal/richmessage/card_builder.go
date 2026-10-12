@@ -340,24 +340,28 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 	builder.Table(headers, rows)
 	builder.Divider()
 
-	// Movies section
+	// Movies section - compact single line
 	if len(movies) > 0 {
-		builder.Heading(fmt.Sprintf("🎥 新增电影（%d 部）", len(movies)), 3)
+		var movieLine strings.Builder
+		movieLine.WriteString("电影更新 ")
 		for _, m := range movies {
 			if m.Year > 1900 && m.Year < 2100 {
-				builder.Paragraph(fmt.Sprintf("• %s (%d)", m.Title, m.Year))
+				movieLine.WriteString(fmt.Sprintf("🎬%s (%d) ", m.Title, m.Year))
 			} else {
-				builder.Paragraph(fmt.Sprintf("• %s", m.Title))
+				movieLine.WriteString(fmt.Sprintf("🎬%s ", m.Title))
 			}
 		}
+		builder.Paragraph(strings.TrimSpace(movieLine.String()))
 	}
 
-	// Series section
+	// Series section - compact single line
 	if len(series) > 0 {
-		builder.Heading(fmt.Sprintf("📺 剧集更新（%d 部）", len(series)), 3)
+		var seriesLine strings.Builder
+		seriesLine.WriteString("电视剧更新 ")
 		for _, s := range series {
-			builder.Paragraph(fmt.Sprintf("• %s", s.Title))
+			seriesLine.WriteString(fmt.Sprintf("📺%s ", s.Title))
 		}
+		builder.Paragraph(strings.TrimSpace(seriesLine.String()))
 	}
 
 	return builder.Build()
@@ -396,16 +400,22 @@ func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDail
 	builder.Table([]string{"统计", "结果"}, rows)
 	builder.Divider()
 	if len(movies) > 0 {
-		builder.Heading(fmt.Sprintf("🎬 新增电影（%d 部）", len(movies)), 3)
+		var movieLine strings.Builder
+		movieLine.WriteString("电影更新 ")
 		for _, item := range movies {
-			builder.Paragraph(fmt.Sprintf("• %s（%d 个文件）", item.Title, item.Files))
+			movieLine.WriteString(item.Title)
+			movieLine.WriteString(" ")
 		}
+		builder.Paragraph(strings.TrimSpace(movieLine.String()))
 	}
 	if len(series) > 0 {
-		builder.Heading(fmt.Sprintf("📺 剧集更新（%s）", seriesLabel), 3)
-	}
-	for _, item := range series {
-		builder.Paragraph(fmt.Sprintf("• %s（%d 个文件）", item.Title, item.Files))
+		var seriesLine strings.Builder
+		seriesLine.WriteString("电视剧更新 ")
+		for _, item := range series {
+			seriesLine.WriteString(item.Title)
+			seriesLine.WriteString(" ")
+		}
+		builder.Paragraph(strings.TrimSpace(seriesLine.String()))
 	}
 	return builder.Build()
 }
