@@ -41,6 +41,11 @@ type WishScheduler struct {
 	minSeeders    int
 	lockTTLMin    int // searching_at 自愈锁 TTL（分钟），与重搜周期解耦（坑B），默认 60
 
+	// 审计第 14 条：FOUND 通知失败重试间隔（默认 30 分钟）与 NOTIFIED 无操作
+	// 清理 TTL（默认 72 小时），可经 setter 覆盖（测试/配置）。
+	foundRetryInterval time.Duration
+	notifiedTTL        time.Duration
+
 	// 出源喜报里「立即求片」按钮的回调串构造函数（由 handler 注入，避免本包反向依赖 callback 包）。
 	buildRequestButton func(item *WishItem) (text string, callbackData string)
 
@@ -85,8 +90,25 @@ func NewWishScheduler(
 		expireDays:    expireDays,
 		minSeeders:    minSeeders,
 		lockTTLMin:    lockTTLMinutes,
-		stopCh:        make(chan struct{}),
-		announced:     make(map[string]bool),
+		// 审计第 14 条默认值；main.go 用 config 覆盖。
+		foundRetryInterval: 30 * time.Minute,
+		notifiedTTL:        72 * time.Hour,
+		stopCh:             make(chan struct{}),
+		announced:          make(map[string]bool),
+	}
+}
+
+// SetFoundNotifyRetryInterval 设置 FOUND 通知失败的重试间隔。
+func (s *WishScheduler) SetFoundNotifyRetryInterval(d time.Duration) {
+	if d > 0 {
+		s.foundRetryInterval = d
+	}
+}
+
+// SetNotifiedTTL 设置 NOTIFIED 无操作自动清理的 TTL。
+func (s *WishScheduler) SetNotifiedTTL(d time.Duration) {
+	if d > 0 {
+		s.notifiedTTL = d
 	}
 }
 
@@ -129,7 +151,8 @@ func (s *WishScheduler) run() {
 	}
 }
 
-// tick 每分钟执行一次：①错峰重搜本分钟该搜的条目 ②距上次过期扫描 >=周期 就补跑（不再依赖整点）。
+// tick 每分钟执行一次：①错峰重搜本分钟该搜的条目 ②FOUND 通知失败重试
+// ③距上次过期扫描 >=周期 就补跑（不再依赖整点）。
 func (s *WishScheduler) tick(now time.Time) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -139,9 +162,31 @@ func (s *WishScheduler) tick(now time.Time) {
 
 	s.rescanThisMinute(now)
 
+	// 审计第 14 条(a)：FOUND 通知失败重试 —— 以前卡在 FOUND 的条目没有任何路径
+	// 会再试通知，这里每分钟捡回 updated_at 已超重试间隔的。
+	s.retryStaleFoundNotifications()
+
 	// 过期扫描漏跑修复：以持久化 last_expiry_sweep_at 为唯一判据，
 	// 「距上次扫描 >= 24h 就补跑」，定时器只负责驱动检查、不再以「03:00 那一分钟」为唯一触发点。
 	s.maybeRunExpirySweep(now)
+}
+
+// retryStaleFoundNotifications 重试通知失败的 FOUND 条目。
+// 复用 notifyFound 完整流程（含可达性检查、发送前状态复查、节流），
+// 失败仍保留 FOUND 并刷新 updated_at 节流，下个间隔再试。
+func (s *WishScheduler) retryStaleFoundNotifications() {
+	if s.foundRetryInterval <= 0 || s.wish == nil {
+		return
+	}
+	items, err := s.wish.ListStaleFoundItems(s.foundRetryInterval)
+	if err != nil {
+		logger.Info("[wish] 查询待重试 FOUND 条目失败: %v", err)
+		return
+	}
+	for _, item := range items {
+		logger.Info("[wish] id=%d FOUND 通知重试（上次尝试已超 %v）", item.ID, s.foundRetryInterval)
+		s.notifyFound(item)
+	}
 }
 
 // expirySweepInterval 过期扫描周期（24h）。
@@ -319,7 +364,11 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 	}
 	if reach == reachTransientErr {
 		// 可达性检查本身网络抖动：保守保留 FOUND，下次再试，不误判退群。
+		// 审计第 14 条(a)：刷新 updated_at 做重试节流，避免每分钟都来一次。
 		logger.Info("[wish] id=%d 可达性检查临时失败，保留 FOUND 待下次重试", item.ID)
+		if terr := s.wish.TouchUpdatedAt(item.ID); terr != nil {
+			logger.Info("[wish] id=%d TouchUpdatedAt 失败: %v", item.ID, terr)
+		}
 		return
 	}
 
@@ -383,7 +432,11 @@ func (s *WishScheduler) notifyFound(item *WishItem) {
 				}
 			} else {
 				// 网络/超时/5xx 等临时错误：保持 FOUND，下次重试，不标终态。
+				// 审计第 14 条(a)：刷新 updated_at 做重试节流。
 				logger.Info("[wish] id=%d 发送出源喜报临时失败，保留 FOUND 待重试: %v", item.ID, err)
+				if terr := s.wish.TouchUpdatedAt(item.ID); terr != nil {
+					logger.Info("[wish] id=%d TouchUpdatedAt 失败: %v", item.ID, terr)
+				}
 			}
 			return
 		}
@@ -574,7 +627,13 @@ func (s *WishScheduler) reachability(userID int64) reachState {
 }
 
 // runExpirySweep 每天一次：对超期无源条目做「最终重搜」，仍无则过期（坑4）。
+// 审计第 14 条(b)：同时清理 NOTIFIED 超 TTL 无操作的条目（用户一直没点「立即求片」），释放名额。
 func (s *WishScheduler) runExpirySweep() {
+	if s.notifiedTTL > 0 {
+		if _, err := s.wish.ExpireStaleNotified(s.notifiedTTL); err != nil {
+			logger.Info("[wish] NOTIFIED 超时清理失败: %v", err)
+		}
+	}
 	candidates, err := s.wish.ListExpiryCandidates(s.expireDays)
 	if err != nil {
 		logger.Info("[wish] 过期扫描查询失败: %v", err)

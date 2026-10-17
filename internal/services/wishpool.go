@@ -74,7 +74,10 @@ func NewWishService(dataDir string) (*WishService, error) {
 
 	// WAL 模式：允许读写并发，大幅减少锁表概率。
 	// busy_timeout=5000：写入锁定时最多等 5 秒再报错，而不是立刻死掉。
-	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)", dbPath)
+	// _txlock=immediate：审计第 15 条 —— DEFERRED 事务在 WAL 下从读升级到写会
+	// 触发 BUSY_SNAPSHOT（忙等待救不了，立即失败）；IMMEDIATE 让事务一开始就拿
+	// 写锁，配合 busy_timeout 排队等待，根治并发「database is locked」。
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate", dbPath)
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open wishpool database: %w", err)
@@ -84,7 +87,7 @@ func NewWishService(dataDir string) (*WishService, error) {
 	// 唯一索引说明：tmdb_id 优先；tmdb_id=0（仅 imdb）的条目用 imdb_id 区分。
 	// 这里建两个部分唯一索引分别覆盖「有 tmdb」与「无 tmdb 仅 imdb」两种情况，
 	// 避免 tmdb_id=0 的多条 imdb 条目互相撞唯一键。
-	_, err = db.Exec(`
+	_, err = db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS wish_items (
 			id           INTEGER PRIMARY KEY AUTOINCREMENT,
 			user_id      INTEGER NOT NULL,
@@ -103,19 +106,20 @@ func NewWishService(dataDir string) (*WishService, error) {
 			updated_at   DATETIME NOT NULL
 		);
 
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_wish_canonical_tmdb
-			ON wish_items(tmdb_id, media_type, season)
-			WHERE tmdb_id != 0;
-
-		CREATE UNIQUE INDEX IF NOT EXISTS idx_wish_canonical_imdb
-			ON wish_items(imdb_id, media_type, season)
-			WHERE tmdb_id = 0 AND imdb_id != '';
+		%s
 
 		CREATE INDEX IF NOT EXISTS idx_wish_state ON wish_items(state);
 		CREATE INDEX IF NOT EXISTS idx_wish_user ON wish_items(user_id);
-	`)
+	`, activeUniqueIndexSQL()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create wish_items table: %w", err)
+	}
+
+	// 审计第 13 条迁移：旧库的唯一索引是全量的（终态行也占键），先删掉再建
+	// 状态条件的。旧库里同一 canonical 不可能有多行（旧全量索引保证过），
+	// 所以新部分索引（更弱的约束）建起来不会炸。
+	if err := ensureStateAwareUniqueIndex(db); err != nil {
+		return nil, fmt.Errorf("failed to migrate state-aware unique index: %w", err)
 	}
 
 	// 向后兼容迁移（坑2 错峰列）：旧库 wish_items 没有 search_offset_minute 列，
@@ -167,6 +171,44 @@ func NewWishService(dataDir string) (*WishService, error) {
 
 	logger.Info("[wish] 许愿池数据库已初始化: %s", dbPath)
 	return svc, nil
+}
+
+// activeUniqueIndexSQL 生成「只约束活跃状态」的部分唯一索引语句。
+// 活跃状态 = PENDING / SEARCHING / FOUND / NOTIFIED；
+// 终态（FULFILLED / EXPIRED / ORPHANED）的行不进索引，可重新许愿。
+func activeUniqueIndexSQL() string {
+	states := strings.Join([]string{
+		"'" + WishStatePending + "'",
+		"'" + WishStateSearching + "'",
+		"'" + WishStateFound + "'",
+		"'" + WishStateNotified + "'",
+	}, ", ")
+	return fmt.Sprintf(`
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_wish_canonical_tmdb
+			ON wish_items(tmdb_id, media_type, season)
+			WHERE tmdb_id != 0 AND state IN (%s);
+
+		CREATE UNIQUE INDEX IF NOT EXISTS idx_wish_canonical_imdb
+			ON wish_items(imdb_id, media_type, season)
+			WHERE tmdb_id = 0 AND imdb_id != '' AND state IN (%s);
+	`, states, states)
+}
+
+// ensureStateAwareUniqueIndex 把旧库的全量唯一索引替换成状态条件的。
+// 旧库同一 canonical 至多一行（旧全量索引保证），所以先 DROP 再建部分索引
+// 绝不会因为存量重复行炸掉；幂等，可重复执行。
+func ensureStateAwareUniqueIndex(db *sql.DB) error {
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_wish_canonical_tmdb`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_wish_canonical_imdb`); err != nil {
+		return err
+	}
+	if _, err := db.Exec(activeUniqueIndexSQL()); err != nil {
+		return err
+	}
+	logger.Info("[wish] 已迁移：唯一索引改为只约束活跃状态（终态可重许）")
+	return nil
 }
 
 // metaKeyLastExpirySweep 是 wish_meta 表里记录「上次过期扫描完成时刻」的 key。
@@ -734,6 +776,185 @@ func (s *WishService) MarkExpired(id int64) error {
 		logger.Info("[wish] id=%d → EXPIRED", id)
 	}
 	return err
+}
+
+// ---------------------------------------------------------------------------
+// 审计第 14 条：状态机死状态修复
+// ---------------------------------------------------------------------------
+
+// ListStaleFoundItems 列出卡在 FOUND 且上次尝试已超过 retryAfter 的条目，
+// 供调度重试通知。updated_at 在每次通知尝试后刷新（成功走 MarkNotified，
+// 失败走 TouchUpdatedAt），天然节流。
+func (s *WishService) ListStaleFoundItems(retryAfter time.Duration) ([]*WishItem, error) {
+	cutoff := time.Now().Add(-retryAfter)
+	rows, err := s.db.Query(`
+		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
+		FROM wish_items
+		WHERE state = ? AND updated_at < ?
+		ORDER BY updated_at ASC`,
+		WishStateFound, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []*WishItem
+	for rows.Next() {
+		it, err := scanWishRowsCursor(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, it)
+	}
+	return items, rows.Err()
+}
+
+// TouchUpdatedAt 刷新某条目的 updated_at（通知失败节流戳），状态不变。
+func (s *WishService) TouchUpdatedAt(id int64) error {
+	_, err := s.db.Exec(`UPDATE wish_items SET updated_at = ? WHERE id = ?`, time.Now(), id)
+	return err
+}
+
+// ExpireStaleNotified 把 NOTIFIED 超过 ttl 仍无操作（用户一直没点「立即求片」）
+// 的条目置 EXPIRED，释放名额。返回过期条数。
+func (s *WishService) ExpireStaleNotified(ttl time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-ttl)
+	now := time.Now()
+	res, err := s.db.Exec(
+		`UPDATE wish_items SET state = ?, searching_at = NULL, updated_at = ?
+		 WHERE state = ? AND notified_at < ?`,
+		WishStateExpired, now, WishStateNotified, cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		logger.Info("[wish] NOTIFIED 超时清理：%d 条已置 EXPIRED", n)
+	}
+	return n, nil
+}
+
+// RevokeOutcome 表示 RevokeWish 的结果。
+type RevokeOutcome int
+
+const (
+	// RevokeSelfWithdrawn 跟随者退出自己的份，单子保留。
+	RevokeSelfWithdrawn RevokeOutcome = iota + 1
+	// RevokeTransferred 发起人退出，发起人身份转给最早的跟随者，单子保留。
+	RevokeTransferred
+	// RevokeCancelled 最后一人退出，整单 EXPIRED。
+	RevokeCancelled
+)
+
+// IsWisher 检查某用户是否是某 canonical 的 wisher。
+func (s *WishService) IsWisher(userID int64, canonicalKey string) bool {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	if canonicalKey == "" || userID == 0 {
+		return false
+	}
+	var one int
+	err := s.db.QueryRow(
+		`SELECT 1 FROM wish_wishers WHERE canonical_key = ? AND user_id = ? LIMIT 1`,
+		canonicalKey, userID).Scan(&one)
+	return err == nil
+}
+
+// RevokeWish 撤回许愿 —— 只撤自己，不连带作废他人。
+//   - 跟随者撤回：只删自己的 wisher 行，单子保留（发起人/状态不变）。
+//   - 发起人撤回且还有其他 wisher：发起人身份转给最早的跟随者，单子保留。
+//   - 最后一人撤回：整单置 EXPIRED。
+//
+// 调用方须保证条目活跃；非 wisher 调用返回错误。全部单事务。
+func (s *WishService) RevokeWish(userID, wishID int64) (RevokeOutcome, error) {
+	if userID == 0 || wishID == 0 {
+		return 0, fmt.Errorf("invalid user or wish id")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	// 1) 取条目（须活跃）。
+	row := tx.QueryRow(`
+		SELECT id, user_id, tmdb_id, imdb_id, media_type, title, year, season, state, found_detail,
+		       searching_at, notified_at, search_offset_minute, created_at, updated_at
+		FROM wish_items
+		WHERE id = ? AND state IN (?,?,?,?)`,
+		wishID, WishStatePending, WishStateSearching, WishStateFound, WishStateNotified)
+	item, err := scanWishRow(row)
+	if err == sql.ErrNoRows {
+		return 0, fmt.Errorf("wish %d not found or not active", wishID)
+	}
+	if err != nil {
+		return 0, err
+	}
+
+	// 2) 验身份：发起人或任一 wisher。
+	ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+	isOriginator := userID == item.UserID
+	var one int
+	inWishers := tx.QueryRow(
+		`SELECT 1 FROM wish_wishers WHERE canonical_key = ? AND user_id = ? LIMIT 1`,
+		ck, userID).Scan(&one) == nil
+	if !isOriginator && !inWishers {
+		return 0, fmt.Errorf("user %d is not a wisher of wish %d", userID, wishID)
+	}
+
+	// 3) 删掉自己的 wisher 行。
+	if _, err := tx.Exec(
+		`DELETE FROM wish_wishers WHERE canonical_key = ? AND user_id = ?`,
+		ck, userID); err != nil {
+		return 0, err
+	}
+
+	now := time.Now()
+	if isOriginator {
+		// 4) 发起人退出：转给最早的剩余跟随者；没人了则整单过期。
+		var next int64
+		err := tx.QueryRow(
+			`SELECT user_id FROM wish_wishers WHERE canonical_key = ?
+			 ORDER BY created_at ASC, user_id ASC LIMIT 1`, ck).Scan(&next)
+		if err == sql.ErrNoRows {
+			if _, err := tx.Exec(
+				`UPDATE wish_items SET state = ?, searching_at = NULL, updated_at = ? WHERE id = ?`,
+				WishStateExpired, now, wishID); err != nil {
+				return 0, err
+			}
+			if err := tx.Commit(); err != nil {
+				return 0, err
+			}
+			committed = true
+			logger.Info("[wish] id=%d 发起人撤回且无人等待 → EXPIRED", wishID)
+			return RevokeCancelled, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(
+			`UPDATE wish_items SET user_id = ?, updated_at = ? WHERE id = ?`,
+			next, now, wishID); err != nil {
+			return 0, err
+		}
+		if err := tx.Commit(); err != nil {
+			return 0, err
+		}
+		committed = true
+		logger.Info("[wish] id=%d 发起人撤回 → 发起人转给 user=%d，单子保留", wishID, next)
+		return RevokeTransferred, nil
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	committed = true
+	logger.Info("[wish] id=%d 跟随者 user=%d 退出自己的份，单子保留", wishID, userID)
+	return RevokeSelfWithdrawn, nil
 }
 
 // ---------------------------------------------------------------------------

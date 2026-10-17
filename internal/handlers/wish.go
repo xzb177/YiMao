@@ -413,21 +413,39 @@ func (h *WishHandler) HandleCancel(ctx *callback.Context) (*callback.Response, e
 		return &callback.Response{CallbackMsg: "无效的许愿ID", ShowAlert: true}, nil
 	}
 
-	// 验证归属
+	// 验证归属：发起人或任一跟随者都可以撤回自己的份。
+	// 审计第 14 条(c)：撤回只撤自己 —— 发起人退出时单子转给下一位等待者，
+	// 不再连带作废所有跟随者。
 	item, err := h.wish.GetByID(wishID)
 	if err != nil || item == nil {
 		return &callback.Response{CallbackMsg: "许愿记录不存在", ShowAlert: true}, nil
 	}
-	if item.UserID != ctx.UserID {
+	ck := services.CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
+	if item.UserID != ctx.UserID && !h.wish.IsWisher(ctx.UserID, ck) {
 		return &callback.Response{CallbackMsg: "这不是你的许愿哦", ShowAlert: true}, nil
 	}
 
-	if err := h.wish.MarkExpired(wishID); err != nil {
+	outcome, err := h.wish.RevokeWish(ctx.UserID, wishID)
+	if err != nil {
 		return &callback.Response{CallbackMsg: "取消失败，请稍后再试", ShowAlert: true}, nil
+	}
+	var toast string
+	switch outcome {
+	case services.RevokeTransferred:
+		toast = "已撤回；许愿已转交给下一位等待者继续"
+	case services.RevokeCancelled:
+		toast = "许愿已取消"
+	default:
+		toast = "已退出该许愿"
 	}
 
 	// 重新渲染列表
-	return h.HandleEntry(ctx)
+	resp, rerr := h.HandleEntry(ctx)
+	if rerr != nil {
+		return &callback.Response{CallbackMsg: toast, ShowAlert: true}, nil
+	}
+	resp.CallbackMsg = toast
+	return resp, nil
 }
 
 // Handle 处理 wish_request 回调（出源喜报「立即求片」按钮）。

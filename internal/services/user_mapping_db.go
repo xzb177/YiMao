@@ -51,15 +51,14 @@ type UserMappingDB struct {
 func NewUserMappingDB(dataDir string) (*UserMappingDB, error) {
 	dbPath := fmt.Sprintf("%s/user_mappings.db", dataDir)
 
-	db, err := sql.Open("sqlite", dbPath)
+	// 审计第 15 条：WAL + busy_timeout + _txlock=immediate。
+	// 注意：PRAGMA 必须走连接串（每个连接生效）。以前在 sql.Open 之后 Exec 一次
+	// "PRAGMA journal_mode=WAL" 只作用于连接池里被抽到的那一个连接，其它连接
+	// 仍是默认配置；且 busy_timeout 从未设置过。
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
-	}
-
-	// Enable WAL mode for better concurrency
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("设置 WAL 模式失败: %w", err)
 	}
 
 	// Create table and enforce one Telegram user per MoviePilot account.
