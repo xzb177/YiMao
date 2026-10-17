@@ -16,9 +16,22 @@ func TestBuildTransferDailySummaryCardCountsDistinctSeriesAndSeasons(t *testing.
 	if !strings.Contains(got, "2 部 / 3 季") {
 		t.Fatalf("stats table did not distinguish works from seasons:\n%s", got)
 	}
-	// escapeMarkdownInline escapes "(", ")" and "-" in inline text.
-	if !strings.Contains(got, "电视剧更新 📺超级飞侠 \\(2014\\) S01E01\\-E52") {
-		t.Fatalf("compact series line missing first entry:\n%s", got)
+	// Detail lines are one per entry: the episode range must share its own
+	// title's line instead of squashing everything into one paragraph.
+	clean := strings.ReplaceAll(got, "\\", "")
+	lines := strings.Split(clean, "\n")
+	lineOf := func(needle string) string {
+		for _, l := range lines {
+			if strings.Contains(l, needle) {
+				return l
+			}
+		}
+		return ""
+	}
+	s1 := lineOf("超级飞侠 (2014) S01E01-E52")
+	s2 := lineOf("超级飞侠 (2014) S02E01-E26")
+	if s1 == "" || s2 == "" || s1 == s2 {
+		t.Fatalf("series details are not one-per-line:\n%s", got)
 	}
 	if strings.Contains(got, "剧集更新（3 部）") {
 		t.Fatalf("series-season entries were mislabeled as distinct works:\n%s", got)
@@ -32,8 +45,12 @@ func TestBuildTransferDailySummaryCardKeepsSimpleSeriesLabel(t *testing.T) {
 	}
 
 	got := BuildTransferDailySummaryCard("2026年7月29日", nil, series, 2, "00:01:00", "00:02:00").Markdown
-	if !strings.Contains(got, "电视剧更新 📺剧集甲 \\(2026\\) S01E01") {
-		t.Fatalf("compact series line missing first entry:\n%s", got)
+	clean := strings.ReplaceAll(got, "\\", "")
+	if !strings.Contains(clean, "电视剧更新") || !strings.Contains(clean, "📺剧集甲 (2026) S01E01") {
+		t.Fatalf("series detail line missing first entry:\n%s", got)
+	}
+	if !strings.Contains(clean, "📺剧集乙 (2026) S01E01") {
+		t.Fatalf("series detail line missing second entry:\n%s", got)
 	}
 	if !strings.Contains(got, "2 部") {
 		t.Fatalf("simple series count missing:\n%s", got)

@@ -318,6 +318,27 @@ func BuildInstantNotifyCard(data InstantNotifyData) RichMessage {
 	return builder.Build()
 }
 
+// dailySummaryDetailMaxLines caps how many detail rows a daily summary lists
+// before collapsing the rest into an overflow tail.
+const dailySummaryDetailMaxLines = 50
+
+// appendSummaryDetails renders a detail section: the heading on its own line,
+// then one Paragraph per item so an episode range always stays on its own
+// title's line. Long lists are capped with an overflow tail showing the real total.
+func appendSummaryDetails(builder *Builder, heading string, lines []string) {
+	builder.Paragraph(heading)
+	shown := lines
+	if len(shown) > dailySummaryDetailMaxLines {
+		shown = shown[:dailySummaryDetailMaxLines]
+	}
+	for _, line := range shown {
+		builder.Paragraph(line)
+	}
+	if len(lines) > len(shown) {
+		builder.Paragraph(fmt.Sprintf("……等共 %d 部", len(lines)))
+	}
+}
+
 // BuildDailySummaryCard builds a Rich Message daily summary for media notifications
 func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []DailySummarySeries, totalCount int) RichMessage {
 	builder := NewBuilder()
@@ -340,28 +361,26 @@ func BuildDailySummaryCard(dateStr string, movies []DailySummaryMovie, series []
 	builder.Table(headers, rows)
 	builder.Divider()
 
-	// Movies section - compact single line
+	// Movies section - one line per title
 	if len(movies) > 0 {
-		var movieLine strings.Builder
-		movieLine.WriteString("电影更新 ")
+		lines := make([]string, 0, len(movies))
 		for _, m := range movies {
 			if m.Year > 1900 && m.Year < 2100 {
-				movieLine.WriteString(fmt.Sprintf("🎬%s (%d) ", m.Title, m.Year))
+				lines = append(lines, fmt.Sprintf("🎬%s (%d)", m.Title, m.Year))
 			} else {
-				movieLine.WriteString(fmt.Sprintf("🎬%s ", m.Title))
+				lines = append(lines, fmt.Sprintf("🎬%s", m.Title))
 			}
 		}
-		builder.Paragraph(strings.TrimSpace(movieLine.String()))
+		appendSummaryDetails(builder, "电影更新", lines)
 	}
 
-	// Series section - compact single line
+	// Series section - one line per title
 	if len(series) > 0 {
-		var seriesLine strings.Builder
-		seriesLine.WriteString("电视剧更新 ")
+		lines := make([]string, 0, len(series))
 		for _, s := range series {
-			seriesLine.WriteString(fmt.Sprintf("📺%s ", s.Title))
+			lines = append(lines, fmt.Sprintf("📺%s", s.Title))
 		}
-		builder.Paragraph(strings.TrimSpace(seriesLine.String()))
+		appendSummaryDetails(builder, "电视剧更新", lines)
 	}
 
 	return builder.Build()
@@ -400,22 +419,18 @@ func BuildTransferDailySummaryCard(dateStr string, movies, series []TransferDail
 	builder.Table([]string{"统计", "结果"}, rows)
 	builder.Divider()
 	if len(movies) > 0 {
-		var movieLine strings.Builder
-		movieLine.WriteString("电影更新 ")
+		lines := make([]string, 0, len(movies))
 		for _, item := range movies {
-			movieLine.WriteString(item.Title)
-			movieLine.WriteString(" ")
+			lines = append(lines, item.Title)
 		}
-		builder.Paragraph(strings.TrimSpace(movieLine.String()))
+		appendSummaryDetails(builder, "电影更新", lines)
 	}
 	if len(series) > 0 {
-		var seriesLine strings.Builder
-		seriesLine.WriteString("电视剧更新 ")
+		lines := make([]string, 0, len(series))
 		for _, item := range series {
-			seriesLine.WriteString(item.Title)
-			seriesLine.WriteString(" ")
+			lines = append(lines, item.Title)
 		}
-		builder.Paragraph(strings.TrimSpace(seriesLine.String()))
+		appendSummaryDetails(builder, "电视剧更新", lines)
 	}
 	return builder.Build()
 }
