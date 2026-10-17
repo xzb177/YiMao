@@ -1,9 +1,12 @@
 package bot
 
 import (
+	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
+	"github.com/xzb177/yimao/pkg/dedupfile"
 	"github.com/xzb177/yimao/pkg/logger"
 	"github.com/xzb177/yimao/pkg/types"
 )
@@ -19,6 +22,14 @@ const (
 	// to outlive one delivery retry cycle.
 	processedUpdateTTL = 10 * time.Minute
 
+	// persistentUpdateTTL 是持久化去重的窗口：进程内 10 分钟只能覆盖超时重投，
+	// 崩溃重启后的重投可能隔很久；落盘后窗口延到 24 小时。
+	persistentUpdateTTL = 24 * time.Hour
+
+	// dedupSaveInterval 是账本落盘节流：每次 accept 都写盘太频繁，
+	// 30 秒内最多写一次；崩溃丢失的至多是 30 秒内的记录（仍好过全丢）。
+	dedupSaveInterval = 30 * time.Second
+
 	// processedUpdatePruneInterval is how often expired update IDs are dropped.
 	processedUpdatePruneInterval = 5 * time.Minute
 )
@@ -32,6 +43,9 @@ type updateDeduper struct {
 	seen map[int64]time.Time
 	ttl  time.Duration
 	now  func() time.Time
+	// file != "" 时启用持久化：账本落盘，重启后仍能判重。
+	file     string
+	lastSave time.Time
 }
 
 func newUpdateDeduper(ttl time.Duration) *updateDeduper {
@@ -39,6 +53,44 @@ func newUpdateDeduper(ttl time.Duration) *updateDeduper {
 		ttl = processedUpdateTTL
 	}
 	return &updateDeduper{seen: make(map[int64]time.Time), ttl: ttl, now: time.Now}
+}
+
+// newPersistentUpdateDeduper 创建带落盘账本的去重器。dataDir == "" 时退化为
+// 纯内存行为（测试/未配置场景）；账本文件不存在或损坏时只记日志
+// （fail-open：宁可重复执行，不丢消息）。
+func newPersistentUpdateDeduper(dataDir string, ttl time.Duration) *updateDeduper {
+	d := newUpdateDeduper(ttl)
+	if dataDir == "" {
+		return d
+	}
+	dataFile := filepath.Join(dataDir, "tg_update_dedup.json")
+	d.file = dataFile
+	raw := dedupfile.Load(dataFile, ttl)
+	for k, ts := range raw {
+		if id, err := strconv.ParseInt(k, 10, 64); err == nil {
+			d.seen[id] = time.Unix(ts, 0)
+		}
+	}
+	if n := len(d.seen); n > 0 {
+		logger.Info("[Dedup] 从 %s 恢复 %d 条去重记录", dataFile, n)
+	}
+	return d
+}
+
+// saveLocked 把内存表写盘（调用方必须持有锁）。失败只记日志（fail-open）。
+func (d *updateDeduper) saveLocked() {
+	if d.file == "" {
+		return
+	}
+	entries := make(map[string]int64, len(d.seen))
+	for id, t := range d.seen {
+		entries[strconv.FormatInt(id, 10)] = t.Unix()
+	}
+	if err := dedupfile.Save(d.file, entries); err != nil {
+		logger.Info("[Dedup] 账本落盘失败 %s: %v（继续内存去重）", d.file, err)
+		return
+	}
+	d.lastSave = d.now()
 }
 
 // accept records an update_id and reports whether it is new. A duplicate (or an
@@ -51,6 +103,9 @@ func (d *updateDeduper) accept(updateID int64) bool {
 		return false
 	}
 	d.seen[updateID] = now
+	if d.file != "" && now.Sub(d.lastSave) >= dedupSaveInterval {
+		d.saveLocked()
+	}
 	return true
 }
 
@@ -65,6 +120,9 @@ func (d *updateDeduper) prune() int {
 			delete(d.seen, id)
 			removed++
 		}
+	}
+	if removed > 0 {
+		d.saveLocked() // 落盘账本同步清理，防无限膨胀
 	}
 	return removed
 }
