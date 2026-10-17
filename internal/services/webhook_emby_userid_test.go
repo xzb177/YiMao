@@ -13,10 +13,10 @@ func newEmbyUserIDTestService(t *testing.T, handler http.Handler) *WebhookServic
 	server := httptest.NewTLSServer(handler)
 	t.Cleanup(server.Close)
 	return &WebhookService{
-		embyURL:     server.URL,
-		embyAPIKey:  "SECRET-API-KEY",
-		embyUserID:  "user-1",
-		tmdbClient:  server.Client(),
+		embyURL:    server.URL,
+		embyAPIKey: "SECRET-API-KEY",
+		embyUserID: "user-1",
+		tmdbClient: server.Client(),
 	}
 }
 
