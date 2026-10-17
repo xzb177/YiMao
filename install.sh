@@ -9,11 +9,14 @@ set -eu
 # 可用环境变量：
 #   INSTALL_DIR            安装目录，默认 /opt/YiMao
 #   YIMAO_REPOSITORY_URL   仓库地址
-#   YIMAO_BRANCH           分支，默认 master
+#   YIMAO_VERSION          要安装的固定版本（git tag 或分支），默认 master。
+#                          审计 4B/B4：线上安装请固定版本号，如 YIMAO_VERSION=v1.1.0，
+#                          避免装到不可预期的最新 master。
+#   YIMAO_BRANCH           旧变量名，兼容用；YIMAO_VERSION 未设置时生效。
 
 REPOSITORY_URL=${YIMAO_REPOSITORY_URL:-https://github.com/xzb177/YiMao.git}
 INSTALL_DIR=${INSTALL_DIR:-/opt/YiMao}
-BRANCH=${YIMAO_BRANCH:-master}
+BRANCH=${YIMAO_VERSION:-${YIMAO_BRANCH:-master}}
 
 info() { printf '[YiMao] %s\n' "$*" >&2; }
 die() { printf '[YiMao] 错误：%s\n' "$*" >&2; exit 1; }

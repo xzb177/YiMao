@@ -1,6 +1,12 @@
 # Optional override for enabling /resetpw.
 # WARNING: mounting docker.sock grants this container control over the Docker host.
 # Use only on trusted hosts, and only if you need MoviePilot password reset.
+# 审计 4B/B2：/resetpw 的实现是 `docker exec` 进 MoviePilot 主容器改 user.db
+# （internal/services/password_reset.go），必须能写 docker.sock。宿主机上
+# docker.sock 的组 ID 不固定，非 root 用户加组不可靠，所以这个高权限配置仍
+# 以 root 运行（PUID=0）。下面是可叠加的收紧项：cap 全删、禁止提权、根文件
+# 系统只读、docker.sock 只读挂载。read_only 与只读挂载都要求保持 PUID=0
+# （entrypoint 只有 PUID=0 时才跳过 useradd/groupadd 写 /etc）。
 services:
   yimao:
     environment:
@@ -9,5 +15,12 @@ services:
       # This explicit high-privilege profile needs root to access docker.sock.
       PUID: "0"
       PGID: "0"
+    # 最小能力集：docker 客户端只走 unix socket，不需要任何 capability。
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # /app/data 走具名卷挂载（可写），根文件系统其余部分只读。
+    read_only: true
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock:ro

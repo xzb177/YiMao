@@ -166,7 +166,9 @@ func New(
 		Issues: deps.IssueService, Wishes: deps.WishService,
 		Telegram: deps.Telegram, Admins: deps.AdminService,
 		UserMapping: deps.UserMapping,
-		MaxAuthAge:  24 * time.Hour,
+		// 审计 4B/B6：initData 有效期从 24 小时收紧到 1 小时（config 默认），
+		// 可通过 INIT_DATA_MAX_AGE_HOURS 覆盖。
+		MaxAuthAge: cfg.InitDataMaxAge(),
 	})
 	miniAppHandler := miniAppServer.Handler()
 	mux.Handle("/miniapp", miniAppHandler)

@@ -413,6 +413,10 @@ func (s *SecurityService) addSecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("X-Frame-Options", "DENY")
 	w.Header().Set("X-XSS-Protection", "1; mode=block")
 	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	// 审计 4B/B5：这些中间件只包裹 JSON 的管理/API/webhook 接口，不服务
+	// HTML 页面，所以用最严的 CSP；Mini App 页面的功能性 CSP 在
+	// internal/miniapp/server.go 的 browserSecurityHeaders 里。
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'deny'")
 }
 
 // GetStats returns security statistics
