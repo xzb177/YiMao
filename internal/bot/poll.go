@@ -3,6 +3,7 @@ package bot
 import (
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
@@ -110,15 +111,33 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 
 		logger.Info("[Poll] Received %d updates", len(updates))
 
-		// offset 在整批 dispatch 完成后再推进：先推进会让处理中的 update 在
-		// 崩溃/重启后彻底丢失，而去重保证了重复投递不会被处理两次。
-		maxUpdateID := dispatchUpdates(updates, dedup, updateSem, nil, func(update types.TelegramUpdate) {
+		// 整批 update 全部处理完成后再推进 offset：崩溃/重启时，未完成的
+		// update 会被 Telegram 重新投递（offset 没确认），而去重保证了重复
+		// 投递不会被处理两次。注意这是在进程内的 at-least-once：崩溃重启后
+		// 内存去重表丢失，投递会再处理一次——真正的 exactly-once 需要持久化
+		// 账本，见 audit batch 2 报告未知项。
+		maxUpdateID := processPollBatch(updates, dedup, updateSem, func(update types.TelegramUpdate) {
 			handlePollUpdate(update, pollDeps, registry, deps, cfg)
 		})
 		if maxUpdateID > 0 {
 			offset = int(maxUpdateID + 1)
 		}
 	}
+}
+
+// processPollBatch dispatches one batch of updates and blocks until every
+// handler has finished, so the caller may advance the polling offset only
+// after the whole batch is actually processed (not merely dispatched).
+func processPollBatch(
+	updates []types.TelegramUpdate,
+	dedup *updateDeduper,
+	sem chan struct{},
+	handle func(types.TelegramUpdate),
+) int64 {
+	var wg sync.WaitGroup
+	maxUpdateID := dispatchUpdates(updates, dedup, sem, &wg, handle)
+	wg.Wait()
+	return maxUpdateID
 }
 
 // handlePollUpdate routes one Telegram update to the message or callback path.

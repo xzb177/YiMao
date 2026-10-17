@@ -11,21 +11,17 @@ import (
 	"testing"
 )
 
-// A retried POST must resend the identical body. Before GetBody-based cloning
-// the second attempt shipped Content-Length with an empty body and MoviePilot
-// answered "ContentLength=N with Body length 0".
-func TestRetryHTTPResendsFullBodyOnRetry(t *testing.T) {
+// 审计第 11 条行为变更：非幂等方法（POST/PUT/PATCH/DELETE）不再自动重试。
+// 服务端可能已经执行了请求（订阅已创建、用户已注册），重试会把一次操作
+// 变成两次。即使 body 可重放，POST 也只执行一次。
+func TestRetryHTTPDoesNotRetryPost(t *testing.T) {
 	var attempts atomic.Int32
 	var bodies []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
 		raw, _ := io.ReadAll(r.Body)
 		bodies = append(bodies, string(raw))
-		if attempts.Add(1) == 1 {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"ok":true}`))
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -38,18 +34,17 @@ func TestRetryHTTPResendsFullBodyOnRetry(t *testing.T) {
 	cfg := DefaultRetryConfig()
 	cfg.BaseDelay = 0
 	resp, err := RetryHTTP(context.Background(), server.Client(), req, cfg)
-	if err != nil {
-		t.Fatalf("RetryHTTP returned error: %v", err)
+	if err == nil {
+		t.Fatal("RetryHTTP must return the 500 error for a non-retried POST")
 	}
-	defer resp.Body.Close()
-
-	if got := attempts.Load(); got != 2 {
-		t.Fatalf("attempts=%d, want 2", got)
+	if resp != nil {
+		resp.Body.Close()
 	}
-	for i, body := range bodies {
-		if body != payload {
-			t.Fatalf("attempt %d body=%q, want %q", i+1, body, payload)
-		}
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("attempts=%d, want exactly 1 (no retry for POST)", got)
+	}
+	if len(bodies) != 1 || bodies[0] != payload {
+		t.Fatalf("bodies=%q, want the single original payload", bodies)
 	}
 }
 
@@ -85,10 +80,10 @@ func TestRetryHTTPDoesNotRetryUnrewindableBody(t *testing.T) {
 		resp.Body.Close()
 	}
 	if err == nil {
-		t.Fatal("RetryHTTP must fail instead of replaying an unrewindable body")
+		t.Fatal("RetryHTTP must return the 500 error for a non-retried POST")
 	}
-	if !strings.Contains(err.Error(), "cannot be replayed") {
-		t.Fatalf("error = %v, want an explicit non-replayable body error", err)
+	if !strings.Contains(err.Error(), "no retry for POST") {
+		t.Fatalf("error = %v, want the explicit no-retry error", err)
 	}
 	if got := attempts.Load(); got != 1 {
 		t.Fatalf("attempts=%d, want exactly 1 (no retry)", got)

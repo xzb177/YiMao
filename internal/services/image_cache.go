@@ -145,8 +145,16 @@ func (c *ImageCache) DownloadOrFetch(imageURL string, headers map[string]string)
 	return data, nil
 }
 
-// download 下载图片
-func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byte, error) {
+// maxImageDownloadBytes 是全项目统一的图片下载上限。依据：
+//   - 审计第 12 条：TMDB original 背景图常见 2–6MB，旧的 1MB 上限会静默截断；
+//   - Telegram Bot API 的 sendPhoto 上限就是 10MB，超过它无论如何发不出去；
+//   - 旧的两条路径上限不一致（1MB / 5MB）且都是静默截断，还把截断图缓存下来。
+//
+// 超限时返回明确错误、不缓存坏图，由调用方决定降级（例如改走 URL 直发）。
+const maxImageDownloadBytes = 10 << 20
+
+// downloadImageWithLimit 下载图片。超过上限返回明确错误，绝不静默截断。
+func downloadImageWithLimit(client *http.Client, imageURL string, headers map[string]string) ([]byte, error) {
 	req, err := http.NewRequest("GET", imageURL, nil)
 	if err != nil {
 		return nil, err
@@ -155,12 +163,12 @@ func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byt
 	// 添加 User-Agent
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
-	// 添加自定义 headers
+	// 添加自定义 headers（例如 X-Emby-Token）
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -169,14 +177,25 @@ func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byt
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download failed with status: %d", resp.StatusCode)
 	}
+	if resp.ContentLength > maxImageDownloadBytes {
+		return nil, fmt.Errorf("image exceeds %d bytes limit (content-length %d)", maxImageDownloadBytes, resp.ContentLength)
+	}
 
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxImageDownloadBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(data)) > maxImageDownloadBytes {
+		return nil, fmt.Errorf("image exceeds %d bytes limit (%d bytes received)", maxImageDownloadBytes, len(data))
 	}
 
 	logger.Info("[ImageCache] Downloaded: %s (%d bytes)", imageURL, len(data))
 	return data, nil
+}
+
+// download 下载图片
+func (c *ImageCache) download(imageURL string, headers map[string]string) ([]byte, error) {
+	return downloadImageWithLimit(c.httpClient, imageURL, headers)
 }
 
 // getCachePath 根据图片 URL 生成缓存文件路径

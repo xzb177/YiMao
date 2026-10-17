@@ -191,13 +191,7 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Check webhook type from path or header
-	webhookType := req.URL.Query().Get("type")
-	if webhookType == "" {
-		webhookType = req.Header.Get("X-Webhook-Type")
-	}
-
-	switch webhookType {
+	switch resolveWebhookType(req) {
 	case "emby":
 		r.handleEmbyWebhook(w, req)
 	case "jellyseerr":
@@ -208,6 +202,34 @@ func (r *Router) HandleWebhook(w http.ResponseWriter, req *http.Request) {
 		// Auto-detect based on request body
 		r.handleAutoDetectWebhook(w, req)
 	}
+}
+
+// resolveWebhookType 决定外部 webhook 的类型。优先级：
+//  1. URL 路径（/webhook/emby、/webhook/jellyseerr、/webhook/moviepilot、/webhook/mp）
+//  2. ?type= 查询参数（兼容旧调用方）
+//  3. X-Webhook-Type 请求头
+//  4. "" —— 走请求体自动识别
+//
+// 审计第 10 条：以前只看 2/3，路径被完全忽略——没带 type 的 Jellyseerr /
+// MoviePilot 事件会掉进 auto-detect，被误判成 Emby（Jellyseerr 的 "event"
+// 字段恰好命中 Emby payload 的 Event 备选字段），返回 200 却什么都没做。
+func resolveWebhookType(req *http.Request) string {
+	path := strings.ToLower(strings.TrimSuffix(req.URL.Path, "/"))
+	switch {
+	case strings.HasSuffix(path, "/webhook/emby"):
+		return "emby"
+	case strings.HasSuffix(path, "/webhook/jellyseerr"):
+		return "jellyseerr"
+	case strings.HasSuffix(path, "/webhook/moviepilot"), strings.HasSuffix(path, "/webhook/mp"):
+		return "moviepilot"
+	}
+	if t := req.URL.Query().Get("type"); t != "" {
+		return strings.ToLower(t)
+	}
+	if t := req.Header.Get("X-Webhook-Type"); t != "" {
+		return strings.ToLower(t)
+	}
+	return ""
 }
 
 // verifyWebhookAuth validates an inbound webhook against the shared secret.
@@ -307,43 +329,85 @@ func (r *Router) handleAutoDetectWebhook(w http.ResponseWriter, req *http.Reques
 		logger.Debug("[API] Auto-detect webhook - Content-Type: %s, Size: %d bytes", req.Header.Get("Content-Type"), len(body))
 	}
 
-	// Try to decode as Emby first
-	var embyPayload services.EmbyWebhookPayload
-	if err := json.Unmarshal(body, &embyPayload); err == nil {
-		// Check for Emby event (NotificationType or Event field)
+	switch kind := classifyAutoDetectWebhook(body); kind {
+	case "emby":
+		var embyPayload services.EmbyWebhookPayload
+
+		_ = json.Unmarshal(body, &embyPayload)
 		event := embyPayload.Event
 		if event == "" {
 			event = embyPayload.EventField
 		}
-		if event != "" {
-			logger.Info("[API] Detected Emby webhook: %s", event)
-			if err := r.webhookService.HandleEmbyWebhook(embyPayload); err != nil {
-				logger.Info("[API] Failed to handle Emby webhook: %v", err)
-				http.Error(w, "Failed to process", http.StatusInternalServerError)
-			} else {
-				w.WriteHeader(http.StatusOK)
-				json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		logger.Info("[API] Detected Emby webhook: %s", event)
+		if err := r.webhookService.HandleEmbyWebhook(embyPayload); err != nil {
+			logger.Info("[API] Failed to handle Emby webhook: %v", err)
+			http.Error(w, "Failed to process", http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(http.StatusOK)
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+				logger.Info("[API] Failed to write Emby webhook response: %v", err)
 			}
-			return
 		}
-	}
+	case "jellyseerr":
+		var jellyseerrPayload services.JellyseerrWebhookPayload
 
-	// Try Jellyseerr
-	var jellyseerrPayload services.JellyseerrWebhookPayload
-	if err := json.Unmarshal(body, &jellyseerrPayload); err == nil && jellyseerrPayload.Event != "" {
+		_ = json.Unmarshal(body, &jellyseerrPayload)
 		logger.Info("[API] Detected Jellyseerr webhook: %s", jellyseerrPayload.Event)
 		if err := r.webhookService.HandleJellyseerrWebhook(jellyseerrPayload); err != nil {
 			logger.Info("[API] Failed to handle Jellyseerr webhook: %v", err)
 			http.Error(w, "Failed to process", http.StatusInternalServerError)
 		} else {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+				logger.Info("[API] Failed to write Jellyseerr webhook response: %v", err)
+			}
 		}
-		return
+	default:
+		// 无法识别：明确返回 400 并记日志，不再假装 200。
+		logger.Warn("[API] Unknown webhook type (path=%s), Size: %d bytes", req.URL.Path, len(body))
+		http.Error(w, "Unknown webhook type", http.StatusBadRequest)
+	}
+}
+
+// classifyAutoDetectWebhook 在没有显式类型（路径/?type=/请求头）时，根据请求体
+// 判定事件来源。审计第 10 条的教训：Jellyseerr 的 "event" 字段会命中
+// EmbyWebhookPayload 的 Event 备选字段（JSON 大小写不敏感），旧代码把
+// Jellyseerr 事件误判成 Emby、返回 200 却什么都没做。
+// 判定规则只认各自独有的标记，不认通用字段：
+//   - emby: 必须有 Emby 原生标记（NotificationType / ItemId / ItemName）
+//   - jellyseerr: 必须有 "event" 且带其独有键（subject / media / request / issue / user）
+//
+// 两个都不满足 → "unknown"，调用方返回 400。
+func classifyAutoDetectWebhook(body []byte) string {
+	var generic map[string]json.RawMessage
+	if err := json.Unmarshal(body, &generic); err != nil {
+		return "unknown"
+	}
+	has := func(keys ...string) bool {
+		for _, k := range keys {
+			if _, ok := generic[k]; ok {
+				return true
+			}
+		}
+		return false
 	}
 
-	logger.Debug("[API] Unknown webhook type, Size: %d bytes", len(body))
-	http.Error(w, "Unknown webhook type", http.StatusBadRequest)
+	// 先判 Jellyseerr：它的 event 字段正是之前误判的来源。
+	if _, ok := generic["event"]; ok {
+		if has("subject", "media", "request", "issue", "user") {
+			return "jellyseerr"
+		}
+	}
+
+	// Emby 只认原生标记，不认通用的 Event 备选字段。
+	var embyPayload services.EmbyWebhookPayload
+	if err := json.Unmarshal(body, &embyPayload); err == nil {
+		if embyPayload.Event != "" || embyPayload.ItemID != "" || embyPayload.ItemName != "" {
+			return "emby"
+		}
+	}
+
+	return "unknown"
 }
 
 // getRequestBody reads and returns request body

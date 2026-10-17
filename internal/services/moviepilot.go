@@ -247,6 +247,11 @@ type MoviePilotClient struct {
 	snapshotClient *http.Client
 	retryConfig    *RetryConfig
 
+	// 订阅搜索触发合并（审计第 11 条）：/subscribe/search 是全局搜索，
+	// 批量审批创建 N 个订阅时会触发 N 次。合并窗口内的触发为一次。
+	searchTriggerMu       sync.Mutex
+	lastSearchTriggerTime time.Time
+
 	// 订阅列表缓存（避免每次请求都拉全量）
 	subsCacheMu   sync.RWMutex
 	subsCacheData []SubscribeItem
@@ -738,23 +743,40 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 	}, nil
 }
 
-// triggerSubscriptionSearch 触发订阅搜索，确保订阅能开始下载
+// searchTriggerCooldown 是订阅搜索触发的合并窗口：窗口内的多次触发只
+// 实际调用一次。MoviePilot 的 /subscribe/search 是全局搜索（扫全部订阅），
+// 不是按订阅 ID 的，所以批量审批创建 N 个订阅时触发一次就够了。
+const searchTriggerCooldown = 30 * time.Second
+
+// triggerSubscriptionSearch 触发订阅搜索，确保订阅能开始下载。
+// 审计第 11 条修复：
+//  1. 去掉外层 Retry——makeRequest 内部的 doRequest 已经经 RetryHTTP 按
+//     幂等语义重试（GET 最多 3 次），外层再包一层会让一次触发最多打 9 次；
+//  2. 合并窗口：批量审批时 N 个订阅只触发一次全局搜索，不再压垮 MoviePilot。
 func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
+	if subID <= 0 {
+		return
+	}
+
+	c.searchTriggerMu.Lock()
+	if time.Since(c.lastSearchTriggerTime) < searchTriggerCooldown {
+		c.searchTriggerMu.Unlock()
+		logger.Debug("[MoviePilot] 订阅搜索触发已合并（订阅 ID: %d，冷却窗口内）", subID)
+		return
+	}
+	c.lastSearchTriggerTime = time.Now()
+	c.searchTriggerMu.Unlock()
+
 	// 等待一小段时间确保订阅已保存
 	time.Sleep(500 * time.Millisecond)
 
-	// 调用 MoviePilot 的订阅搜索 API，使用统一的重试机制
+	// 调用 MoviePilot 的订阅搜索 API（GET，幂等，内部已按重试配置重试）
 	endpoint := "/api/v1/subscribe/search"
 
-	err := Retry(func() error {
-		_, err := c.makeRequest("GET", endpoint, nil)
-		return err
-	}, &RetryConfig{MaxAttempts: 3, BaseDelay: 1 * time.Second, Multiplier: 1.5})
-
-	if err == nil {
-		logger.Info("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
-	} else {
+	if _, err := c.makeRequest("GET", endpoint, nil); err != nil {
 		logger.Info("[MoviePilot] 触发订阅搜索失败，订阅 ID: %d: %v", subID, err)
+	} else {
+		logger.Info("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
 	}
 }
 

@@ -68,9 +68,40 @@ func DefaultIsRetryable(err error) bool {
 // which upstreams reject with "ContentLength=N with Body length 0". Such
 // requests are therefore executed exactly once and their error is returned
 // unchanged instead of being retried into a misleading "max retries exceeded".
+// requestIsIdempotentMethod reports whether an HTTP method is safe to retry
+// automatically. Retrying a POST/PUT/PATCH/DELETE after a network error or a
+// 5xx is dangerous: the server may have already executed it (subscription
+// created, user registered), and the retry executes it a second time.
+// 审计第 11 条：非幂等 POST 默认不自动重试。
+func requestIsIdempotentMethod(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		return true
+	default:
+		return false
+	}
+}
+
 func RetryHTTP(ctx context.Context, client *http.Client, req *http.Request, cfg *RetryConfig) (*http.Response, error) {
 	if cfg == nil {
 		cfg = DefaultRetryConfig()
+	}
+
+	// 非幂等方法只执行一次：无法区分“没发出去”和“发出去了但没收到响应”，
+	// 重试可能把一次订阅/注册变成两次。需要韧性的一律在上层用幂等键处理。
+	if !requestIsIdempotentMethod(req.Method) {
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("request failed (no retry for %s): %w", req.Method, err)
+		}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return resp, nil
+		}
+		resp.Body.Close()
+		return nil, &HTTPError{
+			StatusCode: resp.StatusCode,
+			Err:        fmt.Errorf("HTTP %d: %s (no retry for %s)", resp.StatusCode, resp.Status, req.Method),
+		}
 	}
 
 	replayable := requestIsReplayable(req)

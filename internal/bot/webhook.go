@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
@@ -17,6 +19,34 @@ import (
 	"github.com/xzb177/yimao/pkg/types"
 	"github.com/xzb177/yimao/pkg/validation"
 )
+
+// 审计第 9 条：Telegram webhook 以前既不按 update_id 去重、也不限并发。
+// Telegram 在收不到 200 响应时会重投同一条 update（例如某个回调处理太慢
+// 导致超时），没有去重就会重复执行：重复回复、重复求片、重复扣配额。
+// 这里复用轮询模式的同一套去重器与并发上限（进程内 + TTL），取舍说明：
+//   - 进程内去重覆盖了最常见的重投场景（超时重投、网络抖动）；
+//   - 崩溃重启会丢失去重表，重启后重投的 update 会再处理一次——彻底的
+//     exactly-once 需要持久化账本，超出本次最小改动范围（见报告未知项）。
+var (
+	webhookDeduperOnce sync.Once
+	webhookDeduper     *updateDeduper
+	webhookSem         = make(chan struct{}, maxUpdateWorkers)
+	// webhookDuplicatesSkipped 统计被去重器拦下的重复投递（可观测 + 测试断言用）。
+	webhookDuplicatesSkipped atomic.Int64
+)
+
+func getWebhookDeduper() *updateDeduper {
+	webhookDeduperOnce.Do(func() {
+		webhookDeduper = newUpdateDeduper(processedUpdateTTL)
+		go webhookDeduper.pruneProcessedUpdates(processedUpdatePruneInterval)
+	})
+	return webhookDeduper
+}
+
+// acceptWebhookUpdate 为 webhook 投递做去重：同一 update_id 在 TTL 内只放行一次。
+func acceptWebhookUpdate(updateID int64) bool {
+	return getWebhookDeduper().accept(updateID)
+}
 
 // HandleWebhook handles incoming Telegram webhook
 func HandleWebhook(
@@ -52,6 +82,20 @@ func HandleWebhook(
 		http.Error(w, "Bad request", http.StatusBadRequest)
 		return
 	}
+
+	// 去重：Telegram 收不到 200 会重投同一条 update，重投必须直接回 OK，
+	// 不能再执行一次业务逻辑。
+	if !acceptWebhookUpdate(update.UpdateID) {
+		webhookDuplicatesSkipped.Add(1)
+		logger.Info("[Webhook] Duplicate update %d skipped", update.UpdateID)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+		return
+	}
+
+	// 有界并发：突发更新不能无限制地打满下游 MoviePilot/TMDB/Emby 调用。
+	webhookSem <- struct{}{}
+	defer func() { <-webhookSem }()
 
 	// Route update
 	if update.CallbackQuery != nil {
