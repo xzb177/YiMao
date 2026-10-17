@@ -166,6 +166,7 @@ type detailResponse struct {
 type watchlistItemView struct {
 	TMDBID int    `json:"tmdb_id"`
 	Type   string `json:"type"`
+	Season int    `json:"season,omitempty"` // 剧集季号（0=任意季），电影无此字段
 	Title  string `json:"title,omitempty"`
 	Year   string `json:"year,omitempty"`
 	Poster string `json:"poster_path,omitempty"`
@@ -842,7 +843,12 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	wishJoined := false
 	if s.deps.Carpool != nil {
-		view.InWatchlist = s.deps.Carpool.Contains(id, kind, user.ID)
+		// 拼车按季：tv 用当前选中的季判断（未选季时按任意季），电影不分季。
+		watchSeason := 0
+		if kind == "tv" && season > 0 {
+			watchSeason = season
+		}
+		view.InWatchlist = s.deps.Carpool.Contains(id, kind, watchSeason, user.ID)
 	}
 	if s.deps.Wishes != nil {
 		seasonScope := 0
@@ -1001,7 +1007,7 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		semaphore := make(chan struct{}, 3)
 		var wg sync.WaitGroup
 		for i, item := range items {
-			views[i] = watchlistItemView{TMDBID: item.TMDBID, Type: item.Type, Title: item.Title, Year: item.Year, Poster: item.Poster}
+			views[i] = watchlistItemView{TMDBID: item.TMDBID, Type: item.Type, Season: item.Season, Title: item.Title, Year: item.Year, Poster: item.Poster}
 			if item.Title != "" || s.deps.TMDB == nil {
 				continue
 			}
@@ -1034,19 +1040,25 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		ID   int    `json:"tmdb_id"`
-		Type string `json:"type"`
+		ID     int    `json:"tmdb_id"`
+		Type   string `json:"type"`
+		Season int    `json:"season"` // 剧集季号（0=任意季），电影忽略
 	}
 	if decodeJSONBody(w, r, &body, 8<<10) != nil || body.ID <= 0 || (body.Type != "movie" && body.Type != "tv") {
 		http.Error(w, "请求参数不完整", http.StatusBadRequest)
 		return
+	}
+	// 拼车按季：只有剧集带季号，电影/非法季号一律按 0（任意季）处理。
+	season := 0
+	if body.Type == "tv" && body.Season > 0 {
+		season = body.Season
 	}
 	if r.Method == http.MethodPost {
 		if s.deps.TMDB == nil {
 			http.Error(w, "影视信息服务未就绪", http.StatusServiceUnavailable)
 			return
 		}
-		if len(s.deps.Carpool.ListForUser(user.ID)) >= 200 && !s.deps.Carpool.Contains(body.ID, body.Type, user.ID) {
+		if len(s.deps.Carpool.ListForUser(user.ID)) >= 200 && !s.deps.Carpool.Contains(body.ID, body.Type, season, user.ID) {
 			http.Error(w, "想看列表已达上限", http.StatusConflict)
 			return
 		}
@@ -1068,7 +1080,7 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		if len(date) >= 4 {
 			meta.Year = date[:4]
 		}
-		count, err := s.deps.Carpool.AddWithMetadataChecked(body.ID, body.Type, user.ID, meta)
+		count, err := s.deps.Carpool.AddWithMetadataChecked(body.ID, body.Type, season, user.ID, meta)
 		if err != nil {
 			http.Error(w, "想看保存失败，请稍后再试", http.StatusServiceUnavailable)
 			return
@@ -1076,7 +1088,7 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusCreated, map[string]any{"ok": true, "in_watchlist": true, "watcher_count": count})
 		return
 	}
-	removed, err := s.deps.Carpool.RemoveChecked(body.ID, body.Type, user.ID)
+	removed, err := s.deps.Carpool.RemoveChecked(body.ID, body.Type, season, user.ID)
 	if err != nil {
 		http.Error(w, "取消想看保存失败，请稍后再试", http.StatusServiceUnavailable)
 		return

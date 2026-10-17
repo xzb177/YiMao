@@ -20,7 +20,7 @@ func TestCarpoolMetadataSnapshotPersistsAndLegacyFileStillLoads(t *testing.T) {
 	}
 	added := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 	meta := CarpoolMetadata{Title: "搏击俱乐部", Year: "1999", Poster: "https://image.test/poster.jpg", AddedAt: added}
-	if _, err := svc.AddWithMetadataChecked(550, "movie", 7, meta); err != nil {
+	if _, err := svc.AddWithMetadataChecked(550, "movie", 0, 7, meta); err != nil {
 		t.Fatal(err)
 	}
 	reloaded := NewCarpoolService(dir)
@@ -33,11 +33,11 @@ func TestCarpoolMetadataSnapshotPersistsAndLegacyFileStillLoads(t *testing.T) {
 func TestCarpoolMetadataWriteFailureRollsBackMetadata(t *testing.T) {
 	dir := t.TempDir()
 	svc := NewCarpoolService(dir)
-	if _, err := svc.AddWithMetadataChecked(550, "movie", 7, CarpoolMetadata{Title: "旧标题"}); err != nil {
+	if _, err := svc.AddWithMetadataChecked(550, "movie", 0, 7, CarpoolMetadata{Title: "旧标题"}); err != nil {
 		t.Fatal(err)
 	}
 	svc.dataFile = t.TempDir() + "/missing/carpool.json"
-	if _, err := svc.AddWithMetadataChecked(550, "movie", 7, CarpoolMetadata{Title: "新标题"}); err == nil {
+	if _, err := svc.AddWithMetadataChecked(550, "movie", 0, 7, CarpoolMetadata{Title: "新标题"}); err == nil {
 		t.Fatal("expected persistence failure")
 	}
 	items := svc.ListForUser(7)

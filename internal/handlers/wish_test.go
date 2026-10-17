@@ -163,7 +163,7 @@ func TestWishHandleDuplicateOtherCarpoolsAndFulfills(t *testing.T) {
 	if got.State != services.WishStateFulfilled {
 		t.Fatalf("state=%s want FULFILLED", got.State)
 	}
-	users := carpool.Get(item.TmdbID, item.MediaType)
+	users := carpool.Get(item.TmdbID, item.MediaType, item.Season)
 	if len(users) != 1 || users[0] != item.UserID {
 		t.Fatalf("carpool users=%v", users)
 	}

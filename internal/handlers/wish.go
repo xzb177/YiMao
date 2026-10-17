@@ -505,7 +505,7 @@ func (h *WishHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 		if h.carpool == nil {
 			return &callback.Response{CallbackMsg: "已有其他用户提交相同请求，请稍后再试", ShowAlert: true}, nil
 		}
-		people := h.carpool.Add(item.TmdbID, item.MediaType, item.UserID)
+		people := h.carpool.Add(item.TmdbID, item.MediaType, item.Season, item.UserID)
 		markFulfilled()
 		return &callback.Response{CallbackMsg: fmt.Sprintf("已加入拼车，共 %d 人想看", people)}, nil
 	case services.SubmissionNotBound:

@@ -680,11 +680,15 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	washHandler := handlers.NewWashHandler(deps.ReviewService, deps.TMDBClient, deps.WebhookService, requestHandler.NotifyAdminsForReview, deps.SessionMgr)
 	washHandler.SetUserMapping(deps.UserMapping) // 审计 A1：洗版写入验绑定
 
-	// 拼车取消/拒绝通知
-	carpoolNotifyFunc := func(tmdbID int, mediaType, title, reason string) {
-		userIDs := deps.CarpoolService.GetAndClear(tmdbID, mediaType)
+	// 拼车取消/拒绝通知：season>0 时只结清该季 + 任意季；season=0（整部）时结清全部季。
+	carpoolNotifyFunc := func(tmdbID int, mediaType, title, reason string, season int) {
+		userIDs := deps.CarpoolService.ClearArrival(tmdbID, mediaType, season)
+		seasonSuffix := ""
+		if mediaType == "tv" && season > 0 {
+			seasonSuffix = fmt.Sprintf("（%s）", services.SeasonLabel(season))
+		}
 		for _, uid := range userIDs {
-			deps.Telegram.SendMessage(uid, fmt.Sprintf("📢 拼车通知\n\n《%s》%s，本次拼车已取消", title, reason), "", nil)
+			deps.Telegram.SendMessage(uid, fmt.Sprintf("📢 拼车通知\n\n《%s》%s%s，本次拼车已取消", title, seasonSuffix, reason), "", nil)
 		}
 	}
 	reviewHandler.OnCarpoolNotify = carpoolNotifyFunc

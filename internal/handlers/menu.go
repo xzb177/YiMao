@@ -24,7 +24,7 @@ type MyRequestsHandler struct {
 	quotaSvc    *services.QuotaService
 	adminSvc    *services.AdminService
 	// OnCarpoolNotify 拼车用户通知回调（撤回时触发）。
-	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
+	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string, season int)
 	wishSvc         *services.WishService
 }
 
@@ -137,7 +137,7 @@ func (h *MyRequestsHandler) HandleCancelReview(ctx *callback.Context) (*callback
 
 	// 通知拼车用户
 	if h.OnCarpoolNotify != nil {
-		go h.OnCarpoolNotify(target.TmdbID, string(target.MediaType), target.MediaTitle, "发起人撤回")
+		go h.OnCarpoolNotify(target.TmdbID, string(target.MediaType), target.MediaTitle, "发起人撤回", target.Season)
 	}
 
 	// 通知用户

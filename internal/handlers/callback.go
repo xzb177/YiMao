@@ -546,10 +546,11 @@ func (h *DetailHandler) SetCarpool(c *services.CarpoolService) {
 }
 
 // carpoolButtonText 返回带人数的「我也想看」按钮文本。
+// 剧集统计全部季的人数（同一个人拼了两季会计两次，与拼车池口径一致）。
 func (h *DetailHandler) carpoolButtonText(tmdbID int, mediaType string) string {
 	count := 0
 	if h.carpool != nil {
-		count = len(h.carpool.Get(tmdbID, mediaType))
+		count = h.carpool.CountAll(tmdbID, mediaType)
 	}
 	if count > 0 {
 		return fmt.Sprintf("🙋 加入想看 · %d 人", count)
@@ -1214,7 +1215,18 @@ func (h *DetailHandler) HandleSeasons(ctx *callback.Context) (*callback.Response
 		kb.NewRow()
 	}
 
-	// Return to detail without pushing another search navigation entry.
+	// 拼车按季：用户可直接拼某季（season=0 的「任意季」入口仍在剧集详情页主按钮）。
+	kb.AddButton("🙋 拼车（任意季）", fmt.Sprintf("carpool:id:%s:type:tv:season:0", targetItem.ID))
+	kb.NewRow()
+	for i, season := range regularSeasons {
+		kb.AddButton(fmt.Sprintf("🙋 拼第%d季", season.SeasonNumber), fmt.Sprintf("carpool:id:%s:type:tv:season:%d", targetItem.ID, season.SeasonNumber))
+		if (i+1)%2 == 0 {
+			kb.NewRow()
+		}
+	}
+	if len(regularSeasons)%2 != 0 {
+		kb.NewRow()
+	}
 	if returnSource == "request_heat" {
 		kb.AddButton("⬅️ 返回详情", fmt.Sprintf("detail:id:%s:type:tv:source:request_heat", targetItem.ID))
 	} else {

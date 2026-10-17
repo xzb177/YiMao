@@ -28,7 +28,7 @@ type ReviewHandler struct {
 	approvalLocks  *requestLockTable
 	// OnCarpoolNotify 拼车用户通知回调（拒绝/撤回时触发）。
 	// 参数：tmdbID, mediaType, title, reason
-	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string)
+	OnCarpoolNotify func(tmdbID int, mediaType, title, reason string, season int)
 }
 
 type requestLockEntry struct {
@@ -901,7 +901,7 @@ func (h *ReviewHandler) handleReject(ctx *callback.Context) (*callback.Response,
 
 	// 通知拼车用户
 	if h.OnCarpoolNotify != nil {
-		go h.OnCarpoolNotify(review.TmdbID, string(review.MediaType), review.MediaTitle, "管理员拒绝")
+		go h.OnCarpoolNotify(review.TmdbID, string(review.MediaType), review.MediaTitle, "管理员拒绝", review.Season)
 	}
 
 	if !quotaRestored {

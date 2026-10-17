@@ -17,8 +17,8 @@ func TestRequestHeatRecentUsesRealRequestsAndUniqueUsers(t *testing.T) {
 		"tv-a":    {RequestID: "tv-a", TelegramID: 21, TmdbID: 100, MediaTitle: "同号剧集", MediaYear: 2025, MediaType: MediaTypeTV, Status: "pending", Season: 2, CreatedAt: now.Add(-3 * time.Hour)},
 	}
 	reviews.mu.Unlock()
-	carpool.Add(100, "movie", 11) // duplicate requester must not double count
-	carpool.Add(100, "movie", 13)
+	carpool.Add(100, "movie", 0, 11) // duplicate requester must not double count
+	carpool.Add(100, "movie", 0, 13)
 
 	heat := NewRequestHeatService(reviews, carpool)
 	heat.now = func() time.Time { return now }
