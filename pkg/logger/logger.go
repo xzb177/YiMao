@@ -37,7 +37,7 @@ var sensitivePatterns = []*regexp.Regexp{
 	// Bot tokens (Telegram)
 	// 注意：token 必须放在第 2 分组（Sanitize 只遮蔽第 2 分组），第 1 分组是保留的前缀。
 	// URL 里的 token 前面通常是 "bot"（单词字符），所以前缀不能只用 [^\w]。
-	regexp.MustCompile(`(bot|["'\s(=/:]|^)(\d+:[A-Za-z0-9_-]{35,})([^\w]|$)`),
+	regexp.MustCompile(`(bot|["'\s(=/:]|^)(\d+:[A-Za-z0-9_-]{35,})(\W|$)`),
 	regexp.MustCompile(`(["']?bot_?token["']?\s*[:=]\s*["']?)(\d+:[A-Za-z0-9_-]{35,})(["']?)`),
 
 	// PT 站点凭据（拼进 RSS 请求 URL，出错时随 url.Error 进入日志）

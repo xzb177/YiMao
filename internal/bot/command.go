@@ -372,7 +372,9 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 	resettingOther := false
 	if len(parts) > 1 {
 		if !isRootAdmin {
-			telegram.SendMessage(msg.Chat.ID, "🔒 重置他人密码需要超管权限。普通用户只能重置自己已绑定的 MoviePilot 账号：/resetpw", "", nil)
+			if _, err := telegram.SendMessage(msg.Chat.ID, "🔒 重置他人密码需要超管权限。普通用户只能重置自己已绑定的 MoviePilot 账号：/resetpw", "", nil); err != nil {
+				logger.Warn("[ResetPassword] 发送权限提示失败 chat=%d: %v", msg.Chat.ID, err)
+			}
 			return
 		}
 		resettingOther = true
