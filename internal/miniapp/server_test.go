@@ -133,6 +133,17 @@ func TestIndexSetsBrowserSecurityHeaders(t *testing.T) {
 			t.Errorf("%s=%q want %q", name, got, want)
 		}
 	}
+	// 审计 4B/B5：CSP 必须存在，且 script-src 必须保留 'self'（SDK 走同源）
+	// 与 'unsafe-inline'（整页是内联脚本 + 内联事件处理器）。
+	csp := response.Header().Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("Content-Security-Policy header must be set on the Mini App page")
+	}
+	for _, want := range []string{"default-src 'self'", "script-src 'self' 'unsafe-inline'", "img-src 'self' data: https:", "object-src 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP %q missing %q", csp, want)
+		}
+	}
 }
 
 func TestSearchResultsExposeCanonicalMediaType(t *testing.T) {

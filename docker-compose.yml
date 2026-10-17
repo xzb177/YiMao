@@ -11,6 +11,10 @@ services:
       - ${YIMAO_ENV_FILE:-.env}
     environment:
       DATA_DIR: /app/data
+      # 审计 4B/B1：config 默认 HOST 已收紧为 127.0.0.1；容器用 host 网络模式时
+      # 必须显式保持 0.0.0.0，否则 Telegram webhook / Mini App 等公网入口不可达。
+      # 仍可用 HOST=... 环境变量覆盖。
+      HOST: ${HOST:-0.0.0.0}
       PUID: ${PUID:-10001}
       PGID: ${PGID:-10001}
     network_mode: "host"

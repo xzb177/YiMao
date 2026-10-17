@@ -215,7 +215,8 @@ type searchResultView struct {
 
 func NewServer(deps Deps) *Server {
 	if deps.MaxAuthAge <= 0 {
-		deps.MaxAuthAge = 24 * time.Hour
+		// 审计 4B/B6：与 config 默认保持一致，1 小时。
+		deps.MaxAuthAge = 1 * time.Hour
 	}
 	return &Server{deps: deps, rateLimiter: newUserRateLimiter(deps.RateLimit), availCache: make(map[string]availCacheEntry)}
 }
@@ -242,8 +243,24 @@ func (s *Server) Handler() http.Handler {
 	return browserSecurityHeaders(mux)
 }
 
+// 审计 4B/B5：Mini App 浏览器安全头。CSP 策略按页面实际资源取舍：
+//   - script-src 保留 'unsafe-inline'：整个 Mini App 就是一个大内联 <script>，
+//     加上到处是 onload=/onclick= 内联事件处理器，用 hash 白名单不现实；
+//   - style-src 保留 'unsafe-inline' + data:：样式写在内联 <style>，背景是
+//     data: SVG；img-src 允许 https/data:（海报来自 TMDB 等外部图床）；
+//   - 不加 frame-ancestors：Telegram 客户端把 Mini App 装在 webview 里，
+//     frame-ancestors 'none' 有打死页面的风险。
+const miniAppContentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline' data:; " +
+	"img-src 'self' data: https:; " +
+	"connect-src 'self'; " +
+	"object-src 'none'; " +
+	"base-uri 'self'"
+
 func browserSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", miniAppContentSecurityPolicy)
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")

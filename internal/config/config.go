@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/xzb177/yimao/pkg/logger"
 )
@@ -38,7 +39,10 @@ type Config struct {
 	// Server
 	ServerPort string
 	ServerHost string
-	WebhookURL string
+	// 审计 4B/B6：Telegram initData 有效期（小时），默认 1。过长会让
+	// 截获的 initData 可用一整天。
+	InitDataMaxAgeHours int
+	WebhookURL          string
 	// WebhookSecret, when set, requires inbound webhooks to carry a valid
 	// HMAC-SHA256 signature (X-Webhook-Signature: sha256=<hex>). Empty = off
 	// (backward compatible).
@@ -122,7 +126,13 @@ func Load() (*Config, error) {
 		EmbySkipTLSVerify:     getEnvBool("EMBY_SKIP_TLS_VERIFY", false),
 		TMDBAPIKey:            getEnv("TMDB_API_KEY", ""),
 		ServerPort:            getEnv("PORT", "8080"),
-		ServerHost:            getEnv("HOST", "0.0.0.0"),
+		// 审计 4B/B1：默认只监听本机环回。需要对外（含 Telegram webhook /
+		// Mini App）时显式设置 HOST=0.0.0.0。docker-compose.yml 显式保留了
+		// 0.0.0.0，容器部署不受影响。
+		ServerHost: getEnv("HOST", "127.0.0.1"),
+		// 审计 4B/B6：initData 有效期默认从 24 小时收紧到 1 小时，
+		// 可通过 INIT_DATA_MAX_AGE_HOURS 覆盖。
+		InitDataMaxAgeHours:   getEnvInt("INIT_DATA_MAX_AGE_HOURS", 1),
 		WebhookURL:            getEnv("WEBHOOK_URL", ""),
 		WebhookSecret:         getEnv("WEBHOOK_SECRET", ""),
 		DataDir:               getEnv("DATA_DIR", "/app/data"),
@@ -437,6 +447,15 @@ func (c *Config) PTSites() PTSitesConfig {
 }
 
 // Helper functions
+
+// InitDataMaxAge returns the configured Telegram initData validity window.
+// Non-positive values fall back to the 1-hour default.
+func (c *Config) InitDataMaxAge() time.Duration {
+	if c.InitDataMaxAgeHours > 0 {
+		return time.Duration(c.InitDataMaxAgeHours) * time.Hour
+	}
+	return time.Hour
+}
 
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {

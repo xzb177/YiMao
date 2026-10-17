@@ -16,7 +16,6 @@ RUN apk add --no-cache git
 
 # Local build fix: reach the Go module proxy through the China mirror.
 ENV GOPROXY=https://goproxy.cn,direct
-ENV GONOSUMCHECK=*
 
 WORKDIR /app
 
@@ -27,8 +26,10 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Tidy dependencies and build
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
+# 审计 4B/B3：构建时不再跑 go mod tidy（tidy 会静默改写 go.mod/go.sum，
+# 掩盖"模块文件与代码不一致"）。go mod download 严格按已提交的
+# go.mod/go.sum 校验取包，不一致就直接构建失败。
+RUN CGO_ENABLED=0 GOOS=linux go build -o yimao ./cmd/bot
 
 # Explicit verification target for deployment preflight on Docker-only hosts.
 # The production image remains lean, while `docker build --target verify .`
