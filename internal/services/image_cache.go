@@ -1,12 +1,16 @@
 package services
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"github.com/xzb177/yimao/pkg/logger"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -153,8 +157,84 @@ func (c *ImageCache) DownloadOrFetch(imageURL string, headers map[string]string)
 // 超限时返回明确错误、不缓存坏图，由调用方决定降级（例如改走 URL 直发）。
 const maxImageDownloadBytes = 10 << 20
 
+// 审计 A5：图片回退下载的 SSRF 防护与重定向凭据剥离。
+//
+//   - validateOutboundImageURL 拒绝内网/环回/链路本地/组播等非公网地址（含 DNS 解析后）。
+//   - guardRedirectClient 给每一次重定向做同样的校验，并在跨主机跳转时剥掉
+//     X-Emby-Token 等敏感头（Go 默认只在跨域时剥 Authorization/Cookie，自义定头会原样带过去）。
+//   - allowPrivateImageHosts 仅供测试打开（httptest 跑在 127.0.0.1），生产恒为 false。
+var allowPrivateImageHosts = false
+
+var imageSensitiveRedirectHeaders = []string{
+	"X-Emby-Token", "X-Webhook-Token", "X-Api-Key",
+	"Authorization", "Proxy-Authorization", "Cookie",
+}
+
+func isNonPublicIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+}
+
+// validateOutboundImageURL 校验图片下载目标：只允许 http/https 公网地址。
+func validateOutboundImageURL(rawURL string) error {
+	if allowPrivateImageHosts {
+		return nil
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return fmt.Errorf("invalid image URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("image URL scheme not allowed: %s", u.Scheme)
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); ip != nil {
+		if isNonPublicIP(ip) {
+			return fmt.Errorf("image URL host is not public: %s", host)
+		}
+		return nil
+	}
+	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	if err != nil {
+		return fmt.Errorf("image URL host resolve failed: %w", err)
+	}
+	for _, a := range addrs {
+		if isNonPublicIP(a.IP) {
+			return fmt.Errorf("image URL host resolves to non-public IP: %s", host)
+		}
+	}
+	return nil
+}
+
+func sameURLHost(a, b *url.URL) bool {
+	return strings.EqualFold(a.Hostname(), b.Hostname()) && a.Port() == b.Port() && strings.EqualFold(a.Scheme, b.Scheme)
+}
+
+// guardRedirectClient 包装 client：每次重定向都做 SSRF 校验；跨主机跳转剥敏感头。
+func guardRedirectClient(base *http.Client) *http.Client {
+	c := *base
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		if err := validateOutboundImageURL(req.URL.String()); err != nil {
+			return err
+		}
+		if len(via) > 0 && !sameURLHost(via[len(via)-1].URL, req.URL) {
+			for _, h := range imageSensitiveRedirectHeaders {
+				req.Header.Del(h)
+			}
+		}
+		return nil
+	}
+	return &c
+}
+
 // downloadImageWithLimit 下载图片。超过上限返回明确错误，绝不静默截断。
 func downloadImageWithLimit(client *http.Client, imageURL string, headers map[string]string) ([]byte, error) {
+	if err := validateOutboundImageURL(imageURL); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequest("GET", imageURL, nil)
 	if err != nil {
 		return nil, err
@@ -168,7 +248,8 @@ func downloadImageWithLimit(client *http.Client, imageURL string, headers map[st
 		req.Header.Set(key, value)
 	}
 
-	resp, err := client.Do(req)
+	// 审计 A5：重定向守卫（校验每一跳 + 跨主机剥敏感头）。
+	resp, err := guardRedirectClient(client).Do(req)
 	if err != nil {
 		return nil, err
 	}

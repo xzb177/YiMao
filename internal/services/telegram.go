@@ -377,7 +377,8 @@ func (c *TelegramClient) SendPhotoBytes(chatID int64, filename string, data []by
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, err := c.httpClient.Do(req)
+	// 审计 A4：发图 multipart 路径接入 429 重试（原先直接 Do）。
+	resp, err := c.doWithRetry(req)
 	if err != nil {
 		return nil, fmt.Errorf("telegram sendPhoto failed: %w", telegramNetworkError(err))
 	}
@@ -742,6 +743,10 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		parseMode = ""
 		logger.Warn("[Telegram] Truncated oversized multipart caption to 1024 runes")
 	}
+	if strings.EqualFold(parseMode, "HTML") {
+		// 审计 A3：multipart 路径不走 normalizeTelegramPayload，这里单独转义。
+		caption = sanitizeTelegramHTMLText(caption)
+	}
 	writer.WriteField("parse_mode", parseMode)
 	if caption != "" {
 		_ = writer.WriteField("caption", caption)
@@ -889,6 +894,10 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 		parseMode = ""
 		logger.Warn("[Telegram] Truncated oversized multipart caption to 1024 runes")
 	}
+	if strings.EqualFold(parseMode, "HTML") {
+		// 审计 A3：multipart 路径不走 normalizeTelegramPayload，这里单独转义。
+		caption = sanitizeTelegramHTMLText(caption)
+	}
 	writer.WriteField("parse_mode", parseMode)
 	if caption != "" {
 		_ = writer.WriteField("caption", caption)
@@ -929,7 +938,8 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	resp2, err := c.httpClient.Do(req)
+	// 审计 A4：发图 multipart 路径原来完全不走 429 重试，现在接入同一套 doWithRetry。
+	resp2, err := c.doWithRetry(req)
 	if err != nil {
 		err = stripTokenFromError(err)
 		logger.Info("[Telegram] Multipart request failed: %v", err)
@@ -1134,12 +1144,16 @@ func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) 
 		if resp.StatusCode != 429 {
 			return resp, nil
 		}
-		// 429 Too Many Requests — 读取 Retry-After 并等待
+		// 429 Too Many Requests — 读取重试等待时间。
+		// 审计 A4：Telegram 官方机制是响应体 parameters.retry_after（Retry-After 头不一定有），两者都读，取体里的为准。
 		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 		resp.Body.Close()
-		retryAfter := 1 // 默认 1 秒
-		if ra := resp.Header.Get("Retry-After"); ra != "" {
-			fmt.Sscanf(ra, "%d", &retryAfter)
+		retryAfter := parseTelegramRetryAfter(respBody)
+		if retryAfter <= 0 {
+			retryAfter = 1 // 默认 1 秒
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				_, _ = fmt.Sscanf(ra, "%d", &retryAfter)
+			}
 		}
 		if retryAfter > 30 {
 			retryAfter = 30 // 最多等 30 秒
@@ -1148,6 +1162,23 @@ func (c *TelegramClient) doWithRetry(req *http.Request) (*http.Response, error) 
 		time.Sleep(time.Duration(retryAfter) * time.Second)
 	}
 	return nil, fmt.Errorf("telegram API rate limited after %d retries", maxRetries)
+}
+
+// parseTelegramRetryAfter 从 429 响应体解析官方 parameters.retry_after（秒）。
+// 解析不到返回 0，调用方再回退到 Retry-After 头。
+func parseTelegramRetryAfter(body []byte) int {
+	var v struct {
+		Parameters *struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return 0
+	}
+	if v.Parameters == nil || v.Parameters.RetryAfter <= 0 {
+		return 0
+	}
+	return v.Parameters.RetryAfter
 }
 
 func telegramNetworkError(err error) error {
@@ -1160,13 +1191,60 @@ func telegramNetworkError(err error) error {
 	}
 }
 
+// 审计 A3：Telegram HTML 模式的转义集中在发送前的这一处处理。
+// 允许的标签（Bot API HTML 子集）原样保留，其余 < > & 全部转义；
+// 已经是合法实体（如 &amp;）的不再重复转义，避免已有转义调用点被双重转义。
+var tgAllowedHTMLTagRe = regexp.MustCompile(`^</?(?:b|strong|i|em|u|ins|s|strike|del|a|code|pre|blockquote|tg-emoji|spoiler|tg-spoiler)(?:\s+[a-zA-Z-]+="[^"]*")?>$`)
+var tgHTMLEntityRe = regexp.MustCompile(`^&(#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);`)
+
+func sanitizeTelegramHTMLText(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 16)
+	i := 0
+	for i < len(s) {
+		c := s[i]
+		switch c {
+		case '<':
+			if j := strings.IndexByte(s[i:], '>'); j > 0 {
+				if tag := s[i : i+j+1]; tgAllowedHTMLTagRe.MatchString(tag) {
+					b.WriteString(tag)
+					i += j + 1
+					continue
+				}
+			}
+			b.WriteString("&lt;")
+			i++
+		case '>':
+			b.WriteString("&gt;")
+			i++
+		case '&':
+			if m := tgHTMLEntityRe.FindString(s[i:]); m != "" {
+				b.WriteString(m)
+				i += len(m)
+				continue
+			}
+			b.WriteString("&amp;")
+			i++
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
+}
+
 // normalizeTelegramPayload sanitizes text and keyboards immediately before
 // JSON serialization, covering send/edit/rich/ephemeral request paths.
 func normalizeTelegramPayload(payload map[string]interface{}) {
 	parseMode, _ := payload["parse_mode"].(string)
+	isHTML := strings.EqualFold(parseMode, "HTML")
 	for field, maxRunes := range map[string]int{"text": 4096, "caption": 1024} {
 		if value, ok := payload[field].(string); ok {
 			clean, truncated := truncateTelegramText(value, maxRunes, parseMode)
+			if isHTML && !truncated {
+				// 审计 A3：HTML 模式统一转义（保留允许的标签；已有实体不双重转义）。
+				clean = sanitizeTelegramHTMLText(clean)
+			}
 			payload[field] = clean
 			if truncated {
 				// Truncation degrades HTML to plain text. Markdown is also disabled
@@ -1180,6 +1258,9 @@ func normalizeTelegramPayload(payload map[string]interface{}) {
 		mediaParseMode, _ := media["parse_mode"].(string)
 		if caption, ok := media["caption"].(string); ok {
 			clean, truncated := truncateTelegramText(caption, 1024, mediaParseMode)
+			if strings.EqualFold(mediaParseMode, "HTML") && !truncated {
+				clean = sanitizeTelegramHTMLText(clean)
+			}
 			media["caption"] = clean
 			if truncated {
 				media["parse_mode"] = ""

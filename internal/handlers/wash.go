@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
@@ -11,14 +13,29 @@ import (
 	"github.com/xzb177/yimao/internal/session"
 )
 
+// washRequestNonce 生成不含用户 ID 的洗版工单随机后缀（审计 A1：request_id 脱敏）。
+func washRequestNonce() string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		return fmt.Sprintf("%d_%s", time.Now().UnixNano(), hex.EncodeToString(b[:]))
+	}
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
 // WashHandler creates media-bound wash work orders in the shared review queue.
-// It deliberately does not depend on MoviePilot account binding or quota.
 type WashHandler struct {
 	reviews *services.ReviewService
 	tmdb    *services.TMDBClient
 	emby    *services.WebhookService
 	notify  func(*services.ReviewRequest)
 	sessMgr *session.Manager
+	// 审计 A1：洗版写入接口必须验绑定（开小号刷审核队列）。
+	userMapping services.UserMappingStore
+}
+
+// SetUserMapping 注入用户绑定关系（审计 A1）。
+func (h *WashHandler) SetUserMapping(m services.UserMappingStore) {
+	h.userMapping = m
 }
 
 func NewWashHandler(reviews *services.ReviewService, tmdb *services.TMDBClient, emby *services.WebhookService, notify func(*services.ReviewRequest), sessMgr *session.Manager) *WashHandler {
@@ -48,6 +65,12 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 	}
 	if h.reviews == nil || h.tmdb == nil || h.emby == nil {
 		return &callback.Response{CallbackMsg: "洗版服务未就绪", ShowAlert: true}, nil
+	}
+	// 审计 A1：未绑定用户不许提交洗版工单。
+	if h.userMapping != nil {
+		if _, bound := h.userMapping.GetMoviePilotUserID(ctx.UserID); !bound {
+			return &callback.Response{Text: "🔗 请先使用 /link 绑定账号，再申请洗版", CallbackMsg: "请先绑定账号", ShowAlert: true}, nil
+		}
 	}
 	kind := services.MediaTypeMovie
 	if mediaType == "tv" {
@@ -83,8 +106,9 @@ func (h *WashHandler) Handle(ctx *callback.Context) (*callback.Response, error) 
 			Keyboard: &callback.Keyboard{InlineKeyboard: [][]callback.Button{{{Text: "✅ 提交洗版工单", CallbackData: fmt.Sprintf("wash:id:%d:type:%s:season:%d:confirm:1", id, mediaType, season)}}, {{Text: "⬅️ 重选", CallbackData: "wash"}, {Text: "❌ 取消", CallbackData: "cancel"}}}},
 		}, nil
 	}
+	// 审计 A1：request_id 不再嵌入原始 TG ID（它会出现在回调、管理界面与日志里）。
 	review := &services.ReviewRequest{
-		RequestID: fmt.Sprintf("wash_%d_%d_%d_%d", ctx.UserID, id, season, time.Now().UnixNano()), BusinessType: services.BusinessTypeWash,
+		RequestID: fmt.Sprintf("wash_%d_%d_%s", id, season, washRequestNonce()), BusinessType: services.BusinessTypeWash,
 		TelegramID: ctx.UserID, TelegramName: fmt.Sprintf("用户%d", ctx.UserID), TmdbID: id,
 		MediaTitle: media.GetTitle(), MediaYear: media.GetYear(), MediaType: kind, Season: season,
 		PosterPath: media.PosterPath, Overview: media.Overview, QuotaCost: 0, RequestOrigin: "wash", WashBaseline: baseline,

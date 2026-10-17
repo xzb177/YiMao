@@ -401,7 +401,9 @@ func TestDetailAcceptsCanonicalMediaTypes(t *testing.T) {
 
 func TestWriteEndpointsRejectTrailingJSON(t *testing.T) {
 	carpool := services.NewCarpoolService(t.TempDir())
-	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
+	// 审计 A1：写操作要验绑定（本用例测的是 body 校验，用户设为已绑定）。
+	mapping := &stubUserMapping{boundIDs: map[int64]bool{101: true}}
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool, UserMapping: mapping}).Handler()
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, signedRequest(t, http.MethodDelete, "/api/miniapp/v1/watchlist", `{"tmdb_id":550,"type":"movie"}{"tmdb_id":551,"type":"movie"}`, 101))
 	if response.Code != http.StatusBadRequest {
@@ -411,7 +413,9 @@ func TestWriteEndpointsRejectTrailingJSON(t *testing.T) {
 
 func TestWriteEndpointsRejectOversizedBodies(t *testing.T) {
 	carpool := services.NewCarpoolService(t.TempDir())
-	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
+	// 审计 A1：写操作要验绑定（本用例测的是 body 校验，用户设为已绑定）。
+	mapping := &stubUserMapping{boundIDs: map[int64]bool{101: true}}
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool, UserMapping: mapping}).Handler()
 	body := `{"tmdb_id":550,"type":"movie","padding":"` + strings.Repeat("x", 9<<10) + `"}`
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, signedRequest(t, http.MethodDelete, "/api/miniapp/v1/watchlist", body, 101))
@@ -422,7 +426,9 @@ func TestWriteEndpointsRejectOversizedBodies(t *testing.T) {
 
 func TestWatchlistListAndExactRemove(t *testing.T) {
 	carpool := services.NewCarpoolService(t.TempDir())
-	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool}).Handler()
+	// 审计 A1：写操作要验绑定，测试用户 101 设为已绑定。
+	mapping := &stubUserMapping{boundIDs: map[int64]bool{101: true, 202: true}}
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool, UserMapping: mapping}).Handler()
 
 	carpool.Add(550, "movie", 101)
 	carpool.Add(550, "movie", 202)
@@ -738,7 +744,9 @@ func TestIssuesAreUserScopedAndRepliesHideInternalIDs(t *testing.T) {
 
 func TestIssueCreateDerivesOwnerFromSignedInitData(t *testing.T) {
 	issues := services.NewIssueService(t.TempDir())
-	handler := NewServer(Deps{BotToken: miniAppTestToken, Issues: issues}).Handler()
+	// 审计 A1：写操作要验绑定，测试用户 101 设为已绑定。
+	mapping := &stubUserMapping{boundIDs: map[int64]bool{101: true}}
+	handler := NewServer(Deps{BotToken: miniAppTestToken, Issues: issues, UserMapping: mapping}).Handler()
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, signedRequest(t, http.MethodPost, "/api/miniapp/v1/issues", `{"title":"字幕问题","description":"字幕不同步","user_id":202}`, 101))
 	if response.Code != http.StatusCreated {

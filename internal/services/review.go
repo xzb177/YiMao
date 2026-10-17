@@ -795,7 +795,13 @@ func (s *ReviewService) RestoreQuotaOnce(requestID string, quota *QuotaService) 
 	if quota == nil {
 		return false, fmt.Errorf("quota service not configured")
 	}
-	_, err := quota.RestoreQuotaForRequest(requestID, review.TelegramID, string(review.MediaType), cost)
+	// 审计 A7①：跨天退配额不再扣减今天的已用量（防突破每日上限）。
+	// 零值日期（旧数据无 created_at）传空，按老行为退回。
+	requestDate := ""
+	if !review.CreatedAt.IsZero() {
+		requestDate = review.CreatedAt.Format("2006-01-02")
+	}
+	_, err := quota.RestoreQuotaForRequest(requestID, review.TelegramID, string(review.MediaType), cost, requestDate)
 	if err != nil {
 		return false, err
 	}

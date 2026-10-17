@@ -23,8 +23,34 @@ type TelegramMessage struct {
 	CommunityChatAdded   *TelegramCommunityChatAdded   `json:"community_chat_added,omitempty"`
 	CommunityChatRemoved *TelegramCommunityChatRemoved `json:"community_chat_removed,omitempty"`
 	ReplyToMessage       *TelegramMessage              `json:"reply_to_message,omitempty"`
-	ForwardFrom          *TelegramUser                 `json:"forward_from,omitempty"`   // 转发自用户
-	ForwardOrigin        *TelegramUser                 `json:"forward_origin,omitempty"` // TG API 7.0+ sender_user
+	ForwardFrom          *TelegramUser                 `json:"forward_from,omitempty"`   // 转发自用户（旧格式）
+	ForwardOrigin        *TelegramMessageOrigin        `json:"forward_origin,omitempty"` // TG API 7.0+ 的 MessageOrigin 联合体
+}
+
+// TelegramMessageOrigin 对应 Bot API 7.0+ 的 forward_origin（MessageOrigin）。
+// 注意它不是直接的用户对象：type=user 时真正的用户在 sender_user 里；
+// 以前这里被误写成 *TelegramUser，导致解析出来 ID=0，退回去把消息文字当 ID 解析。
+type TelegramMessageOrigin struct {
+	Type           string        `json:"type"` // user | hidden_user | chat | channel
+	Date           int64         `json:"date,omitempty"`
+	SenderUser     *TelegramUser `json:"sender_user,omitempty"`      // type=user
+	SenderUserName string        `json:"sender_user_name,omitempty"` // type=hidden_user（隐私设置隐藏）
+}
+
+// ForwardedUser 统一取转发来源用户：先看旧 forward_from，再看新 forward_origin。
+// hidden_user/chat/channel 拿不到用户 ID，返回 nil 走手动输入。
+func (m *TelegramMessage) ForwardedUser() *TelegramUser {
+	if m == nil {
+		return nil
+	}
+	if m.ForwardFrom != nil && m.ForwardFrom.ID > 0 {
+		return m.ForwardFrom
+	}
+	if m.ForwardOrigin != nil && m.ForwardOrigin.Type == "user" &&
+		m.ForwardOrigin.SenderUser != nil && m.ForwardOrigin.SenderUser.ID > 0 {
+		return m.ForwardOrigin.SenderUser
+	}
+	return nil
 }
 
 // TelegramCallbackQuery represents a callback query

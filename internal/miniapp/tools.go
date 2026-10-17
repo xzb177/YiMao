@@ -83,6 +83,10 @@ func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "请填写标题和问题描述", http.StatusBadRequest)
 			return
 		}
+		// 审计 A1：问题反馈是写入接口，必须验绑定（开小号刷管理员私信）。
+		if !s.requireBound(w, user) {
+			return
+		}
 		issue, err := s.deps.Issues.CreateIssue(user.ID, displayName(user), body.Title, body.Description,
 			strings.TrimSpace(body.MediaType), strings.TrimSpace(body.MediaID), strings.TrimSpace(body.MediaTitle))
 		if err != nil {

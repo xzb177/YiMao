@@ -12,6 +12,10 @@ import (
 // 审计第 12 条：两条图片下载路径上限不一致（1MB / 5MB）且都是静默截断，
 // 截断的坏图还会被缓存下来。修复后：统一 10MB 上限，超限明确报错、不缓存。
 func TestDownloadImageWithLimit(t *testing.T) {
+	// 审计 A5：httptest 跑在 127.0.0.1，本测试只验大小限制语义，允许内网地址。
+	old := allowPrivateImageHosts
+	allowPrivateImageHosts = true
+	defer func() { allowPrivateImageHosts = old }()
 	serve := func(size int64) *httptest.Server {
 		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "image/jpeg")

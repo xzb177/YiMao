@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -90,26 +91,33 @@ func (s *AdminService) load() error {
 
 	if err := json.Unmarshal(data, &legacyData); err == nil && len(legacyData.Admins) > 0 {
 		s.admins = make(map[int64]*AdminInfo)
-		firstID := int64(0)
+		// 审计 A8：以前这里用 map 迭代的第一个 ID 当超管，顺序随机——每次迁移可能选出不同的超管。
+		// 旧格式没有加入时间信息，改为确定性规则：ID 最小的管理员成为超管（实际部署里通常是
+		// 最早建号的服主）。排序后取最小，保证多次迁移结果一致。
+		ids := make([]int64, 0, len(legacyData.Admins))
+		names := make(map[int64]string, len(legacyData.Admins))
 		for idStr, name := range legacyData.Admins {
 			id, err := strconv.ParseInt(idStr, 10, 64)
 			if err != nil {
 				logger.Info("[AdminService] Invalid admin ID '%s' in legacy data, skipping", idStr)
 				continue
 			}
+			ids = append(ids, id)
+			names[id] = name
+		}
+		sort.Slice(ids, func(a, b int) bool { return ids[a] < ids[b] })
+		for _, id := range ids {
 			s.admins[id] = &AdminInfo{
 				UserID: id,
-				Name:   name,
+				Name:   names[id],
 				Role:   AdminRoleNormal, // Default to normal
 			}
-			if firstID == 0 {
-				firstID = id
-			}
 		}
-		// First admin becomes root
-		if firstID > 0 {
-			s.rootUserID = firstID
-			s.admins[firstID].Role = AdminRoleRoot
+		// ID 最小的管理员成为超管（确定性规则）。
+		if len(ids) > 0 {
+			rootID := ids[0]
+			s.rootUserID = rootID
+			s.admins[rootID].Role = AdminRoleRoot
 		}
 		s.save() // Save in new format
 		logger.Info("[AdminService] Migrated %d admins from legacy format, root=%d", len(s.admins), s.rootUserID)

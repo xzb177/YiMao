@@ -448,7 +448,11 @@ func (s *QuotaService) restoreSnapshotLocked(snapshot quotaFileData) {
 
 // RestoreQuotaForRequest restores quota and persists an idempotency ledger in
 // the same file write. A failed write rolls the in-memory quota back.
-func (s *QuotaService) RestoreQuotaForRequest(requestID string, telegramID int64, mediaType string, cost int) (bool, error) {
+//
+// 审计 A7①：requestDate 是当初扣配额那天的日期（"2006-01-02"，与 getCurrentDate 同口径）。
+// 跨天退配额不能再扣减今天的已用量——否则今天能用掉"上限+退回"次，突破每日上限。
+// 跨天时只记幂等账本（让上游的 Review 标记能对齐），不再动今天的计数。
+func (s *QuotaService) RestoreQuotaForRequest(requestID string, telegramID int64, mediaType string, cost int, requestDate string) (bool, error) {
 	requestID = strings.TrimSpace(requestID)
 	if requestID == "" {
 		return false, fmt.Errorf("request ID is required")
@@ -464,19 +468,23 @@ func (s *QuotaService) RestoreQuotaForRequest(requestID string, telegramID int64
 	}
 	quota := s.getOrCreateQuotaUnsafe(telegramID)
 	previousMovieUsed, previousTVUsed := quota.MovieUsed, quota.TVUsed
-	switch mediaType {
-	case "movie":
-		quota.MovieUsed -= cost
-		if quota.MovieUsed < 0 {
-			quota.MovieUsed = 0
+	// 空日期视为未知，按老行为退回（兼容旧数据）；明确跨天则不再退今天的用量。
+	sameDay := requestDate == "" || requestDate == getCurrentDate()
+	if sameDay {
+		switch mediaType {
+		case "movie":
+			quota.MovieUsed -= cost
+			if quota.MovieUsed < 0 {
+				quota.MovieUsed = 0
+			}
+		case "tv":
+			quota.TVUsed -= cost
+			if quota.TVUsed < 0 {
+				quota.TVUsed = 0
+			}
+		default:
+			return false, fmt.Errorf("unsupported media type: %s", mediaType)
 		}
-	case "tv":
-		quota.TVUsed -= cost
-		if quota.TVUsed < 0 {
-			quota.TVUsed = 0
-		}
-	default:
-		return false, fmt.Errorf("unsupported media type: %s", mediaType)
 	}
 	s.restoredRequests[requestID] = true
 	if err := s.saveLocked(); err != nil {

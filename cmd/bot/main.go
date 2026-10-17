@@ -676,7 +676,9 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 	watchFollowupHandler := handlers.NewWatchFollowupHandler(deps.FulfillmentStats, deps.ReviewService)
 	reviewHandler := handlers.NewReviewHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.ReviewService, deps.QuotaService, deps.WebhookService, groupChatID)
 	feedbackHandler := handlers.NewFeedbackHandler(deps.SessionMgr, deps.Telegram, deps.AdminService)
+	feedbackHandler.SetUserMapping(deps.UserMapping) // 审计 A1：反馈写入验绑定
 	washHandler := handlers.NewWashHandler(deps.ReviewService, deps.TMDBClient, deps.WebhookService, requestHandler.NotifyAdminsForReview, deps.SessionMgr)
+	washHandler.SetUserMapping(deps.UserMapping) // 审计 A1：洗版写入验绑定
 
 	// 拼车取消/拒绝通知
 	carpoolNotifyFunc := func(tmdbID int, mediaType, title, reason string) {
