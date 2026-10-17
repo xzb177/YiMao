@@ -175,6 +175,43 @@ func isNonPublicIP(ip net.IP) bool {
 		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
 }
 
+// imageLookupIP 是可注入的 DNS 解析（默认走系统解析器），测试用桩模拟
+// DNS 重绑定场景。生产路径不要直接调它，先过 validateOutboundImageURL。
+var imageLookupIP = func(ctx context.Context, host string) ([]net.IP, error) {
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return nil, err
+	}
+	ips := make([]net.IP, 0, len(addrs))
+	for _, a := range addrs {
+		ips = append(ips, a.IP)
+	}
+	return ips, nil
+}
+
+// imageDialTCP 是可注入的 TCP 拨号（默认系统拨号），测试用桩观测实际拨打的地址。
+var imageDialTCP = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(ctx, network, addr)
+}
+
+// validateResolvedImageIPs 校验某次解析出的全部 IP：任一非公网即拒绝。
+// CDN 多 IP/轮询是常态——只要全部是公网 IP 就放行，拨号时任选其一。
+func validateResolvedImageIPs(host string, ips []net.IP) error {
+	if allowPrivateImageHosts {
+		return nil
+	}
+	if len(ips) == 0 {
+		return fmt.Errorf("image host %s resolved to no addresses", host)
+	}
+	for _, ip := range ips {
+		if isNonPublicIP(ip) {
+			return fmt.Errorf("image URL host resolves to non-public IP: %s", host)
+		}
+	}
+	return nil
+}
+
 // validateOutboundImageURL 校验图片下载目标：只允许 http/https 公网地址。
 func validateOutboundImageURL(rawURL string) error {
 	if allowPrivateImageHosts {
@@ -194,16 +231,11 @@ func validateOutboundImageURL(rawURL string) error {
 		}
 		return nil
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(context.Background(), host)
+	ips, err := imageLookupIP(context.Background(), host)
 	if err != nil {
 		return fmt.Errorf("image URL host resolve failed: %w", err)
 	}
-	for _, a := range addrs {
-		if isNonPublicIP(a.IP) {
-			return fmt.Errorf("image URL host resolves to non-public IP: %s", host)
-		}
-	}
-	return nil
+	return validateResolvedImageIPs(host, ips)
 }
 
 func sameURLHost(a, b *url.URL) bool {
@@ -230,10 +262,83 @@ func guardRedirectClient(base *http.Client) *http.Client {
 	return &c
 }
 
+// pinnedImageDialContext 返回带 DNS pinning 的 DialContext，堵 DNS 重绑定 TOCTOU：
+//
+// 威胁模型：validateOutboundImageURL 在请求前解析校验一次，真正建连时 Go
+// 又解析一次——两次解析之间攻击者可把域名换到内网 IP（DNS rebinding）。
+//
+// 做法：建连时解析一次、validateResolvedImageIPs 校验全部结果、直接拨已校验
+// 的 IP（同 host 只解析一次，后续复用）。TLS 的 ServerName/证书校验仍用原域名
+// （http.Transport 从请求的原始 host:port 派生 ServerName，DialContext 只换
+// TCP 目标地址），Host 头不变；字面 IP 的 host 直接校验后拨打。
+//
+// 重定向的每一跳都走同一个 client → 同一个 DialContext，逐跳重新 pin。
+func pinnedImageDialContext() func(ctx context.Context, network, addr string) (net.Conn, error) {
+	var mu sync.Mutex
+	pinned := map[string][]net.IP{} // hostname -> 已校验的 IP 组
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		host, port, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		ips, ok := pinned[host]
+		mu.Unlock()
+		if !ok {
+			if ip := net.ParseIP(host); ip != nil {
+				if err := validateResolvedImageIPs(host, []net.IP{ip}); err != nil {
+					return nil, err
+				}
+				ips = []net.IP{ip}
+			} else {
+				resolved, err := imageLookupIP(ctx, host)
+				if err != nil {
+					return nil, err
+				}
+				if err := validateResolvedImageIPs(host, resolved); err != nil {
+					return nil, err
+				}
+				ips = resolved
+			}
+			mu.Lock()
+			pinned[host] = ips
+			mu.Unlock()
+		}
+		// CDN 多 IP 时拨已校验组中的第一个即可。
+		return imageDialTCP(ctx, network, net.JoinHostPort(ips[0].String(), port))
+	}
+}
+
+// pinnedImageClient 给图片下载 client 换上 pinning 拨号器（克隆 Transport，
+// 不动传入的共享 client）。两种退化：
+//   - base 不是 *http.Transport：无法可靠替换拨号，保持原行为（现有校验+重定向守卫仍在）。
+//   - 目标 URL 走了代理：DialContext 拿到的是代理地址而非目标，做 pinning
+//     会误伤内网代理；此时保持原行为（残余风险见报告）。
+func pinnedImageClient(base *http.Client, target *url.URL) *http.Client {
+	tr, ok := base.Transport.(*http.Transport)
+	if !ok || tr == nil {
+		return base
+	}
+	if tr.Proxy != nil {
+		if p, err := tr.Proxy(&http.Request{URL: target}); err == nil && p != nil {
+			return base
+		}
+	}
+	tr2 := tr.Clone()
+	tr2.DialContext = pinnedImageDialContext()
+	c2 := *base
+	c2.Transport = tr2
+	return &c2
+}
+
 // downloadImageWithLimit 下载图片。超过上限返回明确错误，绝不静默截断。
 func downloadImageWithLimit(client *http.Client, imageURL string, headers map[string]string) ([]byte, error) {
 	if err := validateOutboundImageURL(imageURL); err != nil {
 		return nil, err
+	}
+	u, err := url.Parse(imageURL)
+	if err != nil || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid image URL")
 	}
 	req, err := http.NewRequest("GET", imageURL, nil)
 	if err != nil {
@@ -248,8 +353,9 @@ func downloadImageWithLimit(client *http.Client, imageURL string, headers map[st
 		req.Header.Set(key, value)
 	}
 
-	// 审计 A5：重定向守卫（校验每一跳 + 跨主机剥敏感头）。
-	resp, err := guardRedirectClient(client).Do(req)
+	// 审计 A5：重定向守卫（校验每一跳 + 跨主机剥敏感头）；
+	// 亲审 R2：pinning 拨号器堵 DNS 重绑定（校验与建连用同一次解析）。
+	resp, err := guardRedirectClient(pinnedImageClient(client, u)).Do(req)
 	if err != nil {
 		return nil, err
 	}

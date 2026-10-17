@@ -178,6 +178,7 @@ var fourCharLexicon = map[string]bool{
 	"返回首页": true, "返回结果": true, "刷新状态": true, "申请洗版": true, "进入许愿": true,
 	"求片提交": true, "提交求片": true, "继续搜索": true, "已经许愿": true, "状态确认": true, "选择季度": true,
 	"系统设置": true, "问题反馈": true, "不可洗版": true, "加载更多": true,
+	"加入想看": true, "取消想看": true,
 }
 
 func TestMiniAppButtonLabelsAreFourCJKCharacters(t *testing.T) {

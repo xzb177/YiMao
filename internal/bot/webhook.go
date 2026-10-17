@@ -29,9 +29,9 @@ import (
 //   - 崩溃重启会丢失去重表，重启后重投的 update 会再处理一次——彻底的
 //     exactly-once 需要持久化账本，超出本次最小改动范围（见报告未知项）。
 var (
-	webhookDeduperOnce sync.Once
-	webhookDeduper     *updateDeduper
-	webhookSem         = make(chan struct{}, maxUpdateWorkers)
+	webhookDedupersMu sync.Mutex
+	webhookDedupers   = map[string]*updateDeduper{}
+	webhookSem        = make(chan struct{}, maxUpdateWorkers)
 	// webhookDuplicatesSkipped 统计被去重器拦下的重复投递（可观测 + 测试断言用）。
 	webhookDuplicatesSkipped atomic.Int64
 )
@@ -113,17 +113,23 @@ func releaseWebhookUpdate(userID int64) {
 	}
 }
 
-func getWebhookDeduper() *updateDeduper {
-	webhookDeduperOnce.Do(func() {
-		webhookDeduper = newUpdateDeduper(processedUpdateTTL)
-		go webhookDeduper.pruneProcessedUpdates(processedUpdatePruneInterval)
-	})
-	return webhookDeduper
+// getWebhookDeduper 按数据目录懒初始化持久化去重器：账本落盘，
+// 进程重启后 24 小时内的重投仍能判重。
+func getWebhookDeduper(dataDir string) *updateDeduper {
+	webhookDedupersMu.Lock()
+	defer webhookDedupersMu.Unlock()
+	if d, ok := webhookDedupers[dataDir]; ok {
+		return d
+	}
+	d := newPersistentUpdateDeduper(dataDir, persistentUpdateTTL)
+	go d.pruneProcessedUpdates(processedUpdatePruneInterval)
+	webhookDedupers[dataDir] = d
+	return d
 }
 
 // acceptWebhookUpdate 为 webhook 投递做去重：同一 update_id 在 TTL 内只放行一次。
-func acceptWebhookUpdate(updateID int64) bool {
-	return getWebhookDeduper().accept(updateID)
+func acceptWebhookUpdate(dataDir string, updateID int64) bool {
+	return getWebhookDeduper(dataDir).accept(updateID)
 }
 
 // HandleWebhook handles incoming Telegram webhook
@@ -163,7 +169,7 @@ func HandleWebhook(
 
 	// 去重：Telegram 收不到 200 会重投同一条 update，重投必须直接回 OK，
 	// 不能再执行一次业务逻辑。
-	if !acceptWebhookUpdate(update.UpdateID) {
+	if !acceptWebhookUpdate(cfg.DataDir, update.UpdateID) {
 		webhookDuplicatesSkipped.Add(1)
 		logger.Info("[Webhook] Duplicate update %d skipped", update.UpdateID)
 		w.WriteHeader(http.StatusOK)

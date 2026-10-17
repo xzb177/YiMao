@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -64,4 +65,36 @@ func hmacHex(secret, body string) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(body))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// 亲审 R1：Emby 指纹账本必须在「进程重启」（重建实例）后仍判重。
+func TestWebhookDedupPersistsAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	d1 := newWebhookDedup(dir)
+	if !d1.mark([]byte("event-body-1")) {
+		t.Fatal("first mark must pass")
+	}
+	d1.mu.Lock()
+	d1.saveLocked() // 模拟：落盘（绕过 30 秒节流）
+	d1.mu.Unlock()
+
+	d2 := newWebhookDedup(dir) // 「重启」
+	if d2.mark([]byte("event-body-1")) {
+		t.Fatal("replayed body accepted after restart: dedup ledger lost")
+	}
+	if !d2.mark([]byte("event-body-2")) {
+		t.Fatal("new body must pass")
+	}
+}
+
+// 损坏的账本 fail-open：不崩溃、不拒绝新事件。
+func TestWebhookDedupCorruptLedgerFailsOpen(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(dir+"/emby_webhook_dedup.json", []byte("xx"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := newWebhookDedup(dir)
+	if !d.mark([]byte("fresh")) {
+		t.Fatal("corrupt ledger must fail open")
+	}
 }

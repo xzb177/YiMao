@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/xzb177/yimao/internal/config"
+	"github.com/xzb177/yimao/pkg/dedupfile"
 	"github.com/xzb177/yimao/pkg/types"
 )
 
@@ -52,12 +55,64 @@ func TestHandleWebhookDedupsUpdateID(t *testing.T) {
 
 // acceptWebhookUpdate：TTL 内的重复 id 只放行一次。
 func TestAcceptWebhookUpdateDedups(t *testing.T) {
+	dir := t.TempDir() // 每个测试独立数据目录，避免与进程内全局去重器串扰
 	id := int64(9001002)
-	if !acceptWebhookUpdate(id) {
+	if !acceptWebhookUpdate(dir, id) {
 		t.Fatal("first accept must pass")
 	}
-	if acceptWebhookUpdate(id) {
+	if acceptWebhookUpdate(dir, id) {
 		t.Fatal("duplicate accept inside TTL must be rejected")
+	}
+}
+
+// 亲审 R1：持久化去重必须在「进程重启」（重建实例）后仍判重。
+// 先写红后写绿：旧的纯内存实现下第二个 newPersistentUpdateDeduper 必然放行。
+func TestPersistentUpdateDeduperSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	d1 := newPersistentUpdateDeduper(dir, persistentUpdateTTL)
+	if !d1.accept(7001001) || !d1.accept(7001002) {
+		t.Fatal("first accepts must pass")
+	}
+	d1.saveLocked() // 模拟：落盘（绕过 30 秒节流）
+
+	// 「重启」：用同一文件重建实例
+	d2 := newPersistentUpdateDeduper(dir, persistentUpdateTTL)
+	if d2.accept(7001001) {
+		t.Fatal("update 7001001 accepted after restart: dedup ledger lost")
+	}
+	if d2.accept(7001002) {
+		t.Fatal("update 7001002 accepted after restart: dedup ledger lost")
+	}
+	if !d2.accept(7001003) {
+		t.Fatal("new update 7001003 must pass")
+	}
+}
+
+// 过期条目在加载时被清理：账本里的时间戳早于窗口，重建后应放行。
+func TestPersistentUpdateDeduperPrunesExpiredOnLoad(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "tg_update_dedup.json")
+	old := map[string]int64{"7002001": time.Now().Add(-48 * time.Hour).Unix()}
+	if err := dedupfile.Save(file, old); err != nil {
+		t.Fatal(err)
+	}
+	d := newPersistentUpdateDeduper(dir, persistentUpdateTTL)
+	if !d.accept(7002001) {
+		t.Fatal("expired entry must be pruned on load, accept should pass")
+	}
+}
+
+// 账本损坏时 fail-open：不崩溃、不拒绝新消息。
+func TestPersistentUpdateDeduperCorruptLedgerFailsOpen(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "tg_update_dedup.json")
+	if err := os.WriteFile(file, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := newPersistentUpdateDeduper(dir, persistentUpdateTTL)
+	if !d.accept(7003001) {
+		t.Fatal("corrupt ledger must fail open: new update should pass")
 	}
 }
 
