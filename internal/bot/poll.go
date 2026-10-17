@@ -91,7 +91,7 @@ func StartPolling(deps *Dependencies, cfg *config.Config, registry *callback.Reg
 	// 去重 + 并发上限：Telegram 会在 offset 确认前重复投递同一条 update，
 	// 处理两次会造成重复回复/重复求片/重复扣配额；同时限制并发处理数，
 	// 避免一波更新打满下游 MoviePilot/TMDB/Emby 调用。
-	dedup := newUpdateDeduper(processedUpdateTTL)
+	dedup := newPersistentUpdateDeduper(cfg.DataDir, persistentUpdateTTL)
 	updateSem := make(chan struct{}, maxUpdateWorkers)
 	go dedup.pruneProcessedUpdates(processedUpdatePruneInterval)
 

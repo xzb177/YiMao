@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/xzb177/yimao/internal/config"
 	"github.com/xzb177/yimao/internal/services"
 	"github.com/xzb177/yimao/internal/session"
+	"github.com/xzb177/yimao/pkg/dedupfile"
 	"github.com/xzb177/yimao/pkg/logger"
 )
 
@@ -25,20 +27,62 @@ import (
 //
 // Emby 侧的签名格式（X-Webhook-Signature = HMAC(raw body)）没有时间戳，
 // 签名本身无法携带时间窗口，所以用「事件内容指纹 + 时间窗去重」代替：
-// 同一 body 指纹在 webhookReplayWindow（10 分钟）内重复投递直接回 409。
-// 残余风险：10 分钟后的重放仍会被处理；重放不同 body（伪造新事件）
+// 同一 body 指纹在 webhookReplayWindow（24 小时）内重复投递直接回 409。
+// 账本落盘（pkg/dedupfile），进程重启后仍能判重；读/写失败只记日志
+// （fail-open：宁可重复执行，不丢事件）。
+// 残余风险：24 小时后的重放仍会被处理；重放不同 body（伪造新事件）
 // 需要先拿到 WebhookSecret，本来就能伪造——指纹去重只防"同一事件反复重投"。
-const webhookReplayWindow = 10 * time.Minute
+const webhookReplayWindow = 24 * time.Hour
+
+// webhookDedupSaveInterval 是账本落盘节流：30 秒内最多写一次；
+// 崩溃丢失的至多是 30 秒内的记录（仍好过全丢）。
+const webhookDedupSaveInterval = 30 * time.Second
 
 // webhookDedup 记录最近收到的 webhook body 指纹，防重复投递。
 type webhookDedup struct {
-	mu   sync.Mutex
-	seen map[string]time.Time
+	mu       sync.Mutex
+	seen     map[string]time.Time
+	file     string
+	lastSave time.Time
+}
+
+// newWebhookDedup 创建指纹去重器；dataDir != "" 时从落盘账本恢复。
+func newWebhookDedup(dataDir string) *webhookDedup {
+	d := &webhookDedup{seen: make(map[string]time.Time)}
+	if dataDir == "" {
+		return d
+	}
+	d.file = filepath.Join(dataDir, "emby_webhook_dedup.json")
+	for k, ts := range dedupfile.Load(d.file, webhookReplayWindow) {
+		d.seen[k] = time.Unix(ts, 0)
+	}
+	if n := len(d.seen); n > 0 {
+		logger.Info("[API] 从 %s 恢复 %d 条 Emby webhook 指纹", d.file, n)
+	}
+	return d
+}
+
+// saveLocked 落盘（调用方持有锁）；失败只记日志（fail-open）。
+func (d *webhookDedup) saveLocked() {
+	if d.file == "" {
+		return
+	}
+	entries := make(map[string]int64, len(d.seen))
+	for k, t := range d.seen {
+		entries[k] = t.Unix()
+	}
+	if err := dedupfile.Save(d.file, entries); err != nil {
+		logger.Info("[API] Emby webhook 账本落盘失败: %v（继续内存去重）", err)
+		return
+	}
+	d.lastSave = time.Now()
 }
 
 func (d *webhookDedup) mark(body []byte) bool {
 	sum := sha256.Sum256(body)
-	key := string(sum[:])
+	// 十六进制 key：账本是 JSON 文件，原始二进制 key 进 JSON 会被转义，
+	// 落盘再读回就对不上了。
+	key := hex.EncodeToString(sum[:])
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := time.Now()
@@ -46,10 +90,15 @@ func (d *webhookDedup) mark(body []byte) bool {
 		return false
 	}
 	d.seen[key] = now
+	pruned := false
 	for k, t := range d.seen {
 		if now.Sub(t) >= webhookReplayWindow {
 			delete(d.seen, k)
+			pruned = true
 		}
+	}
+	if d.file != "" && (pruned || now.Sub(d.lastSave) >= webhookDedupSaveInterval) {
+		d.saveLocked()
 	}
 	return true
 }
@@ -72,7 +121,11 @@ func (r *Router) webhookAsyncSem() chan struct{} {
 		r.webhookSem = make(chan struct{}, 8)
 	}
 	if r.webhookDedup == nil {
-		r.webhookDedup = &webhookDedup{seen: make(map[string]time.Time)}
+		dataDir := ""
+		if r.cfg != nil {
+			dataDir = r.cfg.DataDir
+		}
+		r.webhookDedup = newWebhookDedup(dataDir)
 	}
 	return r.webhookSem
 }
@@ -91,13 +144,17 @@ func NewRouter(
 	_ *callback.Registry,
 	webhookService *services.WebhookService,
 ) *Router {
+	dataDir := ""
+	if cfg != nil {
+		dataDir = cfg.DataDir
+	}
 	return &Router{
 		cfg:            cfg,
 		adminService:   adminService,
 		quotaService:   quotaService,
 		sessMgr:        sessMgr,
 		webhookService: webhookService,
-		webhookDedup:   &webhookDedup{seen: make(map[string]time.Time)},
+		webhookDedup:   newWebhookDedup(dataDir),
 		webhookSem:     make(chan struct{}, 8),
 	}
 }
