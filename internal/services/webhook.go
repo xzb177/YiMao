@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -244,6 +245,11 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 	for i := 0; i < 5; i++ {
 		enhancedPayload, err = s.getEmbyEnhancedInfo(payload.getItemID())
 		if err == nil {
+			break
+		}
+		// 4xx 是请求本身的问题（ErrEmbyClientError），重试没有意义，直接放弃。
+		if errors.Is(err, ErrEmbyClientError) {
+			logger.Info("[Webhook] Skip retry for %s (4xx): %v", itemName, err)
 			break
 		}
 		// 只在最后一次尝试失败时打印日志
@@ -532,6 +538,11 @@ func (s *WebhookService) aggregateEpisode(payload EmbyWebhookPayload) error {
 				seriesPrimaryImageTag,
 			)
 			if err == nil {
+				break
+			}
+			// 4xx 是请求本身的问题（ErrEmbyClientError），重试没有意义，直接放弃。
+			if errors.Is(err, ErrEmbyClientError) {
+				logger.Info("[Webhook] Skip episode retry (4xx): %v", err)
 				break
 			}
 			time.Sleep(500 * time.Millisecond)

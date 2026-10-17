@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -14,6 +15,32 @@ import (
 
 	"github.com/xzb177/yimao/pkg/logger"
 )
+
+// ErrEmbyClientError 标记 Emby 4xx 响应：请求本身有问题（比如 UserID 错误），
+// 重试不会成功。调用方的重试循环用 errors.Is 识别它并跳过重试。
+var ErrEmbyClientError = errors.New("emby client error (4xx, no retry)")
+
+// embyUserItemsURL 拼 /Users/{userID}/Items/{itemID} 路径。
+// 注意：userID 必须用 embyUserID，API Key 只走 X-Emby-Token 头，
+// 绝不能出现在 URL 路径里（会进日志和反代访问日志）。
+func (s *WebhookService) embyUserItemsURL(itemID, fields string) (string, error) {
+	if s.embyURL == "" || s.embyAPIKey == "" {
+		return "", fmt.Errorf("Emby not configured")
+	}
+	if s.embyUserID == "" {
+		return "", fmt.Errorf("Emby user ID not configured")
+	}
+	return fmt.Sprintf("%s/Users/%s/Items/%s?Fields=%s",
+		s.embyURL, s.embyUserID, itemID, fields), nil
+}
+
+// embyClientError 把 4xx 响应转成 ErrEmbyClientError（供重试循环识别）。
+func embyClientError(statusCode int, what string) error {
+	if statusCode >= 400 && statusCode < 500 {
+		return fmt.Errorf("%w: Emby API returned status %d for %s", ErrEmbyClientError, statusCode, what)
+	}
+	return fmt.Errorf("Emby API returned status %d", statusCode)
+}
 
 func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID string, parentBackdropItemID string, parentBackdropImageTags []string, seriesPrimaryImageTag string) (*EmbyEnhancedInfo, error) {
 	if s.embyURL == "" || s.embyAPIKey == "" {
@@ -85,13 +112,11 @@ func (s *WebhookService) getEmbyEnhancedInfoForEpisode(itemID string, seriesID s
 }
 
 func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, error) {
-	if s.embyURL == "" || s.embyAPIKey == "" {
-		return nil, fmt.Errorf("Emby not configured")
-	}
-
 	// 请求包含 BackdropImageTags 以获取横幅图
-	url := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=Genres,ProviderIds,Overview,ProductionYear,CommunityRating,BackdropImageTags,ImageTags",
-		s.embyURL, s.embyAPIKey, seriesID)
+	url, err := s.embyUserItemsURL(seriesID, "Genres,ProviderIds,Overview,ProductionYear,CommunityRating,BackdropImageTags,ImageTags")
+	if err != nil {
+		return nil, err
+	}
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -109,7 +134,7 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+		return nil, embyClientError(resp.StatusCode, "series "+seriesID)
 	}
 
 	var result map[string]interface{}
@@ -163,12 +188,10 @@ func (s *WebhookService) getSeriesInfo(seriesID string) (*EmbyEnhancedInfo, erro
 }
 
 func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, error) {
-	if s.embyURL == "" || s.embyAPIKey == "" {
-		return nil, fmt.Errorf("Emby not configured")
+	url, err := s.embyUserItemsURL(itemID, "MediaSources,MediaStreams,Genres,Overview,ProductionYear,CommunityRating,RunTimeTicks,ImageTags,BackdropImageTags")
+	if err != nil {
+		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/Users/%s/Items/%s?Fields=MediaSources,MediaStreams,Genres,Overview,ProductionYear,CommunityRating,RunTimeTicks,ImageTags,BackdropImageTags",
-		s.embyURL, s.embyAPIKey, itemID)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -186,7 +209,7 @@ func (s *WebhookService) getEmbyEnhancedInfo(itemID string) (*EmbyEnhancedInfo, 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Emby API returned status %d", resp.StatusCode)
+		return nil, embyClientError(resp.StatusCode, "item "+itemID)
 	}
 
 	var result map[string]interface{}

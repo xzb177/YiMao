@@ -3,6 +3,7 @@ package services
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
@@ -114,6 +115,21 @@ func NewTelegramClient(botToken string) *TelegramClient {
 func (c *TelegramClient) SetBaseURLForTest(baseURL string, httpClient *http.Client) {
 	c.baseURL = baseURL
 	c.httpClient = httpClient
+}
+
+// stripTokenFromError removes any Telegram bot token from an error before it
+// propagates to callers. http.Client errors embed the full request URL
+// (including the token), so returning them raw would leak the token into
+// whatever logging the caller does.
+func stripTokenFromError(err error) error {
+	if err == nil {
+		return nil
+	}
+	redacted := logger.RedactTokens(err.Error())
+	if redacted == err.Error() {
+		return err
+	}
+	return errors.New(redacted)
 }
 
 type TelegramMenuButtonWebApp struct {
@@ -791,6 +807,7 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 
 	resp2, err := c.httpClient.Do(req2)
 	if err != nil {
+		err = stripTokenFromError(err)
 		logger.Info("[Telegram] [代理上传] 上传到 Telegram 失败: %v", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -938,6 +955,7 @@ func (c *TelegramClient) SendPhotoFromURLWithParseMode(chatID int64, photoURL, c
 
 	resp2, err := c.httpClient.Do(req)
 	if err != nil {
+		err = stripTokenFromError(err)
 		logger.Info("[Telegram] Multipart request failed: %v", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -1061,7 +1079,8 @@ func (c *TelegramClient) GetUpdates(offset int, limit int) ([]types.TelegramUpda
 
 	resp, err := c.httpClient.Get(apiURL)
 	if err != nil {
-		return nil, err
+		// 超时等网络错误的 err 里带着完整请求 URL（含 bot token），返回前剥掉。
+		return nil, stripTokenFromError(err)
 	}
 	defer resp.Body.Close()
 
@@ -1092,7 +1111,8 @@ func (c *TelegramClient) GetWebhookInfo() (map[string]interface{}, error) {
 
 	resp, err := c.httpClient.Get(apiURL)
 	if err != nil {
-		return nil, err
+		// 网络错误的 err 里带着完整请求 URL（含 bot token），返回前剥掉。
+		return nil, stripTokenFromError(err)
 	}
 	defer resp.Body.Close()
 
@@ -1220,6 +1240,8 @@ func (c *TelegramClient) makeRequest(apiURL string, payload map[string]interface
 
 	resp, err := c.doWithRetry(req)
 	if err != nil {
+		// doWithRetry 已剥掉 url.Error 的 URL；再做一次 token 兜底遮蔽。
+		err = stripTokenFromError(err)
 		logger.Info("[Telegram] 请求失败: %s", err)
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -1300,6 +1322,8 @@ func (c *TelegramClient) makeSimpleRequest(apiURL string, payload map[string]int
 
 	resp, err := c.doWithRetry(req)
 	if err != nil {
+		// doWithRetry 已剥掉 url.Error 的 URL；再做一次 token 兜底遮蔽。
+		err = stripTokenFromError(err)
 		logger.Info("[Telegram] 请求失败: %s", err)
 		return fmt.Errorf("request failed: %w", err)
 	}
