@@ -905,31 +905,38 @@ func (s *MediaNotificationService) formatDailySummary(date time.Time, items []*M
 	}
 	sortMovieKeys(sortedMovieKeys, uniqueMovies)
 
-	// Build message - compact single-line sections mirroring the rich card
-	if len(sortedSeriesKeys) > 0 {
-		var seriesLine strings.Builder
-		seriesLine.WriteString("电视剧更新 ")
-		for _, key := range sortedSeriesKeys {
-			agg := seriesAggregations[key]
-			seriesLine.WriteString("📺")
-			seriesLine.WriteString(agg.FormatForSummary())
-			seriesLine.WriteString(" ")
+	// Build message - one line per title, mirroring the rich card
+	const maxDetailLines = 50
+	appendPlainDetailLines := func(heading string, lines []string) {
+		builder.WriteString(heading)
+		builder.WriteString("\n")
+		shown := lines
+		if len(shown) > maxDetailLines {
+			shown = shown[:maxDetailLines]
 		}
-		builder.WriteString(strings.TrimSpace(seriesLine.String()))
-		builder.WriteString("\n\n")
+		for _, line := range shown {
+			builder.WriteString(line)
+			builder.WriteString("\n")
+		}
+		if len(lines) > len(shown) {
+			builder.WriteString(fmt.Sprintf("……等共 %d 部\n", len(lines)))
+		}
+		builder.WriteString("\n")
+	}
+	if len(sortedSeriesKeys) > 0 {
+		lines := make([]string, 0, len(sortedSeriesKeys))
+		for _, key := range sortedSeriesKeys {
+			lines = append(lines, "📺"+seriesAggregations[key].FormatForSummary())
+		}
+		appendPlainDetailLines("电视剧更新", lines)
 	}
 
 	if len(sortedMovieKeys) > 0 {
-		var movieLine strings.Builder
-		movieLine.WriteString("电影更新 ")
+		lines := make([]string, 0, len(sortedMovieKeys))
 		for _, key := range sortedMovieKeys {
-			movie := uniqueMovies[key]
-			movieLine.WriteString("🎬")
-			movieLine.WriteString(movie.FormatForSummary())
-			movieLine.WriteString(" ")
+			lines = append(lines, "🎬"+uniqueMovies[key].FormatForSummary())
 		}
-		builder.WriteString(strings.TrimSpace(movieLine.String()))
-		builder.WriteString("\n\n")
+		appendPlainDetailLines("电影更新", lines)
 	}
 
 	// Summary statistics
