@@ -698,39 +698,15 @@ func (c *TelegramClient) SendPhotoWithAuthAndParseMode(chatID int64, photoURL, c
 		}
 		logger.Info("[Telegram] [代理上传] 正在下载 %s 图片: %s", imageType, safeURLForLog(photoURL))
 
-		req, err := http.NewRequest("GET", photoURL, nil)
+		// 审计第 12 条：以前这里是 1MB 静默截断（LimitReader 直接掐断），
+		// TMDB 背景图常见 2–6MB——截断的坏图还会被缓存下来。现在走统一
+		// 上限（10MB）：超限明确报错、不缓存，降级为 URL 直发。
+		downloaded, err := downloadImageWithLimit(c.httpClient, photoURL, headers)
 		if err != nil {
-			logger.Info("[Telegram] Failed to create request: %v", err)
+			logger.Info("[Telegram] [代理上传] 下载失败（改走 URL 直发）: %v", err)
 			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
 		}
-
-		// Add User-Agent to avoid being blocked
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-
-		// Add custom headers (e.g., X-Emby-Token)
-		for key, value := range headers {
-			req.Header.Set(key, value)
-		}
-
-		// Download the image
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			logger.Info("[Telegram] [代理上传] 下载失败: %v", err)
-			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			logger.Info("[Telegram] [代理上传] 下载状态码异常: %d", resp.StatusCode)
-			return c.SendPhotoByURLWithParseMode(chatID, photoURL, caption, parseMode, keyboard, options...)
-		}
-
-		// 读取图片数据
-		imageData, err = io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-		if err != nil {
-			logger.Info("[Telegram] [代理上传] 读取图片数据失败: %v", err)
-			return nil, err
-		}
+		imageData = downloaded
 
 		logger.Info("[Telegram] [代理上传] 下载成功，大小: %d bytes", len(imageData))
 

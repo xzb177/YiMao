@@ -27,14 +27,18 @@ type Dependencies struct {
 	Preferences       *services.PreferencesService
 	IssueService      *services.IssueService
 	AdminService      *services.AdminService
+	AdminHandler      *handlers.AdminHandler // 管理员输入流程（审计 #8：webhook 模式下曾漏注入）
 	QuotaService      *services.QuotaService
 	WebhookService    *services.WebhookService
 	BindingRequest    *services.BindingRequestService
 	MediaNotification *services.MediaNotificationService
 	FeedbackHandler   *handlers.FeedbackHandler
 	WishHandler       *handlers.WishHandler // #6 许愿池命令/回调处理器
+	MyRequests        *handlers.MyRequestsHandler
 	RequestSubmission *services.RequestSubmissionService
 	TMDB              *services.TMDBClient
+	SearchHistory     *services.SearchHistoryService
+	SearchHistoryDB   *services.SearchHistoryDB
 	Reviews           *services.ReviewService
 	Carpool           *services.CarpoolService
 	WishService       *services.WishService
@@ -193,18 +197,29 @@ func localOnlyHandler(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// toBotDeps converts server Dependencies to bot Dependencies
+// toBotDeps converts server Dependencies to bot Dependencies.
+// It must stay field-for-field in sync with the Dependencies struct in
+// internal/bot/poll.go; a missing entry silently degrades webhook mode
+// (e.g. nil AdminHandler breaks admin input flows, nil MyRequests breaks
+// /requests). TestToBotDepsCoversAllFields guards the mapping.
 func toBotDeps(deps *Dependencies) *botHandlers.Dependencies {
-	return &botHandlers.Dependencies{
+	out := &botHandlers.Dependencies{
 		Telegram:        deps.Telegram,
 		MoviePilot:      deps.MoviePilot,
 		SessionMgr:      deps.SessionMgr,
 		UserMapping:     deps.UserMapping,
 		BindingRequest:  deps.BindingRequest,
 		AdminService:    deps.AdminService,
+		AdminHandler:    deps.AdminHandler,
 		QuotaService:    deps.QuotaService,
+		SearchHistory:   deps.SearchHistory,
+		SearchHistoryDB: deps.SearchHistoryDB,
+		TMDB:            deps.TMDB,
 		IssueService:    deps.IssueService,
 		FeedbackHandler: deps.FeedbackHandler,
+		FallbackService: services.NewSearchFallbackService(deps.MoviePilot),
 		WishHandler:     deps.WishHandler,
+		MyRequests:      deps.MyRequests,
 	}
+	return out
 }
