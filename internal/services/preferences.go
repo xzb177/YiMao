@@ -61,6 +61,19 @@ type PreferencesService struct {
 	prefsFile string
 	prefs     map[int64]*UserPreferences
 	mu        sync.RWMutex
+	// 审计 A7③：写盘串行化锁。必须在释放 mu 之前拿到，保证快照按变更顺序落盘，
+	// 否则并发写入时旧快照可能盖掉新快照（写盘乱序）。
+	persistMu sync.Mutex
+}
+
+// saveOrdered 在 mu 仍持有时接管 persistMu，再释放 mu 落盘——
+// 调用方必须在调用前持有 s.mu（写锁），调用后 mu 已释放。
+func (s *PreferencesService) saveOrdered(snapshot map[int64]*UserPreferences) error {
+	s.persistMu.Lock()
+	s.mu.Unlock()
+	err := s.saveSnapshot(snapshot)
+	s.persistMu.Unlock()
+	return err
 }
 
 // NewPreferencesService creates a new preferences service
@@ -154,12 +167,16 @@ func (s *PreferencesService) snapshotLocked() map[int64]*UserPreferences {
 	return r
 }
 func (s *PreferencesService) saveSnapshot(snapshot map[int64]*UserPreferences) error {
+	// 审计 A7③ 附带：落盘格式必须与 load() 一致（{"preferences": {...}}）。
+	// 以前这里写的是扁平 {"id": {...}}，load() 读不到——重启后全部偏好丢失。
 	filePrefs := make(map[string]*UserPreferences)
 	for id, pref := range snapshot {
 		filePrefs[fmt.Sprintf("%d", id)] = pref
 	}
 
-	data, err := json.MarshalIndent(filePrefs, "", "  ")
+	data, err := json.MarshalIndent(struct {
+		Preferences map[string]*UserPreferences `json:"preferences"`
+	}{Preferences: filePrefs}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -239,8 +256,7 @@ func (s *PreferencesService) SetPreference(telegramID int64, prefType Preference
 
 	s.prefs[telegramID] = pref
 	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.saveSnapshot(snapshot)
+	return s.saveOrdered(snapshot)
 }
 
 // TogglePreference toggles a boolean preference
@@ -278,8 +294,7 @@ func (s *PreferencesService) TogglePreference(telegramID int64, prefType Prefere
 
 	s.prefs[telegramID] = pref
 	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return newValue, s.saveSnapshot(snapshot)
+	return newValue, s.saveOrdered(snapshot)
 }
 
 // ShouldNotify checks if a notification should be sent based on preferences
@@ -411,8 +426,7 @@ func (s *PreferencesService) SetNotify(userID int64, notifyKey string, enabled b
 	}
 	s.prefs[userID] = prefs
 	snapshot := s.snapshotLocked()
-	s.mu.Unlock()
-	return s.saveSnapshot(snapshot)
+	return s.saveOrdered(snapshot)
 }
 
 // GetNotifyStatus 返回所有通知类别的开关状态。

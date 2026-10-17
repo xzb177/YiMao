@@ -57,13 +57,13 @@ func TestDelayedAsyncSaveCannotOverwriteRestoreLedger(t *testing.T) {
 	quota.mu.RLock()
 	stale := quota.snapshotLocked()
 	quota.mu.RUnlock()
-	if restored, err := quota.RestoreQuotaForRequest("delayed", 17, string(MediaTypeMovie), 1); err != nil || !restored {
+	if restored, err := quota.RestoreQuotaForRequest("delayed", 17, string(MediaTypeMovie), 1, getCurrentDate()); err != nil || !restored {
 		t.Fatalf("restore = %v, %v; want true, nil", restored, err)
 	}
 
 	quota.saveAsync(stale)
 	reloaded := NewQuotaService(dir, nil)
-	if restored, err := reloaded.RestoreQuotaForRequest("delayed", 17, string(MediaTypeMovie), 1); err != nil || restored {
+	if restored, err := reloaded.RestoreQuotaForRequest("delayed", 17, string(MediaTypeMovie), 1, getCurrentDate()); err != nil || restored {
 		t.Fatalf("second restore after delayed save = %v, %v; want false, nil", restored, err)
 	}
 }
@@ -152,7 +152,7 @@ func TestRestoreQuotaOnceDoesNotDoubleRestoreAfterReviewWriteFailure(t *testing.
 	}
 
 	reloadedQuota := NewQuotaService(dir, nil)
-	if restored, err := reloadedQuota.RestoreQuotaForRequest("movie", 11, "movie", 1); err != nil || restored {
+	if restored, err := reloadedQuota.RestoreQuotaForRequest("movie", 11, "movie", 1, getCurrentDate()); err != nil || restored {
 		t.Fatalf("ledger after restart = %v, %v; want false, nil", restored, err)
 	}
 }

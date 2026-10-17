@@ -165,7 +165,8 @@ func New(
 		Submission: deps.RequestSubmission, Webhook: deps.WebhookService,
 		Issues: deps.IssueService, Wishes: deps.WishService,
 		Telegram: deps.Telegram, Admins: deps.AdminService,
-		MaxAuthAge: 24 * time.Hour,
+		UserMapping: deps.UserMapping,
+		MaxAuthAge:  24 * time.Hour,
 	})
 	miniAppHandler := miniAppServer.Handler()
 	mux.Handle("/miniapp", miniAppHandler)

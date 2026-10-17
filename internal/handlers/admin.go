@@ -1423,11 +1423,12 @@ func (h *AdminHandler) HandleAdminAddMessage(userID int64, chatID int64, message
 	var targetName string
 	var source string
 
-	// Priority 1: Forwarded message — extract user info directly
-	fwdUser := message.ForwardFrom
-	if fwdUser == nil {
-		fwdUser = message.ForwardOrigin // TG API 7.0+ format
-	}
+	// Priority 1: Forwarded message — extract user info directly.
+	// 审计 A8：走 ForwardedUser()，正确处理 Bot API 7.0+ 的 forward_origin
+	// （MessageOrigin 联合体，真实用户在 sender_user 里；以前类型写错导致 ID=0，
+	// 退回去把消息文字当 ID 解析）。hidden_user/chat/channel 拿不到用户 ID，
+	// 返回 nil 时走 Priority 2 手动输入。
+	fwdUser := message.ForwardedUser()
 	if fwdUser != nil && fwdUser.ID > 0 {
 		targetID = fwdUser.ID
 		targetName = strings.TrimSpace(fwdUser.FirstName + " " + fwdUser.LastName)

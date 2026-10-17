@@ -21,6 +21,13 @@ type FeedbackHandler struct {
 	issueService *services.IssueService
 	tmdbClient   *services.TMDBClient
 	quotaService *services.QuotaService
+	// 审计 A1：问题反馈写入接口必须验绑定（开小号刷管理员私信）。
+	userMapping services.UserMappingStore
+}
+
+// SetUserMapping 注入用户绑定关系（审计 A1）。
+func (h *FeedbackHandler) SetUserMapping(m services.UserMappingStore) {
+	h.userMapping = m
 }
 
 // NewFeedbackHandler creates a new feedback handler
@@ -621,6 +628,12 @@ func (h *FeedbackHandler) handleConfirm(ctx *callback.Context) (*callback.Respon
 		userName = name
 	}
 
+	// 审计 A1：未绑定用户不许提交反馈（刷管理员私信）。
+	if h.userMapping != nil {
+		if _, bound := h.userMapping.GetMoviePilotUserID(ctx.UserID); !bound {
+			return &callback.Response{Text: "🔗 请先使用 /link 绑定账号，再提交问题反馈", CallbackMsg: "请先绑定账号", ShowAlert: true}, nil
+		}
+	}
 	issue, err := h.issueService.CreateIssueWithPhoto(ctx.UserID, userName, feedbackTypeLabel(issueType), description, mediaType, tmdbID, mediaTitle, photoFileID)
 	if err != nil {
 		logger.Info("[FeedbackHandler] Failed to create confirmed issue: %v", err)

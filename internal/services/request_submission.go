@@ -162,7 +162,12 @@ func (s *RequestSubmissionService) submitLocked(in RequestSubmission, mpID int64
 	if origin == "" {
 		origin = "normal"
 	}
-	review := &ReviewRequest{RequestID: fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano()), BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, WashBaseline: append([]string(nil), in.WashBaseline...)}
+	// 审计 A1：洗版工单的 request_id 不再嵌入原始 TG ID（会出现在回调与管理界面里）。
+	requestID := fmt.Sprintf("review_%d_%d", in.TelegramID, time.Now().UnixNano())
+	if normalizeBusinessType(in.BusinessType) == BusinessTypeWash {
+		requestID = fmt.Sprintf("washmp_%d_%s", time.Now().UnixNano(), randomString(8))
+	}
+	review := &ReviewRequest{RequestID: requestID, BusinessType: normalizeBusinessType(in.BusinessType), TelegramID: in.TelegramID, TelegramName: in.TelegramName, MoviePilotID: mpID, TmdbID: in.TmdbID, MediaTitle: in.MediaTitle, MediaYear: in.MediaYear, MediaType: in.MediaType, Season: in.Season, PosterPath: in.PosterPath, Overview: in.Overview, EmbyExists: in.EmbyInfo != nil, EmbyInfo: cloneEmby(in.EmbyInfo), RequestOrigin: origin, Priority: in.Priority, WashBaseline: append([]string(nil), in.WashBaseline...)}
 	if in.UseQuota {
 		review.QuotaCost = quotaCost
 	}

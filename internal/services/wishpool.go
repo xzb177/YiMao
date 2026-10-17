@@ -343,6 +343,15 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 		return nil, err
 	}
 	if existing != nil {
+		// 审计 A7④：重复许愿同样把该 user 记进 wish_wishers，会增加该用户的
+		// 去重计数——以前这里不查上限，可绕过每人上限。先查上限。
+		userActive, err := countUserActiveWishesTx(tx, item.UserID)
+		if err != nil {
+			return nil, err
+		}
+		if userActive >= WishMaxPerUser {
+			return &AddWishResult{OverPerUser: true}, nil
+		}
 		// 众筹计数关键语义：重复许愿同一片时，仍把该 user 记进 wish_wishers（同事务），
 		// 这样后来者也能累计进等待人数，再由 handler 给「N 人在等」提示。
 		ck := CanonicalKey(item.TmdbID, item.ImdbID, item.MediaType, item.Season)
@@ -368,14 +377,8 @@ func (s *WishService) AddWish(item *WishItem) (*AddWishResult, error) {
 		return &AddWishResult{OverGlobal: true}, nil
 	}
 
-	var userActive int
-	if err := tx.QueryRow(
-		`SELECT COUNT(DISTINCT w.canonical_key)
-		 FROM wish_wishers w
-		 JOIN wish_items i ON i.tmdb_id != 0 AND w.canonical_key = 'tmdb-' || i.tmdb_id || '-' || i.media_type || '-' || i.season
-		 WHERE w.user_id = ? AND i.state IN (?,?,?,?)`,
-		item.UserID, WishStatePending, WishStateSearching, WishStateFound, WishStateNotified,
-	).Scan(&userActive); err != nil {
+	userActive, err := countUserActiveWishesTx(tx, item.UserID)
+	if err != nil {
 		return nil, err
 	}
 	if userActive >= WishMaxPerUser {
@@ -581,6 +584,30 @@ func CanonicalKey(tmdbID int, imdbID, mediaType string, season int) string {
 		return fmt.Sprintf("tmdb-%d-%s-%d", tmdbID, mediaType, season)
 	}
 	return fmt.Sprintf("imdb-%s-%s-%d", strings.TrimSpace(imdbID), mediaType, season)
+}
+
+// countUserActiveWishesTx 统计某用户在活跃许愿中的去重条目数。
+//
+// 审计 A7④：以前的统计 SQL 只关联 tmdb 形式（i.tmdb_id != 0），
+// imdb  canonical（imdb-tt123-...）的许愿完全没被计入，可绕过每人上限。
+// 这里两种形式都关联，与 CanonicalKey() 的生成规则保持一致。
+func countUserActiveWishesTx(tx *sql.Tx, userID int64) (int, error) {
+	var n int
+	err := tx.QueryRow(
+		`SELECT COUNT(DISTINCT w.canonical_key)
+		 FROM wish_wishers w
+		 WHERE w.user_id = ? AND EXISTS (
+		   SELECT 1 FROM wish_items i
+		   WHERE i.state IN (?,?,?,?)
+		     AND (
+		       (i.tmdb_id != 0 AND w.canonical_key = 'tmdb-' || i.tmdb_id || '-' || i.media_type || '-' || i.season)
+		       OR
+		       (i.tmdb_id = 0 AND i.imdb_id != '' AND w.canonical_key = 'imdb-' || i.imdb_id || '-' || i.media_type || '-' || i.season)
+		     )
+		 )`,
+		userID, WishStatePending, WishStateSearching, WishStateFound, WishStateNotified,
+	).Scan(&n)
+	return n, err
 }
 
 // canonicalKeyOf 是 *WishItem 的便捷封装，复用同一权威生成函数。

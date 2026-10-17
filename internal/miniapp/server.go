@@ -34,8 +34,10 @@ type Deps struct {
 	Wishes     *services.WishService
 	Telegram   *services.TelegramClient
 	Admins     *services.AdminService
-	MaxAuthAge time.Duration
-	RateLimit  RateLimitConfig
+	// 审计 A1：写入接口必须验绑定。UserMapping 为 nil 时视为未配置，按未绑定拒绝。
+	UserMapping services.UserMappingStore
+	MaxAuthAge  time.Duration
+	RateLimit   RateLimitConfig
 }
 
 type requestSubmitter interface {
@@ -48,6 +50,47 @@ type Server struct {
 	dynamicMu    sync.Mutex
 	dynamicAt    time.Time
 	dynamicCache map[string]any
+	// 审计 A2：搜索结果的"在库状态"可用性缓存。一次搜索会为每个结果
+	// 单独打一次上游（N 个结果 = N 次上游调用）；热门标题被反复搜时，
+	// 5 分钟 TTL 缓存直接砍掉重复放大。
+	availMu    sync.Mutex
+	availCache map[string]availCacheEntry
+}
+
+type availCacheEntry struct {
+	exists bool
+	at     time.Time
+}
+
+const availCacheTTL = 5 * time.Minute
+
+// cachedAvailability 读可用性缓存，命中返回 (exists, true)。
+func (s *Server) cachedAvailability(tmdbID int, mediaType string) (exists, hit bool) {
+	key := availCacheKey(tmdbID, mediaType)
+	s.availMu.Lock()
+	defer s.availMu.Unlock()
+	e, ok := s.availCache[key]
+	if !ok || time.Since(e.at) > availCacheTTL {
+		if ok {
+			delete(s.availCache, key)
+		}
+		return false, false
+	}
+	return e.exists, true
+}
+
+func (s *Server) storeAvailability(tmdbID int, mediaType string, exists bool) {
+	key := availCacheKey(tmdbID, mediaType)
+	s.availMu.Lock()
+	defer s.availMu.Unlock()
+	if len(s.availCache) > 4096 {
+		s.availCache = make(map[string]availCacheEntry)
+	}
+	s.availCache[key] = availCacheEntry{exists: exists, at: time.Now()}
+}
+
+func availCacheKey(tmdbID int, mediaType string) string {
+	return mediaType + ":" + strconv.Itoa(tmdbID)
 }
 
 type detailSeason struct {
@@ -174,7 +217,7 @@ func NewServer(deps Deps) *Server {
 	if deps.MaxAuthAge <= 0 {
 		deps.MaxAuthAge = 24 * time.Hour
 	}
-	return &Server{deps: deps, rateLimiter: newUserRateLimiter(deps.RateLimit)}
+	return &Server{deps: deps, rateLimiter: newUserRateLimiter(deps.RateLimit), availCache: make(map[string]availCacheEntry)}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -675,6 +718,11 @@ func (s *Server) searchResultViews(ctx context.Context, results []services.Searc
 		wg.Add(1)
 		go func(index int, tmdbID int, mediaType services.MediaType, subscribed bool) {
 			defer wg.Done()
+			// 审计 A2：先查可用性缓存，热门标题反复搜不再重复打上游。
+			if exists, hit := s.cachedAvailability(tmdbID, string(mediaType)); hit {
+				views[index].Status = searchDetailStatus(services.ResolveSearchCardStatus(exists, nil, subscribed, cacheFresh))
+				return
+			}
 			select {
 			case semaphore <- struct{}{}:
 				defer func() { <-semaphore }()
@@ -684,6 +732,9 @@ func (s *Server) searchResultViews(ctx context.Context, results []services.Searc
 			exists, err := s.deps.MoviePilot.EmbyMediaAvailabilityByTMDBContext(ctx, tmdbID, mediaType)
 			if ctx.Err() != nil {
 				return
+			}
+			if err == nil {
+				s.storeAvailability(tmdbID, string(mediaType), exists)
 			}
 			views[index].Status = searchDetailStatus(services.ResolveSearchCardStatus(exists, err, subscribed, cacheFresh))
 		}(i, result.ID, mediaType, subscribed)
@@ -900,6 +951,20 @@ func (s *Server) handleDetail(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, view)
 }
 
+// requireBound 审计 A1：写入接口在验身份之后必须再验 MoviePilot 绑定。
+// 未绑定（或绑定服务未配置）时返回 false 并已写 403 响应。
+func (s *Server) requireBound(w http.ResponseWriter, user AuthUser) bool {
+	if s.deps.UserMapping == nil {
+		http.Error(w, "绑定服务未就绪", http.StatusServiceUnavailable)
+		return false
+	}
+	if _, bound := s.deps.UserMapping.GetMoviePilotUserID(user.ID); !bound {
+		http.Error(w, "请先绑定 MoviePilot 账号后再操作", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 	user, ok := s.auth(w, r)
 	if !ok {
@@ -907,6 +972,10 @@ func (s *Server) handleWatchlist(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.deps.Carpool == nil {
 		http.Error(w, "想看服务未就绪", http.StatusServiceUnavailable)
+		return
+	}
+	// 审计 A1：写操作（加入/移除想看）只验身份不够，必须验绑定。
+	if r.Method != http.MethodGet && !s.requireBound(w, user) {
 		return
 	}
 	if r.Method == http.MethodGet {
@@ -1192,6 +1261,10 @@ func (s *Server) handleWash(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// 审计 A1：洗版是写入工单接口，必须验绑定。
+	if !s.requireBound(w, user) {
 		return
 	}
 	var body struct {

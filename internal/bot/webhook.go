@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
@@ -34,6 +35,83 @@ var (
 	// webhookDuplicatesSkipped 统计被去重器拦下的重复投递（可观测 + 测试断言用）。
 	webhookDuplicatesSkipped atomic.Int64
 )
+
+// 审计 A2：webhook 按用户限流。
+//
+// 为什么是按用户而不是按 IP：Telegram webhook 的 TCP 连接来自 Telegram 服务器
+// IP（全用户共享），按 IP 限流会把所有用户一起误伤；只有按 Telegram user_id
+// 限流才有意义。单用户 60 秒窗口内最多 webhookUserMaxUpdates 个 update，
+// 超出直接回 200 OK（Telegram 视为已送达、不再重投），不占用处理位——
+// 一个人连点也占不满全局 20 个处理位。
+const (
+	webhookUserRateWindow     = time.Minute
+	webhookUserMaxUpdates     = 30
+	webhookUserOccupancyLimit = 4 // 单用户同时占用的处理位上限（公平排队）
+)
+
+type webhookUserWindow struct {
+	count     int
+	inFlight  int
+	windowEnd time.Time
+}
+
+var webhookUserLimitMu sync.Mutex
+var webhookUserWindows = make(map[int64]*webhookUserWindow)
+
+// webhookUpdateUserID 取 update 背后的 Telegram 用户 ID（消息/回调）。
+func webhookUpdateUserID(update types.TelegramUpdate) int64 {
+	if update.CallbackQuery != nil && update.CallbackQuery.From != nil {
+		return update.CallbackQuery.From.ID
+	}
+	if update.Message != nil && update.Message.From != nil {
+		return update.Message.From.ID
+	}
+	return 0
+}
+
+// allowWebhookUpdate 按用户做速率 + 占用双限。返回 false 时调用方直接回 200。
+func allowWebhookUpdate(userID int64) bool {
+	if userID == 0 {
+		return true
+	}
+	webhookUserLimitMu.Lock()
+	defer webhookUserLimitMu.Unlock()
+	now := time.Now()
+	w, ok := webhookUserWindows[userID]
+	if !ok || !now.Before(w.windowEnd) {
+		w = &webhookUserWindow{windowEnd: now.Add(webhookUserRateWindow)}
+		webhookUserWindows[userID] = w
+	}
+	// 顺手清理过期窗口，防止 map 无限膨胀（摊销）。
+	if len(webhookUserWindows) > 4096 {
+		for id, win := range webhookUserWindows {
+			if !now.Before(win.windowEnd) && win.inFlight == 0 {
+				delete(webhookUserWindows, id)
+			}
+		}
+	}
+	if w.count >= webhookUserMaxUpdates {
+		return false
+	}
+	if w.inFlight >= webhookUserOccupancyLimit {
+		return false
+	}
+	w.count++
+	w.inFlight++
+	return true
+}
+
+// releaseWebhookUpdate 归还在 flight 计数。
+func releaseWebhookUpdate(userID int64) {
+	if userID == 0 {
+		return
+	}
+	webhookUserLimitMu.Lock()
+	defer webhookUserLimitMu.Unlock()
+	if w, ok := webhookUserWindows[userID]; ok && w.inFlight > 0 {
+		w.inFlight--
+	}
+}
 
 func getWebhookDeduper() *updateDeduper {
 	webhookDeduperOnce.Do(func() {
@@ -92,6 +170,17 @@ func HandleWebhook(
 		fmt.Fprint(w, "OK")
 		return
 	}
+
+	// 审计 A2：先按用户限流（速率 + 单用户占用上限），再进全局 20 处理位。
+	// 超限直接回 200 OK：Telegram 视为已送达不再重投，且不占处理位。
+	updateUserID := webhookUpdateUserID(update)
+	if !allowWebhookUpdate(updateUserID) {
+		logger.Info("[Webhook] 用户 %d 触发限流，跳过 update %d", updateUserID, update.UpdateID)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprint(w, "OK")
+		return
+	}
+	defer releaseWebhookUpdate(updateUserID)
 
 	// 有界并发：突发更新不能无限制地打满下游 MoviePilot/TMDB/Emby 调用。
 	webhookSem <- struct{}{}

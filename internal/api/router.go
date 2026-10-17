@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
@@ -19,6 +21,39 @@ import (
 	"github.com/xzb177/yimao/pkg/logger"
 )
 
+// 审计 A6：Emby webhook 防重放 + 异步化。
+//
+// Emby 侧的签名格式（X-Webhook-Signature = HMAC(raw body)）没有时间戳，
+// 签名本身无法携带时间窗口，所以用「事件内容指纹 + 时间窗去重」代替：
+// 同一 body 指纹在 webhookReplayWindow（10 分钟）内重复投递直接回 409。
+// 残余风险：10 分钟后的重放仍会被处理；重放不同 body（伪造新事件）
+// 需要先拿到 WebhookSecret，本来就能伪造——指纹去重只防"同一事件反复重投"。
+const webhookReplayWindow = 10 * time.Minute
+
+// webhookDedup 记录最近收到的 webhook body 指纹，防重复投递。
+type webhookDedup struct {
+	mu   sync.Mutex
+	seen map[string]time.Time
+}
+
+func (d *webhookDedup) mark(body []byte) bool {
+	sum := sha256.Sum256(body)
+	key := string(sum[:])
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := time.Now()
+	if t, ok := d.seen[key]; ok && now.Sub(t) < webhookReplayWindow {
+		return false
+	}
+	d.seen[key] = now
+	for k, t := range d.seen {
+		if now.Sub(t) >= webhookReplayWindow {
+			delete(d.seen, k)
+		}
+	}
+	return true
+}
+
 // Router handles HTTP API requests
 type Router struct {
 	cfg            *config.Config
@@ -26,6 +61,20 @@ type Router struct {
 	quotaService   *services.QuotaService
 	sessMgr        *session.Manager
 	webhookService *services.WebhookService
+	// 审计 A6
+	webhookDedup *webhookDedup
+	webhookSem   chan struct{} // Emby webhook 异步处理并发上限
+}
+
+// webhookAsyncSem 取异步处理信号量（兼容测试里直接构造的 Router 字面量）。
+func (r *Router) webhookAsyncSem() chan struct{} {
+	if r.webhookSem == nil {
+		r.webhookSem = make(chan struct{}, 8)
+	}
+	if r.webhookDedup == nil {
+		r.webhookDedup = &webhookDedup{seen: make(map[string]time.Time)}
+	}
+	return r.webhookSem
 }
 
 // NewRouter creates a new API router
@@ -48,6 +97,8 @@ func NewRouter(
 		quotaService:   quotaService,
 		sessMgr:        sessMgr,
 		webhookService: webhookService,
+		webhookDedup:   &webhookDedup{seen: make(map[string]time.Time)},
+		webhookSem:     make(chan struct{}, 8),
 	}
 }
 
@@ -249,6 +300,10 @@ func verifyWebhookAuth(req *http.Request, body []byte, secret string) bool {
 }
 
 // handleEmbyWebhook handles Emby webhook
+//
+// 审计 A6：以前在请求内同步做重处理（入库/通知/拼车广播全串行），
+// Emby 重试或攻击者重放会把同一事件反复执行。现在：鉴权通过后先做
+// 指纹去重（10 分钟窗口，重复回 409），再丢进有界异步队列，立刻回 202。
 func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 	// Log request for debugging
 	body, err := io.ReadAll(io.LimitReader(req.Body, 1<<20))
@@ -266,14 +321,35 @@ func (r *Router) handleEmbyWebhook(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if err := r.webhookService.HandleEmbyWebhook(payload); err != nil {
-		logger.Info("[API] Failed to handle Emby webhook: %v", err)
-		http.Error(w, "Failed to process", http.StatusInternalServerError)
+	sem := r.webhookAsyncSem()
+	if !r.webhookDedup.mark(body) {
+		logger.Warn("[API] Emby webhook duplicate within replay window, rejected")
+		http.Error(w, "Duplicate webhook", http.StatusConflict)
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	select {
+	case sem <- struct{}{}:
+	default:
+		logger.Warn("[API] Emby webhook queue full, rejecting")
+		http.Error(w, "Webhook busy", http.StatusServiceUnavailable)
+		return
+	}
+
+	go func() {
+		defer func() {
+			<-sem
+			if rec := recover(); rec != nil {
+				logger.Error("[API] Emby webhook handler panicked: %v", rec)
+			}
+		}()
+		if err := r.webhookService.HandleEmbyWebhook(payload); err != nil {
+			logger.Info("[API] Failed to handle Emby webhook: %v", err)
+		}
+	}()
+
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "accepted"})
 }
 
 // handleJellyseerrWebhook handles Jellyseerr webhook
