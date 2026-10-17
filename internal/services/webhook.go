@@ -445,13 +445,21 @@ func (s *WebhookService) sendImmediateNotification(payload EmbyWebhookPayload, i
 		if enhancedPayload != nil && strings.TrimSpace(enhancedPayload.Title) != "" {
 			carpoolTitle = enhancedPayload.Title
 		}
-		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType, carpoolTitle)
+		s.notifyCarpoolMembers(carpoolTMDBID, carpoolType, normalizeWebhookSeason(embyWebhookSeason(payload)), carpoolTitle)
 
 		// 入库后私聊通知求片用户：查找匹配的审核请求，通知求片人
 		s.notifyRequesterOnLibraryAdd(carpoolTMDBID, carpoolType, carpoolTitle, embyWebhookSeason(payload))
 	}
 
 	return nil
+}
+
+// normalizeWebhookSeason 把 webhook 里的季号收敛到拼车语义：负数/异常按未知(0) 处理。
+func normalizeWebhookSeason(season int) int {
+	if season < 0 {
+		return 0
+	}
+	return season
 }
 
 func embyWebhookSeason(payload EmbyWebhookPayload) int {

@@ -726,7 +726,11 @@ func (h *RequestHandler) mapSubmissionResult(result services.SubmissionResult, u
 	case services.SubmissionDuplicateOther:
 		people := 1
 		if h.carpoolService != nil {
-			people = h.carpoolService.Add(tmdbID, mediaType, userID)
+			season := 0
+			if result.Review != nil && mediaType == "tv" {
+				season = result.Review.Season
+			}
+			people = h.carpoolService.Add(tmdbID, mediaType, season, userID)
 		}
 		if people < 1 {
 			people = 1

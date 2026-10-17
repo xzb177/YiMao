@@ -18,7 +18,7 @@ func TestRequestHeatHandlerBuildsDetailLinksWithoutIdentityLeak(t *testing.T) {
 		t.Fatal(err)
 	}
 	carpool := services.NewCarpoolService(dir)
-	carpool.Add(550, "movie", 88776655)
+	carpool.Add(550, "movie", 0, 88776655)
 	handler := NewRequestHeatHandler(services.NewRequestHeatService(reviews, carpool))
 	resp, err := handler.Handle(&callback.Context{UserID: 1, ChatType: "private", Callback: &callback.Callback{Action: callback.ActionRequestHeat}})
 	if err != nil || resp == nil || resp.Keyboard == nil {

@@ -441,8 +441,8 @@ func TestWatchlistListAndExactRemove(t *testing.T) {
 	mapping := &stubUserMapping{boundIDs: map[int64]bool{101: true, 202: true}}
 	handler := NewServer(Deps{BotToken: miniAppTestToken, Carpool: carpool, UserMapping: mapping}).Handler()
 
-	carpool.Add(550, "movie", 101)
-	carpool.Add(550, "movie", 202)
+	carpool.Add(550, "movie", 0, 101)
+	carpool.Add(550, "movie", 0, 202)
 
 	list := httptest.NewRecorder()
 	handler.ServeHTTP(list, signedRequest(t, http.MethodGet, "/api/miniapp/v1/watchlist", "", 101))
@@ -455,7 +455,7 @@ func TestWatchlistListAndExactRemove(t *testing.T) {
 
 	remove := httptest.NewRecorder()
 	handler.ServeHTTP(remove, signedRequest(t, http.MethodDelete, "/api/miniapp/v1/watchlist", `{"tmdb_id":550,"type":"movie"}`, 101))
-	if remove.Code != http.StatusOK || carpool.Contains(550, "movie", 101) || !carpool.Contains(550, "movie", 202) {
+	if remove.Code != http.StatusOK || carpool.Contains(550, "movie", 0, 101) || !carpool.Contains(550, "movie", 0, 202) {
 		t.Fatalf("exact remove failed: status=%d body=%s", remove.Code, remove.Body.String())
 	}
 }
@@ -466,7 +466,7 @@ func TestWatchlistAddFailsClosedWithoutTMDB(t *testing.T) {
 
 	add := httptest.NewRecorder()
 	handler.ServeHTTP(add, signedRequest(t, http.MethodPost, "/api/miniapp/v1/watchlist", `{"tmdb_id":550,"type":"movie"}`, 101))
-	if add.Code != http.StatusServiceUnavailable || carpool.Contains(550, "movie", 101) {
+	if add.Code != http.StatusServiceUnavailable || carpool.Contains(550, "movie", 0, 101) {
 		t.Fatalf("unverified media was persisted: status=%d body=%s", add.Code, add.Body.String())
 	}
 }

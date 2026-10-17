@@ -81,7 +81,7 @@ func (s *RequestHeatService) Recent(window time.Duration, limit int) []RequestHe
 	items := make([]RequestHeatItem, 0, len(aggregates))
 	for _, agg := range aggregates {
 		if s.carpool != nil {
-			for _, userID := range s.carpool.Get(agg.item.TMDBID, agg.item.MediaType) {
+			for _, userID := range s.carpool.GetAll(agg.item.TMDBID, agg.item.MediaType) {
 				if userID != 0 {
 					agg.users[userID] = struct{}{}
 				}

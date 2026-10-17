@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/xzb177/yimao/internal/callback"
@@ -12,8 +13,9 @@ import (
 // 本文件实现「拼车 +1」回调处理（Batch A #3）。
 //
 // 回调格式（沿用项目现有 colon 编码：action:key:value:...）：
-//   carpool:id:<tmdbID>:type:<movie|tv>
-// 点击后把用户加入该片的拼车列表，并回一个 toast「已加入，共 N 人想看」。
+//   carpool:id:<tmdbID>:type:<movie|tv>[:season:<N>]
+// 剧集拼车带季号（season=0 或缺省表示任意季）；电影忽略季号。
+// 点击后把用户加入该片（该季）的拼车列表，并回一个 toast「已加入，共 N 人想看」。
 
 // CarpoolHandler 处理「我也想看 +1」按钮点击。
 type CarpoolHandler struct {
@@ -66,17 +68,27 @@ func (h *CarpoolHandler) Handle(ctx *callback.Context) (*callback.Response, erro
 	if mediaType == "" {
 		mediaType = "movie"
 	}
+	season := 0
+	if mediaType == "tv" {
+		if n, err := strconv.Atoi(ctx.Callback.Params["season"]); err == nil && n > 0 {
+			season = n
+		}
+	}
 
-	count := h.carpool.Add(tmdbID, mediaType, ctx.UserID)
-	logger.Info("[Carpool] 用户 %d 加入拼车: tmdbID=%d type=%s, 当前共 %d 人", ctx.UserID, tmdbID, mediaType, count)
+	count := h.carpool.Add(tmdbID, mediaType, season, ctx.UserID)
+	logger.Info("[Carpool] 用户 %d 加入拼车: tmdbID=%d type=%s season=%d, 当前共 %d 人", ctx.UserID, tmdbID, mediaType, season, count)
 
 	// #1 通路缺口修复：拼车 +1 时尽力打通用户与 bot 的私聊通道（失败不阻断 +1，仅记日志）。
 	// 这样到货时除群内 @ 外，还能给已通私聊的用户发 direct link 兜底。
 	h.tryOpenDMChannel(ctx.UserID)
 
+	seasonSuffix := ""
+	if mediaType == "tv" {
+		seasonSuffix = "（" + services.SeasonLabel(season) + "）"
+	}
 	// 只回 toast，不改动原消息（用户可重复点击，去重后人数不变）。
 	return &callback.Response{
-		CallbackMsg: fmt.Sprintf("✅ 已加入，共 %d 人想看", count),
+		CallbackMsg: fmt.Sprintf("✅ 已加入%s，共 %d 人想看", seasonSuffix, count),
 		ShowAlert:   false,
 	}, nil
 }

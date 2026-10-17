@@ -44,11 +44,15 @@ const carpoolMaxMentions = 20
 // notifyCarpoolMembers 在入库后发出源通知（#2 三层）并清空记录。
 // tmdbIDStr: TMDB ID（字符串，来自 EmbyEnhancedInfo.TMDBID）
 // mediaType: "movie" 或 "tv"
+// season:    剧集入库季号（0=未知/电影）；只通知并结清该季 + 任意季(0) 的成员，
+//
+//	其他季的成员保留不动
+//
 // title:     片名（用于群内公示文案；为空时退化为「你拼车想看的片」）。
 //
 // 失败不丢人：先取列表、群内公示发送成功后才清空（GetThenClear 语义），公示失败保留记录、不整条重发，
-// 下次入库（或人工）仍可重试，避免「清了又发失败 → 永久丢拼车」。
-func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr string, mediaType string, title string) {
+// 下次入库（或人工）仍可重试，避免「清了又发失败 → 永久丢人」。
+func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr, mediaType string, season int, title string) {
 	if s.carpool == nil {
 		return
 	}
@@ -65,9 +69,10 @@ func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr string, mediaType string
 	if tmdbID == 0 {
 		return
 	}
+	season = normalizeCarpoolSeason(mediaType, season)
 
-	// 先只读取（不清空），群内公示成功后再清空，避免失败丢人。
-	userIDs := s.carpool.Get(tmdbID, mediaType)
+	// 先只读取匹配季（该季 + 任意季），不清空；群内公示成功后再结清，避免失败丢人。
+	userIDs := s.carpool.GetArrivalMembers(tmdbID, mediaType, season)
 	if len(userIDs) == 0 {
 		return
 	}
@@ -75,6 +80,10 @@ func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr string, mediaType string
 	titleText := strings.TrimSpace(title)
 	if titleText == "" {
 		titleText = "你拼车想看的片"
+	}
+	seasonSuffix := ""
+	if mediaType == "tv" && season > 0 {
+		seasonSuffix = fmt.Sprintf("（%s）", seasonLabel(season))
 	}
 
 	// 第 2 层：按可达性筛 @ 列表。明确退群/封禁的用户不进 @ 列表（只计入「还有 N 人」）。
@@ -109,7 +118,7 @@ func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr string, mediaType string
 
 	// 第 1 层（主路径）：群内公示。即便 mentions 为空（全员不可达）也照发，保证 100% 可见。
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("🎉 《%s》到货了，%d 人等到了！\n", escapeCarpoolMentionText(titleText), total))
+	b.WriteString(fmt.Sprintf("🎉 《%s》%s到货了，%d 人等到了！\n", escapeCarpoolMentionText(titleText), seasonSuffix, total))
 	if len(mentions) > 0 {
 		b.WriteString(strings.Join(mentions, " "))
 	}
@@ -128,12 +137,12 @@ func (s *WebhookService) notifyCarpoolMembers(tmdbIDStr string, mediaType string
 	}
 
 	// 第 3 层（兜底）：对可达用户额外私信带 direct link。发不出仅记日志，不影响群内公示与清空。
-	s.sendCarpoolDirectPMs(reachable, titleText)
+	s.sendCarpoolDirectPMs(reachable, titleText, season)
 
-	// 群内公示成功后才清空该片拼车记录。
-	s.carpool.GetAndClear(tmdbID, mediaType)
-	logger.Info("[Carpool] 已群内公示 %d 位拼车用户（可达 %d / 不可达 %d）tmdbID=%d type=%s",
-		total, len(reachable), unreachable, tmdbID, mediaType)
+	// 群内公示成功后才结清匹配季（该季 + 任意季）的拼车记录；其他季保留。
+	s.carpool.GetAndClearArrival(tmdbID, mediaType, season)
+	logger.Info("[Carpool] 已群内公示 %d 位拼车用户（可达 %d / 不可达 %d）tmdbID=%d type=%s season=%d",
+		total, len(reachable), unreachable, tmdbID, mediaType, season)
 }
 
 // carpoolUserReachableInGroup 判断拼车用户在群里是否「明确可达」（#2 第 2 层）。
@@ -162,12 +171,16 @@ func (s *WebhookService) carpoolUserReachableInGroup(userID int64) bool {
 
 // sendCarpoolDirectPMs 第 3 层兜底：对可达用户逐个尝试私信，带去 Emby 观看的链接（如配置）。
 // 发不出（未私聊过 / 封禁）仅记日志，绝不影响群内公示。
-func (s *WebhookService) sendCarpoolDirectPMs(userIDs []int64, title string) {
+func (s *WebhookService) sendCarpoolDirectPMs(userIDs []int64, title string, season int) {
 	if len(userIDs) == 0 {
 		return
 	}
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("🎬 你拼车想看的《%s》到货啦，去看看吧～", title))
+	seasonSuffix := ""
+	if season > 0 {
+		seasonSuffix = fmt.Sprintf("（%s）", seasonLabel(season))
+	}
+	sb.WriteString(fmt.Sprintf("🎬 你拼车想看的《%s》%s到货啦，去看看吧～", title, seasonSuffix))
 	// direct link：当前仅在已配置 Emby 地址时附上站点入口
 	if link := s.carpoolDirectLink(); link != "" {
 		sb.WriteString("\n👉 " + link)
