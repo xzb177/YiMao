@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/xzb177/yimao/internal/callback"
 	"github.com/xzb177/yimao/internal/config"
@@ -18,6 +19,7 @@ type LinkHandler struct {
 	moviepilot            *services.MoviePilotClient
 	userMapping           services.UserMappingStore
 	bindingRequestService *services.BindingRequestService
+	adminService          *services.AdminService
 }
 
 func NewLinkHandler(
@@ -27,6 +29,7 @@ func NewLinkHandler(
 	moviepilot *services.MoviePilotClient,
 	userMapping services.UserMappingStore,
 	bindingRequestService *services.BindingRequestService,
+	adminService *services.AdminService,
 ) *LinkHandler {
 	return &LinkHandler{
 		cfg:                   cfg,
@@ -35,6 +38,7 @@ func NewLinkHandler(
 		moviepilot:            moviepilot,
 		userMapping:           userMapping,
 		bindingRequestService: bindingRequestService,
+		adminService:          adminService,
 	}
 }
 
@@ -77,58 +81,6 @@ func (h *LinkHandler) getLinkInstructions() string {
 /link cabbeenpoom 你的密码
 
 没有账号也没关系，首次绑定会自动创建`
-}
-
-// HandleWithCredentials handles linking with username and password
-func (h *LinkHandler) HandleWithCredentials(telegramID int64, username, password string) error {
-	// First, try to get user by username from MoviePilot
-	user, err := h.moviepilot.GetUserByUsername(username)
-
-	// If user doesn't exist, register automatically
-	if err != nil {
-		logger.Info("[LinkHandler] User not found, registering new user: %s", username)
-
-		// Auto-register user in MoviePilot
-		email := username + "@local" // Placeholder email
-
-		user, err = h.moviepilot.RegisterUser(username, password, email)
-		if err != nil {
-			return fmt.Errorf("注册失败: %w", err)
-		}
-
-		logger.Info("[LinkHandler] Successfully registered new user: %s (ID: %d)", username, user.ID)
-	} else {
-		logger.Info("[LinkHandler] Found existing user %s (ID: %d)", username, user.ID)
-	}
-
-	// Create binding request
-	requestID := fmt.Sprintf("bind_%d_%d", telegramID, user.ID)
-
-	req := &services.BindingRequest{
-		RequestID:          requestID,
-		TelegramID:         telegramID,
-		MoviePilotID:       user.ID,
-		MoviePilotName:     user.Username,
-		MoviePilotUsername: user.Username,
-		Status:             "approved", // Auto-approve for direct login
-	}
-
-	if err := h.bindingRequestService.CreateRequest(req); err != nil {
-		return err
-	}
-
-	// Approve immediately (self-binding via credentials)
-	if err := h.bindingRequestService.ApproveRequest(requestID, h.userMapping); err != nil {
-		return err
-	}
-
-	// Update session with MoviePilot user ID
-	sess := h.sessMgr.GetOrCreate(telegramID)
-	sess.Set("moviepilot_id", int(user.ID))
-
-	logger.Info("[LinkHandler] User %d linked to MoviePilot user %s (ID: %d)", telegramID, username, user.ID)
-
-	return nil
 }
 
 // HandleUnlink handles unlinking
@@ -199,11 +151,22 @@ func (h *LinkHandler) HandleResetPW(ctx *callback.Context) (*callback.Response, 
 	newPassword, err := h.moviepilot.ResetUserPassword(h.cfg.MoviePilotDBPath, mpUsername)
 	if err != nil {
 		logger.Info("[ResetPW Callback] Failed for %s: %v", mpUsername, err)
+		if strings.Contains(err.Error(), "超管") {
+			return &callback.Response{
+				Text: "❌ 该账号是 MoviePilot 超管账号，禁止通过机器人重置密码",
+				Edit: true,
+			}, nil
+		}
 		return &callback.Response{
 			Text: "❌ 密码重置失败，请稍后再试或联系管理员",
 			Edit: true,
 		}, nil
 	}
+
+	// 每次重置都通知超管（安全审计要求）。
+	h.adminService.NotifyRootAdmin(h.telegram, fmt.Sprintf(
+		"🔐 密码重置通知\n\n操作人 TG ID：<code>%d</code>\n目标：自己的账号（MoviePilot 用户 <code>%s</code>，回调按钮）",
+		ctx.UserID, mpUsername))
 
 	text := fmt.Sprintf("🔑 密码重置成功！\n\n"+
 		"👤 用户名：<code>%s</code>\n"+

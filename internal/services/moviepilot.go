@@ -884,12 +884,18 @@ func (c *MoviePilotClient) RegisterUser(username, password, email string) (*User
 	}
 
 	if !response.Success {
-		// The account may already exist. Treat that as success so binding is
-		// idempotent instead of failing the user with a misleading error.
-		if existing, lookupErr := c.GetUserByUsername(username); lookupErr == nil {
-			return existing, nil
+		// The account may already exist. Fall back to the existing account
+		// ONLY after verifying the caller's password via login — otherwise
+		// anyone could bind someone else's account by triggering this branch
+		// (e.g. a transient lookup failure in the /link flow).
+		existing, lookupErr := c.GetUserByUsername(username)
+		if lookupErr != nil || existing == nil {
+			return nil, fmt.Errorf("registration failed")
 		}
-		return nil, fmt.Errorf("registration failed")
+		if _, err := c.LoginUser(username, password); err != nil {
+			return nil, fmt.Errorf("account %s already exists and password verification failed", username)
+		}
+		return existing, nil
 	}
 
 	// MoviePilot API doesn't return user ID on creation. Query the user

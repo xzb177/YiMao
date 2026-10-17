@@ -660,7 +660,7 @@ func initRegistry(deps *Dependencies) (*callback.Registry, *Dependencies) {
 		searchHandler.SetSearchHistoryDB(deps.SearchHistoryDB)
 	}
 	myRequestsHandler := handlers.NewMyRequestsHandler(deps.SessionMgr, deps.Telegram, deps.MoviePilot)
-	linkHandler := handlers.NewLinkHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest)
+	linkHandler := handlers.NewLinkHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.UserMapping, deps.BindingRequest, deps.AdminService)
 	helpHandler := handlers.NewHelpHandler()
 	adminHandler := handlers.NewAdminHandler(deps.Cfg, deps.SessionMgr, deps.Telegram, deps.MoviePilot, deps.AdminService, deps.QuotaService)
 	adminHandler.SetFulfillmentStats(deps.FulfillmentStats)

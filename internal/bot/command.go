@@ -358,6 +358,8 @@ func HandleLinkCommand(telegram *services.TelegramClient, msg *types.TelegramMes
 func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.TelegramMessage, cfg *config.Config, userMapping services.UserMappingStore, adminService *services.AdminService) {
 	logger.Info("[ResetPW] Processing /resetpw from user %d", msg.From.ID)
 	isAdmin := adminService != nil && adminService.IsAdmin(msg.From.ID)
+	// 重置他人密码是高危操作：只允许超管（root），普通管理员也不行。
+	isRootAdmin := adminService != nil && adminService.IsRootAdmin(msg.From.ID)
 
 	if blocked, remaining := checkLinkRateLimit(msg.From.ID); blocked {
 		minutes := int(remaining.Minutes()) + 1
@@ -367,11 +369,13 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 
 	var mpUsername string
 	parts := strings.Fields(msg.Text)
+	resettingOther := false
 	if len(parts) > 1 {
-		if !isAdmin {
-			telegram.SendMessage(msg.Chat.ID, "🔒 普通用户只能重置自己已绑定的 MoviePilot 账号。请使用 /resetpw", "", nil)
+		if !isRootAdmin {
+			telegram.SendMessage(msg.Chat.ID, "🔒 重置他人密码需要超管权限。普通用户只能重置自己已绑定的 MoviePilot 账号：/resetpw", "", nil)
 			return
 		}
+		resettingOther = true
 		sanitized, err := validation.SanitizeUsername(parts[1])
 		if err != nil {
 			telegram.SendMessage(msg.Chat.ID, "❌ 用户名格式无效", "", nil)
@@ -406,11 +410,26 @@ func HandleResetPasswordCommand(telegram *services.TelegramClient, msg *types.Te
 	if err != nil {
 		logger.Info("[ResetPW] Failed to reset password for %s by tg=%d admin=%v: %v", mpUsername, msg.From.ID, isAdmin, err)
 		recordLinkFailure(msg.From.ID)
-		_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败，请稍后再试或联系管理员", "", nil)
+		if strings.Contains(err.Error(), "超管") {
+			_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 该账号是 MoviePilot 超管账号，禁止通过机器人重置密码", "", nil)
+		} else {
+			_, _ = telegram.SendMessage(msg.Chat.ID, "❌ 密码重置失败，请稍后再试或联系管理员", "", nil)
+		}
 		return
 	}
 	logger.Info("[ResetPW] Password reset completed for %s by tg=%d admin=%v", mpUsername, msg.From.ID, isAdmin)
 	resetLinkAttempts(msg.From.ID)
+
+	// 每次重置都通知超管（安全审计要求）。
+	if adminService != nil {
+		scope := "自己的账号"
+		if resettingOther {
+			scope = "他人账号"
+		}
+		adminService.NotifyRootAdmin(telegram, fmt.Sprintf(
+			"🔐 密码重置通知\n\n操作人 TG ID：<code>%d</code>\n目标：%s（MoviePilot 用户 <code>%s</code>）",
+			msg.From.ID, scope, mpUsername))
+	}
 
 	text := fmt.Sprintf("🔑 密码重置成功！\n\n"+
 		"👤 用户名：<code>%s</code>\n"+

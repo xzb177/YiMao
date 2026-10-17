@@ -177,6 +177,22 @@ func (s *AdminService) save() error {
 	return atomicWriteFile(s.adminsFile, data, 0600)
 }
 
+// NotifyRootAdmin sends text to the root (super) admin's Telegram chat.
+// It is a no-op when there is no admin service, no root admin, or the send fails.
+// Used for security-sensitive notifications (e.g. every password reset).
+func (s *AdminService) NotifyRootAdmin(telegram *TelegramClient, text string) {
+	if s == nil || telegram == nil {
+		return
+	}
+	rootID := s.GetRootAdminID()
+	if rootID == 0 {
+		return
+	}
+	if _, err := telegram.SendMessage(rootID, text, "HTML", nil); err != nil {
+		logger.Info("[AdminService] Failed to notify root admin %d: %v", rootID, err)
+	}
+}
+
 // IsAdmin checks if a user is an admin
 func (s *AdminService) IsAdmin(userID int64) bool {
 	s.mu.RLock()
@@ -251,6 +267,12 @@ func (s *AdminService) AddAdminWithRole(userID int64, name string, role AdminRol
 			s.admins[userID].Role = AdminRoleRoot
 			s.rootUserID = userID
 		}
+	}
+
+	// Explicit root grants must be reflected in rootUserID, otherwise
+	// GetRootAdminID/NotifyRootAdmin keep pointing at nobody.
+	if s.admins[userID].Role == AdminRoleRoot {
+		s.rootUserID = userID
 	}
 
 	logger.Info("[AdminService] Added admin: %s (%d, role=%s)", name, userID, role)
