@@ -576,6 +576,9 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 		)
 		// 注入「立即求片」按钮构造（出源喜报用），按钮回调走 wish_request。
 		wishScheduler.SetRequestButtonBuilder(handlers.BuildWishRequestButton)
+		// 审计第 14 条：FOUND 通知失败重试间隔 + NOTIFIED 无操作清理 TTL。
+		wishScheduler.SetFoundNotifyRetryInterval(time.Duration(cfg.WishFoundRetryMinutes) * time.Minute)
+		wishScheduler.SetNotifiedTTL(time.Duration(cfg.WishNotifiedTTLHours) * time.Hour)
 		wishScheduler.Start()
 		logger.Info("    - WishScheduler started (#6 DailyRescan)")
 	}

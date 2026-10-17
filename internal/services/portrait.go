@@ -122,16 +122,10 @@ func (s *PortraitService) FindEmbyUserByName(name string) (string, error) {
 		return "", err
 	}
 
-	// 精确匹配
+	// 精确匹配（大小写不敏感）。
+	// 审计第 7 条：禁止模糊回退 —— "zhang" 不能看到 "zhangsan" 的记录。
 	for _, u := range users {
 		if strings.EqualFold(u.Name, name) {
-			return u.ID, nil
-		}
-	}
-	// 模糊匹配（包含）
-	for _, u := range users {
-		if strings.Contains(strings.ToLower(u.Name), strings.ToLower(name)) ||
-			strings.Contains(strings.ToLower(name), strings.ToLower(u.Name)) {
 			return u.ID, nil
 		}
 	}

@@ -369,39 +369,9 @@ func HandlePollMessage(msg *types.TelegramMessage, deps *PollDeps, cfg *config.C
 
 	// Private chat: command handling —— 已在前面统一处理(含 pending 逃逸)，此处无需再判命令。
 
-	// Check if user is not linked and input looks like credentials (userID + password)
-	// Format: "number password" or "username password"
-	if deps.UserMapping != nil {
-		sess := deps.SessionMgr.GetOrCreate(msg.From.ID)
-		intent, _ := sess.GetString("media_search_intent")
-		_, isLinked := deps.UserMapping.GetMoviePilotUserID(msg.From.ID)
-		if intent != "wash" && !isLinked && sanitizedText != "" && len(sanitizedText) > 1 {
-			parts := strings.Fields(sanitizedText)
-			// Check if format matches: ID (number) + password, or username + password
-			if len(parts) >= 2 {
-				// First part is a number (MoviePilot user ID) or username
-				firstPart := parts[0]
-
-				// Detect if this looks like credentials (not a typical search query)
-				// Criteria: first part is all digits, or total parts is exactly 2
-				isCredentialFormat := false
-				if len(parts) == 2 {
-					// Exactly 2 parts: likely username/id + password
-					isCredentialFormat = true
-				} else if len(firstPart) >= 4 && allDigits(firstPart) {
-					// First part is a long number (likely user ID)
-					isCredentialFormat = true
-				}
-
-				if isCredentialFormat {
-					logger.Info("[Poll] User %d not linked, detected credential format, attempting auto-link", msg.From.ID)
-					msg.Text = sanitizedText
-					HandleLinkCommand(deps.Telegram, msg, deps.BindingRequest, cfg, deps.UserMapping)
-					return
-				}
-			}
-		}
-	}
+	// 审计第 6 条：删除「未绑定用户两词消息自动走凭据绑定」的启发式。
+	// 普通搜索消息（如「iron man」）绝不允许进入凭据处理路径，否则会被自动
+	// 注册/登录、计入锁定次数、消息还被删掉。绑定只能走显式的 /link 命令。
 
 	// Handle search query (non-command text)
 	if sanitizedText != "" && len(sanitizedText) > 1 {
@@ -451,16 +421,6 @@ func clearPendingInputStatesPoll(deps *PollDeps, userID int64) bool {
 		}
 	}
 	return hadPending
-}
-
-// allDigits checks if a string contains only digits
-func allDigits(s string) bool {
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // HandleGroupChatMessage handles messages in group chats

@@ -20,7 +20,10 @@ type SearchHistoryDB struct {
 func NewSearchHistoryDB(dataDir string) (*SearchHistoryDB, error) {
 	dbPath := fmt.Sprintf("%s/search_history.db", dataDir)
 
-	db, err := sql.Open("sqlite", dbPath)
+	// 审计第 15 条：搜索历史库之前没开 WAL、没设 busy_timeout，64 并发里 60 个失败。
+	// 与 wishpool 对齐：WAL + busy_timeout(5000) + _txlock=immediate。
+	dsn := fmt.Sprintf("%s?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate", dbPath)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

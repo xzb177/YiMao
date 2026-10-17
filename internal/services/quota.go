@@ -350,6 +350,11 @@ func (s *QuotaService) CheckTVQuota(telegramID int64) bool {
 
 // UseMovieQuota uses one movie quota
 func (s *QuotaService) UseMovieQuota(telegramID int64) error {
+	// 审计第 16 条：管理员无限配额 —— 扣减路径必须与检查路径（CheckMovieQuota/
+	// CanRequest）用同一套判定，否则 CanRequest=true 但提交时报超限。
+	if s.isAdmin(telegramID) {
+		return nil
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	before := s.snapshotLocked()
@@ -374,6 +379,10 @@ func (s *QuotaService) UseTVQuota(telegramID int64) error {
 
 // UseTVQuotaN 扣除 N 个剧集配额。
 func (s *QuotaService) UseTVQuotaN(telegramID int64, n int) error {
+	// 审计第 16 条：管理员无限配额 —— 与 UseMovieQuota 同理，扣减路径统一判定。
+	if s.isAdmin(telegramID) {
+		return nil
+	}
 	if n <= 0 {
 		return fmt.Errorf("TV quota cost must be positive")
 	}
