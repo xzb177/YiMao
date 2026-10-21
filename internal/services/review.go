@@ -94,6 +94,7 @@ const (
 	BusinessTypeRequest   = "request"
 	BusinessTypeWash      = "wash"
 	reviewStatusCancelled = "cancelled" //nolint:misspell // Persisted API/JSON protocol spelling.
+	reviewStatusFailed    = "failed"    // 终态：审核已通过但提交 MP 自动重试耗尽（与洗版 WashStatusFailed 同值同义）
 )
 
 // NormalizedBusinessType treats legacy records without business_type as requests.
@@ -117,6 +118,7 @@ type ReviewService struct {
 	reviews         map[string]*ReviewRequest // requestID -> review
 	mu              sync.RWMutex
 	moviepilot      *MoviePilotClient // For updating subscription status
+	quotaService    *QuotaService     // For terminal stuck refunds (injected via SetQuotaService)
 	autoResubscribe bool
 	startupAllowed  bool  // false when critical ledger loading failed
 	loadErr         error // makes compatibility fallback permanently read-only
@@ -264,6 +266,13 @@ func (s *ReviewService) SetMoviePilotClient(mp *MoviePilotClient) {
 	if s.startupAllowed {
 		go s.refreshSubscriptionStatus()
 	}
+}
+
+// SetQuotaService 注入配额服务，供 stuck 自动重试耗尽时走
+// RestoreQuotaOnce 退还配额（审计 P1-3）。未注入时终态仍会置
+// RefundPending，由启动补偿 RetryPendingRefunds 兜底对账。
+func (s *ReviewService) SetQuotaService(quota *QuotaService) {
+	s.quotaService = quota
 }
 
 // load loads reviews from file
@@ -1583,7 +1592,7 @@ func (s *ReviewService) cleanupAt(now time.Time) {
 		}
 		// Legacy records without a subscription are retained unless explicitly
 		// rejected/cancelled. Old approved/stuck records may still need recovery.
-		if (review.Status == "rejected" || review.Status == reviewStatusCancelled) && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
+		if (review.Status == "rejected" || review.Status == reviewStatusCancelled || review.Status == reviewStatusFailed) && !review.ReviewedAt.IsZero() && review.ReviewedAt.Before(cutoff) {
 			toDelete[id] = review
 		}
 	}
@@ -1717,6 +1726,9 @@ func (s *ReviewService) retryStuckRequests() {
 
 	for _, rv := range stuck {
 		if rv.RetryCount >= MaxApproveRetry {
+			// 重试耗尽：落终态（退配额 + 管理员通知 + 用户进度切「失败」），
+			// 不再无限期挂在 stuck 让用户干等（审计 P1-3）。
+			s.failExhaustedStuckRequest(rv.RequestID)
 			continue
 		}
 		if isNonRetryableApproveError(rv.LastError) {
@@ -1780,6 +1792,60 @@ func (s *ReviewService) retryStuckRequests() {
 		if s.Alert != nil {
 			go s.Alert(rv.RequestID, rv.MediaTitle, rv.RetryCount, "自动重试成功")
 		}
+	}
+}
+
+// failExhaustedStuckRequest 把自动重试耗尽的 stuck 请求落到终态失败
+// （审计 P1-3）：
+//
+//   - Status 置 reviewStatusFailed、清 Stuck：请求退出恢复候选集，
+//     用户「求片进度」经状态文案映射显示「提交失败」，不再永远「同步中」；
+//   - 配额走既有机制退还：先按 Reject 的口径置 RefundPending，再调
+//     RestoreQuotaOnce（持久化标记保证幂等，重复调用不重复退）；
+//     退还失败或配额服务未注入时 RefundPending 保持 true，
+//     由启动补偿 RetryPendingRefunds 兜底对账；
+//   - 复用 Alert 告警通道通知管理员，文案注明已落终态及退配额结果。
+//
+// 锁内复核状态（仍 approved、无订阅关联、重试已达上限、非洗版）后才
+// 落终态，避免与刚成功的 LinkSubscription 竞态误杀。
+func (s *ReviewService) failExhaustedStuckRequest(requestID string) {
+	s.mu.Lock()
+	review, exists := s.reviews[requestID]
+	if !exists || review.Status != "approved" || review.SubscriptionID != 0 ||
+		review.RetryCount < MaxApproveRetry || review.NormalizedBusinessType() == BusinessTypeWash {
+		s.mu.Unlock()
+		return
+	}
+	previousStatus, previousStuck, previousPending := review.Status, review.Stuck, review.RefundPending
+	review.Status = reviewStatusFailed
+	review.Stuck = false
+	if review.NormalizedBusinessType() == BusinessTypeRequest && !review.QuotaRestored {
+		review.RefundPending = true
+	}
+	terminal := cloneReview(review)
+	quota := s.quotaService
+	if err := s.saveLocked(); err != nil {
+		review.Status, review.Stuck, review.RefundPending = previousStatus, previousStuck, previousPending
+		s.mu.Unlock()
+		logger.Warn("[ReviewService] stuck 请求落终态写盘失败，已回滚: %s, err=%v", requestID, err)
+		return
+	}
+	s.mu.Unlock()
+
+	logger.Warn("[ReviewService] stuck 请求自动重试耗尽，落终态失败: %s, 片名: %s, err=%s",
+		requestID, terminal.MediaTitle, terminal.LastError)
+
+	refundNote := "配额已退还"
+	if quota == nil {
+		refundNote = "配额待补偿（将自动对账）"
+	} else if _, err := s.RestoreQuotaOnce(requestID, quota); err != nil {
+		logger.Warn("[ReviewService] 终态退配额失败，保持待补偿: %s, err=%v", requestID, err)
+		refundNote = "配额待补偿（将自动对账）"
+	}
+
+	if s.Alert != nil {
+		go s.Alert(requestID, terminal.MediaTitle, terminal.RetryCount,
+			fmt.Sprintf("自动重试已耗尽，请求已终态失败，%s。最后错误: %s", refundNote, terminal.LastError))
 	}
 }
 

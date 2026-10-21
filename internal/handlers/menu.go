@@ -595,6 +595,12 @@ func (h *MyRequestsHandler) mergePendingReviews(telegramID int64, mpItems []serv
 					continue
 				}
 				state = services.StateCancelled
+			case "failed":
+				// 终态失败（提交 MP 自动重试耗尽，已退配额）：如实显示失败，
+				// 不再停留在「同步中」。洗版 failed 有既有口径，不走此映射。
+				if business == services.BusinessTypeRequest {
+					state = services.StateFailed
+				}
 			case "completed":
 				state = services.StateCompleted
 			}

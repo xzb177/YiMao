@@ -271,6 +271,7 @@ func initServices(cfg *config.Config, chatID int64) *Dependencies {
 	}
 	logger.Info("    - Setting MoviePilotClient...")
 	reviewService.SetMoviePilotClient(moviepilotClient)
+	reviewService.SetQuotaService(quotaService)      // 审计 P1-3：stuck 重试耗尽落终态时退配额
 	reviewService.SetUserMapping(userMappingService) // Issue #1: 全量检测需要 MP 用户名→TG ID 反查
 	if repaired, retryErr := reviewService.RetryPendingRefunds(quotaService); retryErr != nil {
 		logger.Warn("[ReviewService] pending quota refund retry failed after %d repairs: %v", repaired, retryErr)
