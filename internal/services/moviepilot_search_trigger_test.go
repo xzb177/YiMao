@@ -20,7 +20,7 @@ type searchTriggerHarness struct {
 	failAll     atomic.Bool
 }
 
-func newSearchTriggerHarness(t *testing.T, cooldown time.Duration) *searchTriggerHarness {
+func newSearchTriggerHarness(t *testing.T, cooldown time.Duration, backoffs []time.Duration) *searchTriggerHarness {
 	t.Helper()
 	h := &searchTriggerHarness{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +39,10 @@ func newSearchTriggerHarness(t *testing.T, cooldown time.Duration) *searchTrigge
 	}))
 	t.Cleanup(server.Close)
 	h.client = NewMoviePilotClient(server.URL, "test-key", "")
+	// 合并窗口与退避间隔都在构造时注入 client 字段，触发之后不再改动
+	// 任何状态——旧写法运行中改写包级 var 会与仍在飞的补发定时器相撞。
 	h.client.searchTriggerCooldown = cooldown
+	h.client.searchTriggerBackoffs = backoffs
 	return h
 }
 
@@ -58,7 +61,7 @@ func waitForHits(t *testing.T, counter *atomic.Int32, want int32, timeout time.D
 func TestTriggerSubscriptionSearchCoalescedFlush(t *testing.T) {
 	// 窗口取 2s：首次触发内部有 500ms 落库等待，窗口必须明显大于它，
 	// 模拟生产 30s 窗口内秒级连点批准的情形。
-	h := newSearchTriggerHarness(t, 2*time.Second)
+	h := newSearchTriggerHarness(t, 2*time.Second, nil)
 
 	// 第一次触发：不在窗口内，立即发出一次全局搜索。
 	h.client.triggerSubscriptionSearch(101)
@@ -89,11 +92,7 @@ func TestTriggerSubscriptionSearchCoalescedFlush(t *testing.T) {
 }
 
 func TestFlushSubscriptionSearchRetriesAndRecovers(t *testing.T) {
-	oldBackoffs := searchTriggerRetryBackoffs
-	searchTriggerRetryBackoffs = []time.Duration{600 * time.Millisecond, 600 * time.Millisecond}
-	t.Cleanup(func() { searchTriggerRetryBackoffs = oldBackoffs })
-
-	h := newSearchTriggerHarness(t, 150*time.Millisecond)
+	h := newSearchTriggerHarness(t, 150*time.Millisecond, []time.Duration{600 * time.Millisecond, 600 * time.Millisecond})
 	h.failAll.Store(true)
 	// 模拟窗口刚被上一次触发打开：本次触发只能走合并补发路径。
 	h.client.lastSearchTriggerTime = time.Now()
@@ -112,11 +111,7 @@ func TestFlushSubscriptionSearchRetriesAndRecovers(t *testing.T) {
 }
 
 func TestFlushSubscriptionSearchExhaustsRetriesAndStops(t *testing.T) {
-	oldBackoffs := searchTriggerRetryBackoffs
-	searchTriggerRetryBackoffs = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
-	t.Cleanup(func() { searchTriggerRetryBackoffs = oldBackoffs })
-
-	h := newSearchTriggerHarness(t, 100*time.Millisecond)
+	h := newSearchTriggerHarness(t, 100*time.Millisecond, []time.Duration{10 * time.Millisecond, 10 * time.Millisecond})
 	h.failAll.Store(true)
 	h.client.lastSearchTriggerTime = time.Now()
 	h.client.triggerSubscriptionSearch(303)
@@ -137,7 +132,7 @@ func TestFlushSubscriptionSearchExhaustsRetriesAndStops(t *testing.T) {
 }
 
 func TestTriggerSubscriptionSearchIgnoresInvalidID(t *testing.T) {
-	h := newSearchTriggerHarness(t, 100*time.Millisecond)
+	h := newSearchTriggerHarness(t, 100*time.Millisecond, nil)
 	h.client.triggerSubscriptionSearch(0)
 	h.client.triggerSubscriptionSearch(-5)
 	time.Sleep(300 * time.Millisecond)

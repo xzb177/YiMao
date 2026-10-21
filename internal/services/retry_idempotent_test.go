@@ -61,14 +61,10 @@ func TestRetryHTTPDoesNotRetryNonIdempotentMethods(t *testing.T) {
 // RetryHTTP(3)，一次触发瞬间放大到 9 次；而且每个订阅各触发一次全局搜索，
 // 批量审批时直接压垮 MoviePilot 和站点。
 // 现口径：每次 fire 内部仍只有一层 RetryHTTP；触发失败按审计 P1-2 与补发
-// 同口径有限退避（fire 总数封顶 1+len(searchTriggerRetryBackoffs)），全程
+// 同口径有限退避（fire 总数封顶 1+len(退避间隔)，本测试注入 2 档），全程
 // 失败时命中封顶 3×3=9 次后停手并记 Warn——与旧的即时嵌套放大有本质区别：
 // fire 之间有退避间隔，总数有明确上限。
 func TestTriggerSubscriptionSearchSingleLevelRetry(t *testing.T) {
-	oldBackoffs := searchTriggerRetryBackoffs
-	searchTriggerRetryBackoffs = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
-	t.Cleanup(func() { searchTriggerRetryBackoffs = oldBackoffs })
-
 	var hits atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/subscribe/search") {
@@ -79,6 +75,8 @@ func TestTriggerSubscriptionSearchSingleLevelRetry(t *testing.T) {
 	defer server.Close()
 
 	c := NewMoviePilotClient(server.URL, "testkey", "")
+	// 退避在构造后、触发前注入 client 字段，触发后不再改动任何状态。
+	c.searchTriggerBackoffs = []time.Duration{10 * time.Millisecond, 10 * time.Millisecond}
 	c.triggerSubscriptionSearch(42)
 	if got := hits.Load(); got != 9 {
 		t.Fatalf("search endpoint hits=%d, want 9 (3 fires x 3 inner RetryHTTP attempts, bounded)", got)

@@ -252,10 +252,11 @@ type MoviePilotClient struct {
 	// 由窗口结束时的防抖补发统一覆盖（审计 P1-2），不静默丢弃。
 	searchTriggerMu        sync.Mutex
 	lastSearchTriggerTime  time.Time
-	searchTriggerPending   bool          // 窗口内有被合并的触发待补发
-	searchTriggerPendingID int           // 最近一次被合并的订阅 ID（仅日志用）
-	searchTriggerTimer     *time.Timer   // 补发定时器；非空表示补发已排队
-	searchTriggerCooldown  time.Duration // 合并窗口；0 表示用默认值（测试可注入更短窗口）
+	searchTriggerPending   bool            // 窗口内有被合并的触发待补发
+	searchTriggerPendingID int             // 最近一次被合并的订阅 ID（仅日志用）
+	searchTriggerTimer     *time.Timer     // 补发定时器；非空表示补发已排队
+	searchTriggerCooldown  time.Duration   // 合并窗口；0 表示用默认值（测试可注入更短窗口）
+	searchTriggerBackoffs  []time.Duration // 触发失败退避间隔；空表示用默认值（测试可在构造后、触发前注入更短间隔）
 
 	// 订阅列表缓存（避免每次请求都拉全量）
 	subsCacheMu   sync.RWMutex
@@ -754,9 +755,22 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 // 但窗口内被合并的触发绝不能丢弃，见 triggerSubscriptionSearch 的防抖补发。
 const defaultSearchTriggerCooldown = 30 * time.Second
 
-// searchTriggerRetryBackoffs 是订阅搜索触发失败后的退避重试间隔
-// （直发与合并补发共用，有限次）。
-var searchTriggerRetryBackoffs = []time.Duration{2 * time.Second, 5 * time.Second}
+// defaultSearchTriggerBackoffs 是订阅搜索触发失败后的默认退避重试间隔
+// （直发与合并补发共用，有限次）。用函数返回新切片而非包级变量：生产
+// 代码运行期只读各 client 自己的字段，包级不留任何可被改写的状态——
+// 旧实现是包级 var，测试在运行中改写它会与仍在飞的补发定时器 goroutine
+// 相撞（DATA RACE），且跨测试共享会让上一个测试的定时器窜进下一个测试。
+func defaultSearchTriggerBackoffs() []time.Duration {
+	return []time.Duration{2 * time.Second, 5 * time.Second}
+}
+
+// triggerBackoffs 返回本 client 的退避间隔：字段注入了就用字段，否则用默认值。
+func (c *MoviePilotClient) triggerBackoffs() []time.Duration {
+	if len(c.searchTriggerBackoffs) > 0 {
+		return c.searchTriggerBackoffs
+	}
+	return defaultSearchTriggerBackoffs()
+}
 
 func (c *MoviePilotClient) triggerCooldown() time.Duration {
 	if c.searchTriggerCooldown > 0 {
@@ -776,7 +790,7 @@ func (c *MoviePilotClient) triggerCooldown() time.Duration {
 // 创建时，第 1 次全局搜索早已扫完，它的触发被吞就永远没人再喊它搜索。
 // 现在窗口内的触发记账，并在窗口结束时补发一次全局搜索（届时窗口内
 // 新建的订阅都已落库，能被扫到）；补发与直发失败都走
-// fireSubscriptionSearchWithRetry：按 searchTriggerRetryBackoffs 退避
+// fireSubscriptionSearchWithRetry：按 triggerBackoffs 退避
 // 重试，最终失败记 Warn 日志，不再无声丢失（CI errcheck 返修：直发路径
 // 旧实现丢弃了 fireSubscriptionSearch 的 error，与补发口径不一致）。
 func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
@@ -821,15 +835,15 @@ func (c *MoviePilotClient) flushPendingSubscriptionSearch() {
 }
 
 // fireSubscriptionSearchWithRetry 发出一次全局订阅搜索，失败时按
-// searchTriggerRetryBackoffs 有限退避重试；重试耗尽记 Warn 并写明后果。
+// triggerBackoffs 有限退避重试；重试耗尽记 Warn 并写明后果。
 // 直发与合并补发共用，保证两条路的失败口径一致，不再有任何一条路把
 // 失败无声吞掉。scene 仅用于区分日志来源（「触发」/「补发」）。
 // 注意与审计第 11 条的区别：这里的多次 fire 是带退避的顺序重试、总数
-// 封顶 1+len(searchTriggerRetryBackoffs)，每次 fire 内部仍只有一层重试，
+// 封顶 1+len(triggerBackoffs)，每次 fire 内部仍只有一层重试，
 // 不是旧的「外层 Retry 包内层 Retry」的即时乘法放大。
 func (c *MoviePilotClient) fireSubscriptionSearchWithRetry(subID int, scene string) {
 	err := c.fireSubscriptionSearch(subID)
-	for _, backoff := range searchTriggerRetryBackoffs {
+	for _, backoff := range c.triggerBackoffs() {
 		if err == nil {
 			return
 		}
