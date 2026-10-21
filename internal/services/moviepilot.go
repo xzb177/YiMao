@@ -754,7 +754,8 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 // 但窗口内被合并的触发绝不能丢弃，见 triggerSubscriptionSearch 的防抖补发。
 const defaultSearchTriggerCooldown = 30 * time.Second
 
-// searchTriggerRetryBackoffs 是合并补发失败后的退避重试间隔（有限次）。
+// searchTriggerRetryBackoffs 是订阅搜索触发失败后的退避重试间隔
+// （直发与合并补发共用，有限次）。
 var searchTriggerRetryBackoffs = []time.Duration{2 * time.Second, 5 * time.Second}
 
 func (c *MoviePilotClient) triggerCooldown() time.Duration {
@@ -774,8 +775,10 @@ func (c *MoviePilotClient) triggerCooldown() time.Duration {
 // 丢弃，但全局搜索是在订阅创建后 500ms 就发出的——第 2 个订阅在窗口内
 // 创建时，第 1 次全局搜索早已扫完，它的触发被吞就永远没人再喊它搜索。
 // 现在窗口内的触发记账，并在窗口结束时补发一次全局搜索（届时窗口内
-// 新建的订阅都已落库，能被扫到）；补发失败按 searchTriggerRetryBackoffs
-// 退避重试，最终失败记 Warn 日志，不再无声丢失。
+// 新建的订阅都已落库，能被扫到）；补发与直发失败都走
+// fireSubscriptionSearchWithRetry：按 searchTriggerRetryBackoffs 退避
+// 重试，最终失败记 Warn 日志，不再无声丢失（CI errcheck 返修：直发路径
+// 旧实现丢弃了 fireSubscriptionSearch 的 error，与补发口径不一致）。
 func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	if subID <= 0 {
 		return
@@ -795,7 +798,7 @@ func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	c.lastSearchTriggerTime = time.Now()
 	c.searchTriggerMu.Unlock()
 
-	c.fireSubscriptionSearch(subID)
+	c.fireSubscriptionSearchWithRetry(subID, "触发")
 }
 
 // flushPendingSubscriptionSearch 在合并窗口结束时补发一次全局搜索，
@@ -814,16 +817,28 @@ func (c *MoviePilotClient) flushPendingSubscriptionSearch() {
 	c.searchTriggerMu.Unlock()
 
 	logger.Info("[MoviePilot] 补发合并窗口内的订阅搜索触发（订阅 ID: %d）", subID)
-	if err := c.fireSubscriptionSearch(subID); err == nil {
-		return
-	}
+	c.fireSubscriptionSearchWithRetry(subID, "补发")
+}
+
+// fireSubscriptionSearchWithRetry 发出一次全局订阅搜索，失败时按
+// searchTriggerRetryBackoffs 有限退避重试；重试耗尽记 Warn 并写明后果。
+// 直发与合并补发共用，保证两条路的失败口径一致，不再有任何一条路把
+// 失败无声吞掉。scene 仅用于区分日志来源（「触发」/「补发」）。
+// 注意与审计第 11 条的区别：这里的多次 fire 是带退避的顺序重试、总数
+// 封顶 1+len(searchTriggerRetryBackoffs)，每次 fire 内部仍只有一层重试，
+// 不是旧的「外层 Retry 包内层 Retry」的即时乘法放大。
+func (c *MoviePilotClient) fireSubscriptionSearchWithRetry(subID int, scene string) {
+	err := c.fireSubscriptionSearch(subID)
 	for _, backoff := range searchTriggerRetryBackoffs {
-		time.Sleep(backoff)
-		if err := c.fireSubscriptionSearch(subID); err == nil {
+		if err == nil {
 			return
 		}
+		time.Sleep(backoff)
+		err = c.fireSubscriptionSearch(subID)
 	}
-	logger.Warn("[MoviePilot] 订阅搜索补发重试耗尽仍失败（订阅 ID: %d），该订阅要等 MoviePilot 自身定时搜索或下一次订阅创建才会启动搜索", subID)
+	if err != nil {
+		logger.Warn("[MoviePilot] 订阅搜索%s重试耗尽仍失败（订阅 ID: %d），该订阅要等 MoviePilot 自身定时搜索或下一次订阅创建才会启动搜索", scene, subID)
+	}
 }
 
 // fireSubscriptionSearch 实际调用一次全局订阅搜索。
