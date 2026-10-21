@@ -248,9 +248,14 @@ type MoviePilotClient struct {
 	retryConfig    *RetryConfig
 
 	// 订阅搜索触发合并（审计第 11 条）：/subscribe/search 是全局搜索，
-	// 批量审批创建 N 个订阅时会触发 N 次。合并窗口内的触发为一次。
-	searchTriggerMu       sync.Mutex
-	lastSearchTriggerTime time.Time
+	// 批量审批创建 N 个订阅时会触发 N 次。合并窗口内的触发记账，
+	// 由窗口结束时的防抖补发统一覆盖（审计 P1-2），不静默丢弃。
+	searchTriggerMu        sync.Mutex
+	lastSearchTriggerTime  time.Time
+	searchTriggerPending   bool          // 窗口内有被合并的触发待补发
+	searchTriggerPendingID int           // 最近一次被合并的订阅 ID（仅日志用）
+	searchTriggerTimer     *time.Timer   // 补发定时器；非空表示补发已排队
+	searchTriggerCooldown  time.Duration // 合并窗口；0 表示用默认值（测试可注入更短窗口）
 
 	// 订阅列表缓存（避免每次请求都拉全量）
 	subsCacheMu   sync.RWMutex
@@ -743,30 +748,86 @@ func (c *MoviePilotClient) RequestMedia(name string, year int, tmdbID int, media
 	}, nil
 }
 
-// searchTriggerCooldown 是订阅搜索触发的合并窗口：窗口内的多次触发只
-// 实际调用一次。MoviePilot 的 /subscribe/search 是全局搜索（扫全部订阅），
-// 不是按订阅 ID 的，所以批量审批创建 N 个订阅时触发一次就够了。
-const searchTriggerCooldown = 30 * time.Second
+// defaultSearchTriggerCooldown 是订阅搜索触发的合并窗口默认值：窗口内的
+// 多次触发合并处理。MoviePilot 的 /subscribe/search 是全局搜索（扫全部
+// 订阅），不是按订阅 ID 的，所以批量审批创建 N 个订阅时打一次就够——
+// 但窗口内被合并的触发绝不能丢弃，见 triggerSubscriptionSearch 的防抖补发。
+const defaultSearchTriggerCooldown = 30 * time.Second
+
+// searchTriggerRetryBackoffs 是合并补发失败后的退避重试间隔（有限次）。
+var searchTriggerRetryBackoffs = []time.Duration{2 * time.Second, 5 * time.Second}
+
+func (c *MoviePilotClient) triggerCooldown() time.Duration {
+	if c.searchTriggerCooldown > 0 {
+		return c.searchTriggerCooldown
+	}
+	return defaultSearchTriggerCooldown
+}
 
 // triggerSubscriptionSearch 触发订阅搜索，确保订阅能开始下载。
 // 审计第 11 条修复：
 //  1. 去掉外层 Retry——makeRequest 内部的 doRequest 已经经 RetryHTTP 按
 //     幂等语义重试（GET 最多 3 次），外层再包一层会让一次触发最多打 9 次；
 //  2. 合并窗口：批量审批时 N 个订阅只触发一次全局搜索，不再压垮 MoviePilot。
+//
+// 审计 P1-2 修复：合并窗口改为「防抖补发」。旧实现把窗口内的触发直接
+// 丢弃，但全局搜索是在订阅创建后 500ms 就发出的——第 2 个订阅在窗口内
+// 创建时，第 1 次全局搜索早已扫完，它的触发被吞就永远没人再喊它搜索。
+// 现在窗口内的触发记账，并在窗口结束时补发一次全局搜索（届时窗口内
+// 新建的订阅都已落库，能被扫到）；补发失败按 searchTriggerRetryBackoffs
+// 退避重试，最终失败记 Warn 日志，不再无声丢失。
 func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 	if subID <= 0 {
 		return
 	}
 
 	c.searchTriggerMu.Lock()
-	if time.Since(c.lastSearchTriggerTime) < searchTriggerCooldown {
+	if remaining := c.triggerCooldown() - time.Since(c.lastSearchTriggerTime); remaining > 0 {
+		c.searchTriggerPending = true
+		c.searchTriggerPendingID = subID
+		if c.searchTriggerTimer == nil {
+			c.searchTriggerTimer = time.AfterFunc(remaining, c.flushPendingSubscriptionSearch)
+		}
 		c.searchTriggerMu.Unlock()
-		logger.Debug("[MoviePilot] 订阅搜索触发已合并（订阅 ID: %d，冷却窗口内）", subID)
+		logger.Debug("[MoviePilot] 订阅搜索触发已合并，将在窗口结束时补发（订阅 ID: %d）", subID)
 		return
 	}
 	c.lastSearchTriggerTime = time.Now()
 	c.searchTriggerMu.Unlock()
 
+	c.fireSubscriptionSearch(subID)
+}
+
+// flushPendingSubscriptionSearch 在合并窗口结束时补发一次全局搜索，
+// 覆盖窗口内被合并掉的订阅。它由防抖定时器调用；没有待补发时直接返回。
+func (c *MoviePilotClient) flushPendingSubscriptionSearch() {
+	c.searchTriggerMu.Lock()
+	c.searchTriggerTimer = nil
+	if !c.searchTriggerPending {
+		c.searchTriggerMu.Unlock()
+		return
+	}
+	c.searchTriggerPending = false
+	subID := c.searchTriggerPendingID
+	c.searchTriggerPendingID = 0
+	c.lastSearchTriggerTime = time.Now()
+	c.searchTriggerMu.Unlock()
+
+	logger.Info("[MoviePilot] 补发合并窗口内的订阅搜索触发（订阅 ID: %d）", subID)
+	if err := c.fireSubscriptionSearch(subID); err == nil {
+		return
+	}
+	for _, backoff := range searchTriggerRetryBackoffs {
+		time.Sleep(backoff)
+		if err := c.fireSubscriptionSearch(subID); err == nil {
+			return
+		}
+	}
+	logger.Warn("[MoviePilot] 订阅搜索补发重试耗尽仍失败（订阅 ID: %d），该订阅要等 MoviePilot 自身定时搜索或下一次订阅创建才会启动搜索", subID)
+}
+
+// fireSubscriptionSearch 实际调用一次全局订阅搜索。
+func (c *MoviePilotClient) fireSubscriptionSearch(subID int) error {
 	// 等待一小段时间确保订阅已保存
 	time.Sleep(500 * time.Millisecond)
 
@@ -775,9 +836,10 @@ func (c *MoviePilotClient) triggerSubscriptionSearch(subID int) {
 
 	if _, err := c.makeRequest("GET", endpoint, nil); err != nil {
 		logger.Info("[MoviePilot] 触发订阅搜索失败，订阅 ID: %d: %v", subID, err)
-	} else {
-		logger.Info("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
+		return err
 	}
+	logger.Info("[MoviePilot] 已触发订阅搜索，订阅 ID: %d", subID)
+	return nil
 }
 
 // RequestMediaBySearchResult creates a subscription from a search result
