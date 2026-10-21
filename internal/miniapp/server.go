@@ -568,6 +568,8 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			note = "未通过审核，可稍后换个版本或作品重试"
 		} else if review.Status == "cancelled" {
 			note = "已由你主动撤回"
+		} else if review.Status == "failed" && review.NormalizedBusinessType() == services.BusinessTypeRequest {
+			note = "提交失败，配额已退还，可重新求片"
 		} else if review.Stuck {
 			note = "系统正在自动重试，无需重复提交"
 		}
@@ -609,6 +611,11 @@ func publicReviewStatus(review *services.ReviewRequest) (string, string, string)
 }
 
 func userRequestStatus(review *services.ReviewRequest) (string, string, string) {
+	if review.Status == "failed" && review.NormalizedBusinessType() == services.BusinessTypeRequest {
+		// 终态失败（提交 MP 自动重试耗尽）：如实终态，不再显示处理中。
+		// 洗版 failed 由 publicReviewStatus 的 WashStatusFailed 分支处理。
+		return "failed", "提交失败", "done"
+	}
 	if review.Stuck {
 		return "stuck", "同步重试", "active"
 	}
